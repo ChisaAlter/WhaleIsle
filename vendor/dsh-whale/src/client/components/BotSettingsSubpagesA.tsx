@@ -284,6 +284,9 @@ function formatLookNowFailure(res: LookNowRpcResult, zh: boolean): string {
   if (res.reason === 'budget_exceeded') {
     return zh ? '巡视跳过：超出预算限制' : 'Look around skipped: budget_exceeded';
   }
+  if (res.reason === 'off_peak_only') {
+    return zh ? '巡视跳过：仅谷段运行' : 'Look around skipped: off_peak_only';
+  }
   const detail = res.summary || res.error || res.reason;
   if (res.skipped) {
     return detail
@@ -301,10 +304,68 @@ export function BotLookAroundSubpage({ bot }: SubpageProps) {
   const cfg = botLookAround(bot);
   const [focusDraft, setFocusDraft] = useState(cfg.focus ?? '');
   const [running, setRunning] = useState(false);
+  const mountedRef = useRef(true);
+  const activeBotIdRef = useRef(bot.id);
+  const runningRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activeBotIdRef.current = bot.id;
+    runningRef.current = false;
+    setRunning(false);
+  }, [bot.id]);
 
   useEffect(() => {
     setFocusDraft(cfg.focus ?? '');
   }, [cfg.focus]);
+
+  const handleLookNow = async () => {
+    if (runningRef.current) {
+      return;
+    }
+    const targetBotId = bot.id;
+    runningRef.current = true;
+    setRunning(true);
+    try {
+      const res = await callBotRpc<LookNowRpcResult | null>(RPC_METHODS.LOOK_AROUND_NOW, {
+        botId: targetBotId,
+        background: true,
+      });
+      if (!mountedRef.current || activeBotIdRef.current !== targetBotId) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: 'error' });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? '巡视正在进行中' : 'Look around is already running',
+          tone: 'info',
+        });
+        return;
+      }
+      botsStore.pushToast({
+        message: zh ? '已启动立即巡视' : 'Look around sweep started',
+        tone: 'success',
+      });
+    } catch (err) {
+      if (mountedRef.current && activeBotIdRef.current === targetBotId) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
+    } finally {
+      if (mountedRef.current && activeBotIdRef.current === targetBotId) {
+        runningRef.current = false;
+        setRunning(false);
+      }
+    }
+  };
 
   const patchLook = async (patch: Record<string, unknown>) => {
     await callBotRpc(RPC_METHODS.LOOK_AROUND_SET, { botId: bot.id, ...patch });
@@ -393,34 +454,7 @@ export function BotLookAroundSubpage({ bot }: SubpageProps) {
             type="button"
             className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
             disabled={running || bot.paused}
-            onClick={async () => {
-              setRunning(true);
-              try {
-                const res = await callBotRpc<LookNowRpcResult | null>(RPC_METHODS.LOOK_AROUND_NOW, {
-                  botId: bot.id,
-                  background: true,
-                });
-                if (res && res.ok === false) {
-                  botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: 'error' });
-                  return;
-                }
-                if (res && res.alreadyRunning) {
-                  botsStore.pushToast({
-                    message: zh ? '巡视正在进行中' : 'Look around is already running',
-                    tone: 'info',
-                  });
-                  return;
-                }
-                botsStore.pushToast({
-                  message: zh ? '已启动立即巡视' : 'Look around sweep started',
-                  tone: 'success',
-                });
-              } catch (err) {
-                botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
-              } finally {
-                setRunning(false);
-              }
-            }}
+            onClick={() => void handleLookNow()}
           >
             <IconRefresh size={11} />
             <span>{running ? tr('settings.bots.lookAround.looking', 'Looking…') : tr('bots.upNext.lookNow', 'Look now')}</span>

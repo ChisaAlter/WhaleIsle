@@ -102,6 +102,8 @@ interface AutomationRunNowResult {
   alreadyRunning?: boolean;
   skipped?: boolean;
   reason?: string;
+  budgetReason?: string;
+  automationId?: string;
   summary?: string;
   error?: string;
 }
@@ -122,6 +124,9 @@ function formatLookNowFailure(res: LookAroundNowResult, zh: boolean): string {
   if (res.reason === 'budget_exceeded') {
     return zh ? '巡视跳过：超出预算限制' : 'Look around skipped: budget_exceeded';
   }
+  if (res.reason === 'off_peak_only') {
+    return zh ? '巡视跳过：仅谷段运行' : 'Look around skipped: off_peak_only';
+  }
   const detail = res.summary || res.error || res.reason;
   if (res.skipped) {
     return detail
@@ -134,8 +139,18 @@ function formatLookNowFailure(res: LookAroundNowResult, zh: boolean): string {
 }
 
 function formatAutomationRunFailure(res: AutomationRunNowResult, name: string, zh: boolean): string {
-  if (res.reason === 'budget_exceeded') {
+  const budgetCode = res.budgetReason || res.reason;
+  if (budgetCode === 'budget_exceeded') {
     return zh ? `任务跳过（超出预算限制）：${name}` : `Automation skipped (budget_exceeded): ${name}`;
+  }
+  if (budgetCode === 'off_peak_only') {
+    return zh ? `任务跳过（仅谷段运行）：${name}` : `Automation skipped (off_peak_only): ${name}`;
+  }
+  if (res.skipped || res.reason === 'skipped_budget') {
+    const detail = res.budgetReason || res.error || res.summary || res.reason;
+    return detail
+      ? (zh ? `任务跳过（${name}）：${detail}` : `Automation skipped (${name}): ${detail}`)
+      : (zh ? `任务已跳过：${name}` : `Automation skipped: ${name}`);
   }
   const detail = res.error || res.reason || res.summary;
   return detail
@@ -242,6 +257,33 @@ export function BotActivityUpcoming({
   const [busySuggestionIds, setBusySuggestionIds] = useState<Record<string, 'start' | 'dismiss'>>({});
   const [busyAutoActions, setBusyAutoActions] = useState<Record<string, 'run' | 'update' | 'delete'>>({});
   const markedSeenForBotRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const activeBotIdRef = useRef(bot.id);
+  const lookingNowRef = useRef(false);
+  const busySuggestionRef = useRef<Set<string>>(new Set());
+  const busyAutoRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activeBotIdRef.current = bot.id;
+    lookingNowRef.current = false;
+    busySuggestionRef.current.clear();
+    busyAutoRef.current.clear();
+    setLookingNow(false);
+    setBusySuggestionIds({});
+    setBusyAutoActions({});
+    setLocalUnreadIds({});
+  }, [bot.id]);
+
+  const isCurrentBot = (targetBotId: string) => (
+    mountedRef.current && activeBotIdRef.current === targetBotId
+  );
 
   const scheduledAutos = useMemo(
     () => sortAutomations(automations.filter((a) => !a.once)),
@@ -335,12 +377,20 @@ export function BotActivityUpcoming({
   };
 
   const handleLookNow = async () => {
+    if (lookingNowRef.current) {
+      return;
+    }
+    const targetBotId = bot.id;
+    lookingNowRef.current = true;
     setLookingNow(true);
     try {
       const res = await callBotRpc<LookAroundNowResult | null>(RPC_METHODS.LOOK_AROUND_NOW, {
-        botId: bot.id,
+        botId: targetBotId,
         background: true,
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: 'error' });
         return;
@@ -358,24 +408,34 @@ export function BotActivityUpcoming({
       });
       onReload();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
     } finally {
-      setLookingNow(false);
+      if (isCurrentBot(targetBotId)) {
+        lookingNowRef.current = false;
+        setLookingNow(false);
+      }
     }
   };
 
   const handleStartSuggestion = async (sug: SuggestionRow) => {
-    if (busySuggestionIds[sug.id]) {
+    if (busySuggestionRef.current.has(sug.id)) {
       return;
     }
+    const targetBotId = bot.id;
+    busySuggestionRef.current.add(sug.id);
     setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: 'start' }));
-    void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {});
+    void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: targetBotId, ids: [sug.id] }).catch(() => {});
     try {
       const res = await callBotRpc<SuggestionStartResult | null>(RPC_METHODS.SUGGESTIONS_START, {
-        botId: bot.id,
+        botId: targetBotId,
         suggestionId: sug.id,
         background: true,
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({ message: formatSuggestionStartFailure(res, zh), tone: 'error' });
         if (res.alreadyResolved) {
@@ -386,37 +446,47 @@ export function BotActivityUpcoming({
       if (res && res.turnError) {
         botsStore.pushToast({ message: res.turnError, tone: 'error' });
         onReload();
-        void botsStore.openBotHome(bot.id);
+        void botsStore.openBotHome(targetBotId);
         return;
       }
       onReload();
-      void botsStore.openBotHome(bot.id);
+      void botsStore.openBotHome(targetBotId);
       botsStore.pushToast({
         message: zh ? `已开始执行：${sug.title}` : `Started: ${sug.title}`,
         tone: 'success',
       });
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
     } finally {
-      setBusySuggestionIds((prev) => {
-        const next = { ...prev };
-        delete next[sug.id];
-        return next;
-      });
+      if (isCurrentBot(targetBotId)) {
+        busySuggestionRef.current.delete(sug.id);
+        setBusySuggestionIds((prev) => {
+          const next = { ...prev };
+          delete next[sug.id];
+          return next;
+        });
+      }
     }
   };
 
   const handleDismissSuggestion = async (sug: SuggestionRow) => {
-    if (busySuggestionIds[sug.id]) {
+    if (busySuggestionRef.current.has(sug.id)) {
       return;
     }
+    const targetBotId = bot.id;
+    busySuggestionRef.current.add(sug.id);
     setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: 'dismiss' }));
-    void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {});
+    void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: targetBotId, ids: [sug.id] }).catch(() => {});
     try {
       const res = await callBotRpc<SuggestionDismissResult | null>(RPC_METHODS.SUGGESTIONS_DISMISS, {
-        botId: bot.id,
+        botId: targetBotId,
         suggestionId: sug.id,
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({
           message: res.error || (zh ? '忽略建议失败' : 'Failed to dismiss suggestion'),
@@ -430,38 +500,55 @@ export function BotActivityUpcoming({
         tone: 'info',
       });
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
     } finally {
-      setBusySuggestionIds((prev) => {
-        const next = { ...prev };
-        delete next[sug.id];
-        return next;
-      });
+      if (isCurrentBot(targetBotId)) {
+        busySuggestionRef.current.delete(sug.id);
+        setBusySuggestionIds((prev) => {
+          const next = { ...prev };
+          delete next[sug.id];
+          return next;
+        });
+      }
     }
   };
 
-  const withBusyAuto = async (autoId: string, action: 'run' | 'update' | 'delete', fn: () => Promise<void>) => {
-    if (busyAutoActions[autoId]) {
+  const withBusyAuto = async (
+    autoId: string,
+    action: 'run' | 'update' | 'delete',
+    fn: (targetBotId: string) => Promise<void>,
+  ) => {
+    if (busyAutoRef.current.has(autoId)) {
       return;
     }
+    const targetBotId = bot.id;
+    busyAutoRef.current.add(autoId);
     setBusyAutoActions((prev) => ({ ...prev, [autoId]: action }));
     try {
-      await fn();
+      await fn(targetBotId);
     } finally {
-      setBusyAutoActions((prev) => {
-        const next = { ...prev };
-        delete next[autoId];
-        return next;
-      });
+      if (isCurrentBot(targetBotId)) {
+        busyAutoRef.current.delete(autoId);
+        setBusyAutoActions((prev) => {
+          const next = { ...prev };
+          delete next[autoId];
+          return next;
+        });
+      }
     }
   };
 
-  const handleRunAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'run', async () => {
+  const handleRunAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'run', async (targetBotId) => {
     try {
       const res = await callBotRpc<AutomationRunNowResult | null>(RPC_METHODS.AUTOMATIONS_RUN_NOW, {
         id: auto.id,
         background: true,
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({ message: formatAutomationRunFailure(res, auto.name, zh), tone: 'error' });
         return;
@@ -479,25 +566,35 @@ export function BotActivityUpcoming({
       });
       onReload();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
     }
   });
 
-  const handleToggleAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'update', async () => {
+  const handleToggleAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'update', async (targetBotId) => {
     try {
       await callBotRpc(RPC_METHODS.AUTOMATIONS_UPDATE, { id: auto.id, enabled: !auto.enabled });
-      onReload();
+      if (isCurrentBot(targetBotId)) {
+        onReload();
+      }
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
     }
   });
 
-  const handleDeleteAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'delete', async () => {
+  const handleDeleteAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'delete', async (targetBotId) => {
     try {
       await callBotRpc(RPC_METHODS.AUTOMATIONS_DELETE, { id: auto.id });
-      onReload();
+      if (isCurrentBot(targetBotId)) {
+        onReload();
+      }
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      }
     }
   });
 

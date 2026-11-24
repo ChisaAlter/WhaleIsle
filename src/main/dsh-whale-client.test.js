@@ -1644,6 +1644,19 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
   const rpcCalls = [];
   const FakeEventSource = createFakeEventSourceClass(eventSources);
   const fixtures = defaultBotFixtures();
+  fixtures.bots.push({
+    id: 'bot-beta',
+    name: '海豚二号',
+    purpose: '测试队友',
+    avatar: 'mascot:W2',
+    avatarColor: '#10b981',
+    paused: false,
+    dotState: 'idle',
+    homeSessionId: 'sess-beta-home',
+    chatSessionId: 'sess-beta-home',
+    homePath: 'C:/Users/demo/.whaleisle/bots/bot-beta',
+    needsYouCount: 0,
+  });
 
   const createDeferred = () => {
     let resolve;
@@ -1656,6 +1669,7 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
     { id: 'sug-dismiss-ok', title: '整理旧分支', why: '存在合并分支', status: 'open', createdAt: Date.now() - 4_000 },
     { id: 'sug-turn-err', title: '检查线上告警', why: '有错误率波动', status: 'open', createdAt: Date.now() - 3_000 },
     { id: 'sug-fail-res', title: '重跑失败用例', why: '夜间单测红了', status: 'open', createdAt: Date.now() - 2_000 },
+    { id: 'sug-switch-bot', title: '切队友前点执行', why: '验证在途切 Bot 不错跳', status: 'open', createdAt: Date.now() - 1_000 },
   ];
   const automationsList = [
     {
@@ -1671,17 +1685,19 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
 
   let nextStartDeferred = null;
   let nextDismissDeferred = null;
+  let nextLookNowDeferred = null;
   let nextAutoRunDeferred = null;
   let lookNowOutcome = { ok: true, started: true, background: true, runId: 'look-1', botId: 'bot-whale' };
   let autoRunOutcome = { ok: true, started: true, background: true };
 
   const fetchImpl = makeRpcFetch(async (method, params) => {
     if (method === 'bots.list') return fixtures;
-    if (method === 'bots.chat.open') return { sessionId: 'sess-whale-home' };
+    if (method === 'bots.chat.open') return { sessionId: params.botId === 'bot-beta' ? 'sess-beta-home' : 'sess-whale-home' };
     if (method === 'bots.chatTree') return fixtures.chatsByBot[params.botId] ?? { chats: [] };
-    if (method === 'bots.automations.list') return { automations: automationsList };
+    if (method === 'bots.automations.list') return { automations: params.botId === 'bot-whale' ? automationsList : [] };
     if (method === 'bots.upNext.list') {
-      return { seenAt: Date.now(), openSuggestions: [...openSuggestions], suggestions: [...openSuggestions] };
+      const list = params.botId === 'bot-whale' ? [...openSuggestions] : [];
+      return { seenAt: Date.now(), openSuggestions: list, suggestions: list };
     }
     if (method === 'bots.upNext.seen' || method === 'bots.upNext.unseen') return { ok: true };
     if (method === 'bots.suggestions.start') {
@@ -1711,6 +1727,11 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
       return { ok: true, suggestion: { id: params.suggestionId, status: 'dismissed' } };
     }
     if (method === 'bots.lookAround.lookNow') {
+      if (nextLookNowDeferred) {
+        const d = nextLookNowDeferred;
+        nextLookNowDeferred = null;
+        await d.promise;
+      }
       return lookNowOutcome;
     }
     if (method === 'bots.automations.runNow') {
@@ -1933,12 +1954,70 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
   await flush();
   assert.ok(getToasts().some((toast) => toast.tone === 'info' && /任务正在运行中/.test(toast.text)));
 
+  autoRunOutcome = { ok: false, skipped: true, reason: 'skipped_budget', budgetReason: 'budget_exceeded', automationId: 'auto-1' };
+  await act(async () => { autoRunBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /任务跳过（超出预算限制）：每日晨报/.test(toast.text)));
+
+  autoRunOutcome = { ok: false, skipped: true, reason: 'skipped_budget', budgetReason: 'off_peak_only', automationId: 'auto-1' };
+  await act(async () => { autoRunBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /任务跳过（仅谷段运行）：每日晨报/.test(toast.text)));
+
   autoRunOutcome = { ok: false, error: '执行队列已满' };
   await act(async () => { autoRunBtn.click(); });
   await flush();
   assert.ok(getToasts().some((toast) => toast.tone === 'error' && /执行队列已满/.test(toast.text)));
 
-  // 7. Settings panel Look Around subpage ("立即巡视"): sends background:true and surfaces skipped/alreadyRunning.
+  // 7. In-flight bot switch safety: switching bots while Start & LookNow are pending resets busy state and blocks stale openBotHome/reload.
+  const switchStartDeferred = createDeferred();
+  const switchLookDeferred = createDeferred();
+  nextStartDeferred = switchStartDeferred;
+  nextLookNowDeferred = switchLookDeferred;
+  lookNowOutcome = { ok: true, started: true, background: true, runId: 'look-switch', botId: 'bot-whale' };
+  const switchCard = findCardByTitle('切队友前点执行');
+  assert.ok(switchCard, 'switch-test suggestion card must render');
+  await act(async () => {
+    findButtonByText(switchCard, /开始执行|Start/).click();
+    lookNowBtn.click();
+  });
+  assert.equal(lookNowBtn.disabled, true, 'Bot A lookNow button must be disabled while in flight');
+
+  // Switch RightPanelComp to bot-beta before bot-whale's RPCs settle.
+  await act(async () => {
+    root.render(h('div', null,
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, { botId: 'bot-beta' })),
+      h(OverlayComp, {}),
+    ));
+  });
+  await flush();
+
+  const betaLookBtn = findButtonByText(rightPanelHost, /立即巡视|Look now/);
+  assert.ok(betaLookBtn && !betaLookBtn.disabled, 'Bot B lookNow button must be enabled immediately after switching bots');
+  const openSessionsBefore = host.calls.openSession.length;
+  const upNextReloadsBefore = rpcCalls.filter((c) => c.method === 'bots.upNext.list' && c.params?.botId === 'bot-beta').length;
+
+  switchStartDeferred.resolve();
+  switchLookDeferred.resolve();
+  await flush();
+
+  assert.equal(host.calls.openSession.length, openSessionsBefore, 'Stale bot-whale start completion must NOT yank user back via openBotHome');
+  assert.equal(
+    rpcCalls.filter((c) => c.method === 'bots.upNext.list' && c.params?.botId === 'bot-beta').length,
+    upNextReloadsBefore,
+    'Stale bot-whale completion must NOT trigger reload on bot-beta',
+  );
+
+  // Switch back to bot-whale to test Settings Look Around subpage.
+  await act(async () => {
+    root.render(h('div', null,
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, { botId: 'bot-whale' })),
+      h(OverlayComp, {}),
+    ));
+  });
+  await flush();
+
+  // 8. Settings panel Look Around subpage ("立即巡视"): sends background:true and surfaces skipped/alreadyRunning.
   const settingsBtn = rightPanelHost.querySelector('button[aria-label="设置"], button[aria-label="Settings"]');
   assert.ok(settingsBtn, 'right panel header must expose Settings button');
   await act(async () => { settingsBtn.click(); });

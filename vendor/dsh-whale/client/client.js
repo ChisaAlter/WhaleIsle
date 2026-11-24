@@ -6814,6 +6814,9 @@ function formatLookNowFailure(res, zh) {
   if (res.reason === "budget_exceeded") {
     return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u8D85\u51FA\u9884\u7B97\u9650\u5236" : "Look around skipped: budget_exceeded";
   }
+  if (res.reason === "off_peak_only") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u4EC5\u8C37\u6BB5\u8FD0\u884C" : "Look around skipped: off_peak_only";
+  }
   const detail = res.summary || res.error || res.reason;
   if (res.skipped) {
     return detail ? zh ? `\u5DE1\u89C6\u8DF3\u8FC7\uFF1A${detail}` : `Look around skipped: ${detail}` : zh ? "\u5DE1\u89C6\u5DF2\u8DF3\u8FC7" : "Look around skipped";
@@ -6826,9 +6829,64 @@ function BotLookAroundSubpage({ bot }) {
   const cfg = botLookAround(bot);
   const [focusDraft, setFocusDraft] = (0, import_react8.useState)(cfg.focus ?? "");
   const [running, setRunning] = (0, import_react8.useState)(false);
+  const mountedRef = (0, import_react8.useRef)(true);
+  const activeBotIdRef = (0, import_react8.useRef)(bot.id);
+  const runningRef = (0, import_react8.useRef)(false);
+  (0, import_react8.useEffect)(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  (0, import_react8.useEffect)(() => {
+    activeBotIdRef.current = bot.id;
+    runningRef.current = false;
+    setRunning(false);
+  }, [bot.id]);
   (0, import_react8.useEffect)(() => {
     setFocusDraft(cfg.focus ?? "");
   }, [cfg.focus]);
+  const handleLookNow = async () => {
+    if (runningRef.current) {
+      return;
+    }
+    const targetBotId = bot.id;
+    runningRef.current = true;
+    setRunning(true);
+    try {
+      const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
+        botId: targetBotId,
+        background: true
+      });
+      if (!mountedRef.current || activeBotIdRef.current !== targetBotId) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: "error" });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? "\u5DE1\u89C6\u6B63\u5728\u8FDB\u884C\u4E2D" : "Look around is already running",
+          tone: "info"
+        });
+        return;
+      }
+      botsStore.pushToast({
+        message: zh ? "\u5DF2\u542F\u52A8\u7ACB\u5373\u5DE1\u89C6" : "Look around sweep started",
+        tone: "success"
+      });
+    } catch (err) {
+      if (mountedRef.current && activeBotIdRef.current === targetBotId) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    } finally {
+      if (mountedRef.current && activeBotIdRef.current === targetBotId) {
+        runningRef.current = false;
+        setRunning(false);
+      }
+    }
+  };
   const patchLook = async (patch) => {
     await callBotRpc(RPC_METHODS2.LOOK_AROUND_SET, { botId: bot.id, ...patch });
     await botsStore.refresh();
@@ -6918,34 +6976,7 @@ function BotLookAroundSubpage({ bot }) {
             type: "button",
             className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary",
             disabled: running || bot.paused,
-            onClick: async () => {
-              setRunning(true);
-              try {
-                const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
-                  botId: bot.id,
-                  background: true
-                });
-                if (res && res.ok === false) {
-                  botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: "error" });
-                  return;
-                }
-                if (res && res.alreadyRunning) {
-                  botsStore.pushToast({
-                    message: zh ? "\u5DE1\u89C6\u6B63\u5728\u8FDB\u884C\u4E2D" : "Look around is already running",
-                    tone: "info"
-                  });
-                  return;
-                }
-                botsStore.pushToast({
-                  message: zh ? "\u5DF2\u542F\u52A8\u7ACB\u5373\u5DE1\u89C6" : "Look around sweep started",
-                  tone: "success"
-                });
-              } catch (err) {
-                botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
-              } finally {
-                setRunning(false);
-              }
-            },
+            onClick: () => void handleLookNow(),
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(IconRefresh, { size: 11 }),
               /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: running ? tr("settings.bots.lookAround.looking", "Looking\u2026") : tr("bots.upNext.lookNow", "Look now") })
@@ -13157,6 +13188,9 @@ function formatLookNowFailure2(res, zh) {
   if (res.reason === "budget_exceeded") {
     return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u8D85\u51FA\u9884\u7B97\u9650\u5236" : "Look around skipped: budget_exceeded";
   }
+  if (res.reason === "off_peak_only") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u4EC5\u8C37\u6BB5\u8FD0\u884C" : "Look around skipped: off_peak_only";
+  }
   const detail = res.summary || res.error || res.reason;
   if (res.skipped) {
     return detail ? zh ? `\u5DE1\u89C6\u8DF3\u8FC7\uFF1A${detail}` : `Look around skipped: ${detail}` : zh ? "\u5DE1\u89C6\u5DF2\u8DF3\u8FC7" : "Look around skipped";
@@ -13164,8 +13198,16 @@ function formatLookNowFailure2(res, zh) {
   return detail ? zh ? `\u5DE1\u89C6\u5931\u8D25\uFF1A${detail}` : `Look around failed: ${detail}` : zh ? "\u5DE1\u89C6\u5931\u8D25" : "Look around failed";
 }
 function formatAutomationRunFailure(res, name2, zh) {
-  if (res.reason === "budget_exceeded") {
+  const budgetCode = res.budgetReason || res.reason;
+  if (budgetCode === "budget_exceeded") {
     return zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08\u8D85\u51FA\u9884\u7B97\u9650\u5236\uFF09\uFF1A${name2}` : `Automation skipped (budget_exceeded): ${name2}`;
+  }
+  if (budgetCode === "off_peak_only") {
+    return zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08\u4EC5\u8C37\u6BB5\u8FD0\u884C\uFF09\uFF1A${name2}` : `Automation skipped (off_peak_only): ${name2}`;
+  }
+  if (res.skipped || res.reason === "skipped_budget") {
+    const detail2 = res.budgetReason || res.error || res.summary || res.reason;
+    return detail2 ? zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08${name2}\uFF09\uFF1A${detail2}` : `Automation skipped (${name2}): ${detail2}` : zh ? `\u4EFB\u52A1\u5DF2\u8DF3\u8FC7\uFF1A${name2}` : `Automation skipped: ${name2}`;
   }
   const detail = res.error || res.reason || res.summary;
   return detail ? zh ? `\u8FD0\u884C\u5931\u8D25\uFF08${name2}\uFF09\uFF1A${detail}` : `Failed to run ${name2}: ${detail}` : zh ? `\u8FD0\u884C\u5931\u8D25\uFF1A${name2}` : `Failed to run ${name2}`;
@@ -13256,6 +13298,28 @@ function BotActivityUpcoming({
   const [busySuggestionIds, setBusySuggestionIds] = (0, import_react17.useState)({});
   const [busyAutoActions, setBusyAutoActions] = (0, import_react17.useState)({});
   const markedSeenForBotRef = (0, import_react17.useRef)(null);
+  const mountedRef = (0, import_react17.useRef)(true);
+  const activeBotIdRef = (0, import_react17.useRef)(bot.id);
+  const lookingNowRef = (0, import_react17.useRef)(false);
+  const busySuggestionRef = (0, import_react17.useRef)(/* @__PURE__ */ new Set());
+  const busyAutoRef = (0, import_react17.useRef)(/* @__PURE__ */ new Set());
+  (0, import_react17.useEffect)(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  (0, import_react17.useEffect)(() => {
+    activeBotIdRef.current = bot.id;
+    lookingNowRef.current = false;
+    busySuggestionRef.current.clear();
+    busyAutoRef.current.clear();
+    setLookingNow(false);
+    setBusySuggestionIds({});
+    setBusyAutoActions({});
+    setLocalUnreadIds({});
+  }, [bot.id]);
+  const isCurrentBot = (targetBotId) => mountedRef.current && activeBotIdRef.current === targetBotId;
   const scheduledAutos = (0, import_react17.useMemo)(
     () => sortAutomations(automations.filter((a) => !a.once)),
     [automations]
@@ -13335,12 +13399,20 @@ function BotActivityUpcoming({
     });
   };
   const handleLookNow = async () => {
+    if (lookingNowRef.current) {
+      return;
+    }
+    const targetBotId = bot.id;
+    lookingNowRef.current = true;
     setLookingNow(true);
     try {
       const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
-        botId: bot.id,
+        botId: targetBotId,
         background: true
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({ message: formatLookNowFailure2(res, zh), tone: "error" });
         return;
@@ -13358,24 +13430,34 @@ function BotActivityUpcoming({
       });
       onReload();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     } finally {
-      setLookingNow(false);
+      if (isCurrentBot(targetBotId)) {
+        lookingNowRef.current = false;
+        setLookingNow(false);
+      }
     }
   };
   const handleStartSuggestion = async (sug) => {
-    if (busySuggestionIds[sug.id]) {
+    if (busySuggestionRef.current.has(sug.id)) {
       return;
     }
+    const targetBotId = bot.id;
+    busySuggestionRef.current.add(sug.id);
     setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: "start" }));
-    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
+    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: targetBotId, ids: [sug.id] }).catch(() => {
     });
     try {
       const res = await callBotRpc(RPC_METHODS2.SUGGESTIONS_START, {
-        botId: bot.id,
+        botId: targetBotId,
         suggestionId: sug.id,
         background: true
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({ message: formatSuggestionStartFailure(res, zh), tone: "error" });
         if (res.alreadyResolved) {
@@ -13386,37 +13468,47 @@ function BotActivityUpcoming({
       if (res && res.turnError) {
         botsStore.pushToast({ message: res.turnError, tone: "error" });
         onReload();
-        void botsStore.openBotHome(bot.id);
+        void botsStore.openBotHome(targetBotId);
         return;
       }
       onReload();
-      void botsStore.openBotHome(bot.id);
+      void botsStore.openBotHome(targetBotId);
       botsStore.pushToast({
         message: zh ? `\u5DF2\u5F00\u59CB\u6267\u884C\uFF1A${sug.title}` : `Started: ${sug.title}`,
         tone: "success"
       });
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     } finally {
-      setBusySuggestionIds((prev) => {
-        const next = { ...prev };
-        delete next[sug.id];
-        return next;
-      });
+      if (isCurrentBot(targetBotId)) {
+        busySuggestionRef.current.delete(sug.id);
+        setBusySuggestionIds((prev) => {
+          const next = { ...prev };
+          delete next[sug.id];
+          return next;
+        });
+      }
     }
   };
   const handleDismissSuggestion = async (sug) => {
-    if (busySuggestionIds[sug.id]) {
+    if (busySuggestionRef.current.has(sug.id)) {
       return;
     }
+    const targetBotId = bot.id;
+    busySuggestionRef.current.add(sug.id);
     setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: "dismiss" }));
-    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
+    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: targetBotId, ids: [sug.id] }).catch(() => {
     });
     try {
       const res = await callBotRpc(RPC_METHODS2.SUGGESTIONS_DISMISS, {
-        botId: bot.id,
+        botId: targetBotId,
         suggestionId: sug.id
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({
           message: res.error || (zh ? "\u5FFD\u7565\u5EFA\u8BAE\u5931\u8D25" : "Failed to dismiss suggestion"),
@@ -13430,36 +13522,49 @@ function BotActivityUpcoming({
         tone: "info"
       });
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     } finally {
-      setBusySuggestionIds((prev) => {
-        const next = { ...prev };
-        delete next[sug.id];
-        return next;
-      });
+      if (isCurrentBot(targetBotId)) {
+        busySuggestionRef.current.delete(sug.id);
+        setBusySuggestionIds((prev) => {
+          const next = { ...prev };
+          delete next[sug.id];
+          return next;
+        });
+      }
     }
   };
   const withBusyAuto = async (autoId, action, fn) => {
-    if (busyAutoActions[autoId]) {
+    if (busyAutoRef.current.has(autoId)) {
       return;
     }
+    const targetBotId = bot.id;
+    busyAutoRef.current.add(autoId);
     setBusyAutoActions((prev) => ({ ...prev, [autoId]: action }));
     try {
-      await fn();
+      await fn(targetBotId);
     } finally {
-      setBusyAutoActions((prev) => {
-        const next = { ...prev };
-        delete next[autoId];
-        return next;
-      });
+      if (isCurrentBot(targetBotId)) {
+        busyAutoRef.current.delete(autoId);
+        setBusyAutoActions((prev) => {
+          const next = { ...prev };
+          delete next[autoId];
+          return next;
+        });
+      }
     }
   };
-  const handleRunAutomation = (auto) => withBusyAuto(auto.id, "run", async () => {
+  const handleRunAutomation = (auto) => withBusyAuto(auto.id, "run", async (targetBotId) => {
     try {
       const res = await callBotRpc(RPC_METHODS2.AUTOMATIONS_RUN_NOW, {
         id: auto.id,
         background: true
       });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
       if (res && res.ok === false) {
         botsStore.pushToast({ message: formatAutomationRunFailure(res, auto.name, zh), tone: "error" });
         return;
@@ -13477,23 +13582,33 @@ function BotActivityUpcoming({
       });
       onReload();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     }
   });
-  const handleToggleAutomation = (auto) => withBusyAuto(auto.id, "update", async () => {
+  const handleToggleAutomation = (auto) => withBusyAuto(auto.id, "update", async (targetBotId) => {
     try {
       await callBotRpc(RPC_METHODS2.AUTOMATIONS_UPDATE, { id: auto.id, enabled: !auto.enabled });
-      onReload();
+      if (isCurrentBot(targetBotId)) {
+        onReload();
+      }
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     }
   });
-  const handleDeleteAutomation = (auto) => withBusyAuto(auto.id, "delete", async () => {
+  const handleDeleteAutomation = (auto) => withBusyAuto(auto.id, "delete", async (targetBotId) => {
     try {
       await callBotRpc(RPC_METHODS2.AUTOMATIONS_DELETE, { id: auto.id });
-      onReload();
+      if (isCurrentBot(targetBotId)) {
+        onReload();
+      }
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     }
   });
   const handleCreateAuto = async () => {
