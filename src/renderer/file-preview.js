@@ -7,6 +7,7 @@ function applyTheme(theme) {
   const dark = theme?.scheme === 'dark';
   document.documentElement.toggleAttribute('data-ds-dark-theme', dark);
   document.body.toggleAttribute('data-ds-dark-theme', dark);
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
 }
 
 function textFor(state, key) {
@@ -72,6 +73,7 @@ function render(state) {
     frame.title = state.name || 'File preview';
     frame.referrerPolicy = 'no-referrer';
     if (state.kind === 'html') frame.setAttribute('sandbox', 'allow-scripts');
+    else frame.setAttribute('sandbox', '');
     frame.src = state.url;
     root.replaceChildren(frame);
     return;

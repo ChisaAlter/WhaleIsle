@@ -758,3 +758,47 @@ test('shared builtin skills & captain templates: upgraded status-brief, 4 new sk
   }
   assert.ok(shared.searchTemplates('大总管').some((t) => t.id === 'engineering-captain'));
 });
+
+test('Audit regression [P1 #26]: mcpManager avoids error<->ready parity flip across consecutive failed probes and syncs on tools CRUD', async (t) => {
+  const { createBotsRuntime } = await importEsm(path.join(BOTS_LIB, 'runtime.js'));
+  const root = makeTempHome(t, 'mcp-parity-');
+  let probeShouldFail = true;
+  let probeCalls = 0;
+  const rt = createBotsRuntime({
+    dshHome: root,
+    enableSchedulers: false,
+    autoRecovery: false,
+    probeMcpServer: async () => {
+      probeCalls += 1;
+      return probeShouldFail ? { ok: false, code: 'conn_refused', message: 'connection refused' } : { ok: true };
+    },
+  });
+  try {
+    const created = await rt.botsService.createBot({ name: 'McpBot', skipKickoff: true });
+    const botId = created.bot.id;
+
+    // toolsAdd automatically triggers syncBotMcps -> initial probe fails -> status: 'error'
+    await rt.botsService.toolsAdd(botId, { name: 'srv-a', transport: 'http', url: 'https://mcp.example.test' });
+    assert.equal(probeCalls, 1);
+    assert.equal(rt.mcpManager.getBotMcpStatus(botId).servers[0].status, 'error');
+
+    // Second syncBotMcps with probe STILL failing must stay 'error' (never flip to 'ready')
+    const second = await rt.mcpManager.syncBotMcps(botId);
+    assert.equal(probeCalls, 2);
+    assert.equal(second.servers[0].status, 'error');
+
+    // Third syncBotMcps when probe recovers -> transitions cleanly to 'ready'
+    probeShouldFail = false;
+    const third = await rt.mcpManager.syncBotMcps(botId);
+    assert.equal(probeCalls, 3);
+    assert.equal(third.servers[0].status, 'ready');
+
+    // toolsUpdate & toolsRemove also trigger syncBotMcps
+    await rt.botsService.toolsUpdate(botId, 'srv-a', { url: 'https://mcp2.example.test' });
+    assert.equal(probeCalls, 4);
+    await rt.botsService.toolsRemove(botId, 'srv-a');
+    assert.equal(rt.mcpManager.getBotMcpStatus(botId).servers.length, 0);
+  } finally {
+    await rt.close();
+  }
+});

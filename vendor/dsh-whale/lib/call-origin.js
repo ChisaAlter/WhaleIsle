@@ -57,17 +57,24 @@ export function isSessionTainted(sessionOrAgent) {
   return events.some((ev) => isTaintingEvent(ev));
 }
 
+/** @param {any} source */
+function isControllableTurnSource(source) {
+  const kind = String(source?.kind ?? '');
+  return kind === 'user'
+    || kind === 'dsh-im:inbound'
+    || kind === 'schedule'
+    || kind.startsWith('dsh-whale:')
+    || kind.startsWith('dsh-bots:')
+    || source?.plugin === 'dsh-whale';
+}
+
 /** @param {any[]} events */
 function activeTurnMessage(events) {
   const start = findLastMatching(events, (/** @type {any} */ event) => event?.type === 'turn/start');
   if (!start) return null;
   const message = findLastMatching(events, (/** @type {any} */ event) => event?.type === 'user/message'
     && event.seq > start.seq
-    && (event.data?.source?.kind === 'user'
-      || event.data?.source?.kind === 'dsh-im:inbound'
-      || event.data?.source?.kind === 'schedule'
-      || String(event.data?.source?.kind ?? '').startsWith('dsh-whale:')
-      || event.data?.source?.plugin === 'dsh-whale'));
+    && isControllableTurnSource(event.data?.source));
   if (!message) return null;
   if (events.some((/** @type {any} */ event) => event?.type === 'turn/end' && event.seq > message.seq)) return null;
   return message;
@@ -77,7 +84,8 @@ function activeTurnMessage(events) {
 function classifyActiveMessage(message) {
   const source = message.data?.source ?? {};
   const rpcId = String(source.rpcId ?? '');
-  if (source.kind === 'schedule' || source.kind === 'dsh-whale:pulse') {
+  const sourceKind = String(source.kind ?? '');
+  if (sourceKind === 'schedule' || sourceKind === 'dsh-whale:pulse' || sourceKind.startsWith('dsh-bots:')) {
     return { kind: 'pulse', message, reason: '' };
   }
   if (source.kind === 'plugin' && source.plugin === 'dsh-whale' && (source.form === 'pulse' || PULSE_RPC_RE.test(rpcId))) {

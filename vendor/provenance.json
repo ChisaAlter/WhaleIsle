@@ -61,7 +61,7 @@
           "README.md",
           "LICENSE"
         ],
-        "artifactHash": "cb0f8e5859eac798aa04cf284243a8f1b65ee017f13b0a03e21c498bc9602cf4"
+        "artifactHash": "77833de5043048d5f95327c259ff3fa5ee455b4c3e995b45dcf7d19796679ffa"
       }
     },
     "dsh-platform-session": {
@@ -82,8 +82,8 @@
         "artifacts": [
           "lib/client.js"
         ],
-        "sourceHash": "28f7487acfc38092392dd07a30d0184e23e9763d7c5e0146aac2f67300f7dd66",
-        "artifactHash": "9555624022596096d00147a2697d50d5be55a546d0c90fa09cc45e89b81b8d09"
+        "sourceHash": "6076264b9853d38ecc62dd13cc40d8c43ac7bca72f2884e72b5dfc0d405bfe1d",
+        "artifactHash": "68dcc779272c94cbd08b32c625ec0e03d12d549e11b116fc5588f6ffb429d98d"
       },
       "recordCommands": [
         [

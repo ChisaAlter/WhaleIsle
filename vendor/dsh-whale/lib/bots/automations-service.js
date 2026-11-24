@@ -293,9 +293,8 @@ export function createAutomationsService(deps) {
       (Object.prototype.hasOwnProperty.call(patch, 'nextRunAt') && patch.nextRunAt === null && current.nextRunAt !== null)
       || (Object.prototype.hasOwnProperty.call(patch, 'lastError') && patch.lastError === null && current.lastError !== null)
     );
-    if (needsNullClear && typeof workStore.deleteAutomation === 'function') {
-      workStore.deleteAutomation(current.id);
-      return workStore.upsertAutomation(merged, now);
+    if (needsNullClear && typeof workStore.withTransaction === 'function') {
+      return workStore.withTransaction(() => workStore.upsertAutomation(merged, now));
     }
     return workStore.upsertAutomation(merged, now);
   }
@@ -381,8 +380,8 @@ export function createAutomationsService(deps) {
         });
       } else {
         await sessionRuntime.runSingleTurn(home.sessionId, deliveryPrompt, {
-          timeoutMs: 60_000,
-          origin: 'automation-result',
+          timeoutMs: 60_000, botId: bot.id, isBackground: true, origin: 'automation-result',
+          sourceKind: 'dsh-bots:automation', source: { kind: 'dsh-bots:automation', automationId: auto.id, phase: 'deliver-result' },
         });
       }
       return { kind: 'chat', sessionId: home.sessionId };
@@ -390,8 +389,16 @@ export function createAutomationsService(deps) {
     return null;
   }
 
-  /** @param {any} auto @param {any} bot @param {{ groupId: string, threadId: string } | null} groupDest @param {string} prompt @param {string | null} [claimId] */
-  async function executeAutomationTurn(auto, bot, groupDest, prompt, claimId = null) {
+  /** @param {string} triggerKind */
+  function resolveAutomationSourceKind(triggerKind) {
+    if (triggerKind === 'webhook') return 'dsh-bots:webhook';
+    if (triggerKind === 'folder') return 'dsh-bots:folder';
+    return 'dsh-bots:automation';
+  }
+
+  /** @param {any} auto @param {any} bot @param {{ groupId: string, threadId: string } | null} groupDest @param {string} prompt @param {string | null} [claimId] @param {string} [triggerKind] */
+  async function executeAutomationTurn(auto, bot, groupDest, prompt, claimId = null, triggerKind = 'schedule') {
+    const sourceKind = resolveAutomationSourceKind(triggerKind);
     const groupsSvc = groupsServiceOf();
     if (auto.runsIn === 'chat' && groupDest && typeof groupsSvc?.runAutomationInGroup === 'function') {
       const groupRun = await groupsSvc.runAutomationInGroup({
@@ -400,6 +407,8 @@ export function createAutomationsService(deps) {
         botId: bot.id,
         automation: auto,
         prompt,
+        triggerKind,
+        sourceKind,
       });
       return { targetSessionId: groupRun?.sessionId ?? null, turn: groupRun };
     }
@@ -415,7 +424,9 @@ export function createAutomationsService(deps) {
     if (claimId) {
       workStore.updateAutomationClaim?.(claimId, { status: 'running', sessionId: targetSessionId }, nowFn());
     }
-    const turn = await sessionRuntime.runSingleTurn(targetSessionId, prompt, { timeoutMs: 120_000 });
+    const turn = await sessionRuntime.runSingleTurn(targetSessionId, prompt, {
+      timeoutMs: 120_000, botId: bot.id, isBackground: true, sourceKind, source: { kind: sourceKind, automationId: auto.id, triggerKind },
+    });
     return { targetSessionId, turn };
   }
 
@@ -487,7 +498,7 @@ export function createAutomationsService(deps) {
 
     const groupDest = resolveGroupDestination(auto);
     const prompt = buildAutomationPrompt(auto, { triggerKind, coalescedCount, triggerContext });
-    const { targetSessionId, turn } = await executeAutomationTurn(auto, bot, groupDest, prompt, claim.claimId);
+    const { targetSessionId, turn } = await executeAutomationTurn(auto, bot, groupDest, prompt, claim.claimId, triggerKind);
     const merged = isSharedTurnMerged(turn);
     const ok = isSharedTurnCompleted(turn);
     const rawReply = String(turn?.reply ?? '').trim();

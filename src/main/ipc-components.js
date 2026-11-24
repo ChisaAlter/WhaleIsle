@@ -113,14 +113,25 @@ function register({ handle, send, onQuitCommit }) {
     quitHooked = true;
     const shutdownAll = () => {
       svc.shutdown();
-      void bridge?.stopCompanion?.();
+      return bridge?.stopCompanion?.();
     };
     if (typeof onQuitCommit === 'function') {
       onQuitCommit(shutdownAll);
     } else {
       try {
         const { app } = require('electron');
-        app.on('before-quit', shutdownAll);
+        let companionStopped = false;
+        app.on('before-quit', (/** @type {Electron.Event} */ event) => {
+          svc.shutdown();
+          if (companionStopped || typeof bridge?.stopCompanion !== 'function') return;
+          companionStopped = true;
+          event.preventDefault();
+          Promise.resolve(bridge.stopCompanion())
+            .catch((error) => {
+              console.warn('[src/main/ipc-components.js] stopCompanion failed during before-quit', error);
+            })
+            .finally(() => { app.quit(); });
+        });
       } catch {
         // outside Electron (unit tests) — shutdown stays reachable directly
       }

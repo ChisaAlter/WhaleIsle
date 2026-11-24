@@ -155,3 +155,26 @@ test('disabling harness clears pending items and badges immediately', () => {
   assert.equal(selectBadgeCount(state), 0);
   assert.equal(selectPopupVisible(state), false);
 });
+
+test('projectPopupView sanitizes subject.icon against harnessOrigin and safe raster data URIs', () => {
+  const origin = 'http://127.0.0.1:3080';
+  const safeData = 'data:image/png;base64,iVBORw0KGgo=';
+  const sameOriginIcon = 'http://127.0.0.1:3080/api/icon.png';
+  const foreignPortIcon = 'http://127.0.0.1:9999/probe.png';
+  const svgDataIcon = 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+
+  const projectWithIcon = (icon) => {
+    let state = createInitialState({ harnessActive: true, mainVisible: false, popupEnabled: true });
+    state = reduceApprovalState(state, {
+      type: 'UPSERT',
+      item: makeItem({ subject: { name: 'Tool', icon } }),
+    });
+    return projectPopupView(state, { locale: 'en', harnessOrigin: origin });
+  };
+
+  assert.equal(projectWithIcon(sameOriginIcon).activeItem?.subject?.icon, sameOriginIcon);
+  assert.equal(projectWithIcon(safeData).activeItem?.subject?.icon, safeData);
+  assert.equal(projectWithIcon(foreignPortIcon).activeItem?.subject?.icon, undefined);
+  assert.equal(projectWithIcon(svgDataIcon).activeItem?.subject?.icon, undefined);
+  assert.equal(projectWithIcon(sameOriginIcon).harnessOrigin, origin);
+});

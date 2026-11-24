@@ -14,3 +14,9 @@ test('html preview iframe sandbox grants only allow-scripts', () => {
   assert.ok(match, 'html preview must sandbox its iframe');
   assert.equal(match[1], 'allow-scripts');
 });
+
+test('pdf preview iframe is sandboxed and theme syncs documentElement.style.colorScheme', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'file-preview.js'), 'utf8');
+  assert.match(source, /else frame\.setAttribute\('sandbox', ''\)/);
+  assert.match(source, /document\.documentElement\.style\.colorScheme = dark \? 'dark' : 'light'/);
+});

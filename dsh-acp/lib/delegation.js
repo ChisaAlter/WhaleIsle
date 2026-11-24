@@ -1,8 +1,55 @@
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 import { resolveDelegationCwd } from './delegate-cwd.js';
 
 /** Configured external agents share the host's managed child lifecycle. */
 export const DELEGATION_PROVIDER = 'configured-acp';
+
+function loadDefineTool() {
+  const here = fileURLToPath(import.meta.url);
+  const anchors = [];
+  for (const root of [process.env.DSH_HARNESS_ROOT, process.env.DSH_INSTALLED_HOST_ROOT]) {
+    if (!root) continue;
+    anchors.push(path.join(root, 'package.json'));
+    anchors.push(path.join(root, 'apps', 'cli', 'package.json'));
+    anchors.push(path.join(root, 'packages', 'core', 'tools', 'package.json'));
+  }
+  if (process.argv[1]) anchors.push(path.resolve(process.argv[1]));
+  anchors.push(here);
+  const repoRoots = [path.resolve(path.dirname(here), '..', '..')];
+  let cursor = process.cwd();
+  for (let i = 0; i < 4; i += 1) {
+    repoRoots.push(cursor);
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  for (const root of repoRoots) {
+    anchors.push(path.join(root, 'package.json'));
+    anchors.push(path.join(root, 'vendor', 'deepseek-harness', 'apps', 'cli', 'package.json'));
+    anchors.push(path.join(root, 'vendor', 'deepseek-harness', 'packages', 'core', 'tools', 'package.json'));
+  }
+  for (const anchor of anchors) {
+    if (!existsSync(anchor)) continue;
+    try {
+      const mod = createRequire(anchor)('@deepseek-ai/dsh-tools');
+      if (typeof mod?.defineTool === 'function') return mod.defineTool;
+    } catch {
+      // Try next resolution anchor.
+    }
+  }
+  for (const root of repoRoots) {
+    const directEntry = path.join(root, 'vendor', 'deepseek-harness', 'packages', 'core', 'tools', 'lib', 'index.js');
+    if (existsSync(directEntry)) {
+      const mod = createRequire(here)(directEntry);
+      if (typeof mod?.defineTool === 'function') return mod.defineTool;
+    }
+  }
+  throw new Error('Cannot resolve @deepseek-ai/dsh-tools defineTool');
+}
 
 export const AGENT_TOOLS = [
   {
@@ -25,11 +72,11 @@ export const AGENT_TOOLS = [
         reasoning_effort: { type: 'string', description: 'Optional reasoning effort id.' },
         client_request_id: { type: 'string', description: 'Stable id for safe retries; reuse only for identical arguments.' },
         mode: { type: 'string', enum: ['async', 'wait'], description: 'Default async. A bounded wait still arranges automatic completion delivery.' },
-        timeout_ms: { type: 'integer', minimum: 0, maximum: 20000 },
+        timeout_ms: { type: 'integer' },
         isolation: { type: 'string', enum: ['shared', 'worktree'], description: 'Shared cwd by default. Worktree creates a retained checkout from committed HEAD; uncommitted changes are not copied.' },
         interaction_mode: { type: 'string', enum: ['default', 'plan'] },
         runtime_mode: { type: 'string', enum: ['inherit', 'read-only', 'approval-required'], description: 'Inherit the host policy, or restrict it further. Cannot grant extra permissions.' },
-        options: { type: 'array', description: 'Exact settings discovered in the selected model options.', items: { type: 'object', properties: { id: { type: 'string' }, value: { type: ['string', 'boolean'] } }, required: ['id', 'value'], additionalProperties: false } },
+        options: { type: 'array', description: 'Exact settings discovered in the selected model options.', items: { type: 'object', properties: { id: { type: 'string' }, value: { oneOf: [{ type: 'string' }, { type: 'boolean' }] } }, required: ['id', 'value'], additionalProperties: false } },
       },
       required: ['agent', 'prompt'],
       additionalProperties: false,
@@ -52,7 +99,7 @@ export const CONTROL_TOOLS = [
       properties: {
         task_id: { type: 'string', description: 'Exact task identity; preferred to the compatibility child-session id.' },
         agent_id: { type: 'string', description: 'Child session id; selects its latest task.' },
-        wait_ms: { type: 'integer', minimum: 0, maximum: 20000 },
+        wait_ms: { type: 'integer' },
       },
       additionalProperties: false,
     },
@@ -67,15 +114,36 @@ export function resultRequest(args = {}) {
   return { id, waitMs: args.wait_ms || 0 };
 }
 
-/** Host tools declare per-parameter `required`; MCP uses a JSON Schema `required` list. */
+/** Convert an MCP JSON Schema property map into the dsh-tools ParameterSchemaSpec DSL. */
 function hostParameters(inputSchema) {
-  const required = new Set(inputSchema.required || []);
-  return Object.fromEntries(Object.entries(inputSchema.properties).map(([name, schema]) => [
-    name, { ...schema, ...(required.has(name) ? { required: true } : {}) },
-  ]));
+  const convertPropertyMap = (properties, requiredList) => {
+    const required = new Set(requiredList || []);
+    return Object.fromEntries(Object.entries(properties || {}).map(([name, schema]) => {
+      const next = convertNode(schema);
+      if (required.has(name)) next.required = true;
+      return [name, next];
+    }));
+  };
+  const convertNode = (schema) => {
+    const copy = { ...schema };
+    delete copy.minimum;
+    delete copy.maximum;
+    if (copy.type === 'object' && copy.properties) {
+      const req = copy.required;
+      delete copy.required;
+      copy.properties = convertPropertyMap(copy.properties, req);
+    } else if (copy.type === 'array' && copy.items) {
+      copy.items = convertNode(copy.items);
+    } else if (Array.isArray(copy.oneOf)) {
+      copy.oneOf = copy.oneOf.map(convertNode);
+    }
+    return copy;
+  };
+  return convertPropertyMap(inputSchema.properties, inputSchema.required);
 }
 
 export function registerDelegation(ctx, manager) {
+  const defineTool = loadDefineTool();
   ctx.effect(() => ctx.subagents.registerProvider({
     name: DELEGATION_PROVIDER,
     capabilities: { agentOptions: true, agentPreset: false, outputSchema: false, depthLimit: true },
@@ -85,6 +153,9 @@ export function registerDelegation(ctx, manager) {
   const handlers = {
     acp_agents: () => ({ agents: manager.listDelegationAgents() }),
     async acp_delegate(args, exec) {
+      if (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 0 || args.timeout_ms > 20000)) {
+        throw new Error('timeout_ms must be an integer from 0 to 20000.');
+      }
       const resolvedCwd = resolveDelegationCwd(args, exec.agent);
       const hasExplicitCwd = typeof args.cwd === 'string' && args.cwd.trim() !== '';
       const targetCwd = hasExplicitCwd ? resolvedCwd : '';
@@ -108,7 +179,7 @@ export function registerDelegation(ctx, manager) {
     },
   };
   for (const tool of [...AGENT_TOOLS, ...CONTROL_TOOLS]) {
-    ctx.effect(() => ctx.tools.register({
+    ctx.effect(() => ctx.tools.register(defineTool({
       name: tool.name,
       description: tool.description,
       parameters: hostParameters(tool.inputSchema),
@@ -118,6 +189,6 @@ export function registerDelegation(ctx, manager) {
       },
       isConcurrencySafe: () => true,
       execute: (args, exec) => handlers[tool.name](args, exec),
-    }));
+    })));
   }
 }

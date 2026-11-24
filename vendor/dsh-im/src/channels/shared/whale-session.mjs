@@ -64,8 +64,10 @@ export async function whaleSessionResolution(
   harness,
   { home = process.env.DSH_HOME, state, key, channel, accountId } = {},
 ) {
+  const effectiveChannel = cleanStr(channel) || cleanStr(harness?.accessGate?.channel);
+  const effectiveAccountId = cleanStr(accountId) || cleanStr(harness?.accessGate?.botId);
   const preset = (await harness?.agentPresetSettings?.())?.agentPreset || null;
-  const hasChannel = Boolean(cleanStr(channel));
+  const hasChannel = Boolean(effectiveChannel);
   if (!isWhalePresetCompatible(preset, hasChannel)) {
     return { preset, residentId: '', sessionId: null };
   }
@@ -76,7 +78,7 @@ export async function whaleSessionResolution(
       return { preset, residentId: '', sessionId: null };
     }
   }
-  return currentWhaleSessionResolution(preset, { home, channel, accountId });
+  return currentWhaleSessionResolution(preset, { home, channel: effectiveChannel, accountId: effectiveAccountId });
 }
 
 /** Final same-process send admission reads the latest switches without yielding. */

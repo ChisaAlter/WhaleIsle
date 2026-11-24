@@ -5,7 +5,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { withOwnedTempDir } = require('../../shared/fs-safe');
-const { detectMagpieState, probeConcurrency } = require('./detect');
+const {
+  detectMagpieState,
+  hasSharedUserConfig,
+  probeConcurrency,
+  probeGateway,
+  probeHttpReachable,
+  toLoopbackHostPort,
+} = require('./detect');
 
 test('detectMagpieState covers external, external-ui-companion, managed-shared-config, and managed states', async () => {
   await withOwnedTempDir('magpie-detect-', async (configDir) => {
@@ -79,4 +86,38 @@ test('probeConcurrency normalizes active request/waiting/tool counters', async (
     fetchJson: async () => { throw new Error('offline'); },
   });
   assert.equal(unreachable, null);
+});
+
+test('toLoopbackHostPort enforces loopback whitelist and rejects non-loopback/userinfo/path', async () => {
+  assert.equal(toLoopbackHostPort('127.0.0.1:3425'), '127.0.0.1:3425');
+  assert.equal(toLoopbackHostPort('localhost:4000'), 'localhost:4000');
+  assert.equal(toLoopbackHostPort('[::1]:3425'), '[::1]:3425');
+  assert.equal(toLoopbackHostPort(':3425'), '127.0.0.1:3425');
+  assert.equal(toLoopbackHostPort('0.0.0.0:3425'), '127.0.0.1:3425');
+
+  for (const bad of ['evil.example:3425', '192.168.1.2:3425', 'user@127.0.0.1:3425', '127.0.0.1:3425/steal']) {
+    assert.throws(() => toLoopbackHostPort(bad), /非回环|非法/);
+  }
+  let fetched = 0;
+  const gw = await probeGateway('evil.example:3425', {
+    fetchJson: async () => { fetched += 1; return { name: 'magpie' }; },
+  });
+  assert.equal(gw, null);
+  assert.equal(fetched, 0);
+});
+
+test('hasSharedUserConfig recognizes non-ephemeral files and probeHttpReachable rejects 404', async () => {
+  await withOwnedTempDir('magpie-shared-cfg-', async (configDir) => {
+    fs.writeFileSync(path.join(configDir, 'gateway.json'), '{}');
+    fs.writeFileSync(path.join(configDir, 'service.lock'), '');
+    assert.equal(hasSharedUserConfig(configDir), false);
+    fs.writeFileSync(path.join(configDir, 'plugin-auth.json'), '{}');
+    assert.equal(hasSharedUserConfig(configDir), true);
+  });
+  assert.equal(await probeHttpReachable('http://127.0.0.1:3430/boot.js', {
+    fetchImpl: async () => new Response('not found', { status: 404 }),
+  }), false);
+  assert.equal(await probeHttpReachable('http://127.0.0.1:3430/boot.js', {
+    fetchImpl: async () => new Response('boot', { status: 200 }),
+  }), true);
 });

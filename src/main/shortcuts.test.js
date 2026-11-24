@@ -308,3 +308,34 @@ test('native-first: unbound iframe keys stay with the guest; main-frame bound ke
   assert.equal(input.payload.frameName, '');
   assert.equal(input.payload.code, 'KeyO');
 });
+
+test('shortcuts IPC handles null getView/getWindow, empty getOrigin, and port-prefix collisions safely', async (t) => {
+  const protocol = await import(PROTOCOL_URL);
+  const userData = tmpDir(t);
+  const ipc = fakeIpc();
+  const contents = fakeContents('http://127.0.0.1:41801');
+  let currentView = null;
+  let currentWindow = null;
+  let currentOrigin = '';
+  const service = createShortcutService({
+    ipcMain: ipc,
+    userData,
+    platform: 'windows',
+    getView: () => currentView,
+    getWindow: () => currentWindow,
+    getOrigin: () => currentOrigin,
+    protocol,
+  });
+  t.after(() => service.dispose());
+  const getHandler = ipc.handlers.get(CHANNELS.get);
+  const closeHandler = ipc.handlers.get(CHANNELS.closeWindow);
+  await assert.rejects(() => getHandler({ sender: contents, senderFrame: contents.mainFrame }, DEFINITIONS, null), /rejected sender/);
+  assert.equal(service.dispatchMenuCommand('workspace.add'), false);
+  currentView = { webContents: contents };
+  await assert.rejects(() => getHandler({ sender: contents, senderFrame: contents.mainFrame }, DEFINITIONS, null), /rejected sender/);
+  currentOrigin = 'http://127.0.0.1:4180';
+  await assert.rejects(() => getHandler({ sender: contents, senderFrame: contents.mainFrame }, DEFINITIONS, null), /rejected sender/);
+  contents.mainFrame.url = 'http://127.0.0.1:4180/chat';
+  await getHandler({ sender: contents, senderFrame: contents.mainFrame }, DEFINITIONS, null);
+  await closeHandler({ sender: contents, senderFrame: contents.mainFrame }, 0);
+});

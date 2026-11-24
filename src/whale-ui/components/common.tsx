@@ -20,8 +20,10 @@ const palette: Record<string, string> = { ink: "var(--whale-fg)", muted: "var(--
 export function color(value?: string, background = false): string | undefined {
   if (!value) return undefined;
   const chart = /^chart([1-6])$/.exec(value);
-  const c = chart ? `var(--whale-chart-${chart[1]}, ${["var(--whale-accent)", "var(--whale-ok)", "var(--whale-warn)", "var(--whale-danger)", "var(--whale-purple, var(--whale-accent))", "var(--whale-pink, var(--whale-danger))"][Number(chart[1]) - 1]})` : palette[value] ?? value;
-  return background && value in palette && value !== "surface" ? `color-mix(in srgb, ${c} 12%, var(--whale-bg))` : c;
+  const c = chart
+    ? `var(--whale-chart-${chart[1]}, ${["var(--whale-accent)", "var(--whale-ok)", "var(--whale-warn)", "var(--whale-danger)", "var(--whale-purple, var(--whale-accent))", "var(--whale-pink, var(--whale-danger))"][Number(chart[1]) - 1]})`
+    : Object.hasOwn(palette, value) ? palette[value] : value;
+  return background && Object.hasOwn(palette, value) && value !== "surface" ? `color-mix(in srgb, ${c} 12%, var(--whale-bg))` : c;
 }
 // Words and glyphs take the darker `-text` step of a state colour (see viewer/styles.css); bars, tints and fills keep color().
 const textPalette: Record<string, string> = { info: "var(--whale-accent-text)", primary: "var(--whale-accent-text)", success: "var(--whale-ok-text)", warning: "var(--whale-warn-text)", danger: "var(--whale-danger-text)", purple: "var(--whale-purple-text)", pink: "var(--whale-pink-text)", faint: "var(--whale-faint-text)" };

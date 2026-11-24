@@ -203,5 +203,27 @@ test('openMagpieWindow mounts zero-injection sandboxed WebContentsView and guard
   assert.equal(meta.version, '0.1.4708');
   assert.equal(meta.ownership, 'managed');
 
+  // Reusing window with a different ?k= on the same origin remounts the view
+  mod.openMagpieWindow({
+    url: 'http://127.0.0.1:3430/?k=rotated',
+    ownership: 'managed',
+    version: '0.1.4708',
+    latestVersion: '0.1.4709',
+    theme: { scheme: 'dark' },
+  });
+  assert.equal(createdWindows.length, 1);
+  assert.equal(createdViews.length, 2);
+  assert.deepEqual(createdViews[1].webContents.loadedUrls, ['http://127.0.0.1:3430/?k=rotated&theme=dark']);
+
+  // Other file:// pages are blocked by attachShellIpc's isPackagedRendererFileUrl guard
+  const otherFileUrl = pathToFileURL(path.join(__dirname, '..', 'renderer', 'boot.html')).href;
+  let otherFileBlocked = false;
+  win.webContents.emit('will-navigate', { preventDefault() { otherFileBlocked = true; } }, otherFileUrl);
+  assert.equal(otherFileBlocked, true);
+  let redirectBlocked = false;
+  win.webContents.emit('will-redirect', { preventDefault() { redirectBlocked = true; } }, otherFileUrl);
+  assert.equal(redirectBlocked, true);
+  assert.throws(() => handler({ sender: win.webContents, senderFrame: { url: otherFileUrl } }), /Unauthorized/);
+
   mod.closeMagpieWindow();
 });

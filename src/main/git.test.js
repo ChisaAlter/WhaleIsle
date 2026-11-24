@@ -20,6 +20,7 @@ childProcess.spawn = function countingSpawn(command, args, options) {
 
 const { createWorkspaceAuthority } = require('./workspace-authority');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
+const { gitDiff: gitDiffDirect, untrackedAsDiff } = require('./git-diff.js');
 const { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, GH_TIMEOUT_MS, commitArgs, gitBranchList, gitCheckLargeFiles, gitChildEnv, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFailureMessage, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStagePatch, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, gitUnstagePatch, inferHookName, isGitAdviceLine, isNtfsReservedGitPath, matchesBranchHeadContext, normalizeGitRemoteUrl, parseCustomCommitMessage, parseGhPullRequestRow, parseGitHubRepositoryNameWithOwner, parsePorcelainZ, parseUnifiedDiff, providerFromRemoteUrl, readPrTemplate, readRangeContext, rememberLastKnownPr, resetFetchCooldowns, resetGitExecutableProbe, resetLastKnownPrCache, resolveBaseBranchForNoUpstream, resolveBranchHeadContext, resolveLastKnownPr, resolvePrBaseBranch, resolvePreferredHeadSelector, run, sanitizeProgressText, setGhDefaultBranchResolver, setLookupOpenPullRequest, setWorkspaceAuthority, summarizeCommitMessage } = require('./git.js');
 const { resetReadContexts } = require('./git-read-context.js');
 const { fetchForStatus } = require('./git-fetch.js');
@@ -1968,10 +1969,12 @@ test('gitPublishRepository pushes an existing history to a pasted origin', async
     fs.writeFileSync(path.join(cwd, 'README.md'), 'hello\n');
     git(cwd, ['add', 'README.md']);
     git(cwd, ['commit', '-m', 'base']);
-    const published = await gitPublishRepository(cwd, { remoteUrl: bare });
+    const remoteUrl = 'https://example.test/acme/repo.git';
+    git(cwd, ['config', `url.${bare.replaceAll('\\', '/')}.insteadOf`, remoteUrl]);
+    const published = await gitPublishRepository(cwd, { remoteUrl });
     assert.equal(published.ok, true, published.message);
     assert.notEqual(published.status, 'remote_added');
-    assert.equal(published.url, bare);
+    assert.equal(published.url, remoteUrl);
     git(bare, ['rev-parse', '--verify', 'refs/heads/main']);
   } finally {
     resetFetchCooldowns();
@@ -2904,5 +2907,79 @@ test('gitDiff supports options.path and options.staged on unborn HEAD and baseRe
   } finally {
     setWorkspaceAuthority(null);
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('gitPublishRepository rejects leading dashes, control characters, and disallowed remote protocols', async () => {
+  const cwd = makeTempDir();
+  try {
+    git(cwd, ['init', '-b', 'main']);
+    for (const remoteUrl of [
+      '-upload-pack=evil',
+      'https://github.com/acme/repo.git\n--evil',
+      'ext::sh -c whoami',
+      'file:///tmp/repo.git',
+      'git://github.com/acme/repo.git',
+      'C:\\temp\\bare-repo',
+    ]) {
+      const res = await gitPublishRepository(cwd, { remoteUrl });
+      assert.equal(res.ok, false, `expected rejection for remoteUrl=${remoteUrl}`);
+    }
+    for (const name of ['-private', '--help', 'bad\nname', '../escape', 'a\\b']) {
+      const res = await gitPublishRepository(cwd, { name });
+      assert.equal(res.ok, false, `expected rejection for name=${name}`);
+    }
+    const sshOk = await gitPublishRepository(cwd, { remoteUrl: 'git@github.com:acme/empty.git' });
+    assert.equal(sshOk.ok, true, sshOk.message);
+    assert.equal(sshOk.status, 'remote_added');
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('untrackedAsDiff and gitDiff refuse symlink/junction escapes and .git targets', async () => {
+  const cwd = makeTempDir();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-git-outside-'));
+  try {
+    fs.writeFileSync(path.join(outsideDir, 'secret.txt'), 'TOP_SECRET\n', 'utf8');
+    git(cwd, ['init', '-b', 'main']);
+    git(cwd, ['config', 'user.email', 'git-test@example.com']);
+    git(cwd, ['config', 'user.name', 'Git Test']);
+    fs.writeFileSync(path.join(cwd, 'ok.txt'), 'safe\n', 'utf8');
+    git(cwd, ['add', 'ok.txt']);
+    git(cwd, ['commit', '-m', 'init']);
+
+    // Directory junction pointing outside the workspace and into .git must never be read.
+    const escapeLink = path.join(cwd, 'escape-dir');
+    const gitLink = path.join(cwd, 'git-alias');
+    fs.symlinkSync(outsideDir, escapeLink, process.platform === 'win32' ? 'junction' : 'dir');
+    fs.symlinkSync(path.join(cwd, '.git'), gitLink, process.platform === 'win32' ? 'junction' : 'dir');
+
+    assert.equal(untrackedAsDiff(cwd, 'escape-dir/secret.txt'), null);
+    assert.equal(untrackedAsDiff(cwd, 'git-alias/HEAD'), null);
+    assert.equal(untrackedAsDiff(cwd, '.git/HEAD'), null);
+
+    // Direct lstatSync symlink check (even if pointing to a real file inside workspace).
+    const origLstat = fs.lstatSync;
+    fs.lstatSync = (target, ...rest) => {
+      if (String(target).endsWith(`${path.sep}ok.txt`)) {
+        return { isSymbolicLink: () => true, isFile: () => false, size: 5 };
+      }
+      return origLstat(target, ...rest);
+    };
+    try {
+      assert.equal(untrackedAsDiff(cwd, 'ok.txt'), null);
+    } finally {
+      fs.lstatSync = origLstat;
+    }
+
+    const diff = await gitDiffDirect(cwd, { staged: false });
+    assert.ok(diff);
+    assert.equal(diff.files.some((f) => f.path.includes('secret.txt') || f.path.includes('HEAD')), false);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
   }
 });

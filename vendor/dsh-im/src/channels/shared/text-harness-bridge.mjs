@@ -461,6 +461,8 @@ export class TextHarnessBridge {
         this.#state,
         key,
         {
+          channel: this.#descriptor.key,
+          accountId: this.#accessGate?.botId ?? null,
           signal: this.#signal,
           hasImages: hasInboundImages(message),
           hasFiles: hasInboundFiles(message),
@@ -613,7 +615,10 @@ export class TextHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+        if (await sharedWhaleSessionId(this.#harness, {
+          channel: this.#descriptor.key,
+          accountId: this.#accessGate?.botId ?? null,
+        }) || await isWhaleEnforcedForHarness(this.#harness)) {
           await this.#bot.sendText(target, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(conversationKey);
@@ -666,6 +671,8 @@ export class TextHarnessBridge {
         harness: this.#harness,
         state: this.#state,
         key: conversationKey,
+        channel: this.#descriptor.key,
+        accountId: this.#accessGate?.botId ?? null,
         text,
         content,
         speaker: message.speaker,

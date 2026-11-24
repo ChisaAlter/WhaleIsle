@@ -171,3 +171,54 @@ test('migrateWhaleBridgeToMagpie rolls back target config and DSH channel on mid
     assert.equal(readMigrationState(wbRoot).stage, 'rolled_back');
   });
 });
+
+test('merge mode throws and rolls back on corrupt target config and rewrites migrations.json home fields', async () => {
+  await withOwnedTempDir('magpie-migrate-corrupt-', async (sandbox) => {
+    const desktopStateDir = path.join(sandbox, 'state');
+    const dshHome = path.join(sandbox, 'dsh');
+    const targetConfigDir = path.join(sandbox, 'config-magpie');
+    const wbRoot = path.join(desktopStateDir, 'components', 'whalebridge');
+    const wbData = path.join(wbRoot, 'data');
+    fs.mkdirSync(wbData, { recursive: true });
+    fs.writeFileSync(path.join(wbData, 'providers.json'), JSON.stringify({ providers: { legacy: { name: 'Legacy' } }, order: ['legacy'] }));
+    fs.writeFileSync(path.join(wbData, 'migrations.json'), JSON.stringify([
+      { id: 'm1', home: path.join(wbData, 'grok', 'u1') },
+    ]));
+    fs.writeFileSync(path.join(wbRoot, 'installed.json'), JSON.stringify({ version: '1.2.0', entry: 'WhaleBridge-win32-x64.exe' }));
+
+    fs.mkdirSync(targetConfigDir, { recursive: true });
+    const corruptBytes = '{corrupt json';
+    fs.writeFileSync(path.join(targetConfigDir, 'providers.json'), corruptBytes);
+
+    await assert.rejects(
+      () => migrateWhaleBridgeToMagpie({ desktopStateDir, dshHome, targetConfigDir }),
+      SyntaxError,
+    );
+    assert.equal(fs.readFileSync(path.join(targetConfigDir, 'providers.json'), 'utf8'), corruptBytes);
+    assert.equal(readMigrationState(wbRoot).stage, 'rolled_back');
+
+    // Fix providers.json and simulate a crash at data_migrated with prior backupDir.
+    fs.writeFileSync(path.join(targetConfigDir, 'providers.json'), JSON.stringify({ providers: { clean: { name: 'Clean' } }, order: ['clean'] }));
+    const priorBackup = path.join(wbRoot, 'prior-backup');
+    fs.mkdirSync(path.join(priorBackup, 'magpie'), { recursive: true });
+    fs.copyFileSync(path.join(targetConfigDir, 'providers.json'), path.join(priorBackup, 'magpie', 'providers.json'));
+    fs.writeFileSync(path.join(priorBackup, 'manifest.json'), JSON.stringify([
+      { src: path.join(targetConfigDir, 'providers.json'), dst: path.join(priorBackup, 'magpie', 'providers.json'), existed: true },
+    ]));
+    // Pollute target providers.json as if crashed mid-migration.
+    fs.writeFileSync(path.join(targetConfigDir, 'providers.json'), JSON.stringify({ providers: { dirty: { name: 'Dirty' } } }));
+    fs.writeFileSync(path.join(wbRoot, 'migration-state.json'), JSON.stringify({
+      stage: 'data_migrated',
+      backupDir: priorBackup,
+    }));
+
+    const res = await migrateWhaleBridgeToMagpie({ desktopStateDir, dshHome, targetConfigDir });
+    assert.equal(res.migrated, true);
+    const mergedProviders = JSON.parse(fs.readFileSync(path.join(targetConfigDir, 'providers.json'), 'utf8'));
+    assert.ok(mergedProviders.providers.clean);
+    assert.ok(mergedProviders.providers.legacy);
+    assert.equal(mergedProviders.providers.dirty, undefined);
+    const mergedMigrations = JSON.parse(fs.readFileSync(path.join(targetConfigDir, 'migrations.json'), 'utf8'));
+    assert.equal(mergedMigrations[0].home, path.join(targetConfigDir, 'grok', 'u1'));
+  });
+});

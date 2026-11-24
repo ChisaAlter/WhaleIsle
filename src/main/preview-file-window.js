@@ -5,6 +5,7 @@ const { loadConfig } = require('./config');
 const { currentTheme, officialShellBackground } = require('./chrome');
 const { rendererFile } = require('./paths');
 const { readFile } = require('./workspace-fs');
+const { isPackagedRendererFileUrl } = require('./local-url');
 const { normalizePreviewFileTarget } = require('./preview-file-target');
 const { createRegisterIpc, unauthorizedError } = require('./ipc-register');
 
@@ -56,6 +57,11 @@ function createFilePreviewWindowController(options = {}) {
   const preloadPath = options.preloadPath ?? defaultPreloadPath();
   const htmlPath = options.htmlPath ?? rendererFile('file-preview.html');
   const platform = options.platform ?? process.platform;
+  const isAllowedWindowUrl = (/** @type {unknown} */ rawUrl) => isPackagedRendererFileUrl(
+    rawUrl,
+    path.basename(htmlPath),
+    /** @type {any} */ (options).htmlPath ? { resolvePath: () => htmlPath } : undefined,
+  );
   let previewWindow = null;
   let previewState = null;
   let requestSequence = 0;
@@ -69,7 +75,7 @@ function createFilePreviewWindowController(options = {}) {
 
   createRegisterIpc(ipcMain)({
     channel: FILE_PREVIEW_STATE_CHANNEL,
-    authorize: (event) => {
+    authorize: (/** @type {any} */ event) => {
       const sender = event?.sender;
       const frame = event?.senderFrame;
       if (
@@ -77,6 +83,7 @@ function createFilePreviewWindowController(options = {}) {
         || previewWindow.isDestroyed()
         || sender !== previewWindow.webContents
         || frame !== sender.mainFrame
+        || !isAllowedWindowUrl(frame?.url)
         || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())
       ) {
         throw unauthorizedError();
@@ -99,6 +106,18 @@ function createFilePreviewWindowController(options = {}) {
     const contents = win.webContents;
     if (contents && typeof contents.setWindowOpenHandler === 'function') {
       contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    }
+    if (contents && typeof contents.on === 'function') {
+      const guardNavigation = (/** @type {any} */ event, /** @type {unknown} */ nextUrl) => {
+        if (!isAllowedWindowUrl(nextUrl)) event.preventDefault();
+      };
+      contents.on('will-navigate', guardNavigation);
+      contents.on('will-redirect', guardNavigation);
+      contents.on('will-frame-navigate', (/** @type {any} */ event) => {
+        if (event?.isMainFrame !== false && !isAllowedWindowUrl(event?.url)) {
+          event.preventDefault();
+        }
+      });
     }
     if (typeof win.once === 'function') {
       win.once('closed', () => {

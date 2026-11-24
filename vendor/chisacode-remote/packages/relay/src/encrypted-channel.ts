@@ -335,6 +335,7 @@ export class EncryptedChannel {
   private pendingSends: Array<string | ArrayBuffer> = [];
   private onOpenCallbacks: Array<() => void> = [];
   private onCloseCallbacks: Array<() => void> = [];
+  private onWebRtcFallbackCallbacks: Array<(reason: string) => void> = [];
   // Replay protection state, maintained per channel direction.
   // Each side has its own send counter + send salt (random, generated when
   // the channel transitions to open) and tracks the peer's receive counter +
@@ -607,6 +608,41 @@ export class EncryptedChannel {
     return this.activeSendLeg === "webrtc";
   }
 
+  /** Returns true once the primary Relay WS leg has finished draining and closed. */
+  isPrimaryLegDrained(): boolean {
+    return this.primaryLegDrained;
+  }
+
+  /**
+   * Reverts an activated WebRTC leg back to the still-open primary Relay WS leg
+   * before primary-leg drain completes. Returns true if fallback succeeded.
+   */
+  fallbackToPrimaryLeg(reason = "webrtc_fallback"): boolean {
+    if (this.state !== "open" || this.primaryLegDrained || this.activeSendLeg !== "webrtc") {
+      return false;
+    }
+    this.activeSendLeg = "primary";
+    this.peerPreviousLegEndSeq = null;
+    this.clearDrainTimer();
+    this.detachWebRtcReceiveLeg();
+    for (const cb of [...this.onWebRtcFallbackCallbacks]) {
+      try {
+        cb(reason);
+      } catch {
+        // ignore observer errors
+      }
+    }
+    return true;
+  }
+
+  onWebRtcFallback(cb: (reason: string) => void): () => void {
+    this.onWebRtcFallbackCallbacks.push(cb);
+    return () => {
+      const idx = this.onWebRtcFallbackCallbacks.indexOf(cb);
+      if (idx >= 0) this.onWebRtcFallbackCallbacks.splice(idx, 1);
+    };
+  }
+
   /**
    * Attaches a WebRTC DataChannel leg for early receive buffering before
    * outbound cutover. Closing this pre-activation leg does NOT disconnect the
@@ -639,6 +675,10 @@ export class EncryptedChannel {
     dcTransport.onclose = (code, reason) => {
       if (this.dcTransport !== dcTransport) return;
       if (this.activeSendLeg === "webrtc") {
+        if (!this.primaryLegDrained) {
+          this.fallbackToPrimaryLeg("dc_closed_before_drain");
+          return;
+        }
         this.emitChannelClosed(code, reason);
       } else {
         this.dcTransport = null;
@@ -646,7 +686,7 @@ export class EncryptedChannel {
     };
     dcTransport.onerror = (error) => {
       if (this.dcTransport !== dcTransport) return;
-      if (this.activeSendLeg === "webrtc") {
+      if (this.activeSendLeg === "webrtc" && this.primaryLegDrained) {
         this.events.onerror?.(error);
       }
     };

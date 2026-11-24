@@ -671,6 +671,12 @@ const OWNER_MEMORY_PATTERNS = [
   { category: 'moment', re: /(?:今天(?:终于|完成了|上线了|搞定了|发布了|拿到了)|刚(?:刚)?(?:上线|发布|完成))[^\n。！？!?]{2,140}/u },
 ];
 
+/** @param {any} source */
+function isInternalPluginSource(source) {
+  const kind = String(source?.kind ?? '');
+  return kind === 'plugin' || kind.startsWith('dsh-whale:') || kind.startsWith('dsh-bots:');
+}
+
 /**
  * True only when an event is a direct, owner-authored message (desktop user
  * or verified private IM owner). Rejects assistant replies, tool results,
@@ -684,7 +690,7 @@ export function isTrustedOwnerMessage(event) {
   const source = event.data?.source ?? {};
   const rpcId = String(source.rpcId ?? '');
   if (/^whale-pulse-/u.test(rpcId)) return false;
-  if (source.kind === 'plugin' || source.kind?.startsWith?.('dsh-whale:')) return false;
+  if (isInternalPluginSource(source)) return false;
   if (source.kind === 'user') {
     if (rpcId && /^(im|feishu|weixin|wecom|qq|slack|telegram|discord|whatsapp|dingtalk|office)-/u.test(rpcId)) {
       return /^[a-z0-9_]+-owner-private-[a-f0-9-]+$/iu.test(rpcId);

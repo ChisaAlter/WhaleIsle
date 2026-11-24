@@ -43,6 +43,8 @@ export async function askInWorkspaceSession({
   harness,
   state,
   key,
+  channel,
+  accountId,
   text,
   content,
   speaker,
@@ -50,6 +52,8 @@ export async function askInWorkspaceSession({
   existsOptions,
   askOptions,
 }) {
+  const effectiveChannel = channel ?? askOptions?.channel ?? harness?.accessGate?.channel ?? null;
+  const effectiveAccountId = accountId ?? askOptions?.accountId ?? harness?.accessGate?.botId ?? null;
   const effectiveSpeaker = normalizeSpeakerMetadata(speaker ?? askOptions?.speaker);
   if (effectiveSpeaker && effectiveSpeaker.role === 'none') {
     const denied = new Error('Speaker is not authorized to send prompts to this session.');
@@ -59,7 +63,12 @@ export async function askInWorkspaceSession({
   while (true) {
     try {
       const binding = await withSessionBindingLock(state, key, async () => {
-        const resolution = await whaleSessionResolution(harness, { state, key });
+        const resolution = await whaleSessionResolution(harness, {
+          state,
+          key,
+          channel: effectiveChannel,
+          accountId: effectiveAccountId,
+        });
         const selected = await selectConversationSession(harness, state, key, resolution);
         const whaleSessionId = selected.shared ? selected.sessionId : null;
         let sessionId = selected.sessionId;

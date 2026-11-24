@@ -535,7 +535,13 @@ export function createLookAroundService(deps) {
       kind: 'look-around',
       origin: 'automation',
     });
-    const res = await sessionRuntime.runSingleTurn(started.sessionId, prompt, { timeoutMs: 90_000 });
+    const res = await sessionRuntime.runSingleTurn(started.sessionId, prompt, {
+      timeoutMs: 90_000,
+      botId: bot.id,
+      isBackground: true,
+      sourceKind: 'dsh-bots:look-around',
+      source: { kind: 'dsh-bots:look-around', phase: 'sweep' },
+    });
     botsStore.closeChat(started.sessionId, Date.now());
     return { ok: Boolean(res.ok), summary: res.error || 'completed' };
   }
@@ -623,7 +629,12 @@ export function createLookAroundService(deps) {
     const prompt = entry.link ? `${entry.ask}\n\nLink: ${entry.link}` : entry.ask;
     let turnError = null;
     try {
-      const turnRes = await sessionRuntime.runSingleTurn(target.sessionId, prompt, { timeoutMs: 30_000 });
+      const turnRes = await sessionRuntime.runSingleTurn(target.sessionId, prompt, {
+        timeoutMs: 30_000,
+        botId: bot.id,
+        sourceKind: 'dsh-bots:look-around',
+        source: { kind: 'dsh-bots:look-around', phase: 'start-suggestion', suggestionId },
+      });
       if (turnRes && turnRes.ok === false) {
         turnError = String(turnRes.error ?? 'turn_failed');
         reportError(new Error(turnError), {

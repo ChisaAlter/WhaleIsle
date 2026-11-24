@@ -341,6 +341,7 @@ export function createBotsRuntime(options) {
     getGroupsService: () => runtime.groupsService,
     getGroupsList: () => runtime.groupsService?.list() ?? [],
     onPetBotChanged: (bot) => { runtime.legacyCompat?.syncLegacySettingsProjection(bot); },
+    onToolsChanged: (/** @type {string} */ botId) => mcpManager.syncBotMcps(botId),
   });
 
   runtime.legacyCompat = createLegacyCompat({
@@ -420,17 +421,33 @@ export function createBotsRuntime(options) {
     botsService: runtime.botsService,
   });
 
-  runtime.mailReconciler = createMailReconciler({
+  /** @type {Promise<any>} */
+  let owedMailChain = Promise.resolve();
+  /** @template T @param {() => Promise<T>} fn @returns {Promise<T>} */
+  function serializeOwedMail(fn) {
+    const run = owedMailChain.then(fn, fn);
+    owedMailChain = run.catch(() => null);
+    return run;
+  }
+
+  const rawMailReconciler = createMailReconciler({
     itemsStore,
     botsStore,
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
     wakeBot: options.wakeBot,
   });
+  runtime.mailReconciler = {
+    reconcileOwedMail: (/** @type {any} */ opts) => serializeOwedMail(() => rawMailReconciler.reconcileOwedMail(opts)),
+  };
+  const rawSendOwedMail = runtime.sessionRuntime.sendOwedMail.bind(runtime.sessionRuntime);
+  const rawDeliverOwedMail = runtime.sessionRuntime.deliverOwedMail.bind(runtime.sessionRuntime);
+  runtime.sessionRuntime.sendOwedMail = () => serializeOwedMail(() => rawSendOwedMail());
+  runtime.sessionRuntime.deliverOwedMail = (/** @type {any} */ opts) => serializeOwedMail(() => rawDeliverOwedMail(opts));
 
   runtime.http = createBotsHttpHandler(runtime);
 
-  if (options.reconcileMailOnStart !== false && typeof options.wakeBot === 'function' && itemsStore.owedMail().length > 0) {
+  if (options.autoRecovery === false && options.reconcileMailOnStart !== false && typeof options.wakeBot === 'function' && itemsStore.owedMail().length > 0) {
     void Promise.resolve()
       .then(() => (closed ? null : runtime.mailReconciler.reconcileOwedMail()))
       .catch((error) => { reportRuntimeError('mail_reconciler_startup', error); });
@@ -459,14 +476,34 @@ export function createBotsRuntime(options) {
       const journal = { bots: 0, scanned: 0, appended: 0, skipped: 0 };
 
       if (!dbHandle.isReadOnly) {
-        mail = await runtime.sessionRuntime.sendOwedMail().catch((/** @type {any} */ err) => ({
-          ok: false,
-          error: String(err?.message ?? err),
-          deliveredGroups: 0,
-          deliveredEvents: 0,
-          skippedGroups: 0,
-          details: [],
-        }));
+        if (typeof options.wakeBot === 'function') {
+          if (options.reconcileMailOnStart !== false) {
+            const rec = await runtime.mailReconciler.reconcileOwedMail().catch((/** @type {any} */ err) => ({
+              ok: false,
+              error: String(err?.message ?? err),
+              reconciledGroups: 0,
+              markedEvents: 0,
+              skippedGroups: 0,
+            }));
+            mail = {
+              ok: rec.ok !== false,
+              ...(rec.error ? { error: rec.error } : {}),
+              deliveredGroups: rec.reconciledGroups ?? 0,
+              deliveredEvents: rec.markedEvents ?? 0,
+              skippedGroups: rec.skippedGroups ?? 0,
+              details: [],
+            };
+          }
+        } else {
+          mail = await runtime.sessionRuntime.sendOwedMail().catch((/** @type {any} */ err) => ({
+            ok: false,
+            error: String(err?.message ?? err),
+            deliveredGroups: 0,
+            deliveredEvents: 0,
+            skippedGroups: 0,
+            details: [],
+          }));
+        }
 
         groups = await runtime.groupsService.resumePending({
           waitForReplies: recoveryOptions.waitForReplies === true,

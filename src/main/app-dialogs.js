@@ -40,6 +40,7 @@ function createShellDialogs() {
   const shellOverlays = new UpdateOverlays();
   /** @type {ShellConfirmDialog|undefined} */
   let shellConfirmInstance;
+  let confirmQueue = Promise.resolve();
   function shellConfirm() {
     if (!shellConfirmInstance) {
       shellConfirmInstance = new ShellConfirmDialog(
@@ -51,16 +52,10 @@ function createShellDialogs() {
     return shellConfirmInstance;
   }
 
-  /**
-   * Productized confirmation: shell overlay modal when a window can host it,
-   * native messagebox otherwise (no window yet, destroyed parent).
-   * @param {any} parent
-   * @param {Record<string, any>} options
-   */
-  async function confirmDialog(parent, options) {
+  async function presentConfirmDialog(/** @type {any} */ parent, /** @type {Record<string, any>} */ options) {
     if (parent && !parent.isDestroyed()) {
       try {
-        return await shellConfirm().show(parent, options);
+        return await shellConfirm().showQueued(parent, options);
       } catch (error) {
         console.warn('dshd dialog: shell confirm failed, native fallback', error);
       }
@@ -82,6 +77,37 @@ function createShellDialogs() {
         : { response: options.cancelId };
     }
     return dialog.showMessageBox(parent || undefined, /** @type {any} */ ({ ...options, detail: nativeDetail }));
+  }
+
+  /**
+   * Productized confirmation: serialized shell overlay modal when a window can
+   * host it, native messagebox otherwise (no window yet, destroyed parent).
+   * @param {any} parent
+   * @param {Record<string, any>} options
+   */
+  async function confirmDialog(parent, options) {
+    const cancelId = options?.cancelId ?? (Array.isArray(options?.buttons) ? options.buttons.length - 1 : 0);
+    if (options?.signal?.aborted === true) {
+      return { response: cancelId };
+    }
+    const run = confirmQueue.then(async () => {
+      if (options?.signal?.aborted === true) {
+        return { response: cancelId };
+      }
+      const resolvedParent = typeof parent === 'function' ? parent() : parent;
+      return presentConfirmDialog(resolvedParent, options);
+    });
+    confirmQueue = run.then(() => undefined, () => undefined);
+    if (!options?.signal) return run;
+    /** @type {(() => void) | undefined} */
+    let onAbort;
+    const aborted = new Promise((resolve) => {
+      onAbort = () => resolve({ response: cancelId });
+      options.signal.addEventListener('abort', onAbort, { once: true });
+    });
+    return Promise.race([run, aborted]).finally(() => {
+      options.signal.removeEventListener('abort', onAbort);
+    });
   }
 
   // Anchor for productized confirmations: the first VISIBLE window — a hidden
@@ -225,8 +251,9 @@ function createShellDialogs() {
   /**
    * @param {string} operation
    * @param {Record<string, any>} inspection
+   * @param {{ signal?: AbortSignal }} [ctx]
    */
-  async function confirmTaskStop(operation, inspection) {
+  async function confirmTaskStop(operation, inspection, ctx) {
     const verb = TASK_VERBS[operation] || '继续';
     const parts = [];
     for (const item of inspection.activeWork || []) {
@@ -254,6 +281,7 @@ function createShellDialogs() {
       message: `${verb}将中断仍在运行的工作`,
       detail,
       noLink: true,
+      ...(ctx?.signal ? { signal: ctx.signal } : {}),
     };
     const result = await confirmDialog(firstVisibleWindow(), options);
     return result.response === 0;

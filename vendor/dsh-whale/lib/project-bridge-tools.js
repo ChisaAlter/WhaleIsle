@@ -59,6 +59,8 @@ const handoffOutput = {
     },
   },
   render: (_args, value) => [{ type: 'text', text: String(value?.detail ?? '') }],
+  /** @param {any} _args @param {any} value */
+  presentationMeta: (_args, value) => ({ ok: Boolean(value?.ok), detail: String(value?.detail ?? '') }),
 };
 
 function projectService(ctx) {
@@ -337,11 +339,21 @@ export function registerProjectBridgeTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args?.title || args?.goal || args?.projectId || args?.cwd || '') }],
     }),
-    presentResult: (_args, result) => (result?.ok !== true ? undefined : {
-      card: 'generic',
-      title: 'Project handoff delivered',
-      content: [{ type: 'text', text: String(result.value?.detail ?? '') }],
-    }),
+    presentResult: (_args, result) => {
+      if (!result || result.isError) return undefined;
+      const meta = result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta)
+        ? /** @type {Record<string, any>} */ (result.meta)
+        : null;
+      if (meta && 'ok' in meta && meta.ok !== true) return undefined;
+      const fallbackText = Array.isArray(result.content)
+        ? result.content.map((/** @type {any} */ b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
+        : '';
+      return {
+        card: 'generic',
+        title: 'Project handoff delivered',
+        content: [{ type: 'text', text: String(meta?.detail ?? fallbackText) }],
+      };
+    },
     async execute(args, exec) {
       const originError = guardHandoffOrigin(exec, getSelfId);
       if (originError) return emptyHandoffFailure(originError, args?.projectId);

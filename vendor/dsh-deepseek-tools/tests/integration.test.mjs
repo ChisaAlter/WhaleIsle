@@ -241,3 +241,37 @@ test('real web profile: persistent settings, native tools, file permissions, str
     console.log(outcome.output); assert.equal(outcome.code, 0, outcome.output);
   }
 });
+
+test('Audit regression [P2]: deepseek_tts output.render safely handles null and non-object values', async () => {
+  const { apply } = await import('../lib/index.js');
+  const registered = new Map();
+  const makeField = (val) => ({ get: () => val });
+  const mockCtx = {
+    effect() {},
+    on() {},
+    settings: { configure() {} },
+    tools: {
+      register(def) {
+        registered.set(def.name, def);
+        return () => registered.delete(def.name);
+      },
+    },
+  };
+  apply(mockCtx, {
+    baseURL: makeField('https://api.deepseek.com'),
+    apiKeyEnv: makeField('DEEPSEEK_API_KEY'),
+    tts: makeField(true),
+    asr: makeField(false),
+    ocr: makeField(false),
+    voice: makeField('stella'),
+    filterMarkdown: makeField(true),
+  });
+  const tts = registered.get('deepseek_tts');
+  assert.ok(tts);
+  assert.deepEqual(tts.output.render({}, null), [{ type: 'text', text: 'null' }]);
+  assert.deepEqual(tts.output.render({}, 'plain-str'), [{ type: 'text', text: '"plain-str"' }]);
+  const attachment = { attachmentId: 'sha256:abc', name: 'speech.wav' };
+  const blocks = tts.output.render({}, { attachment, path: '/tmp/speech.wav' });
+  assert.equal(blocks.length, 2);
+  assert.deepEqual(blocks[0], { type: 'file', attachment });
+});

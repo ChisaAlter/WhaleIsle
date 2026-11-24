@@ -123,8 +123,9 @@
   function applyTheme(theme) {
     if (!theme) return;
     if (typeof theme.scheme === 'string') {
-      const isLight = theme.scheme === 'light';
-      document.documentElement.toggleAttribute('data-ds-dark-theme', !isLight && theme.scheme === 'dark');
+      const isDark = theme.scheme === 'dark';
+      document.documentElement.toggleAttribute('data-ds-dark-theme', isDark);
+      document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
     }
     if (typeof theme.minimalMode === 'boolean') {
       document.documentElement.toggleAttribute('data-dsh-minimal', theme.minimalMode);
@@ -226,11 +227,35 @@
     container.replaceChildren(fragment);
   }
 
+  const SAFE_DATA_IMAGE_RE = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i;
+
+  /**
+   * @param {unknown} raw
+   * @param {unknown} harnessOrigin
+   * @returns {string | null}
+   */
+  function sanitizeSubjectIcon(raw, harnessOrigin) {
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (SAFE_DATA_IMAGE_RE.test(trimmed)) return trimmed;
+    if (typeof harnessOrigin !== 'string' || !harnessOrigin.trim()) return null;
+    try {
+      const iconUrl = new URL(trimmed);
+      const originUrl = new URL(harnessOrigin);
+      if (iconUrl.protocol !== 'http:' && iconUrl.protocol !== 'https:') return null;
+      return iconUrl.origin === originUrl.origin ? iconUrl.href : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * @param {ProjectedItem} item
    * @param {typeof COPY.zh} copy
+   * @param {string} [harnessOrigin]
    */
-  function renderItemBody(item, copy) {
+  function renderItemBody(item, copy, harnessOrigin) {
     if (els.metaRow && els.sessionName && els.requesterTag) {
       els.metaRow.hidden = false;
       els.sessionName.textContent = item.sessionTitle || copy.untitledSession;
@@ -246,8 +271,9 @@
       if (item.subject) {
         els.subjectRow.hidden = false;
         els.subjectName.textContent = item.subject.name;
-        if (item.subject.icon) {
-          els.subjectIcon.src = item.subject.icon;
+        const safeIcon = sanitizeSubjectIcon(item.subject.icon, harnessOrigin);
+        if (safeIcon) {
+          els.subjectIcon.src = safeIcon;
           els.subjectIcon.hidden = false;
         } else {
           els.subjectIcon.removeAttribute('src');
@@ -323,7 +349,7 @@
       }
     }
 
-    renderItemBody(item, copy);
+    renderItemBody(item, copy, /** @type {any} */ (view).harnessOrigin);
     renderActions(item, copy);
 
     if (view.error && view.error.at > lastErrorAt) {

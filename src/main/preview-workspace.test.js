@@ -47,6 +47,7 @@ test('fileUrl serves an authorized html file under a token prefix', async () => 
     assert.equal(page.status, 200);
     assert.equal(page.body, '<h1>ok</h1>');
     assert.equal(page.headers['x-content-type-options'], 'nosniff');
+    assert.equal(page.headers['content-security-policy'], 'sandbox');
     assert.match(page.headers['content-type'], /text\/html/);
   } finally {
     await preview.close();
@@ -200,7 +201,10 @@ test('a directory path is refused and GET of a directory is 403', async () => {
     const file = await preview.fileUrl({ cwd, relativePath: 'site/index.html' });
     const parsed = new URL(file.url);
     const token = parsed.pathname.split('/')[1];
-    const listed = await request(`http://127.0.0.1:${parsed.port}/${token}/site`);
+    assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/site`)).status, 404);
+    fs.rmSync(path.join(cwd, 'site', 'index.html'));
+    fs.mkdirSync(path.join(cwd, 'site', 'index.html'));
+    const listed = await request(file.url);
     assert.equal(listed.status, 403);
   } finally {
     await preview.close();
@@ -239,7 +243,7 @@ test('fileUrl refuses a cwd outside the authorized workspace', async () => {
   }
 });
 
-test('fileUrl serves scratch html and its assets under one token while parent, .git, and link escapes stay denied', async (t) => {
+test('fileUrl scopes each token to a single file and sandboxes HTML/SVG responses', async (t) => {
   const workspace = makeTempDir();
   const scratch = makeTempDir();
   const outside = makeTempDir();
@@ -248,8 +252,10 @@ test('fileUrl serves scratch html and its assets under one token while parent, .
   });
   try {
     fs.writeFileSync(path.join(scratch, 'index.html'), '<link rel="stylesheet" href="site.css"><img src="pixel.png">');
+    fs.writeFileSync(path.join(scratch, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     fs.writeFileSync(path.join(scratch, 'site.css'), 'body { color: red; }');
     fs.writeFileSync(path.join(scratch, 'pixel.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    fs.writeFileSync(path.join(scratch, '.env'), 'SECRET=1');
     fs.mkdirSync(path.join(scratch, '.git'));
     fs.writeFileSync(path.join(scratch, '.git', 'config'), 'secret');
     fs.writeFileSync(path.join(outside, 'secret.html'), 'leaked');
@@ -257,9 +263,24 @@ test('fileUrl serves scratch html and its assets under one token while parent, .
     assert.equal(opened.ok, true);
     const parsed = new URL(opened.url);
     const token = parsed.pathname.split('/')[1];
-    assert.equal((await request(opened.url)).body.includes('site.css'), true);
-    assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/site.css`)).status, 200);
-    assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/pixel.png`)).status, 200);
+    const htmlRes = await request(opened.url);
+    assert.equal(htmlRes.status, 200);
+    assert.equal(htmlRes.headers['content-security-policy'], 'sandbox');
+    assert.equal(htmlRes.body.includes('site.css'), true);
+    // Single-file token must not read sibling files in the same workspace.
+    assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/site.css`)).status, 404);
+    assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/pixel.png`)).status, 404);
+    assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/.env`)).status, 404);
+    const cssOpened = await preview.fileUrl({ cwd: scratch, relativePath: 'site.css' });
+    assert.equal(cssOpened.ok, true);
+    assert.notEqual(new URL(cssOpened.url).pathname.split('/')[1], token);
+    const cssRes = await request(cssOpened.url);
+    assert.equal(cssRes.status, 200);
+    assert.equal(cssRes.headers['content-security-policy'], undefined);
+    const svgOpened = await preview.fileUrl({ cwd: scratch, relativePath: 'icon.svg' });
+    const svgRes = await request(svgOpened.url);
+    assert.equal(svgRes.status, 200);
+    assert.equal(svgRes.headers['content-security-policy'], 'sandbox');
     assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/../index.html`)).status, 404);
     assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/%2e%2e%2findex.html`)).status, 404);
     assert.equal((await request(`http://127.0.0.1:${parsed.port}/${token}/.git/config`)).status, 404);

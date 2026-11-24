@@ -1318,6 +1318,7 @@ function sanitizeEChartOption(v: unknown, depth: number, budget: EChartSanitizeB
   if (o === undefined) return undefined
   const out: Record<string, unknown> = {}
   for (const [key, val] of Object.entries(o)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue
     const s = sanitizeEChartOption(val, depth + 1, budget)
     if (s === undefined) continue
     // Force tooltip.renderMode: 'richText' to prevent ECharts from writing

@@ -114,6 +114,7 @@ function createApprovalMonitor(deps) {
   let disposed = false;
   let lastBadgeCount = -1;
   let lastBadgeLocale = currentLocale();
+  let currentHarnessOrigin = '';
   /** @type {any} */
   let boundMainWin = null;
   /** @type {(() => void) | null} */
@@ -157,6 +158,7 @@ function createApprovalMonitor(deps) {
     const theme = readTheme();
     return projectPopupView(state, {
       locale: currentLocale(),
+      harnessOrigin: currentHarnessOrigin,
       theme: {
         scheme: theme?.scheme === 'dark' ? 'dark' : 'light',
         minimalMode: Boolean(readMinimal()),
@@ -234,6 +236,7 @@ function createApprovalMonitor(deps) {
   function setHarnessOrigin(origin, cookie = getCookie()) {
     if (disposed) return;
     const trimmed = typeof origin === 'string' ? origin.trim() : '';
+    currentHarnessOrigin = trimmed;
     if (!trimmed) {
       wire.disconnect();
       dispatch({ type: 'SET_HARNESS_ACTIVE', active: false });

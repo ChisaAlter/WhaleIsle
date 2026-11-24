@@ -784,3 +784,112 @@ test('bot-tools-registry & plugins: dsh-bot-worker empirical verify/needs_you, b
     }
   });
 });
+
+test('Audit regressions [P1 #27/#28/#29]: long-gap RRule skip, folder-watcher recovery & self-write suppression, and non-destructive null clear', async () => {
+  const { computeNextScheduleAt } = await importBots('cron-rrule.js');
+  const { createFolderWatcher } = await importBots('folder-watcher.js');
+
+  // [P1 #27] RRule without BYDAY/BYHOUR across >41.67 days (Jan 31 -> Mar 31, INTERVAL=2, DAILY;INTERVAL=60)
+  const jan31 = Date.UTC(2026, 0, 31, 9, 15, 0);
+  const nextMonthly31 = computeNextScheduleAt('FREQ=MONTHLY', { afterMs: jan31, anchorMs: jan31, timezone: 'Asia/Shanghai' });
+  assert.equal(nextMonthly31, Date.UTC(2026, 2, 31, 9, 15, 0));
+
+  const jan10 = Date.UTC(2026, 0, 10, 8, 30, 0);
+  const nextBiMonthly = computeNextScheduleAt('FREQ=MONTHLY;INTERVAL=2', { afterMs: jan10, anchorMs: jan10, timezone: 'Asia/Shanghai' });
+  assert.equal(nextBiMonthly, Date.UTC(2026, 2, 10, 8, 30, 0));
+
+  const nextDaily60 = computeNextScheduleAt('FREQ=DAILY;INTERVAL=60', { afterMs: jan10, anchorMs: jan10, timezone: 'UTC' });
+  assert.equal(nextDaily60, jan10 + 60 * 86_400_000);
+
+  // [P1 #28] folder-watcher fallback try/catch, error cleanup + recreation, and self-write suppression
+  await withTempDir('folder-regressions', async ({ root, onClose }) => {
+    const watchDir = path.join(root, 'watched');
+    fs.mkdirSync(watchDir, { recursive: true });
+
+    const errors = [];
+    let failFallback = true;
+    const handles = [];
+    const events = [];
+    const fw = createFolderWatcher({
+      debounceMs: 20,
+      selfWriteSuppressMs: 120,
+      onError: (err) => errors.push(err),
+      onChange: (ev) => events.push(ev),
+      watchFactory: (p, opts, listener) => {
+        if (failFallback) {
+          if (opts?.recursive) throw Object.assign(new Error('no recursive'), { code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM' });
+          throw new Error('fallback also failed');
+        }
+        const listeners = {};
+        const handle = {
+          closed: false,
+          listener,
+          on(ev, fn) { listeners[ev] = fn; },
+          emitError(err) { listeners.error?.(err); },
+          close() { this.closed = true; },
+        };
+        handles.push(handle);
+        return handle;
+      },
+    });
+    onClose(() => fw.close());
+
+    const subs = [{ id: 'a1', botId: 'b1', enabled: true, triggers: [{ kind: 'folder', path: watchDir }] }];
+    assert.doesNotThrow(() => fw.syncWatches(subs));
+    assert.equal(fw.listWatches().length, 0);
+    assert.equal(errors.length, 1);
+
+    failFallback = false;
+    fw.syncWatches(subs);
+    assert.equal(fw.listWatches().length, 1);
+    assert.equal(handles.length, 1);
+
+    // Emit error -> closes & removes zombie handle so next syncWatches recreates it
+    handles[0].emitError(new Error('inotify watch died'));
+    assert.equal(handles[0].closed, true);
+    assert.equal(fw.listWatches().length, 0);
+
+    fw.syncWatches(subs);
+    assert.equal(fw.listWatches().length, 1);
+    assert.equal(handles.length, 2);
+
+    // Trigger real event, then immediate self-write during suppression window -> ignored
+    handles[1].listener('change', 'input.txt');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(events.length, 1);
+    handles[1].listener('change', 'output-by-self.txt');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(events.length, 1, 'self-write inside suppression window must not retrigger');
+
+    // Explicit suppressSelfWrite
+    fw.suppressSelfWrite(path.join(watchDir, 'suppressed.txt'), 200);
+    await new Promise((r) => setTimeout(r, 110));
+    handles[1].listener('change', 'suppressed.txt');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(events.length, 1);
+  });
+
+  // [P1 #29] persistAutomationState clears nextRunAt/lastError to null without deleting row
+  await withTempDir('auto-null-clear', async ({ root, onClose }) => {
+    const rt = await buildTestRuntime(root, onClose);
+    const bot = (await rt.botsService.createBot({ name: 'NullClearBot', skipKickoff: true })).bot;
+    const auto = rt.automationsService.create({
+      botId: bot.id,
+      name: 'OnceFail',
+      prompt: 'Run once',
+      once: { by: Date.now() + 60_000 },
+    });
+    rt.workStore.upsertAutomation({ ...auto, lastError: 'old-err' });
+    const origDelete = rt.workStore.deleteAutomation;
+    let deletedCalled = false;
+    rt.workStore.deleteAutomation = (...args) => {
+      deletedCalled = true;
+      return origDelete(...args);
+    };
+    const updated = rt.automationsService.update(auto.id, { enabled: false, lastError: null, nextRunAt: null });
+    assert.equal(deletedCalled, false);
+    assert.equal(updated.lastError, null);
+    assert.equal(updated.nextRunAt, null);
+    assert.ok(rt.workStore.getAutomation(auto.id));
+  });
+});

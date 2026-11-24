@@ -425,3 +425,44 @@ test('real ProjectService.acceptAuthorizedHandoff enforces confirmedByDesktop, v
   assert.equal(duplicate.deduplicated, true);
   assert.equal(leadEvents.length, 1);
 });
+
+test('Audit regression [P1 #30]: presentResult reads !result.isError and meta/content for whale_handoff_to_project and whale_sticker', async () => {
+  const { registerProjectBridgeTools } = await import(pathToFileURL(path.resolve(__dirname, '../../vendor/dsh-whale/lib/project-bridge-tools.js')).href);
+  const { registerStickerTools } = await import(pathToFileURL(path.resolve(__dirname, '../../vendor/dsh-whale/lib/sticker-tools.js')).href);
+
+  const registered = new Map();
+  const mockCtx = {
+    tools: {
+      register(def) {
+        registered.set(def.name, def);
+        return () => registered.delete(def.name);
+      },
+    },
+  };
+  registerProjectBridgeTools(mockCtx, { getSelfId: () => 'whale-1' });
+  registerStickerTools(mockCtx);
+
+  const handoffTool = registered.get('whale_handoff_to_project');
+  assert.ok(handoffTool && typeof handoffTool.presentResult === 'function');
+  assert.equal(handoffTool.presentResult({ goal: 'x' }, { isError: true, content: [{ type: 'text', text: 'err' }] }), undefined);
+  assert.equal(
+    handoffTool.presentResult({ goal: 'x' }, { isError: false, content: [{ type: 'text', text: 'nope' }], meta: { ok: false, detail: 'nope' } }),
+    undefined,
+  );
+  const handoffCard = handoffTool.presentResult(
+    { goal: 'x' },
+    { isError: false, content: [{ type: 'text', text: 'fallback detail' }], meta: { ok: true, detail: 'handed off cleanly' } },
+  );
+  assert.equal(handoffCard.title, 'Project handoff delivered');
+  assert.equal(handoffCard.content[0].text, 'handed off cleanly');
+
+  const stickerTool = registered.get('whale_sticker');
+  assert.ok(stickerTool && typeof stickerTool.presentResult === 'function');
+  assert.equal(stickerTool.presentResult({ query: 'happy' }, { isError: true, content: [] }), undefined);
+  const stickerCard = stickerTool.presentResult(
+    { query: 'happy' },
+    { isError: false, content: [{ type: 'text', text: 'Picked happy' }], meta: { ok: true, name: 'happy.webp' } },
+  );
+  assert.equal(stickerCard.title, 'Sticker picked');
+  assert.equal(stickerCard.content[0].text, 'happy.webp');
+});

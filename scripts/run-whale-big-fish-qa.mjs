@@ -86,10 +86,19 @@ try {
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.waitForFunction(() => typeof window.__dshWhaleOpen === 'function');
     await page.getByText('你的大肥鱼队友', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '新建队友', exact: true }).waitFor();
     assert.equal(await page.locator('html[data-dsh-whale-mode]').count(), 0, 'legacy fullscreen overlay must not exist');
-    await page.evaluate(() => window.__dshWhaleOpen());
     const newBotDialog = page.getByRole('dialog', { name: '新建大肥鱼队友' });
-    await newBotDialog.waitFor();
+    await page.waitForLoadState('networkidle').catch((/** @type {unknown} */ err) => {
+      console.debug?.('big-fish-qa networkidle skipped:', err instanceof Error ? err.message : err);
+    });
+    await page.evaluate(() => /** @type {any} */ (window).__dshWhaleOpen());
+    try {
+      await newBotDialog.waitFor({ timeout: 5000 });
+    } catch {
+      await page.evaluate(() => /** @type {any} */ (window).__dshWhaleOpen());
+      await newBotDialog.waitFor();
+    }
     await newBotDialog.getByPlaceholder('给你的大肥鱼起个名字').fill('鲸鱼娘');
     await newBotDialog.getByRole('button', { name: '创建', exact: true }).click();
     await newBotDialog.waitFor({ state: 'detached' });

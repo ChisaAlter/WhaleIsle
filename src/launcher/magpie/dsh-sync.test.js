@@ -90,3 +90,42 @@ test('detachWhaleBridgeDshChannel and remapDshDefaultModel preserve non-whalebri
     assert.deepEqual(readDshDefaultModel(dshHome), { provider: 'magpie', model: 'claude-3-7', reasoningEffort: '' });
   });
 });
+
+test('syncDshToMagpieGateway throws on non-ok /v1/models and preserves existing cordis.patch.yml models', async () => {
+  await withOwnedTempDir('magpie-dsh-fail-', async (dshHome) => {
+    const patchFile = path.join(dshHome, 'profiles', 'web', 'cordis.patch.yml');
+    fs.mkdirSync(path.dirname(patchFile), { recursive: true });
+    const initial = [
+      '- id: llm-pi-ai',
+      '  config:',
+      '    providers:',
+      '      magpie:',
+      '        api: openai-completions',
+      '        baseUrl: http://127.0.0.1:3425/v1',
+      '        apiKeyEnv: MAGPIE_GATEWAY_KEY',
+      '        models:',
+      '        - id: "keep-me"',
+      '',
+    ].join('\n');
+    fs.writeFileSync(patchFile, initial);
+
+    await assert.rejects(
+      () => syncDshToMagpieGateway({
+        dshHome,
+        gatewayAddr: '127.0.0.1:3425',
+        fetchImpl: async () => new Response('unauthorized', { status: 401 }),
+      }),
+      /HTTP 401/,
+    );
+    assert.equal(fs.readFileSync(patchFile, 'utf8'), initial);
+
+    await assert.rejects(
+      () => syncDshToMagpieGateway({
+        dshHome,
+        gatewayAddr: 'evil.example:3425',
+        fetchImpl: async () => { throw new Error('must not fetch'); },
+      }),
+      /非回环/,
+    );
+  });
+});

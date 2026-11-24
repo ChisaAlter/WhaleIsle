@@ -152,3 +152,27 @@ test('update-dialog.css follows DSHD design-language token and geometry rules', 
   assert.doesNotMatch(css, /data-ds-dark-theme|data-theme|prefers-color-scheme/);
   assert.doesNotMatch(css, /::-webkit-scrollbar/);
 });
+
+test('ShellConfirmDialog.showQueued serializes concurrent dialogs without cancelling the active prompt', async () => {
+  const f = dialogFixture();
+  const first = f.dialog.showQueued(f.parent, { buttons: ['允许', '拒绝'], cancelId: 1, title: 'first' });
+  const secondController = new AbortController();
+  const second = f.dialog.showQueued(f.parent, { buttons: ['继续', '取消'], cancelId: 1, title: 'second', signal: secondController.signal });
+  const third = f.dialog.showQueued(f.parent, { buttons: ['确定', '取消'], cancelId: 1, title: 'third' });
+
+  await new Promise(setImmediate);
+  assert.equal(f.dialog.active.view.title, 'first');
+
+  // Aborting a queued second prompt resolves it immediately without disturbing the active first prompt.
+  secondController.abort();
+  assert.equal(JSON.stringify(await second), JSON.stringify({ response: 1 }));
+  assert.equal(f.dialog.active.view.title, 'first');
+
+  f.respond(1, 0);
+  assert.equal(JSON.stringify(await first), JSON.stringify({ response: 0 }));
+  await new Promise(setImmediate);
+  assert.equal(f.dialog.active.view.title, 'third');
+  f.respond(2, 1);
+  assert.equal(JSON.stringify(await third), JSON.stringify({ response: 1 }));
+  f.dialog.dispose();
+});

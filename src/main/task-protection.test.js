@@ -612,3 +612,41 @@ test('drain failure preserves the blocked work diagnostics', async () => {
   assert.equal(result.pendingCount, 2);
   assert.deepEqual(result.pendingLabels, ['http POST /api', 'resolveAgent']);
 });
+
+test('finalizeQuit cancels and waits for a busy prior coordinator instead of concurrent shutdown', async () => {
+  let confirmAborted = false;
+  let releaseConfirm;
+  const { protection } = makeProtection({
+    inspection: DIRTY_INSPECTION,
+    confirm: (_op, _insp, { signal }) => new Promise((resolve) => {
+      releaseConfirm = resolve;
+      signal.addEventListener('abort', () => {
+        confirmAborted = true;
+        resolve(false);
+      }, { once: true });
+    }),
+  });
+  let shutdownCount = 0;
+  let quitCalls = 0;
+  let exitCalls = 0;
+  const { quit } = productionQuit({
+    taskProtection: protection,
+    harness: { shutdown: async () => { shutdownCount += 1; } },
+    cleanupDesktopResources: async () => {},
+    app: { quit: () => { quitCalls += 1; }, exit: () => { exitCalls += 1; } },
+  });
+
+  const restartPending = protection.coordinate('restart', { commit: async () => {} });
+  await new Promise(setImmediate);
+  assert.equal(protection.isCoordinating(), true);
+
+  await quit();
+  const restartResult = await restartPending;
+  assert.equal(confirmAborted, true);
+  assert.equal(restartResult.proceeded, false);
+  assert.equal(restartResult.code, 'cancelled');
+  assert.equal(shutdownCount, 1);
+  assert.equal(quitCalls, 1);
+  assert.equal(exitCalls, 0);
+  void releaseConfirm;
+});

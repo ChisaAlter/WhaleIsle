@@ -58,12 +58,25 @@ export function saveMachines(file, list, currentId, keepCurrentKey = true) {
   writeFileSync(file, JSON.stringify(payload, null, 2))
 }
 
+export const passphraseSecretId = (id) => `${id}.passphrase`
+export const proxyPasswordSecretId = (id) => `${id}.proxy-password`
+
 /** Strip secrets before sending a machine to the client. */
 export function sanitizeMachine(m) {
   if (!m) return m
-  const { password, proxy, ...rest } = m
-  const out = { ...rest, passwordSet: !!(m.password && m.password.length) }
-  if (proxy) out.proxy = { ...proxy, password: proxy.password ? '' : undefined, passwordSet: !!(proxy.password && proxy.password.length) }
+  const { password, passphrase, proxy, ...rest } = m
+  const out = {
+    ...rest,
+    passwordSet: !!(m.passwordSet || (password && password.length)),
+    passphraseSet: !!(m.passphraseSet || (passphrase && passphrase.length)),
+  }
+  if (proxy) {
+    const { password: proxyPassword, ...proxyRest } = proxy
+    out.proxy = {
+      ...proxyRest,
+      passwordSet: !!(proxy.passwordSet || (proxyPassword && proxyPassword.length)),
+    }
+  }
   return out
 }
 
@@ -86,4 +99,175 @@ export function applyMachine(config, m) {
 /** Mint a fresh machine id. */
 export function machineId() {
   return 'm-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6)
+}
+
+function hasAnyStoredKeychainSecret(prev) {
+  if (!prev || !prev.credentialBackend || prev.credentialBackend === 'plain') return false
+  return !!(
+    (prev.passwordSet && !prev.password) ||
+    (prev.passphraseSet && !prev.passphrase) ||
+    (prev.proxy && prev.proxy.passwordSet && !prev.proxy.password)
+  )
+}
+
+async function persistSecretField({
+  rawValue,
+  prevValue,
+  prevSet,
+  secretKey,
+  requestedBackend,
+  state,
+  secretsDir,
+  persistPassword,
+}) {
+  const effectiveRaw = rawValue || (requestedBackend !== 'plain' && prevValue ? prevValue : '')
+  if (effectiveRaw) {
+    const persisted = await persistPassword({
+      backend: state.credentialBackend,
+      machineId: secretKey,
+      password: effectiveRaw,
+      secretsDir,
+    })
+    if (persisted.stored === 'secret') {
+      state.credentialBackend = persisted.credentialBackend
+      state.anySecretStored = true
+    } else if (!state.anySecretStored) {
+      state.credentialBackend = persisted.credentialBackend
+    }
+    if (persisted.warning && !state.warning) {
+      state.warning = persisted.warning
+      state.warningDetail = persisted.error
+    }
+    return { value: persisted.password, isSet: true }
+  }
+  return { value: prevValue || '', isSet: !!(prevValue || prevSet) }
+}
+
+async function persistProxyConfig({ id, proxyBody, prev, requestedBackend, state, secretsDir, persistPassword, deleteSecret }) {
+  if (!proxyBody) {
+    if (prev && prev.proxy && prev.credentialBackend && prev.credentialBackend !== 'plain') {
+      await deleteSecret(proxyPasswordSecretId(id), secretsDir)
+    }
+    return undefined
+  }
+  const proxyUser = String(proxyBody.username || '').trim()
+  const samePrev = !!(prev && prev.proxy && prev.proxy.host === String(proxyBody.host) && prev.proxy.username === proxyUser)
+  const rawProxyPw = proxyBody.password ? String(proxyBody.password) : ''
+  const proxyRes = await persistSecretField({
+    rawValue: rawProxyPw,
+    prevValue: samePrev ? prev.proxy.password : '',
+    prevSet: samePrev ? prev.proxy.passwordSet : false,
+    secretKey: proxyPasswordSecretId(id),
+    requestedBackend,
+    state,
+    secretsDir,
+    persistPassword,
+  })
+  if (!rawProxyPw && !samePrev && prev && prev.credentialBackend && prev.credentialBackend !== 'plain') {
+    await deleteSecret(proxyPasswordSecretId(id), secretsDir)
+  }
+  return {
+    host: String(proxyBody.host),
+    port: Number(proxyBody.port) || 22,
+    username: proxyUser,
+    password: proxyRes.value,
+    passwordSet: proxyRes.isSet,
+    privateKeyPath: String(proxyBody.privateKeyPath || '').trim(),
+  }
+}
+
+function formatMachineRecord({ id, host, body, prev, pwRes, ppRes, proxy, credentialBackend }) {
+  return {
+    id,
+    name: String(body.name || '').trim() || host,
+    host,
+    port: Number(body.port) || 22,
+    username: String(body.username || '').trim() || 'root',
+    password: pwRes.value,
+    passwordSet: pwRes.isSet,
+    privateKeyPath: String(body.privateKeyPath || '').trim(),
+    passphrase: ppRes.value,
+    passphraseSet: ppRes.isSet,
+    workspace: String(body.workspace || '').trim(),
+    hostKeyMode: body.hostKeyMode || '',
+    useAgent: !!body.useAgent,
+    keyboardInteractive: !!body.keyboardInteractive,
+    proxy,
+    credentialBackend,
+    recentWorkspaces: prev?.recentWorkspaces || [],
+    lastConnectedAt: prev?.lastConnectedAt || null,
+    latencyMs: prev?.latencyMs || null,
+  }
+}
+
+/** Build a machine record from an HTTP add/update payload and persist secrets uniformly. */
+export async function buildAndPersistMachine({
+  id,
+  body,
+  prev,
+  requestedBackend,
+  secretsDir,
+  persistPassword,
+  deleteSecret,
+}) {
+  const host = String(body.host || '').trim()
+  const proxyBody = body.proxy && body.proxy.host ? body.proxy : null
+  const state = {
+    credentialBackend: requestedBackend,
+    anySecretStored: hasAnyStoredKeychainSecret(prev),
+    warning: '',
+    warningDetail: '',
+  }
+
+  const pwRes = await persistSecretField({
+    rawValue: body.password ? String(body.password) : '',
+    prevValue: prev?.password || '',
+    prevSet: !!prev?.passwordSet,
+    secretKey: id,
+    requestedBackend,
+    state,
+    secretsDir,
+    persistPassword,
+  })
+  const ppRes = await persistSecretField({
+    rawValue: body.passphrase ? String(body.passphrase) : '',
+    prevValue: prev?.passphrase || '',
+    prevSet: !!prev?.passphraseSet,
+    secretKey: passphraseSecretId(id),
+    requestedBackend,
+    state,
+    secretsDir,
+    persistPassword,
+  })
+  const proxy = await persistProxyConfig({
+    id,
+    proxyBody,
+    prev,
+    requestedBackend,
+    state,
+    secretsDir,
+    persistPassword,
+    deleteSecret,
+  })
+  const rec = formatMachineRecord({
+    id,
+    host,
+    body,
+    prev,
+    pwRes,
+    ppRes,
+    proxy,
+    credentialBackend: state.credentialBackend,
+  })
+  return { rec, warning: state.warning, warningDetail: state.warningDetail }
+}
+
+/** Delete all OS-keychain secrets owned by a machine record. */
+export async function deleteMachineSecrets(m, secretsDir, deleteSecret) {
+  if (!m || !m.credentialBackend || m.credentialBackend === 'plain') return
+  await Promise.all([
+    deleteSecret(m.id, secretsDir),
+    deleteSecret(passphraseSecretId(m.id), secretsDir),
+    deleteSecret(proxyPasswordSecretId(m.id), secretsDir),
+  ])
 }

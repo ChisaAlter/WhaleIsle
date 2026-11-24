@@ -58,3 +58,26 @@ test('navigation allowlist blocks the Host origin, creds, and non-http', () => {
   assert.equal(guests.allowedNavigation('javascript:alert(1)'), false);
   assert.equal(guests.allowedNavigation('not a url'), false);
 });
+
+test('installBrowserGuests handles null view, empty origin, and port-prefix collisions safely', async () => {
+  const { installBrowserGuests } = require('./browser-guests');
+  const handlers = new Map();
+  const ipcMain = { handle(ch, fn) { handlers.set(ch, fn); } };
+  const mainFrame = { url: 'http://127.0.0.1:30801/' };
+  const webContents = { mainFrame, isDestroyed: () => false };
+  let currentView = null;
+  let currentOrigin = '';
+  installBrowserGuests(fixture().guests, {
+    ipcMain,
+    getView: () => currentView,
+    getOrigin: () => currentOrigin,
+  });
+  const acquire = handlers.get('shell:browser-acquire');
+  assert.throws(() => acquire({ sender: webContents, senderFrame: mainFrame }, 'ws-1'), /rejected sender/);
+  currentView = { webContents };
+  assert.throws(() => acquire({ sender: webContents, senderFrame: mainFrame }, 'ws-1'), /rejected sender/);
+  currentOrigin = 'http://127.0.0.1:3080';
+  assert.throws(() => acquire({ sender: webContents, senderFrame: mainFrame }, 'ws-1'), /rejected sender/);
+  mainFrame.url = 'http://127.0.0.1:3080/chat';
+  assert.ok(acquire({ sender: webContents, senderFrame: mainFrame }, 'ws-1').lease);
+});

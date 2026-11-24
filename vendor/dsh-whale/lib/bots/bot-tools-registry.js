@@ -18,14 +18,13 @@ import {
   validateBotName,
   validateBotReplyArgs,
 } from '../../src/shared/index.js';
-import { isNonOwnerImTurn } from '../call-origin.js';
+import { UNATTENDED_REFUSAL_TEXT, isNonOwnerImTurn, isUnattendedPulseTurn } from '../call-origin.js';
 import {
   CONFIRM_TOOL_TIMEOUT_MS,
   NON_OWNER_IM_REFUSAL_TEXT,
   confirmModelAction,
   refusalTextFor,
 } from '../desktop-confirm.js';
-import { BOT_WORKER_PRESET_ID } from '../preset.js';
 import { genericOutput } from '../shared.js';
 import { buildBotItemTools } from './bot-tools-items.js';
 import {
@@ -37,9 +36,9 @@ import {
 import { appendDecisionTsv, botMetaDir, botsRootDir } from './fs-home.js';
 import { evaluateLookAroundToolPolicy } from './look-around-service.js';
 import { resolveBotForSession } from './prompt-engine.js';
-import { BOT_OWNER_WORK } from './session-runtime.js';
 import { createToolWalManager } from './tool-wal.js';
-import { createWorktreeRunner, executeDispatchedWorker } from './worktree-runner.js';
+import { createWorktreeRunner } from './worktree-runner.js';
+import { executeWorkStart } from './bot-tools-work.js';
 
 /** @type {any} */
 let activeBotsRuntimeSource = null;
@@ -121,13 +120,9 @@ function buildCallerInfo(runtime, bot, sessionId, chat, exec) {
 function resolveCallerBot(runtime, exec) {
   if (!runtime) return null;
   const resolved = resolveBotForSession(runtime, exec);
-  if (resolved?.bot) {
-    const sessionId = resolved.sessionId || resolved.bot.chatSessionId || 'unknown';
-    return buildCallerInfo(runtime, resolved.bot, sessionId, resolved.chat, exec);
-  }
-  const fallback = runtime.legacyCompat?.resolvePetBot?.() ?? runtime.botsStore?.listBots?.()?.[0] ?? null;
-  if (!fallback) return null;
-  return buildCallerInfo(runtime, fallback, fallback.chatSessionId || 'unknown', null, exec);
+  if (!resolved?.bot) return null;
+  const sessionId = resolved.sessionId || resolved.bot.chatSessionId || 'unknown';
+  return buildCallerInfo(runtime, resolved.bot, sessionId, resolved.chat, exec);
 }
 
 /** @param {any} caller @param {any} exec */
@@ -312,71 +307,6 @@ function executeMemorySearch(runtime, caller, args) {
   return okOut(JSON.stringify({ query, scope: scopeRaw, results: [] }));
 }
 
-/** @param {any} runtime @param {any} caller @param {any} args @param {any} options */
-async function executeWorkStart(runtime, caller, args, options) {
-  const cwd = String(args.cwd ?? '').trim();
-  const prompt = String(args.prompt ?? '').trim();
-  if (!cwd || !prompt) return errOut('cwd and prompt are required.');
-
-  const dispatchId = `disp-${crypto.randomUUID().slice(0, 12)}`;
-  const taskId = `task-${crypto.randomUUID().slice(0, 12)}`;
-  const worktreeRunner = resolveWorktreeRunner(runtime, options);
-  let prepared;
-  try {
-    prepared = await worktreeRunner.prepareWorkerCwd({
-      botId: caller.bot.id, cwd, dispatchId, useWorktree: args.useWorktree !== false,
-    });
-  } catch (error) {
-    return errOut(String(/** @type {any} */ (error)?.message ?? error));
-  }
-
-  let started;
-  try {
-    started = await runtime.sessionRuntime.startSideChat(caller.bot.id, {
-      title: args.title || `Worker · ${path.basename(cwd)}`,
-      kind: 'worker', origin: 'work', owner: BOT_OWNER_WORK,
-      preset: BOT_WORKER_PRESET_ID, cwd: prepared.cwd,
-    });
-  } catch (error) {
-    if (prepared.isolatedWorktree) {
-      await worktreeRunner.cleanupWorktree(dispatchId).then(undefined, (/** @type {unknown} */ e) => {
-        reportToolAsyncError(runtime, 'bot_work_start:rollback', e, { dispatchId });
-      });
-    }
-    return errOut(`Failed to start worker session: ${String(/** @type {any} */ (error)?.message ?? error)}`);
-  }
-
-  const work = runtime.workStore.startWork({
-    botId: caller.bot.id, source: 'app', externalId: caller.sessionId, taskId, dispatchId,
-  });
-  const itemUid = args.itemUid ? resolveItemUid(runtime.itemsStore, args.itemUid) : null;
-  if (itemUid) {
-    runtime.itemsStore.linkStartedWorker(itemUid, dispatchId, { chatId: caller.sessionId, botId: caller.bot.id });
-  }
-  runtime.eventBus.emit({ botIds: [caller.bot.id], kinds: ['workers', 'items', 'chats'] });
-
-  const lifecycle = executeDispatchedWorker({
-    runtime, caller, homeDir: botHomeDir(runtime, caller.bot), worktreeRunner, dispatchId,
-    sessionId: started.sessionId, effectiveCwd: prepared.cwd, isolatedWorktree: prepared.isolatedWorktree,
-    itemUid, args, onError: (tag, err, meta) => reportToolAsyncError(runtime, tag, err, meta),
-  });
-
-  if (args.awaitCompletion === true) {
-    const outcome = await lifecycle;
-    return okOut(JSON.stringify({
-      work, sessionId: started.sessionId, dispatchId, preset: BOT_WORKER_PRESET_ID,
-      cwd: prepared.cwd, isolatedWorktree: prepared.isolatedWorktree,
-      completed: true, passed: outcome.ok, exitCode: outcome.exitCode,
-      verify: outcome.verify ?? null, decisionEntry: outcome.decisionEntry ?? null,
-    }));
-  }
-  lifecycle.then(undefined, (err) => reportToolAsyncError(runtime, 'bot_work_start:lifecycle', err, { dispatchId }));
-  return okOut(JSON.stringify({
-    work, sessionId: started.sessionId, dispatchId, preset: BOT_WORKER_PRESET_ID,
-    cwd: prepared.cwd, isolatedWorktree: prepared.isolatedWorktree,
-  }));
-}
-
 /** @param {() => any} getRuntime */
 function buildBasicBotTools(getRuntime) {
   return [
@@ -554,17 +484,28 @@ function buildGuardedBotTools(getRuntime, options) {
       itemUid: { type: 'string', description: 'Optional Work Item uid or #number to link and verify.' },
       title: { type: 'string', description: 'Optional worker title.' },
       doneMeans: { type: 'string', description: 'Acceptance criteria for the coding worker.' },
-      verifyCmd: { type: 'string', description: 'Optional shell command to empirically verify worker output.' },
+      verifyCmd: { type: 'string', description: 'Optional command (no shell chaining/redirection) to empirically verify worker output.' },
       useWorktree: { type: 'boolean', description: 'Isolate inside a detached Git worktree when cwd is a Git repo (default true).' },
       keepWorktree: { type: 'boolean', description: 'Keep the isolated worktree after completion (default false).' },
       awaitCompletion: { type: 'boolean', description: 'Wait for worker turn and verification before returning (default false).' },
     }, async (args, exec) => {
       const blocked = refuseNonOwnerIm(exec);
       if (blocked) return blocked;
+      if (isUnattendedPulseTurn(exec)) return errOut(UNATTENDED_REFUSAL_TEXT);
       const runtime = getRuntime();
       const caller = resolveCallerBot(runtime, exec);
-      return caller ? executeWorkStart(runtime, caller, args, options) : errOut('Caller bot context unavailable.');
-    }),
+      return caller
+        ? executeWorkStart(runtime, caller, args, {
+          options,
+          exec,
+          requireConfirm,
+          resolveWorktreeRunner,
+          resolveItemUid,
+          botHomeDir,
+          reportToolAsyncError,
+        })
+        : errOut('Caller bot context unavailable.');
+    }, CONFIRM_TOOL_TIMEOUT_MS),
 
     makeTool('bot_send', 'Send a handoff, question, or status message to another local bot.', {
       toBotId: { type: 'string', description: 'Target bot id or name.', required: true },
@@ -591,6 +532,8 @@ function buildGuardedBotTools(getRuntime, options) {
         properties: { name: { type: 'string' }, transport: { type: 'string' }, url: { type: 'string' }, command: { type: 'string' } },
       },
     }, async (args, exec) => {
+      const blocked = refuseNonOwnerIm(exec);
+      if (blocked) return blocked;
       const runtime = getRuntime();
       const caller = resolveCallerBot(runtime, exec);
       if (!caller) return errOut('Caller bot context unavailable.');
@@ -626,8 +569,18 @@ function buildGuardedBotTools(getRuntime, options) {
       const caller = resolveCallerBot(runtime, exec);
       if (!caller) return errOut('Caller bot context unavailable.');
       const action = String(args.action || 'create').trim();
-      if (action === 'delete') return okOut(JSON.stringify(runtime.automationsService.delete(args.id)));
-      if (action === 'update') return okOut(JSON.stringify(runtime.automationsService.update(args.id, args)));
+      if (action === 'delete') {
+        const existing = runtime.workStore?.getAutomation?.(args.id);
+        if (!existing) return errOut(`Automation not found: ${args.id}`);
+        if (existing.botId !== caller.bot.id) return errOut('Cannot delete an automation owned by another bot.');
+        return okOut(JSON.stringify(runtime.automationsService.delete(args.id)));
+      }
+      if (action === 'update') {
+        const existing = runtime.workStore?.getAutomation?.(args.id);
+        if (!existing) return errOut(`Automation not found: ${args.id}`);
+        if (existing.botId !== caller.bot.id) return errOut('Cannot update an automation owned by another bot.');
+        return okOut(JSON.stringify(runtime.automationsService.update(args.id, args)));
+      }
       if (action === 'create') return okOut(JSON.stringify(runtime.automationsService.create({ ...args, botId: caller.bot.id })));
       return errOut(`Invalid automation action: ${action}`);
     }),
@@ -664,7 +617,11 @@ function buildGuardedBotTools(getRuntime, options) {
       const started = await runtime.sessionRuntime.startSideChat(caller.bot.id, { title: args.title });
       if (args.prompt) {
         const turnPromise = Promise.resolve()
-          .then(() => runtime.sessionRuntime.runSingleTurn(started.sessionId, String(args.prompt)))
+          .then(() => runtime.sessionRuntime.runSingleTurn(started.sessionId, String(args.prompt), {
+            botId: caller.bot.id,
+            sourceKind: 'dsh-bots:bot-send',
+            source: { kind: 'dsh-bots:bot-send', fromSessionId: caller.sessionId },
+          }))
           .then((turn) => {
             if (turn?.ok === false) reportToolAsyncError(runtime, 'bot_new_chat', turn.error || 'turn-failed', { sessionId: started.sessionId });
             return turn;

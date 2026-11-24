@@ -129,7 +129,7 @@ function removeBotKeyFromMetaJson(filePath, botId) {
  * @param {any} deps
  */
 export function createBotsService(deps) {
-  const { dshHome, db, botsStore, itemsStore, groupsStore, workStore, memoryService, sessionRuntime, eventBus } = deps;
+  const { dshHome, db, botsStore, itemsStore, groupsStore, workStore, memoryService, sessionRuntime, eventBus, onToolsChanged } = deps;
   const botsRoot = botsRootDir(dshHome);
   const metaRoot = botMetaDir(dshHome);
   /** @type {Promise<any>} */
@@ -584,7 +584,7 @@ export function createBotsService(deps) {
 
   /** @param {string} botId @param {any} server @param {{ expectedVersion?: string }} [options] */
   function toolsAdd(botId, server, options = {}) {
-    return serialize(() => {
+    return serialize(async () => {
       const bot = requireBot(botId);
       const homeDir = homeDirFor(bot);
       const expectedVersion = options?.expectedVersion ?? server?.expectedVersion;
@@ -594,6 +594,7 @@ export function createBotsService(deps) {
       const saved = writeBotToolsConfig(homeDir, metaRoot, bot.id, {
         servers: [...current.filter((/** @type {any} */ s) => s.name !== cleanServer?.name), cleanServer],
       }, { expectedVersion });
+      if (typeof onToolsChanged === 'function') await onToolsChanged(bot.id).catch(() => null);
       eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
       return saved;
     });
@@ -601,7 +602,7 @@ export function createBotsService(deps) {
 
   /** @param {string} botId @param {string} name @param {any} patch @param {{ expectedVersion?: string }} [options] */
   function toolsUpdate(botId, name, patch, options = {}) {
-    return serialize(() => {
+    return serialize(async () => {
       const bot = requireBot(botId);
       const homeDir = homeDirFor(bot);
       const expectedVersion = options?.expectedVersion ?? patch?.expectedVersion;
@@ -611,6 +612,7 @@ export function createBotsService(deps) {
       const saved = writeBotToolsConfig(homeDir, metaRoot, bot.id, {
         servers: current.map((/** @type {any} */ s) => (s.name === name ? { ...s, ...cleanPatch, name: cleanPatch?.name ?? s.name } : s)),
       }, { expectedVersion });
+      if (typeof onToolsChanged === 'function') await onToolsChanged(bot.id).catch(() => null);
       eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
       return saved;
     });
@@ -618,7 +620,7 @@ export function createBotsService(deps) {
 
   /** @param {string} botId @param {string} name @param {{ expectedVersion?: string }} [options] */
   function toolsRemove(botId, name, options = {}) {
-    return serialize(() => {
+    return serialize(async () => {
       const bot = requireBot(botId);
       const homeDir = homeDirFor(bot);
       const expectedVersion = options?.expectedVersion;
@@ -626,6 +628,7 @@ export function createBotsService(deps) {
       const saved = writeBotToolsConfig(homeDir, metaRoot, bot.id, {
         servers: current.filter((/** @type {any} */ s) => s.name !== name),
       }, { expectedVersion });
+      if (typeof onToolsChanged === 'function') await onToolsChanged(bot.id).catch(() => null);
       eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
       return saved;
     });

@@ -981,6 +981,8 @@ export class FeishuHarnessBridge {
       this.#state,
       key,
       {
+        channel: 'feishu',
+        accountId: this.#botId ?? this.#accessGate?.botId ?? this.#appId,
         signal: this.#signal,
         hasImages: hasInboundImages(message),
         hasFiles: hasInboundFiles(message),
@@ -1037,7 +1039,10 @@ export class FeishuHarnessBridge {
       return;
     }
     if (commandText === '/new') {
-      if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+      if (await sharedWhaleSessionId(this.#harness, {
+        channel: 'feishu',
+        accountId: this.#botId ?? this.#accessGate?.botId ?? this.#appId,
+      }) || await isWhaleEnforcedForHarness(this.#harness)) {
         await this.#send(event.message.chat_id, whaleRestrictedCommandReply('/new'));
         return;
       }
@@ -2636,6 +2641,8 @@ export class FeishuHarnessBridge {
     try {
       const result = await runModelCommand(
         `/model ${modelId}`, this.#harness, this.#state, key, {
+          channel: 'feishu',
+          accountId: this.#botId ?? this.#accessGate?.botId ?? this.#appId,
           signal: this.#signal,
           pendingInteraction: this.#hasPendingInteraction(key),
           control: { owner: this, key },
@@ -3248,6 +3255,8 @@ export class FeishuHarnessBridge {
         harness: this.#harness,
         state: this.#state,
         key,
+        channel: 'feishu',
+        accountId: this.#botId ?? this.#accessGate?.botId ?? this.#appId,
         text,
         content,
         speaker: event.speaker,
@@ -3307,6 +3316,8 @@ export class FeishuHarnessBridge {
             harness: this.#harness,
             state: this.#state,
             key,
+            channel: 'feishu',
+            accountId: this.#botId ?? this.#accessGate?.botId ?? this.#appId,
             text,
             content,
             speaker: event.speaker,
@@ -3370,6 +3381,8 @@ export class FeishuHarnessBridge {
         harness: this.#harness,
         state: this.#state,
         key,
+        channel: 'feishu',
+        accountId: this.#botId ?? this.#accessGate?.botId ?? this.#appId,
         text,
         content,
         speaker: event.speaker,

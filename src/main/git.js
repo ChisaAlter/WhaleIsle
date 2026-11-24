@@ -1045,6 +1045,49 @@ async function gitCreateChangeRequest(cwd, input, onProgress) {
   });
 }
 
+function hasControlChars(/** @type {string} */ value) {
+  return [...value].some((ch) => { const n = ch.charCodeAt(0); return n < 0x20 || n === 0x7f; });
+}
+
+function isAllowedPublishRemoteUrl(/** @type {string} */ remoteUrl) {
+  if (!remoteUrl || remoteUrl.startsWith('-') || hasControlChars(remoteUrl) || /\s/.test(remoteUrl)) return false;
+  if (/^git@[^:/\s]+:[^\s]+$/i.test(remoteUrl)) {
+    const hostPart = remoteUrl.slice('git@'.length).split(':')[0];
+    return Boolean(hostPart) && !hostPart.startsWith('-');
+  }
+  try {
+    const parsed = new URL(remoteUrl);
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:' || parsed.protocol === 'ssh:')
+      && Boolean(parsed.hostname) && !parsed.hostname.startsWith('-');
+  } catch {
+    return false;
+  }
+}
+
+function isSafePublishRepoName(/** @type {string} */ name) {
+  if (!name || name.startsWith('-') || hasControlChars(name)) return false;
+  if (name === '.' || name === '..' || /[\\\s]/.test(name)) return false;
+  return !name.split('/').some((/** @type {string} */ seg) => seg === '' || seg === '.' || seg === '..' || seg.startsWith('-'));
+}
+
+function validatePublishTarget(/** @type {any} */ input, /** @type {string} */ root) {
+  if (input?.remoteUrl !== undefined && (typeof input.remoteUrl !== 'string' || hasControlChars(input.remoteUrl))) {
+    return { error: 'Invalid remote URL.' };
+  }
+  const remoteUrl = typeof input?.remoteUrl === 'string' ? input.remoteUrl.trim() : '';
+  if (remoteUrl && !isAllowedPublishRemoteUrl(remoteUrl)) {
+    return { error: 'Remote URL must use https:, http:, ssh:, or git@ and cannot start with "-".' };
+  }
+  if (input?.name !== undefined && (typeof input.name !== 'string' || hasControlChars(input.name))) {
+    return { error: 'Invalid repository name.' };
+  }
+  const name = typeof input?.name === 'string' && input.name.trim() ? input.name.trim() : path.basename(root);
+  if (!remoteUrl && !isSafePublishRepoName(name)) {
+    return { error: 'Repository name cannot start with "-" or contain control characters.' };
+  }
+  return { remoteUrl, name };
+}
+
 async function gitPublishRepository(cwd, input, onProgress) {
   const emit = typeof onProgress === 'function' ? onProgress : () => {};
   const root = asCwd(cwd);
@@ -1052,10 +1095,9 @@ async function gitPublishRepository(cwd, input, onProgress) {
   const remotes = await listRemoteNames(root);
   // CTA offers Publish when origin is missing; allow other remotes (e.g. upstream only).
   if (remotes.includes('origin')) return fail('This repository already has an origin remote.');
-  const remoteUrl = typeof input?.remoteUrl === 'string' ? input.remoteUrl.trim() : '';
-  const name = typeof input?.name === 'string' && input.name.trim()
-    ? input.name.trim()
-    : path.basename(root);
+  const target = validatePublishTarget(input, root);
+  if (target.error) return fail(target.error);
+  const { remoteUrl, name } = target;
   const visibility = input?.visibility === 'public' ? 'public' : 'private';
   emit({ kind: 'phase', title: 'Publishing repository...' });
   const headProbe = await runGit(root, ['rev-parse', '--verify', 'HEAD']);
@@ -1064,7 +1106,7 @@ async function gitPublishRepository(cwd, input, onProgress) {
     // An `origin` that appears before the add reports failure still changed
     // the remote config; drop the memo before the write.
     invalidateReadContext(root);
-    const added = await runGit(root, ['remote', 'add', 'origin', remoteUrl]);
+    const added = await runGit(root, ['remote', 'add', '--', 'origin', remoteUrl]);
     if (added.code !== 0) return fail(gitFailureMessage(added, 'git remote add failed.'));
     // Empty repo → remote_added without push (avoids opaque HEAD refspec failure).
     if (!hasCommits) return ok({ status: 'remote_added', remoteName: 'origin', url: remoteUrl });
@@ -1073,7 +1115,7 @@ async function gitPublishRepository(cwd, input, onProgress) {
     return { ...pushed, url: remoteUrl, remoteName: 'origin' };
   }
   const createArgs = [
-    'repo', 'create', name,
+    'repo', 'create',
     visibility === 'private' ? '--private' : '--public',
     '--source=.',
     '--remote=origin',
@@ -1081,6 +1123,7 @@ async function gitPublishRepository(cwd, input, onProgress) {
     '--yes',
   ];
   if (hasCommits) createArgs.push('--push');
+  createArgs.push('--', name);
   // `gh repo create --remote=origin` writes the remote as part of its work.
   invalidateReadContext(root);
   const created = await run('gh', createArgs, root, { timeoutMs: COMMIT_TIMEOUT_MS });
@@ -1352,64 +1395,20 @@ async function gitCheckLargeFiles(cwd) {
 }
 
 module.exports = {
-  gitStatus,
-  gitFetchForStatus,
-  gitReadPullRequest,
-  gitInit,
-  gitDiff,
-  gitCommit,
-  gitPush,
-  gitPull,
-  gitCreateChangeRequest,
-  gitPublishRepository,
-  openWorkspacePath,
-  gitStage, gitStagePatch,
-  gitUnstage, gitUnstagePatch,
-  gitDiscard,
-  gitStatusEntries,
-  gitBranchList,
-  gitSwitchBranch,
-  gitCreateBranch,
-  gitCheckLargeFiles,
-  summarizeCommitMessage,
-  sanitizeFeatureBranchName,
-  uniqueFeatureBranchName,
-  readPrTemplate,
-  readRangeContext,
-  parseGitHubRepositoryNameWithOwner,
-  normalizeGitRemoteUrl,
-  providerFromRemoteUrl,
-  selectProviderContext,
-  resolvePreferredHeadSelector,
-  resolveBranchHeadContext,
-  matchesBranchHeadContext,
-  parseGhPullRequestRow,
-  resolveBaseBranchForNoUpstream,
-  resolvePrBaseBranch,
-  setGhDefaultBranchResolver,
-  setLookupOpenPullRequest,
-  resetLastKnownPrCache,
-  rememberLastKnownPr,
-  resolveLastKnownPr,
-  commitArgs,
-  parseCustomCommitMessage,
-  sanitizeProgressText,
-  isGitAdviceLine,
-  gitFailureMessage,
-  inferHookName,
-  parsePorcelainZ,
-  isNtfsReservedGitPath,
-  parseUnifiedDiff,
-  run,
-  gitChildEnv,
-  resetGitExecutableProbe,
-  resolveCurrentUpstream,
-  resolvePushRemoteName,
-  setWorkspaceAuthority,
-  resetFetchCooldowns,
-  GIT_TIMEOUT_MS,
-  COMMIT_TIMEOUT_MS,
-  FETCH_TIMEOUT_MS,
-  GH_TIMEOUT_MS,
-  GIT_MAX_OUTPUT_BYTES,
+  gitStatus, gitFetchForStatus, gitReadPullRequest, gitInit, gitDiff, gitCommit,
+  gitPush, gitPull, gitCreateChangeRequest, gitPublishRepository, openWorkspacePath,
+  gitStage, gitStagePatch, gitUnstage, gitUnstagePatch, gitDiscard,
+  gitStatusEntries, gitBranchList, gitSwitchBranch, gitCreateBranch, gitCheckLargeFiles,
+  summarizeCommitMessage, sanitizeFeatureBranchName, uniqueFeatureBranchName,
+  readPrTemplate, readRangeContext, parseGitHubRepositoryNameWithOwner,
+  normalizeGitRemoteUrl, providerFromRemoteUrl, selectProviderContext,
+  resolvePreferredHeadSelector, resolveBranchHeadContext, matchesBranchHeadContext,
+  parseGhPullRequestRow, resolveBaseBranchForNoUpstream, resolvePrBaseBranch,
+  setGhDefaultBranchResolver, setLookupOpenPullRequest, resetLastKnownPrCache,
+  rememberLastKnownPr, resolveLastKnownPr, commitArgs, parseCustomCommitMessage,
+  sanitizeProgressText, isGitAdviceLine, gitFailureMessage, inferHookName,
+  parsePorcelainZ, isNtfsReservedGitPath, parseUnifiedDiff, run, gitChildEnv,
+  resetGitExecutableProbe, resolveCurrentUpstream, resolvePushRemoteName,
+  setWorkspaceAuthority, resetFetchCooldowns,
+  GIT_TIMEOUT_MS, COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, GH_TIMEOUT_MS, GIT_MAX_OUTPUT_BYTES,
 };

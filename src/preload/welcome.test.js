@@ -16,13 +16,21 @@ function fakeRenderer(bootstrap) {
   };
 }
 
-function loadPreload(renderer = fakeRenderer(WELCOME_LOCALE)) {
+function loadPreload(renderer = fakeRenderer(WELCOME_LOCALE), {
+  isMainFrame = true,
+  href = 'file:///app/src/renderer/welcome.html',
+  protocol = 'file:',
+} = {}) {
   const electronPath = require.resolve('electron');
   const preloadPath = require.resolve('./welcome');
   const cachedElectron = require.cache[electronPath];
   const cachedPreload = require.cache[preloadPath];
+  const prevMainFrame = Object.getOwnPropertyDescriptor(process, 'isMainFrame');
+  const prevLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
   let exposed = null;
 
+  Object.defineProperty(process, 'isMainFrame', { configurable: true, value: isMainFrame });
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { href, protocol } });
   require.cache[electronPath] = {
     id: electronPath,
     filename: electronPath,
@@ -40,6 +48,10 @@ function loadPreload(renderer = fakeRenderer(WELCOME_LOCALE)) {
     require('./welcome');
     return { exposed };
   } finally {
+    if (prevMainFrame) Object.defineProperty(process, 'isMainFrame', prevMainFrame);
+    else delete process.isMainFrame;
+    if (prevLocation) Object.defineProperty(globalThis, 'location', prevLocation);
+    else delete globalThis.location;
     if (cachedElectron) require.cache[electronPath] = cachedElectron;
     else delete require.cache[electronPath];
     if (cachedPreload) require.cache[preloadPath] = cachedPreload;
@@ -120,4 +132,10 @@ test('welcome window options keep the renderer sandboxed without a bundled prelo
   const source = fs.readFileSync(path.join(__dirname, '../main/welcome-window.js'), 'utf8');
   assert.match(source, /sandbox:\s*true/);
   assert.doesNotMatch(source, /sandbox:\s*false/);
+});
+
+test('welcome preload refuses subframes and non-welcome file URLs', () => {
+  assert.equal(loadPreload(fakeRenderer(WELCOME_LOCALE), { isMainFrame: false }).exposed, null);
+  assert.equal(loadPreload(fakeRenderer(WELCOME_LOCALE), { href: 'https://evil.example/welcome.html', protocol: 'https:' }).exposed, null);
+  assert.equal(loadPreload(fakeRenderer(WELCOME_LOCALE), { href: 'file:///app/src/renderer/other.html', protocol: 'file:' }).exposed, null);
 });

@@ -87,3 +87,73 @@ test('two default chats share resident identity; switching preset makes next aut
   preset = 'standard'; assert.equal((await askInWorkspaceSession({ harness, state, key: 'a', text: 'new' })).answer, 'standard-new'); assert.equal(creates, 1);
   assert.equal(state.sessionFor('b'), 'resident', 'unvisited chats retain history mappings until individually resolved');
 });
+
+test('Audit regression [P0-4]: dsh-bot multi-bot routes in im-routes.json resolve via { channel, accountId } across workspace-session and model-command', async (t) => {
+  const { askInWorkspaceSession } = await import('./src/channels/shared/workspace-session.mjs');
+  const { runModelCommand } = await import('./src/channels/shared/model-command.mjs');
+  const { sharedWhaleSessionId } = await import('./src/channels/shared/whale-session.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-im-multibot-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const home = join(dir, 'home');
+  await mkdir(join(home, 'data', 'bots', '_meta'), { recursive: true });
+  await writeFile(join(home, 'data', 'bots', '_meta', 'im-routes.json'), JSON.stringify({
+    routes: {
+      'feishu:bot-alpha': { enabled: true, botId: 'bot-alpha', sessionId: 'sess-alpha-home' },
+      'dingtalk:client-beta': { enabled: true, botId: 'bot-beta', sessionId: 'sess-beta-home' },
+    },
+  }));
+
+  const prevHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  t.after(() => {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+  });
+
+  const asked = [];
+  const modelsChecked = [];
+  const harness = {
+    agentPresetSettings: async () => ({ agentPreset: 'dsh-bot' }),
+    accessGate: { channel: 'feishu', botId: 'bot-alpha' },
+    workspaceSession(sid) {
+      return {
+        sessionId: sid,
+        sessionExists: async () => sid === 'sess-alpha-home' || sid === 'sess-beta-home',
+        models: async () => {
+          modelsChecked.push(sid);
+          return {
+            current: { provider: 'deepseek', model: 'deepseek-chat' },
+            groups: [{ id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] }],
+            failures: [],
+          };
+        },
+        ask: async (text) => { asked.push({ sid, text }); return { text: `ok:${sid}`, artifacts: [] }; },
+      };
+    },
+    createSession: async () => { throw new Error('must not create per-chat session for dsh-bot route'); },
+  };
+
+  assert.equal(await sharedWhaleSessionId(harness, { channel: 'feishu', accountId: 'bot-alpha' }), 'sess-alpha-home');
+  assert.equal(await sharedWhaleSessionId(harness), 'sess-alpha-home');
+
+  const state = await new ConversationStateStore(join(dir, 'state.json')).load();
+  const reply = await askInWorkspaceSession({
+    harness,
+    state,
+    key: 'chat-1',
+    channel: 'dingtalk',
+    accountId: 'client-beta',
+    text: 'hello beta',
+  });
+  assert.equal(reply.answer.text, 'ok:sess-beta-home');
+  assert.deepEqual(asked, [{ sid: 'sess-beta-home', text: 'hello beta' }]);
+
+  const modelRes = await runModelCommand('/models', harness, state, 'chat-1', {
+    channel: 'dingtalk',
+    accountId: 'client-beta',
+  });
+  assert.equal(modelRes.handled, true);
+  assert.match(modelRes.message, /deepseek-chat/);
+  assert.deepEqual(modelsChecked, ['sess-beta-home']);
+});

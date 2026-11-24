@@ -799,6 +799,8 @@ export class WecomHarnessBridge {
     this.#status.messagesReceived += 1;
     this.#status.lastMessageAt = new Date().toISOString();
     const result = await runner(message.content, this.#harness, this.#state, key, {
+      channel: 'wecom',
+      accountId: this.#accessGate?.botId ?? null,
       signal: this.#signal,
       hasImages: hasInboundImages(message),
       hasFiles: hasInboundFiles(message),
@@ -931,7 +933,10 @@ export class WecomHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+        if (await sharedWhaleSessionId(this.#harness, {
+          channel: 'wecom',
+          accountId: this.#accessGate?.botId ?? null,
+        }) || await isWhaleEnforcedForHarness(this.#harness)) {
           await this.#sendImmediate(frame, chatId, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(key);
@@ -982,6 +987,8 @@ export class WecomHarnessBridge {
         harness: this.#harness,
         state: this.#state,
         key,
+        channel: 'wecom',
+        accountId: this.#accessGate?.botId ?? null,
         text,
         content,
         speaker: frame.speaker,

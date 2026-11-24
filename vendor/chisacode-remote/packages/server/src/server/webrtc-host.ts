@@ -19,6 +19,7 @@ import {
   RTC_SERIAL_SEND_MAX_BYTES,
   RTC_SERIAL_SEND_MAX_FRAMES,
   type RtcIceCandidateInit,
+  type TransportMode,
   type WebRtcTransportMode,
   tryParseRtcUpgradeClientMessage,
 } from "@chisacode/protocol/webrtc-signaling";
@@ -614,7 +615,7 @@ export interface WebRtcHostSessionControllerOptions {
   channel: EncryptedChannel;
   logger: pino.Logger;
   iceServers?: readonly IceServerConfig[];
-  onTransportModeChange?: (mode: WebRtcTransportMode) => void;
+  onTransportModeChange?: (mode: TransportMode) => void;
   attemptTtlMs?: number;
   activateTimeoutMs?: number;
   drainTimeoutMs?: number;
@@ -626,7 +627,7 @@ export class WebRtcHostSessionController {
   private readonly channel: EncryptedChannel;
   private readonly logger: pino.Logger;
   private readonly configuredIceServers: readonly IceServerConfig[];
-  private readonly onTransportModeChange?: (mode: WebRtcTransportMode) => void;
+  private readonly onTransportModeChange?: (mode: TransportMode) => void;
   private readonly attemptTtlMs: number;
   private readonly activateTimeoutMs: number;
   private readonly drainTimeoutMs: number;
@@ -634,7 +635,11 @@ export class WebRtcHostSessionController {
 
   private authenticated = false;
   private currentAttempt: PendingUpgradeAttempt | null = null;
+  private activatedAttempt: PendingUpgradeAttempt | null = null;
   private activePc: RTCPeerConnection | null = null;
+  private offerGeneration = 0;
+  private pendingOfferAttemptId: string | null = null;
+  private unsubChannelFallback: (() => void) | null = null;
   private disposed = false;
 
   constructor(options: WebRtcHostSessionControllerOptions) {
@@ -646,6 +651,22 @@ export class WebRtcHostSessionController {
     this.activateTimeoutMs = options.activateTimeoutMs ?? RTC_ACTIVATE_TIMEOUT_MS;
     this.drainTimeoutMs = options.drainTimeoutMs ?? RTC_DRAIN_TIMEOUT_MS;
     this.detectHostCandidatesFn = options.detectHostCandidates ?? detectHostCandidates;
+    const maybeChannel = this.channel as unknown as {
+      onWebRtcFallback?: (cb: (reason: string) => void) => () => void;
+    };
+    if (typeof maybeChannel.onWebRtcFallback === "function") {
+      this.unsubChannelFallback = maybeChannel.onWebRtcFallback((reason) => {
+        const activated = this.activatedAttempt;
+        if (!activated) return;
+        this.activatedAttempt = null;
+        this.logger.info(
+          { attemptId: activated.attemptId, reason },
+          "webrtc_upgrade_fallback_to_relay",
+        );
+        this.disposeActivatedAttempt(activated);
+        this.onTransportModeChange?.("relay");
+      });
+    }
   }
 
   markAuthenticated(): void {
@@ -747,6 +768,24 @@ export class WebRtcHostSessionController {
     }
   }
 
+  private disposeActivatedAttempt(attempt: PendingUpgradeAttempt): void {
+    if (attempt.disposed) return;
+    attempt.disposed = true;
+    if (attempt.ttlTimer) {
+      clearTimeout(attempt.ttlTimer);
+      attempt.ttlTimer = null;
+    }
+    try {
+      attempt.dc?.close();
+    } catch {
+      // ignore
+    }
+    if (this.activePc === attempt.pc) {
+      this.activePc = null;
+    }
+    void attempt.pc.close().catch(() => undefined);
+  }
+
   private async handleOffer(attemptId: string, sdp: string): Promise<void> {
     if (this.disposed || this.channel.isWebRtcActive()) {
       this.sendAbort(attemptId, "already_upgraded");
@@ -758,6 +797,8 @@ export class WebRtcHostSessionController {
       return;
     }
 
+    const generation = ++this.offerGeneration;
+    this.pendingOfferAttemptId = attemptId;
     if (this.currentAttempt) {
       this.cleanupAttempt(this.currentAttempt, true);
     }
@@ -765,7 +806,16 @@ export class WebRtcHostSessionController {
     let attempt: PendingUpgradeAttempt | null = null;
     try {
       const hostCandidates = await this.detectHostCandidatesFn();
-      if (this.disposed || !this.channel.isOpen()) return;
+      if (
+        this.disposed ||
+        !this.channel.isOpen() ||
+        this.channel.isWebRtcActive() ||
+        this.offerGeneration !== generation ||
+        this.pendingOfferAttemptId !== attemptId
+      ) {
+        return;
+      }
+      this.pendingOfferAttemptId = null;
 
       const orderedIceServers = orderIceServersForWerift(this.configuredIceServers);
       const additionalHostAddresses = [...hostCandidates.ipv4, ...hostCandidates.ipv6];
@@ -906,6 +956,9 @@ export class WebRtcHostSessionController {
           : {}),
       });
     } catch (err) {
+      if (this.offerGeneration === generation && this.pendingOfferAttemptId === attemptId) {
+        this.pendingOfferAttemptId = null;
+      }
       this.logger.warn({ err, attemptId }, "webrtc_upgrade_offer_failed");
       if (attempt) {
         this.cleanupAttempt(attempt, true);
@@ -991,6 +1044,7 @@ export class WebRtcHostSessionController {
       attempt.unsubPeerCallbacks.length = 0;
       this.activePc = attempt.pc;
       this.currentAttempt = null;
+      this.activatedAttempt = attempt;
 
       // Atomically send rtc_upgrade_activated as the LAST frame on Relay WS,
       // cut outbound traffic to DataChannel, and drain Relay WS up to clientPreviousLegEndSeq.
@@ -1006,6 +1060,12 @@ export class WebRtcHostSessionController {
             hostPreviousLegEndSeq: Number(seq),
           }),
       });
+      if (
+        typeof (this.channel as unknown as { isPrimaryLegDrained?: () => boolean }).isPrimaryLegDrained === "function" &&
+        (this.channel as unknown as { isPrimaryLegDrained: () => boolean }).isPrimaryLegDrained()
+      ) {
+        this.activatedAttempt = null;
+      }
 
       this.logger.info({ attemptId, mode }, "webrtc_upgrade_activated");
       this.onTransportModeChange?.(mode);
@@ -1017,17 +1077,53 @@ export class WebRtcHostSessionController {
   }
 
   private handleAbort(attemptId: string, reason?: string): void {
+    if (this.pendingOfferAttemptId === attemptId) {
+      this.offerGeneration += 1;
+      this.pendingOfferAttemptId = null;
+      this.logger.info({ attemptId, reason }, "webrtc_upgrade_aborted_during_offer_detect");
+      return;
+    }
     const attempt = this.currentAttempt;
-    if (!attempt || attempt.attemptId !== attemptId) return;
-    this.logger.info({ attemptId, reason }, "webrtc_upgrade_aborted_by_client");
-    this.cleanupAttempt(attempt, true);
+    if (attempt && attempt.attemptId === attemptId) {
+      this.logger.info({ attemptId, reason }, "webrtc_upgrade_aborted_by_client");
+      this.cleanupAttempt(attempt, true);
+      return;
+    }
+    const activated = this.activatedAttempt;
+    if (activated && activated.attemptId === attemptId) {
+      const maybeChannel = this.channel as unknown as {
+        isPrimaryLegDrained?: () => boolean;
+        fallbackToPrimaryLeg?: (reason?: string) => boolean;
+      };
+      const drained =
+        typeof maybeChannel.isPrimaryLegDrained === "function"
+          ? maybeChannel.isPrimaryLegDrained()
+          : true;
+      if (!drained && typeof maybeChannel.fallbackToPrimaryLeg === "function") {
+        const fellBack = maybeChannel.fallbackToPrimaryLeg(reason ?? "client_aborted_before_drain");
+        if (fellBack && this.activatedAttempt === activated) {
+          this.activatedAttempt = null;
+          this.disposeActivatedAttempt(activated);
+          this.onTransportModeChange?.("relay");
+        }
+      }
+    }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.offerGeneration += 1;
+    this.pendingOfferAttemptId = null;
+    this.unsubChannelFallback?.();
+    this.unsubChannelFallback = null;
     if (this.currentAttempt) {
       this.cleanupAttempt(this.currentAttempt, true);
+    }
+    if (this.activatedAttempt) {
+      const activated = this.activatedAttempt;
+      this.activatedAttempt = null;
+      this.disposeActivatedAttempt(activated);
     }
     if (this.activePc) {
       const pc = this.activePc;

@@ -596,3 +596,178 @@ test('extractEntryTo surfaces a mid-read zip stream error and destroys the chain
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- ZIP bounds, inflate cap, space check, journal & recovery ----------------
+
+test('readZip rejects out-of-bounds cdSize/cdOffset and truncated central records', () => {
+  const dir = tmpdir();
+  try {
+    const file = path.join(dir, 'oob.zip');
+    zip.writeZip(file, [{ name: 'a.txt', data: Buffer.from('hello') }]);
+    const buf = fs.readFileSync(file);
+    const eocdAt = buf.length - 22;
+    const forged = Buffer.from(buf);
+    forged.writeUInt32LE(0x7fffffff, eocdAt + 12); // cdSize far past file end
+    fs.writeFileSync(file, forged);
+    assert.throws(() => zip.readZip(file), /central directory bounds/);
+
+    // Truncated central directory entry (valid bounds, cut off mid-entry)
+    const trunc = Buffer.from(buf);
+    trunc.writeUInt32LE(20, eocdAt + 12);
+    fs.writeFileSync(file, trunc);
+    assert.throws(() => zip.readZip(file), /truncated/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readEntry enforces maxOutputLength on inflateRawSync', () => {
+  const dir = tmpdir();
+  try {
+    const file = path.join(dir, 'bomb.zip');
+    const big = Buffer.alloc(64 * 1024, 0x41);
+    zip.writeZip(file, [{ name: 'manifest.json', data: big }]);
+    const entry = zip.readZip(file)[0];
+    assert.throws(() => zip.readEntry(file, entry, { maxOutputLength: 1024 }), /exceeds max output length/);
+    // Even if header lies about entry.size, inflateRawSync itself stops at maxOutputLength.
+    const lied = { ...entry, size: 512 };
+    assert.throws(() => zip.readEntry(file, lied, { maxOutputLength: 1024 }), /ERR_BUFFER_TOO_LARGE|buffer|length|output/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractEntryTo aborts mid-stream when decoded bytes exceed declared entry.size', async () => {
+  const dir = tmpdir();
+  try {
+    const file = path.join(dir, 'overrun.zip');
+    const raw = Buffer.alloc(128 * 1024, 0x62);
+    zip.writeZip(file, [{ name: 'payload/0', data: raw }]);
+    const entry = { ...zip.readZip(file)[0], size: 1024 };
+    const dest = path.join(dir, 'out.bin');
+    await assert.rejects(() => zip.extractEntryTo(file, entry, dest), /exceeds declared size/);
+    assert.equal(fs.existsSync(dest), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('applyDeltaFile runs checkInstallSpace before beforeApply and rejects ENOSPC', async () => {
+  const dir = tmpdir();
+  try {
+    const fromDir = path.join(dir, 'from');
+    const toDir = path.join(dir, 'to');
+    const target = path.join(dir, 'target');
+    writeTree(fromDir, FROM_TREE);
+    writeTree(toDir, TO_TREE);
+    fs.cpSync(fromDir, target, { recursive: true });
+    const out = path.join(dir, 'delta.zip');
+    await buildDelta({ fromDir, toDir, outFile: out });
+    let beforeApplyCalled = 0;
+    let checkedBytes = -1;
+    await assert.rejects(
+      () => applyDeltaFile(out, target, {
+        beforeApply: async () => { beforeApplyCalled += 1; return { ok: true }; },
+      }, {
+        checkInstallSpace: (_dir, bytes) => {
+          checkedBytes = bytes;
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+        },
+      }),
+      (error) => error instanceof DeltaApplyError && error.code === 'apply-failed' && error.detail === 'ENOSPC',
+    );
+    assert.ok(checkedBytes > 0);
+    assert.equal(beforeApplyCalled, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('recoverPendingDeltas restores an interrupted mid-commit transaction so applyDeltaFile can succeed cleanly', async () => {
+  const { recoverPendingDeltas } = require('./apply');
+  const dir = tmpdir();
+  try {
+    const fromDir = path.join(dir, 'from');
+    const toDir = path.join(dir, 'to');
+    const target = path.join(dir, 'target');
+    writeTree(fromDir, FROM_TREE);
+    writeTree(toDir, TO_TREE);
+    fs.cpSync(fromDir, target, { recursive: true });
+    const out = path.join(dir, 'delta.zip');
+    await buildDelta({ fromDir, toDir, outFile: out });
+
+    // Simulate a crash mid-commit: app.exe moved to backup, new app.exe not yet placed,
+    // and lib/change.dll already replaced with new content.
+    const stagingDir = path.join(target, '.dshd-delta-9999-crash');
+    fs.mkdirSync(path.join(stagingDir, 'old'), { recursive: true });
+    fs.mkdirSync(path.join(stagingDir, 'new'), { recursive: true });
+    const appTarget = path.join(target, 'app.exe');
+    const appBackup = path.join(stagingDir, 'old', '0');
+    fs.renameSync(appTarget, appBackup);
+
+    const changeTarget = path.join(target, 'lib', 'change.dll');
+    const changeBackup = path.join(stagingDir, 'old', '1');
+    fs.copyFileSync(changeTarget, changeBackup);
+    fs.writeFileSync(changeTarget, 'new-dll-content');
+
+    fs.writeFileSync(path.join(stagingDir, 'journal.json'), JSON.stringify({
+      version: 1,
+      phase: 'committing',
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0',
+      ops: [
+        { path: 'app.exe', op: 'patch', target: appTarget, backup: appBackup, staged: path.join(stagingDir, 'new', '0') },
+        { path: 'lib/change.dll', op: 'patch', target: changeTarget, backup: changeBackup, staged: path.join(stagingDir, 'new', '1') },
+      ],
+    }));
+
+    // Re-running applyDeltaFile recovers the broken tree first instead of failing with base file missing.
+    const result = await applyDeltaFile(out, target, {});
+    assert.equal(result.ok, true);
+    assert.deepEqual(await treeHashes(target), await treeHashes(toDir));
+    assert.equal(recoverPendingDeltas(target).recovered, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('applyDeltaFile preserves staging backups and flags rollbackIncomplete when rollback rename fails', async () => {
+  const dir = tmpdir();
+  try {
+    const fromDir = path.join(dir, 'from');
+    const toDir = path.join(dir, 'to');
+    const target = path.join(dir, 'target');
+    writeTree(fromDir, FROM_TREE);
+    writeTree(toDir, TO_TREE);
+    fs.cpSync(fromDir, target, { recursive: true });
+    const out = path.join(dir, 'delta.zip');
+    await buildDelta({ fromDir, toDir, outFile: out });
+
+    const impl = Object.create(fs);
+    let commitRenames = 0;
+    impl.renameSync = (from, to) => {
+      if (String(from).endsWith('.tmp') && String(to).endsWith('journal.json')) {
+        return fs.renameSync(from, to);
+      }
+      if (String(to).includes('rolledback') || String(from).includes(`${path.sep}old${path.sep}`)) {
+        throw Object.assign(new Error('EACCES: locked'), { code: 'EACCES' });
+      }
+      commitRenames += 1;
+      // Fail on the 3rd non-journal rename so op[0] has already backed up & placed.
+      if (commitRenames === 3) {
+        throw Object.assign(new Error('EIO: disk failure'), { code: 'EIO' });
+      }
+      return fs.renameSync(from, to);
+    };
+
+    await assert.rejects(
+      () => applyDeltaFile(out, target, {}, { fs: impl, sleep: () => {} }),
+      (error) => error instanceof DeltaApplyError && error.code === 'apply-failed' && error.rollbackIncomplete === true,
+    );
+    const leftover = fs.readdirSync(target).filter((n) => n.startsWith('.dshd-delta-'));
+    assert.equal(leftover.length, 1);
+    assert.equal(fs.existsSync(path.join(target, leftover[0], 'old', '0')), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

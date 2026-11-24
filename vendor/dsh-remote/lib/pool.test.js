@@ -55,3 +55,49 @@ test('SshPool replies to keyboard-interactive prompts with passwordResolver secr
   assert.deepEqual(responses, ['keychain-secret-123'])
   pool.close()
 })
+
+test('SshPool reuses a single healthy SFTP subsystem per connection and clears on end/close/error', async () => {
+  let sftpOpens = 0
+  const sftpInstances = []
+  const pool = new SshPool(
+    { host: 'remote.example', port: 22, username: 'alice', password: 'pw', hostKeyMode: 'off', commandTimeoutMs: 5000 },
+    {
+      Client: fakeClientFactory((client) => {
+        client.sftp = (cb) => {
+          sftpOpens++
+          const inst = new EventEmitter()
+          inst.endCalled = 0
+          inst.end = () => { inst.endCalled++ }
+          inst.readdir = (dir, done) => done(null, [{ filename: dir }])
+          sftpInstances.push(inst)
+          queueMicrotask(() => cb(null, inst))
+        }
+        client.emit('ready')
+      }),
+    },
+  )
+
+  const [a, b, c] = await Promise.all([pool.sftp(), pool.sftp(), pool.sftp()])
+  assert.equal(sftpOpens, 1)
+  assert.equal(a, b)
+  assert.equal(b, c)
+
+  const d = await pool.sftp()
+  assert.equal(sftpOpens, 1)
+  assert.equal(d, a)
+
+  // SFTP subsystem closes -> next sftp() opens a fresh one without opening 20 sessions
+  sftpInstances[0].emit('close')
+  const e = await pool.sftp()
+  assert.equal(sftpOpens, 2)
+  assert.notEqual(e, a)
+
+  // Error on SFTP subsystem also invalidates cache
+  sftpInstances[1].emit('error', new Error('channel error'))
+  const f = await pool.sftp()
+  assert.equal(sftpOpens, 3)
+  assert.notEqual(f, e)
+
+  pool.close()
+  assert.equal(sftpInstances[2].endCalled, 1)
+})

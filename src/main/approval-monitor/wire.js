@@ -2,15 +2,13 @@
 
 const WebSocket = require('ws');
 const { rpc } = require('../workspace-rpc');
-const { isSameOriginLoopbackUrl } = require('../local-url');
 const { constantTimeEqual } = require('../../shared/secret');
+const { sanitizeIconUrl } = require('./state');
 
-const MAX_ICON_BYTES = 64 * 1024;
 const MAX_COMMAND_CHARS = 4000;
 const MAX_PLAN_SUMMARY_CHARS = 600;
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 5000, 10000];
 const DEFAULT_RECONCILE_DELAY_MS = 200;
-const DATA_IMAGE_RE = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i;
 
 /**
  * @typedef {import('./state').ApprovalAction} ApprovalAction
@@ -34,20 +32,6 @@ function isRecord(value) {
 /** @param {unknown} value @returns {string} */
 function nonEmptyString(value) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-/** @param {unknown} raw @param {string} origin @returns {string | undefined} */
-function sanitizeIconUrl(raw, origin) {
-  const trimmed = nonEmptyString(raw);
-  if (!trimmed) return undefined;
-  const dataMatch = DATA_IMAGE_RE.exec(trimmed);
-  if (dataMatch) {
-    const base64 = dataMatch[2].replace(/\s+/g, '');
-    const decodedBytes = Buffer.from(base64, 'base64').length;
-    if (decodedBytes === 0 || decodedBytes > MAX_ICON_BYTES) return undefined;
-    return `data:image/${dataMatch[1].toLowerCase()};base64,${base64}`;
-  }
-  return origin && isSameOriginLoopbackUrl(trimmed, origin) ? trimmed : undefined;
 }
 
 /** @param {string} fallback @param {unknown} byLocale @returns {LocalizedText} */

@@ -1,4 +1,5 @@
 'use strict';
+const { URL } = require('node:url');
 const { isHttpOrHttpsUrl } = require('./preview-url');
 const { rewriteLoopbackLoadUrl } = require('./local-url');
 const path = require('node:path');
@@ -26,27 +27,81 @@ const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 /** Byte cap for one saved MediaRecorder artifact. */
 const MAX_RECORDING_BYTES = 512 * 1024 * 1024;
 
+const LOOPBACK_MATCH_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
+
+function defaultControlOrigins() {
+  const urls = [];
+  try {
+    const { getHarnessOrigin } = require('./window');
+    const origin = typeof getHarnessOrigin === 'function' ? getHarnessOrigin() : '';
+    if (origin) urls.push(origin);
+  } catch {
+    // Window module unavailable in isolated tests.
+  }
+  try {
+    const { desktopInstallEnv } = require('./desktop-install-control');
+    const controlUrl = typeof desktopInstallEnv === 'function'
+      ? desktopInstallEnv()?.DSH_DESKTOP_INSTALL_URL
+      : '';
+    if (controlUrl) urls.push(controlUrl);
+  } catch {
+    // Install control module unavailable in isolated tests.
+  }
+  return urls;
+}
+
+function matchesControlOrigin(/** @type {URL} */ url, /** @type {unknown} */ candidate) {
+  if (typeof candidate !== 'string' || candidate.trim() === '') return false;
+  try {
+    const host = new URL(candidate);
+    if (url.port !== host.port) return false;
+    return url.hostname === host.hostname
+      || (LOOPBACK_MATCH_HOSTS.has(url.hostname) && LOOPBACK_MATCH_HOSTS.has(host.hostname));
+  } catch {
+    return false;
+  }
+}
+
+function isBlockedControlUrl(/** @type {URL} */ url, /** @type {{ blockedOrigins?: string[], getHarnessOrigin?: () => string } | undefined} */ options) {
+  const origins = [
+    ...defaultControlOrigins(),
+    ...(Array.isArray(options?.blockedOrigins) ? options.blockedOrigins : []),
+  ];
+  if (typeof options?.getHarnessOrigin === 'function') {
+    const origin = options.getHarnessOrigin();
+    if (origin) origins.push(origin);
+  }
+  return origins.some((candidate) => matchesControlOrigin(url, candidate));
+}
+
 /**
- * Guest document URLs: any http(s) host. `file:`, `javascript:`, and `ftp:`
- * are rejected. Subresource loads (fonts, CDN scripts) are filtered
- * separately by {@link previewRequestFilter}. Loopback-dev discovery still
- * uses `isPreviewableUrl` in preview-url.js.
+ * Guest document URLs: any http(s) host without URL credentials or application
+ * loopback control origins. `file:`, `javascript:`, and `ftp:` are rejected.
  * @param {unknown} raw
+ * @param {{ blockedOrigins?: string[], getHarnessOrigin?: () => string }} [options]
  * @returns {boolean}
  */
-function isAllowedPreviewUrl(raw) {
-  return isHttpOrHttpsUrl(raw);
+function isAllowedPreviewUrl(raw, options) {
+  if (!isHttpOrHttpsUrl(raw)) return false;
+  try {
+    const parsed = new URL(String(raw));
+    if (parsed.username !== '' || parsed.password !== '') return false;
+    return !isBlockedControlUrl(parsed, options);
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Map `0.0.0.0` to `127.0.0.1` when loopback; otherwise `URL.href` for http(s).
  * @param {unknown} raw
+ * @param {{ blockedOrigins?: string[], getHarnessOrigin?: () => string }} [options]
  * @returns {string | null}
  */
-function resolvePreviewLoadUrl(raw) {
+function resolvePreviewLoadUrl(raw, options) {
   const rewritten = rewriteLoopbackLoadUrl(raw);
-  if (rewritten) return rewritten;
-  if (!isAllowedPreviewUrl(raw)) return null;
+  if (rewritten) return isAllowedPreviewUrl(rewritten, options) ? rewritten : null;
+  if (!isAllowedPreviewUrl(raw, options)) return null;
   try {
     return new URL(String(raw)).href;
   } catch {
@@ -165,18 +220,31 @@ function defaultAttach({ bounds, partition }) {
 }
 
 /**
- * Cancel non-http(s) document navigations (mainFrame / subFrame). Allow
- * other resource types so Vite/Next apps can load CDN fonts and scripts
- * while top-level navigation stays http(s) via will-navigate / will-redirect.
+ * Cancel non-http(s) document navigations (mainFrame / subFrame) and block
+ * credentialed or application-control requests across all protocols.
  * @param {{ url?: string, resourceType?: string }} details
+ * @param {{ blockedOrigins?: string[], getHarnessOrigin?: () => string }} [options]
  * @returns {{ cancel: boolean }}
  */
-function previewRequestFilter(details) {
-  const type = details && details.resourceType;
-  if (typeof type === 'string' && !FRAME_RESOURCE_TYPES.has(type)) {
-    return { cancel: false };
+function previewRequestFilter(details, options) {
+  let url;
+  try {
+    url = new URL(String(details?.url ?? ''));
+  } catch {
+    return { cancel: true };
   }
-  return { cancel: !isAllowedPreviewUrl(details && details.url) };
+  const type = details && details.resourceType;
+  if (typeof type !== 'string' || FRAME_RESOURCE_TYPES.has(type)) {
+    return { cancel: !isAllowedPreviewUrl(url.href, options) };
+  }
+  const isNetwork = url.protocol === 'http:' || url.protocol === 'https:'
+    || url.protocol === 'ws:' || url.protocol === 'wss:';
+  if (isNetwork) {
+    return {
+      cancel: url.username !== '' || url.password !== '' || isBlockedControlUrl(url, options),
+    };
+  }
+  return { cancel: url.protocol !== 'data:' && url.protocol !== 'blob:' && url.protocol !== 'about:' };
 }
 
 /**
@@ -260,16 +328,18 @@ function isPreviewRefreshShortcut(input) {
   return (input.control || input.meta) && key === 'r' && !input.shift && !input.alt;
 }
 
-function guardView(view) {
-  const deny = (event, next) => {
-    if (!isAllowedPreviewUrl(next)) event.preventDefault();
+function guardView(/** @type {any} */ view, /** @type {{ blockedOrigins?: string[], getHarnessOrigin?: () => string } | undefined} */ options) {
+  const deny = (/** @type {any} */ event, /** @type {unknown} */ next) => {
+    const targetUrl = typeof next === 'string' ? next : event?.url;
+    if (!isAllowedPreviewUrl(targetUrl, options)) event.preventDefault();
   };
   view.webContents.on('will-navigate', deny);
+  view.webContents.on('will-frame-navigate', deny);
   view.webContents.on('will-redirect', deny);
   const webRequest = view.webRequest;
   if (webRequest && typeof webRequest.onBeforeRequest === 'function') {
-    webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
-      callback(previewRequestFilter(details));
+    webRequest.onBeforeRequest((/** @type {any} */ details, /** @type {(res: { cancel: boolean }) => void} */ callback) => {
+      callback(previewRequestFilter(details, options));
     });
   }
 }

@@ -100,14 +100,20 @@ function parseByteRange(header, size) {
   return { start, end };
 }
 
+function isSandboxedDocumentMime(/** @type {string} */ mime) {
+  return mime.startsWith('text/html')
+    || mime === 'application/xhtml+xml'
+    || mime === 'image/svg+xml';
+}
+
 /**
  * Serve workspace files on 127.0.0.1 behind an unguessable path token.
  * @param {{ authority?: { resolveInside: Function, resolveAuthorizedCwd: Function } }} [options]
  */
 function createWorkspacePreviewController(options = {}) {
   const authority = options.authority ?? loadWorkspaceAuthority();
-  const tokenCwds = new Map();
-  const cwdTokens = new Map();
+  const tokenTargets = new Map();
+  const fileTokens = new Map();
   let server = null;
   let port = 0;
   let listening = null;
@@ -159,13 +165,17 @@ function createWorkspacePreviewController(options = {}) {
       send(res, 404, 'Not Found');
       return;
     }
-    const cwd = tokenCwds.get(token);
-    if (cwd === undefined) {
+    const entry = tokenTargets.get(token);
+    if (entry === undefined) {
       send(res, 404, 'Not Found');
       return;
     }
     const relative = rest.join('/');
-    const target = authority.resolveInside(cwd, relative);
+    if (relative !== entry.relativePath) {
+      send(res, 404, 'Not Found');
+      return;
+    }
+    const target = authority.resolveInside(entry.cwd, entry.relativePath);
     if (!target) {
       send(res, 404, 'Not Found');
       return;
@@ -211,6 +221,7 @@ function createWorkspacePreviewController(options = {}) {
       'Content-Type': mime,
       'Content-Length': String(length),
       'Accept-Ranges': 'bytes',
+      ...(isSandboxedDocumentMime(mime) ? { 'Content-Security-Policy': 'sandbox' } : {}),
       ...(range ? { 'Content-Range': `bytes ${start}-${end}/${stat.size}` } : {}),
     });
     if (stat.size === 0) {
@@ -245,13 +256,16 @@ function createWorkspacePreviewController(options = {}) {
       return { ok: false, message: 'Directories cannot be previewed.' };
     }
     await ensureListen();
-    let token = cwdTokens.get(base);
+    const relative = path.relative(base, target).split(path.sep).join('/');
+    const fileKey = process.platform === 'win32'
+      ? `${base.toLowerCase()}\0${relative.toLowerCase()}`
+      : `${base}\0${relative}`;
+    let token = fileTokens.get(fileKey);
     if (token === undefined) {
       token = crypto.randomBytes(16).toString('base64url');
-      cwdTokens.set(base, token);
-      tokenCwds.set(token, base);
+      fileTokens.set(fileKey, token);
+      tokenTargets.set(token, { cwd: base, relativePath: relative });
     }
-    const relative = path.relative(base, target).split(path.sep).join('/');
     const encoded = relative.split('/').map((part) => encodeURIComponent(part)).join('/');
     return { ok: true, url: `http://127.0.0.1:${port}/${token}/${encoded}` };
   }
@@ -261,8 +275,8 @@ function createWorkspacePreviewController(options = {}) {
     server = null;
     port = 0;
     listening = null;
-    tokenCwds.clear();
-    cwdTokens.clear();
+    tokenTargets.clear();
+    fileTokens.clear();
     if (!current) return Promise.resolve();
     return new Promise((resolve) => {
       current.close(() => resolve());

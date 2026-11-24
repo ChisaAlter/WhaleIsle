@@ -6,6 +6,7 @@
 // delta format needs: UTF-8 names, no zip64 (<4 GiB payloads), no comments.
 const fs = require('fs');
 const path = require('path');
+const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const zlib = require('zlib');
 
@@ -16,6 +17,8 @@ const METHOD_STORE = 0;
 const METHOD_DEFLATE = 8;
 const FLAG_UTF8 = 0x0800;
 const MAX_ENTRIES = 0xffff;
+const MAX_CENTRAL_DIR_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -140,11 +143,20 @@ function readZip(zipFile, deps = {}) {
     const count = tail.readUInt16LE(eocdAt + 10);
     const cdOffset = tail.readUInt32LE(eocdAt + 16);
     const cdSize = tail.readUInt32LE(eocdAt + 12);
+    if (cdOffset > stat.size || cdSize > stat.size - cdOffset) {
+      throw new Error('corrupt central directory bounds');
+    }
+    if (cdSize > MAX_CENTRAL_DIR_BYTES) {
+      throw new Error('central directory exceeds size limit');
+    }
     const cd = Buffer.alloc(cdSize);
     fsx.readSync(fd, cd, 0, cdSize, cdOffset);
     const entries = [];
     let at = 0;
     for (let i = 0; i < count; i += 1) {
+      if (at + 46 > cd.length) {
+        throw new Error('corrupt central directory (truncated header)');
+      }
       if (cd.readUInt32LE(at) !== SIG_CENTRAL) {
         throw new Error('corrupt central directory');
       }
@@ -156,9 +168,13 @@ function readZip(zipFile, deps = {}) {
       const extraLen = cd.readUInt16LE(at + 30);
       const commentLen = cd.readUInt16LE(at + 32);
       const localOffset = cd.readUInt32LE(at + 42);
+      const recordLen = 46 + nameLen + extraLen + commentLen;
+      if (at + recordLen > cd.length) {
+        throw new Error('corrupt central directory (truncated entry)');
+      }
       const name = cd.slice(at + 46, at + 46 + nameLen).toString('utf8');
       entries.push({ name, method, crc32: crc, size, compressedSize: compSize, localOffset });
-      at += 46 + nameLen + extraLen + commentLen;
+      at += recordLen;
     }
     return entries;
   } finally {
@@ -168,6 +184,10 @@ function readZip(zipFile, deps = {}) {
 
 function entryDataRange(zipFile, entry, deps = {}) {
   const fsx = deps.fs || fs;
+  const stat = fsx.statSync(zipFile);
+  if (!Number.isSafeInteger(entry.localOffset) || entry.localOffset < 0 || entry.localOffset + 30 > stat.size) {
+    throw new Error(`bad local header for ${entry.name}`);
+  }
   const fd = fsx.openSync(zipFile, 'r');
   try {
     const head = Buffer.alloc(30);
@@ -178,6 +198,10 @@ function entryDataRange(zipFile, entry, deps = {}) {
     const nameLen = head.readUInt16LE(26);
     const extraLen = head.readUInt16LE(28);
     const start = entry.localOffset + 30 + nameLen + extraLen;
+    if (!Number.isSafeInteger(entry.compressedSize) || entry.compressedSize < 0
+      || start > stat.size || entry.compressedSize > stat.size - start) {
+      throw new Error(`entry range out of bounds for ${entry.name}`);
+    }
     return { start, end: start + entry.compressedSize - 1 };
   } finally {
     fsx.closeSync(fd);
@@ -186,13 +210,21 @@ function entryDataRange(zipFile, entry, deps = {}) {
 
 function readEntry(zipFile, entry, deps = {}) {
   const fsx = deps.fs || fs;
+  const maxCap = /** @type {{ maxOutputLength?: number }} */ (deps).maxOutputLength;
+  const maxOutputLength = Number.isFinite(maxCap) && maxCap !== undefined ? maxCap : DEFAULT_MAX_ENTRY_BYTES;
+  if (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > maxOutputLength) {
+    throw new Error(`zip entry ${entry.name} exceeds max output length (${maxOutputLength})`);
+  }
+  if (entry.method === METHOD_STORE && entry.compressedSize > maxOutputLength) {
+    throw new Error(`zip entry ${entry.name} exceeds max output length (${maxOutputLength})`);
+  }
   const range = entryDataRange(zipFile, entry, deps);
   const fd = fsx.openSync(zipFile, 'r');
   try {
     const raw = Buffer.alloc(entry.compressedSize);
     fsx.readSync(fd, raw, 0, entry.compressedSize, range.start);
     const data = entry.method === METHOD_DEFLATE
-      ? zlib.inflateRawSync(raw)
+      ? zlib.inflateRawSync(raw, { maxOutputLength })
       : entry.method === METHOD_STORE
         ? raw
         : (() => { throw new Error(`unsupported zip method ${entry.method} for ${entry.name}`); })();
@@ -208,10 +240,14 @@ function readEntry(zipFile, entry, deps = {}) {
 /**
  * Stream one entry to `dest` — the inflate runs through zlib streams so a
  * multi-hundred-MB payload never lands in memory whole. CRC + declared size
- * are verified while writing; a mismatch deletes the partial and throws.
+ * are verified while writing; an oversized stream or mismatch aborts
+ * immediately, deletes the partial, and throws.
  */
 async function extractEntryTo(zipFile, entry, dest, deps = {}) {
   const fsx = deps.fs || fs;
+  if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
+    throw new Error(`invalid declared size for ${entry.name}`);
+  }
   const range = entryDataRange(zipFile, entry, deps);
   fsx.mkdirSync(path.dirname(dest), { recursive: true });
   if (entry.method !== METHOD_DEFLATE && entry.method !== METHOD_STORE) {
@@ -236,15 +272,22 @@ async function extractEntryTo(zipFile, entry, dest, deps = {}) {
   }
   let size = 0;
   let crc = 0xffffffff;
-  decoded.on('data', (chunk) => {
-    size += chunk.length;
-    crc = crc32Chunk(crc, chunk);
+  const guard = new Transform({
+    transform(chunk, _encoding, callback) {
+      size += chunk.length;
+      if (size > entry.size) {
+        callback(new Error(`zip entry ${entry.name} exceeds declared size ${entry.size}`));
+        return;
+      }
+      crc = crc32Chunk(crc, chunk);
+      callback(null, chunk);
+    },
   });
   try {
     if (entry.method === METHOD_DEFLATE) {
-      await pipeline(source, decoded, out);
+      await pipeline(source, decoded, guard, out);
     } else {
-      await pipeline(source, out);
+      await pipeline(source, guard, out);
     }
   } catch (error) {
     try { fsx.unlinkSync(dest); } catch { /* partial already gone */ }

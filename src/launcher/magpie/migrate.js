@@ -40,6 +40,18 @@ const KEEP_EXISTING_TARGET_FILES = new Set([
 function readJsonOrNull(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error)?.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/** @param {string} file */
+function readJsonBestEffort(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
     return null;
   }
@@ -49,8 +61,11 @@ function readJsonOrNull(file) {
 function readTextOrEmpty(file) {
   try {
     return fs.readFileSync(file, 'utf8');
-  } catch {
-    return '';
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error)?.code === 'ENOENT') {
+      return '';
+    }
+    throw error;
   }
 }
 
@@ -81,9 +96,9 @@ function detectLegacyWhaleBridge(desktopStateDir) {
   const root = path.join(desktopStateDir, 'components', 'whalebridge');
   const dataDir = path.join(root, 'data');
   const installedFile = path.join(root, 'installed.json');
-  const installed = readJsonOrNull(installedFile);
-  const state = readJsonOrNull(path.join(dataDir, 'state.json'));
-  const migrationState = readJsonOrNull(path.join(root, 'migration-state.json'));
+  const installed = readJsonBestEffort(installedFile);
+  const state = readJsonBestEffort(path.join(dataDir, 'state.json'));
+  const migrationState = readJsonBestEffort(path.join(root, 'migration-state.json'));
   const hasData = fs.existsSync(dataDir) && [
     'providers.json', 'logins.json', 'settings.json', 'usage.jsonl', 'agents.json',
   ].some((name) => fs.existsSync(path.join(dataDir, name)));
@@ -102,7 +117,7 @@ function detectLegacyWhaleBridge(desktopStateDir) {
 
 /** @param {string} legacyRoot */
 function readMigrationState(legacyRoot) {
-  return readJsonOrNull(path.join(legacyRoot, 'migration-state.json'));
+  return readJsonBestEffort(path.join(legacyRoot, 'migration-state.json'));
 }
 
 /**
@@ -464,6 +479,14 @@ function mergeIntoExistingConfigDir(legacyDataDir, targetConfigDir) {
     const merged = mergePluginsJson(readJsonOrNull(path.join(targetConfigDir, 'plugins.json')), srcPlugins);
     atomicWriteFileSync(path.join(targetConfigDir, 'plugins.json'), `${JSON.stringify(merged, null, 2)}\n`);
   }
+  const srcMigrations = readJsonOrNull(path.join(legacyDataDir, 'migrations.json'));
+  if (srcMigrations !== null) {
+    const rewrittenMigrations = rewriteHomeFields(srcMigrations, legacyDataDir, targetConfigDir);
+    const dstMigrationsFile = path.join(targetConfigDir, 'migrations.json');
+    const existingMigrations = readJsonOrNull(dstMigrationsFile);
+    const mergedMigrations = mergePluginsJson(existingMigrations, rewrittenMigrations);
+    atomicWriteFileSync(dstMigrationsFile, `${JSON.stringify(mergedMigrations, null, 2)}\n`);
+  }
   const srcUsage = readTextOrEmpty(path.join(legacyDataDir, 'usage.jsonl'));
   if (srcUsage) {
     const merged = mergeUsageJsonl(readTextOrEmpty(path.join(targetConfigDir, 'usage.jsonl')), srcUsage);
@@ -477,7 +500,7 @@ function mergeIntoExistingConfigDir(legacyDataDir, targetConfigDir) {
   }
   for (const entry of fs.readdirSync(legacyDataDir, { withFileTypes: true })) {
     if (!entry.isFile() || EXCLUDED_TOP_ENTRIES.has(entry.name) || KEEP_EXISTING_TARGET_FILES.has(entry.name)) continue;
-    if (['providers.json', 'logins.json', 'plugin-auth.json', 'plugins.json', 'usage.jsonl'].includes(entry.name)) continue;
+    if (['providers.json', 'logins.json', 'plugin-auth.json', 'plugins.json', 'migrations.json', 'usage.jsonl'].includes(entry.name)) continue;
     if (entry.name.endsWith('.lock')) continue;
     const dst = path.join(targetConfigDir, entry.name);
     if (!fs.existsSync(dst)) {
@@ -493,7 +516,10 @@ function mergeIntoExistingConfigDir(legacyDataDir, targetConfigDir) {
  */
 async function disconnectLegacyBridge({ legacyRoot, legacyInstalled, legacyDataDir, dshHome, runTool }) {
   const version = legacyInstalled?.version;
-  const exe = version ? path.join(legacyRoot, 'versions', version, 'WhaleBridge-win32-x64.exe') : '';
+  const entryName = typeof legacyInstalled?.entry === 'string' && legacyInstalled.entry.trim()
+    ? path.basename(legacyInstalled.entry.trim())
+    : (process.platform === 'win32' ? 'WhaleBridge-win32-x64.exe' : 'whalebridge');
+  const exe = version ? path.join(legacyRoot, 'versions', version, entryName) : '';
   if (exe && fs.existsSync(exe) && typeof runTool === 'function') {
     /** @type {Record<string, string | undefined>} */
     const env = {
@@ -506,6 +532,20 @@ async function disconnectLegacyBridge({ legacyRoot, legacyInstalled, legacyDataD
     await runTool(exe, ['whalebridge-disconnect'], { env, windowsHide: true, timeout: 15_000 });
   }
   detachWhaleBridgeDshChannel(dshHome);
+}
+
+/** @param {any} existing */
+function restorePriorMigrationBackup(existing) {
+  if (!existing || !['backed_up', 'data_migrated', 'agents_disconnected'].includes(existing.stage)) {
+    return;
+  }
+  if (typeof existing.backupDir !== 'string' || !existing.backupDir) {
+    return;
+  }
+  const recordedPrev = readJsonBestEffort(path.join(existing.backupDir, 'manifest.json'));
+  if (Array.isArray(recordedPrev)) {
+    restoreSnapshot(recordedPrev);
+  }
 }
 
 /**
@@ -526,10 +566,11 @@ async function migrateWhaleBridgeToMagpie(options) {
   }
   const stateFile = path.join(legacy.root, 'migration-state.json');
   const fingerprint = fingerprintLegacyData(legacy.dataDir);
-  const existing = readJsonOrNull(stateFile);
+  const existing = readJsonBestEffort(stateFile);
   if (existing?.stage === 'completed' && existing?.fingerprint === fingerprint) {
     return { migrated: false, reason: 'already-migrated', state: existing };
   }
+  restorePriorMigrationBackup(existing);
 
   const backupDir = path.join(legacy.root, `migration-backup-${Date.now()}`);
   const writeStage = (/** @type {string} */ stage, extra = {}) => {
@@ -551,7 +592,7 @@ async function migrateWhaleBridgeToMagpie(options) {
     targetConfigDir: options.targetConfigDir,
   });
   const previousDefault = readDshDefaultModel(options.dshHome);
-  const agentsSnapshot = readJsonOrNull(path.join(legacy.dataDir, 'agents.json'));
+  const agentsSnapshot = readJsonBestEffort(path.join(legacy.dataDir, 'agents.json'));
   writeStage('backed_up', { previousDefault, externalAgents: agentsSnapshot || null });
 
   try {

@@ -365,24 +365,69 @@ function matchesRRule(rule, parts, anchor, candidateMs, anchorMs) {
   return matchesRRuleInterval(rule, parts, anchor, candidateMs, anchorMs);
 }
 
-/** @param {any} parsed @param {ReturnType<typeof getZonedParts>} parts */
-function computeSkipMinutes(parsed, parts) {
-  if (parsed.kind === 'cron') {
-    if (!parsed.month.has(parts.month)) return Math.max(60, (24 - parts.hour) * 60 - parts.minute);
-    const dayAllowed = (!parsed.domWildcard && !parsed.dowWildcard)
-      ? (parsed.dom.has(parts.day) || parsed.dow.has(parts.dow))
-      : ((!parsed.domWildcard ? parsed.dom.has(parts.day) : true) && (!parsed.dowWildcard ? parsed.dow.has(parts.dow) : true));
-    if (!dayAllowed) return Math.max(60, (24 - parts.hour) * 60 - parts.minute);
-    if (!parsed.hour.has(parts.hour)) return Math.max(1, 60 - parts.minute);
-    return 1;
+/** @param {any} cron @param {ReturnType<typeof getZonedParts>} parts */
+function computeCronSkipMinutes(cron, parts) {
+  if (!cron.month.has(parts.month)) return Math.max(60, (24 - parts.hour) * 60 - parts.minute);
+  const dayAllowed = (!cron.domWildcard && !cron.dowWildcard)
+    ? (cron.dom.has(parts.day) || cron.dow.has(parts.dow))
+    : ((!cron.domWildcard ? cron.dom.has(parts.day) : true) && (!cron.dowWildcard ? cron.dow.has(parts.dow) : true));
+  if (!dayAllowed) return Math.max(60, (24 - parts.hour) * 60 - parts.minute);
+  if (!cron.hour.has(parts.hour)) return Math.max(1, 60 - parts.minute);
+  return 1;
+}
+
+/** @param {any} rule @param {ReturnType<typeof getZonedParts>} parts @param {ReturnType<typeof getZonedParts>} anchorParts */
+function isRRuleDayMismatch(rule, parts, anchorParts) {
+  if (rule.byDay && !rule.byDay.has(parts.dow)) return true;
+  if (!rule.byDay) {
+    if (rule.freq === 'WEEKLY' && parts.dow !== anchorParts.dow) return true;
+    if (rule.freq === 'MONTHLY' && parts.day !== anchorParts.day) return true;
   }
-  if (parsed.byDay && !parsed.byDay.has(parts.dow)) {
+  if (rule.interval <= 1) return false;
+  if (rule.freq === 'DAILY') {
+    const diffDays = calendarDayNumber(parts) - calendarDayNumber(anchorParts);
+    return diffDays >= 0 && diffDays % rule.interval !== 0;
+  }
+  if (rule.freq === 'WEEKLY') {
+    const diffWeeks = weekDiffFromSunday(parts, anchorParts);
+    return diffWeeks >= 0 && diffWeeks % rule.interval !== 0;
+  }
+  if (rule.freq === 'MONTHLY') {
+    const diffMonths = (parts.year - anchorParts.year) * 12 + (parts.month - anchorParts.month);
+    return diffMonths >= 0 && diffMonths % rule.interval !== 0;
+  }
+  return false;
+}
+
+/** @param {any} rule @param {ReturnType<typeof getZonedParts>} parts @param {ReturnType<typeof getZonedParts>} anchorParts @param {number} candidateMs @param {number} anchorMs */
+function computeRRuleSkipMinutes(rule, parts, anchorParts, candidateMs, anchorMs) {
+  if (isRRuleDayMismatch(rule, parts, anchorParts)) {
     return Math.max(60, (24 - parts.hour) * 60 - parts.minute);
   }
-  if (parsed.byHour && !parsed.byHour.has(parts.hour)) {
+  if (rule.byHour && !rule.byHour.has(parts.hour)) {
     return Math.max(1, 60 - parts.minute);
   }
+  const needsHourAnchor = rule.freq === 'DAILY' || rule.freq === 'WEEKLY' || rule.freq === 'MONTHLY';
+  if (!rule.byHour && needsHourAnchor && parts.hour !== anchorParts.hour) {
+    return Math.max(1, 60 - parts.minute);
+  }
+  if (!rule.byMinute && rule.freq !== 'MINUTELY' && parts.minute !== anchorParts.minute) {
+    return parts.minute < anchorParts.minute
+      ? anchorParts.minute - parts.minute
+      : (60 - parts.minute) + anchorParts.minute;
+  }
+  if (rule.freq === 'HOURLY' && rule.interval > 1) {
+    const diffHr = Math.floor((candidateMs - anchorMs) / 3_600_000);
+    if (diffHr >= 0 && diffHr % rule.interval !== 0) return 60;
+  }
   return 1;
+}
+
+/** @param {any} parsed @param {ReturnType<typeof getZonedParts>} parts @param {ReturnType<typeof getZonedParts>} anchorParts @param {number} candidateMs @param {number} anchorMs */
+function computeSkipMinutes(parsed, parts, anchorParts, candidateMs, anchorMs) {
+  return parsed.kind === 'cron'
+    ? computeCronSkipMinutes(parsed, parts)
+    : computeRRuleSkipMinutes(parsed, parts, anchorParts, candidateMs, anchorMs);
 }
 
 /**
@@ -415,7 +460,7 @@ export function computeNextScheduleAt(schedule, options = {}) {
       : matchesRRule(parsed, parts, anchorParts, cursorMs, anchorMs);
     if (matched) return cursorMs;
 
-    const skip = computeSkipMinutes(parsed, parts);
+    const skip = computeSkipMinutes(parsed, parts, anchorParts, cursorMs, anchorMs);
     // Use smaller step near potential DST transitions so we never leap past a local midnight/hour.
     const safeSkip = timezone !== 'UTC' && skip > 60 ? 60 : skip;
     cursorMs += safeSkip * MINUTE_MS;

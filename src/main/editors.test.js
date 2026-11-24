@@ -151,3 +151,47 @@ test('openWithSystemDefault uses resolveInside and shell.openPath, not git openW
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('openInEditor safely handles Windows .cmd/.bat wrappers and async spawn errors', async () => {
+  const { EventEmitter } = require('node:events');
+  const cwd = makeTempDir();
+  try {
+    const weirdFile = 'a & calc %PATH%.ts';
+    fs.writeFileSync(path.join(cwd, weirdFile), '');
+    const spawned = [];
+    const spawnErrors = [];
+    const res = await openInEditor(
+      { editor: 'vscode', cwd, relativePath: weirdFile, line: 3, column: 2 },
+      {
+        platform: 'win32',
+        env: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' },
+        execFile: (file, _args, _opts, cb) => {
+          assert.equal(file, 'where.exe');
+          cb(null, 'C:\\Program Files\\VS Code\\bin\\code\r\nC:\\Program Files\\VS Code\\bin\\code.cmd\r\n');
+        },
+        spawn(command, args, options) {
+          spawned.push({ command, args, options });
+          const emitter = new EventEmitter();
+          emitter.unref = () => {};
+          process.nextTick(() => emitter.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
+          return emitter;
+        },
+        onSpawnError(error) {
+          spawnErrors.push(error.message);
+        },
+      },
+    );
+    assert.equal(res.ok, true);
+    assert.equal(spawned.length, 1);
+    assert.equal(spawned[0].command, 'C:\\Windows\\System32\\cmd.exe');
+    assert.equal(spawned[0].options.windowsVerbatimArguments, true);
+    assert.equal(spawned[0].options.env.DSHD_EDITOR_CMD, 'C:\\Program Files\\VS Code\\bin\\code.cmd');
+    assert.equal(spawned[0].options.env.DSHD_EDITOR_ARG_0, '--goto');
+    assert.match(spawned[0].options.env.DSHD_EDITOR_ARG_1, /a & calc %PATH%\.ts:3:2$/);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(spawnErrors, ['ENOENT']);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

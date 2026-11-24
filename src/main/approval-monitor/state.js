@@ -1,5 +1,30 @@
 'use strict';
 
+const { isSameOriginLoopbackUrl } = require('../local-url');
+
+const MAX_ICON_BYTES = 64 * 1024;
+const DATA_IMAGE_RE = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i;
+
+/**
+ * Allow only safe raster bitmap data URIs (<= 64 KiB) or URLs on the active harness origin.
+ * @param {unknown} raw
+ * @param {unknown} origin
+ * @returns {string | undefined}
+ */
+function sanitizeIconUrl(raw, origin) {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (!trimmed) return undefined;
+  const dataMatch = DATA_IMAGE_RE.exec(trimmed);
+  if (dataMatch) {
+    const base64 = dataMatch[2].replace(/\s+/g, '');
+    const decodedBytes = Buffer.from(base64, 'base64').length;
+    if (decodedBytes === 0 || decodedBytes > MAX_ICON_BYTES) return undefined;
+    return `data:image/${dataMatch[1].toLowerCase()};base64,${base64}`;
+  }
+  const safeOrigin = typeof origin === 'string' ? origin.trim() : '';
+  return safeOrigin && isSameOriginLoopbackUrl(trimmed, safeOrigin) ? trimmed : undefined;
+}
+
 /**
  * @typedef {'tool-approval' | 'permission-approval' | 'plan-review'} ApprovalKind
  * @typedef {'allow-once' | 'allow-always' | 'reject' | 'request-changes'} ApprovalAction
@@ -88,6 +113,7 @@
  * @property {ProjectedApprovalItem | null} activeItem
  * @property {readonly { eventId: string, kind: ApprovalKind }[]} items
  * @property {ApprovalErrorNotice | null} error
+ * @property {string} harnessOrigin
  *
  * @typedef {
  *   | { type: 'UPSERT', item: PendingApprovalItem }
@@ -448,11 +474,13 @@ function reduceApprovalState(state, action) {
  * @param {PendingApprovalItem} item
  * @param {ApprovalLocale} locale
  * @param {ApprovalAction | null} busyAction
+ * @param {string} harnessOrigin
  * @returns {ProjectedApprovalItem}
  */
-function projectApprovalItem(item, locale, busyAction) {
+function projectApprovalItem(item, locale, busyAction, harnessOrigin = '') {
+  const safeIcon = item.subject ? sanitizeIconUrl(item.subject.icon, harnessOrigin) : undefined;
   const subject = item.subject
-    ? { name: item.subject.name, ...(item.subject.icon ? { icon: item.subject.icon } : {}) }
+    ? { name: item.subject.name, ...(safeIcon ? { icon: safeIcon } : {}) }
     : null;
   const requester = item.requester
     ? { sessionId: item.requester.sessionId, label: item.requester.label }
@@ -477,11 +505,12 @@ function projectApprovalItem(item, locale, busyAction) {
 
 /**
  * @param {ApprovalState} state
- * @param {{ locale?: ApprovalLocale, theme?: Partial<PopupThemeView> }} [options]
+ * @param {{ locale?: ApprovalLocale, theme?: Partial<PopupThemeView>, harnessOrigin?: string }} [options]
  * @returns {PopupView}
  */
 function projectPopupView(state, options = {}) {
   const locale = options.locale === 'en' ? 'en' : 'zh';
+  const harnessOrigin = typeof options.harnessOrigin === 'string' ? options.harnessOrigin.trim() : '';
   /** @type {PopupThemeView} */
   const theme = {
     scheme: options.theme?.scheme === 'dark' ? 'dark' : 'light',
@@ -495,7 +524,7 @@ function projectPopupView(state, options = {}) {
 
   const current = selectedIndex >= 0 ? state.items[selectedIndex] : null;
   const activeItem = current
-    ? projectApprovalItem(current, locale, state.inflight.get(current.eventId) ?? null)
+    ? projectApprovalItem(current, locale, state.inflight.get(current.eventId) ?? null, harnessOrigin)
     : null;
   const error = state.lastError && current && state.lastError.eventId === current.eventId
     ? { ...state.lastError }
@@ -505,6 +534,7 @@ function projectPopupView(state, options = {}) {
     visible: selectPopupVisible(state),
     locale,
     theme,
+    harnessOrigin,
     total,
     selectedIndex,
     activeItem,
@@ -520,4 +550,5 @@ module.exports = {
   selectPopupVisible,
   reduceApprovalState,
   projectPopupView,
+  sanitizeIconUrl,
 };

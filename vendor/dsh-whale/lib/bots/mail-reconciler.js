@@ -108,6 +108,8 @@ export function createMailReconciler(deps) {
     const res = await sessionRuntime.runSingleTurn(sessionId, prompt, {
       botId: group.ownerBotId,
       isBackground: true,
+      sourceKind: 'dsh-bots:mail',
+      source: { kind: 'dsh-bots:mail', action: group.action },
     });
     if (res && res.ok === false) {
       return { status: 'failed', error: res.error || 'turn_failed' };
@@ -116,38 +118,53 @@ export function createMailReconciler(deps) {
   }
 
   async function runReconcile({ afterAction = 0 } = {}) {
-    const groups = itemsStore.owedMail(afterAction);
+    let cursor = Number(afterAction) || 0;
+    let totalGroups = 0;
     let reconciledGroups = 0;
     let markedEvents = 0;
     let failedGroups = 0;
     let skippedGroups = 0;
     const errors = [];
 
-    for (const group of groups) {
-      try {
-        const outcome = await deliverGroup(group);
-        if (outcome.status === 'skipped') {
-          skippedGroups += 1;
-          continue;
-        }
-        if (outcome.status !== 'delivered') {
+    for (let guard = 0; guard < 100; guard += 1) {
+      const groups = itemsStore.owedMail(cursor);
+      if (!Array.isArray(groups) || groups.length === 0) break;
+      totalGroups += groups.length;
+      const seenActions = new Set();
+      let maxAction = cursor;
+
+      for (const group of groups) {
+        const action = Number(group.action) || 0;
+        seenActions.add(action);
+        if (action > maxAction) maxAction = action;
+        try {
+          const outcome = await deliverGroup(group);
+          if (outcome.status === 'skipped') {
+            skippedGroups += 1;
+            continue;
+          }
+          if (outcome.status !== 'delivered') {
+            failedGroups += 1;
+            errors.push({ action: group.action, botId: group.ownerBotId, error: outcome.error });
+            continue;
+          }
+          const marked = itemsStore.markMailSent(group.eventIds);
+          markedEvents += marked;
+          reconciledGroups += 1;
+          eventBus?.emit({ botIds: [group.ownerBotId], kinds: ['items', 'chats'] });
+        } catch (error) {
           failedGroups += 1;
-          errors.push({ action: group.action, botId: group.ownerBotId, error: outcome.error });
-          continue;
+          errors.push({ action: group.action, botId: group.ownerBotId, error: String(/** @type {any} */ (error)?.message ?? error) });
         }
-        const marked = itemsStore.markMailSent(group.eventIds);
-        markedEvents += marked;
-        reconciledGroups += 1;
-        eventBus?.emit({ botIds: [group.ownerBotId], kinds: ['items', 'chats'] });
-      } catch (error) {
-        failedGroups += 1;
-        errors.push({ action: group.action, botId: group.ownerBotId, error: String(/** @type {any} */ (error)?.message ?? error) });
       }
+
+      if (maxAction <= cursor || seenActions.size < 50) break;
+      cursor = maxAction;
     }
 
     return {
       ok: failedGroups === 0,
-      totalGroups: groups.length,
+      totalGroups,
       reconciledGroups,
       markedEvents,
       failedGroups,

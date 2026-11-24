@@ -4,6 +4,7 @@
  */
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { BOT_WORKER_MAX_CONCURRENCY } from '../../src/shared/bot-types.js';
@@ -15,6 +16,14 @@ const GIT_TIMEOUT_MS = 20_000;
 const VERIFY_DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CAPTURE_BYTES = 64 * 1024;
 const EVIDENCE_TAIL_CHARS = 1600;
+const MAX_VERIFY_CMD_LENGTH = 2000;
+
+const FORBIDDEN_VERIFY_SHELL_EXECUTABLES = new Set([
+  'sh', 'bash', 'zsh', 'dash', 'fish', 'ksh', 'csh', 'tcsh',
+  'cmd', 'cmd.exe', 'powershell', 'powershell.exe', 'pwsh', 'pwsh.exe',
+  'wsl', 'wsl.exe', 'wscript', 'wscript.exe', 'cscript', 'cscript.exe',
+]);
+const UNQUOTED_SHELL_META_RE = /[;&|`$()<>~!*?{}\r\n]/u;
 
 export { BOT_WORKER_MAX_CONCURRENCY };
 
@@ -25,6 +34,157 @@ function isWithinBoundary(root, target) {
   if (normTarget === normRoot) return true;
   const prefix = normRoot.endsWith(path.sep) ? normRoot : `${normRoot}${path.sep}`;
   return normTarget.startsWith(prefix);
+}
+
+/** @param {string} a @param {string} b */
+function sameNormalizedPath(a, b) {
+  const normA = process.platform === 'win32' ? a.toLowerCase() : a;
+  const normB = process.platform === 'win32' ? b.toLowerCase() : b;
+  return normA === normB;
+}
+
+/** @param {string} rawPath */
+function resolveCanonicalPath(rawPath) {
+  const resolved = path.resolve(String(rawPath ?? ''));
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/** @param {string} homeDir @param {boolean} insideTmp */
+function collectSensitiveWorkerRoots(homeDir, insideTmp) {
+  const roots = [
+    path.join(homeDir, '.ssh'),
+    path.join(homeDir, '.gnupg'),
+    path.join(homeDir, '.aws'),
+    path.join(homeDir, '.kube'),
+    path.join(homeDir, '.docker'),
+    path.join(homeDir, '.config'),
+  ];
+  if (process.platform === 'win32') {
+    for (const envKey of ['WINDIR', 'SystemRoot', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramData', 'APPDATA']) {
+      if (process.env[envKey]) roots.push(process.env[envKey]);
+    }
+    if (process.env.LOCALAPPDATA && !insideTmp) roots.push(process.env.LOCALAPPDATA);
+    const sysPrefix = `${process.env.SystemDrive || 'C:'}${path.sep}`;
+    roots.push(
+      path.join(sysPrefix, 'Windows'),
+      path.join(sysPrefix, 'Program Files'),
+      path.join(sysPrefix, 'Program Files (x86)'),
+      path.join(sysPrefix, 'ProgramData'),
+      path.join(sysPrefix, 'Users', 'Default'),
+      path.join(sysPrefix, 'Recovery'),
+      path.join(sysPrefix, 'System Volume Information'),
+    );
+    return roots;
+  }
+  roots.push(
+    '/bin', '/boot', '/dev', '/etc', '/lib', '/lib64',
+    '/proc', '/root', '/run', '/sbin', '/sys', '/usr',
+    '/System', '/Library', '/Applications',
+  );
+  if (!insideTmp) roots.push('/var');
+  return roots;
+}
+
+/**
+ * Validate that a worker `cwd` is an existing directory outside sensitive system
+ * and credential locations (and never `_meta` itself).
+ * @param {string} cwd
+ * @param {{ metaRoot?: string }} [options]
+ */
+export function validateWorkerCwd(cwd, { metaRoot = '' } = {}) {
+  const raw = String(cwd ?? '').trim();
+  if (!raw) throw Object.assign(new Error('Worker cwd is required.'), { code: 'unsafe_worker_cwd' });
+  const resolved = path.resolve(raw);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    throw Object.assign(new Error(`Worker cwd must be an existing directory: ${resolved}`), { code: 'unsafe_worker_cwd' });
+  }
+  const realCwd = resolveCanonicalPath(resolved);
+  const tmpDir = resolveCanonicalPath(os.tmpdir());
+  const homeDir = resolveCanonicalPath(os.homedir());
+  if (sameNormalizedPath(realCwd, path.parse(realCwd).root)
+    || sameNormalizedPath(realCwd, homeDir)
+    || sameNormalizedPath(realCwd, tmpDir)) {
+    throw Object.assign(new Error(`Refusing broad base directory as worker cwd: ${realCwd}`), { code: 'unsafe_worker_cwd' });
+  }
+  if (metaRoot && isWithinBoundary(resolveCanonicalPath(metaRoot), realCwd)) {
+    throw Object.assign(new Error(`Refusing bots internal metadata directory as worker cwd: ${realCwd}`), { code: 'unsafe_worker_cwd' });
+  }
+  for (const sensitive of collectSensitiveWorkerRoots(homeDir, isWithinBoundary(tmpDir, realCwd))) {
+    if (isWithinBoundary(resolveCanonicalPath(sensitive), realCwd)) {
+      throw Object.assign(new Error(`Refusing sensitive system/config directory as worker cwd: ${realCwd}`), { code: 'unsafe_worker_cwd' });
+    }
+  }
+  return realCwd;
+}
+
+/**
+ * @param {string} cmd
+ * @returns {{ ok: true, tokens: string[] } | { ok: false, error: string }}
+ */
+function scanVerifyCommandTokens(cmd) {
+  /** @type {string[]} */
+  const tokens = [];
+  let current = '';
+  let hasToken = false;
+  /** @type {'' | "'" | '"'} */
+  let quote = '';
+  for (let i = 0; i < cmd.length; i += 1) {
+    const ch = cmd[i];
+    if (quote === "'") {
+      if (ch === "'") quote = '';
+      else current += ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '\\' && (cmd[i + 1] === '"' || cmd[i + 1] === '\\')) {
+        current += cmd[i + 1];
+        i += 1;
+      } else if (ch === '"') quote = '';
+      else current += ch;
+      continue;
+    }
+    if (/\s/u.test(ch)) {
+      if (hasToken) { tokens.push(current); current = ''; hasToken = false; }
+      continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; hasToken = true; continue; }
+    if (UNQUOTED_SHELL_META_RE.test(ch)) {
+      return {
+        ok: false,
+        error: `Verification command contains forbidden shell operator "${ch}". Use a single direct executable command without shell chaining or redirection.`,
+      };
+    }
+    current += ch;
+    hasToken = true;
+  }
+  if (quote !== '') return { ok: false, error: 'Verification command has an unclosed quote.' };
+  if (hasToken) tokens.push(current);
+  return { ok: true, tokens };
+}
+
+/**
+ * Parse and validate `verifyCmd` into executable + argv without shell metacharacter injection.
+ * @param {string} verifyCmd
+ * @returns {{ ok: true, file: string, args: string[] } | { ok: false, error: string }}
+ */
+export function parseAndValidateVerifyCommand(verifyCmd) {
+  const cmd = String(verifyCmd ?? '').trim();
+  if (!cmd) return { ok: false, error: 'Verification command cannot be empty.' };
+  if (cmd.length > MAX_VERIFY_CMD_LENGTH) return { ok: false, error: `Verification command exceeds ${MAX_VERIFY_CMD_LENGTH} characters.` };
+  if (/[\0\r\n]/u.test(cmd)) return { ok: false, error: 'Verification command must not contain control or newline characters.' };
+  const scanned = scanVerifyCommandTokens(cmd);
+  if (!scanned.ok) return { ok: false, error: scanned.error };
+  const tokens = scanned.tokens;
+  if (tokens.length === 0 || !tokens[0]) return { ok: false, error: 'Verification command executable is missing.' };
+  const exeBase = path.basename(tokens[0]).toLowerCase();
+  if (FORBIDDEN_VERIFY_SHELL_EXECUTABLES.has(exeBase)) {
+    return { ok: false, error: `Direct shell interpreter "${exeBase}" is not allowed as verifyCmd.` };
+  }
+  return { ok: true, file: tokens[0], args: tokens.slice(1) };
 }
 
 /** @param {string[]} args @param {{ cwd: string, timeoutMs?: number }} opts */
@@ -192,20 +352,24 @@ function normalizeCustomVerify(custom, startedAt) {
 /**
  * Execute an empirical verification shell command inside `cwd` with timeout and capped output.
  * @param {string} verifyCmd
- * @param {{ cwd: string, timeoutMs?: number, execCommand?: (cmd: string, opts: { cwd: string, timeoutMs: number }) => Promise<any> }} options
+ * @param {{ cwd: string, timeoutMs?: number, execCommand?: (cmd: string, opts: { cwd: string, timeoutMs: number, file: string, args: string[] }) => Promise<any> }} options
  */
 export async function runVerifyCommand(verifyCmd, options) {
   const cmd = String(verifyCmd ?? '').trim();
+  const parsed = parseAndValidateVerifyCommand(cmd);
+  if (!parsed.ok) {
+    throw Object.assign(new Error(parsed.error || 'Invalid verification command.'), { code: 'invalid_verify_command' });
+  }
   const cwd = path.resolve(String(options?.cwd ?? ''));
   const timeoutMs = Math.max(1000, Number(options?.timeoutMs) || VERIFY_DEFAULT_TIMEOUT_MS);
   const startedAt = Date.now();
 
   if (typeof options?.execCommand === 'function') {
-    return normalizeCustomVerify(await options.execCommand(cmd, { cwd, timeoutMs }), startedAt);
+    return normalizeCustomVerify(await options.execCommand(cmd, { cwd, timeoutMs, file: parsed.file, args: parsed.args }), startedAt);
   }
 
   return new Promise((resolve) => {
-    const child = spawn(cmd, { cwd, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(parsed.file, parsed.args, { cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     /** @type {string[]} */
     const outChunks = [];
     /** @type {string[]} */
@@ -334,7 +498,11 @@ export async function executeDispatchedWorker(params) {
   const workerPrompt = formatWorkerPrompt(args, effectiveCwd);
 
   try {
-    const turn = await runtime.sessionRuntime.runSingleTurn(sessionId, workerPrompt);
+    const turn = await runtime.sessionRuntime.runSingleTurn(sessionId, workerPrompt, {
+      botId: caller.bot.id,
+      sourceKind: 'dsh-bots:worker',
+      source: { kind: 'dsh-bots:worker', dispatchId },
+    });
     const turnOk = turn?.ok !== false;
     const verify = turnOk && verifyCmd
       ? await worktreeRunner.verifyWorkerResult(verifyCmd, { cwd: effectiveCwd })
@@ -397,7 +565,7 @@ export function createWorktreeRunner(deps) {
         { code: 'worker_concurrency_exceeded', data: quota },
       );
     }
-    const resolvedCwd = path.resolve(String(cwd ?? ''));
+    const resolvedCwd = validateWorkerCwd(cwd, { metaRoot });
     const repo = await detectGitRepository(resolvedCwd, { execGit });
     const shouldIsolate = useWorktree !== false && repo.isGitRepo && Boolean(repo.repoRoot) && Boolean(repo.headSha);
     if (!shouldIsolate || !repo.repoRoot || !repo.headSha) {
@@ -459,6 +627,8 @@ export function createWorktreeRunner(deps) {
   return {
     /** @param {string} cwd */
     detectGitRepository: (cwd) => detectGitRepository(cwd, { execGit }),
+    /** @param {string} cwd */
+    validateWorkerCwd: (cwd) => validateWorkerCwd(cwd, { metaRoot }),
     checkConcurrency,
     prepareWorkerCwd,
     verifyWorkerResult,

@@ -1,8 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
-const { isHttpOrHttpsUrl, isLoopbackHttpUrl } = require('./local-url');
+const { isHttpOrHttpsUrl, isLoopbackHttpUrl, isPackagedRendererFileUrl } = require('./local-url');
 
 const TOPBAR_HEIGHT = 38;
 const MAGPIE_PARTITION = 'persist:magpie';
@@ -12,7 +11,7 @@ let activeWindow = null;
 /** @type {Electron.WebContentsView | null} */
 let activeView = null;
 /** @type {string} */
-let activeOrigin = '';
+let activeTargetUrl = '';
 /** @type {any} */
 let activeMeta = {};
 /** @type {(() => void) | null} */
@@ -46,14 +45,14 @@ function reuseActiveWindow(state, deps) {
   if (!state.activeWindow.webContents.isDestroyed()) {
     state.activeWindow.webContents.send('magpie:shell-meta', state.activeMeta);
   }
-  if (state.activeOrigin !== deps.origin && state.activeView) {
+  if (state.activeTargetUrl !== deps.targetUrl && state.activeView) {
     try {
       state.activeWindow.contentView.removeChildView(state.activeView);
       state.activeView.webContents.close?.();
     } catch {
       // Ignore teardown errors when replacing the embedded view.
     }
-    state.activeOrigin = deps.origin;
+    state.activeTargetUrl = deps.targetUrl;
     state.activeView = deps.remount();
   }
   if (deps.activate !== false) {
@@ -68,21 +67,22 @@ function reuseActiveWindow(state, deps) {
 /**
  * Register authorized shell window control handlers on `win.webContents`.
  * @param {Electron.BrowserWindow} win
- * @param {string} shellUrl
  * @param {any} deps
  */
-function attachShellIpc(win, shellUrl, deps) {
+function attachShellIpc(win, deps) {
   const contents = win.webContents;
   const isOwnedSender = (/** @type {Electron.IpcMainEvent | Electron.IpcMainInvokeEvent} */ event) => (
     !win.isDestroyed() &&
     event.sender === contents &&
     event.senderFrame === contents.mainFrame &&
-    String(event.senderFrame?.url || '').startsWith('file:')
+    isPackagedRendererFileUrl(event.senderFrame?.url, 'magpie-shell.html')
   );
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  contents.on('will-navigate', (event, targetUrl) => {
-    if (!String(targetUrl || '').startsWith(shellUrl)) event.preventDefault();
-  });
+  const guardShellNavigation = (/** @type {Electron.Event} */ event, /** @type {string} */ targetUrl) => {
+    if (!isPackagedRendererFileUrl(targetUrl, 'magpie-shell.html')) event.preventDefault();
+  };
+  contents.on('will-navigate', guardShellNavigation);
+  contents.on('will-redirect', guardShellNavigation);
   const isMaximized = () => deps.nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized();
   const windowState = () => ({ maximized: isMaximized(), minimizable: win.minimizable, maximizable: win.maximizable });
 
@@ -159,24 +159,24 @@ function openMagpieWindow(options) {
 
   if (activeWindow && !activeWindow.isDestroyed()) {
     const updated = reuseActiveWindow(
-      { activeWindow, activeView, activeOrigin, activeMeta, activeOnClose },
+      { activeWindow, activeView, activeTargetUrl, activeMeta, activeOnClose },
       {
         meta,
-        origin,
+        targetUrl,
         activate: options.activate,
         onClose: options.onClose,
         remount: () => mountMagpieView(/** @type {Electron.BrowserWindow} */ (activeWindow), targetUrl, origin, WebContentsView, session, openExternalHttp),
       },
     );
     activeView = updated.activeView;
-    activeOrigin = updated.activeOrigin;
+    activeTargetUrl = updated.activeTargetUrl;
     activeMeta = updated.activeMeta;
     activeOnClose = updated.activeOnClose;
     return;
   }
 
   activeMeta = meta;
-  activeOrigin = origin;
+  activeTargetUrl = targetUrl;
   activeOnClose = typeof options.onClose === 'function' ? options.onClose : null;
 
   const chromeOptions = chrome.windowChrome({
@@ -207,7 +207,7 @@ function openMagpieWindow(options) {
     win.setWindowButtonVisibility?.(true);
   }
 
-  const { syncState } = attachShellIpc(win, pathToFileURL(rendererFile('magpie-shell.html')).href, {
+  const { syncState } = attachShellIpc(win, {
     nativeMotion,
     openExternalHttp,
     getMeta: () => activeMeta,
@@ -234,7 +234,7 @@ function openMagpieWindow(options) {
     if (activeWindow === win) {
       activeWindow = null;
       activeView = null;
-      activeOrigin = '';
+      activeTargetUrl = '';
       activeOnClose = null;
     }
     try {
@@ -302,7 +302,7 @@ function closeMagpieWindow() {
   }
   activeWindow = null;
   activeView = null;
-  activeOrigin = '';
+  activeTargetUrl = '';
   activeOnClose = null;
 }
 

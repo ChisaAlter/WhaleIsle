@@ -8,6 +8,18 @@
 const { PLATFORM_IPC, platformBounds } = require('./platform-view');
 const { createRegisterIpc } = require('./ipc-register');
 
+function matchesOrigin(/** @type {unknown} */ frameUrl, /** @type {unknown} */ expectedOrigin) {
+  if (typeof expectedOrigin !== 'string' || expectedOrigin.trim() === '') return false;
+  if (typeof frameUrl !== 'string' || frameUrl.trim() === '') return false;
+  try {
+    const actual = new URL(frameUrl).origin;
+    const expected = new URL(expectedOrigin).origin;
+    return actual !== 'null' && actual === expected;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * @param {{ ipcMain: any, platformView: any, refreshSession: () => any,
  *   getHarnessView: () => any, getHarnessOrigin: () => string,
@@ -16,9 +28,10 @@ const { createRegisterIpc } = require('./ipc-register');
 function registerPlatformIpc({ ipcMain, platformView, refreshSession, getHarnessView, getHarnessOrigin, getMainWindow, nativeTheme }) {
   const assertProductDoc = (event) => {
     const view = getHarnessView();
-    if (view === undefined || event.sender !== view.webContents
+    if (!view || !view.webContents || view.webContents.isDestroyed?.()
+      || event.sender !== view.webContents
       || event.senderFrame !== view.webContents.mainFrame
-      || !event.senderFrame.url.startsWith(getHarnessOrigin())) {
+      || !matchesOrigin(event.senderFrame?.url, getHarnessOrigin())) {
       throw new Error('dshd platform: rejected sender');
     }
     return getMainWindow();
@@ -63,7 +76,14 @@ function registerPlatformIpc({ ipcMain, platformView, refreshSession, getHarness
     // rejection or warning path.
     authorize: (event) => {
       const view = getHarnessView();
-      return Boolean(view && !view.webContents.isDestroyed() && event.sender === view.webContents);
+      return Boolean(
+        view
+        && view.webContents
+        && !view.webContents.isDestroyed()
+        && event.sender === view.webContents
+        && event.senderFrame === view.webContents.mainFrame
+        && matchesOrigin(event.senderFrame?.url, getHarnessOrigin()),
+      );
     },
     handler: (_event, owned, value) => {
       if (!owned) return;

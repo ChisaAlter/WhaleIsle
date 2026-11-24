@@ -21,6 +21,7 @@ const VOICE_STATES = Object.freeze({
 });
 
 const BARGE_IN_BUDGET_MS = 50;
+const MAX_HISTORY_ENTRIES = 24;
 
 /**
  * High-resolution monotonic timestamp in milliseconds.
@@ -158,6 +159,18 @@ function createPetVoiceSession(options = {}) {
   /** @type {Array<{ role: string, text: string }>} */
   const history = [];
 
+  /**
+   * Append one turn entry while keeping history within a fixed sliding window.
+   * @param {string} role
+   * @param {string} text
+   */
+  function appendHistory(role, text) {
+    history.push({ role, text });
+    if (history.length > MAX_HISTORY_ENTRIES) {
+      history.splice(0, history.length - MAX_HISTORY_ENTRIES);
+    }
+  }
+
   /** @type {AbortController | null} */
   let listenAbort = null;
   /** @type {AbortController | null} */
@@ -261,7 +274,7 @@ function createPetVoiceSession(options = {}) {
       });
       reconciliation = { turnId: activeTurnId, ...split, interruptedAt: nowFn(), latencyMs };
       lastReconciliation = reconciliation;
-      if (split.spokenText) history.push({ role: 'assistant', text: split.spokenText });
+      if (split.spokenText) appendHistory('assistant', split.spokenText);
     }
 
     currentResponseText = '';
@@ -410,7 +423,7 @@ function createPetVoiceSession(options = {}) {
       if (controller.signal.aborted || activeTurnId !== myTurnId) {
         return { ok: false, interrupted: true, state, reconciliation: lastReconciliation };
       }
-      history.push({ role: 'assistant', text: replyText });
+      appendHistory('assistant', replyText);
       currentResponseText = '';
       currentSpokenText = '';
       currentSpokenChars = 0;
@@ -442,7 +455,12 @@ function createPetVoiceSession(options = {}) {
     }
     abortController(listenAbort, 'transcript_finalized');
     listenAbort = null;
-    if (turnAbort && !turnAbort.signal.aborted) {
+    if (
+      state === VOICE_STATES.THINKING
+      || state === VOICE_STATES.SPEAKING
+      || (turnAbort && !turnAbort.signal.aborted)
+      || (speakAbort && !speakAbort.signal.aborted)
+    ) {
       interrupt({ resumeListening: false, reason: 'superseded' });
     }
 
@@ -453,7 +471,7 @@ function createPetVoiceSession(options = {}) {
     currentResponseText = '';
     currentSpokenText = '';
     currentSpokenChars = 0;
-    history.push({ role: 'user', text });
+    appendHistory('user', text);
 
     const thought = await runThinkingStage(text, myTurnId);
     if (!thought.ok) {

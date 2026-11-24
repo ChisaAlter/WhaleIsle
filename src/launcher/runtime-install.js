@@ -14,6 +14,7 @@ const installDetect = require('./install-detect');
 const releaseSource = require('./release-source');
 const forensicsLog = require('./forensics-log');
 const { isLauncherPackage, runtimeTarget, desktopStateDir } = require('./product');
+const { recoverPendingDeltas } = require('./delta/apply');
 const peerClient = require('./task-control-client');
 
 const INSTALL_WAIT_MS = 8 * 60_000;
@@ -438,10 +439,46 @@ function probeDesktopRunning(deps = {}) {
 const START_ALIVE_MS = 12_000;
 const START_POLL_MS = 400;
 
+/**
+ * @param {string} installPath
+ * @param {any} deps
+ */
+function recoverDesktopDeltaOrFail(installPath, deps) {
+  try {
+    const recover = deps.recoverPendingDeltas || recoverPendingDeltas;
+    recover(installPath);
+    return null;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      code: /** @type {any} */ (error)?.code || 'delta-recovery-failed',
+      installPath,
+    };
+  }
+}
+
+/**
+ * @param {any} logMod
+ * @param {any} deps
+ */
+function resolveBootLogPath(logMod, deps) {
+  try {
+    const stateDir = typeof deps.stateDir === 'function' ? deps.stateDir() : desktopStateDir(app);
+    return stateDir ? logMod.bootLogPath(stateDir) : '';
+  } catch {
+    return '';
+  }
+}
+
 async function startExternalDesktop(argv = [], deps = {}) {
   const info = installedInfo({ fresh: true, deps });
   if (!info.registeredInstall || !info.installPath) {
     return { ok: false, error: 'runtime-not-installed' };
+  }
+  const recoveryError = recoverDesktopDeltaOrFail(info.installPath, deps);
+  if (recoveryError) {
+    return recoveryError;
   }
   const exe = runtimeExePath(info, deps);
   if (!exe) {
@@ -462,13 +499,7 @@ async function startExternalDesktop(argv = [], deps = {}) {
     windowsHide: false,
   });
   const logMod = deps.forensicsLog || forensicsLog;
-  let bootLogPath = '';
-  try {
-    const stateDir = typeof deps.stateDir === 'function' ? deps.stateDir() : desktopStateDir(app);
-    bootLogPath = stateDir ? logMod.bootLogPath(stateDir) : '';
-  } catch {
-    bootLogPath = '';
-  }
+  const bootLogPath = resolveBootLogPath(logMod, deps);
   const bootLog = logMod.attachBootLog(child, bootLogPath);
   bootLog.line(`spawning external runtime: ${exe} ${args.join(' ')}`);
   // A rejected spawn reports through the error event on the next tick; an

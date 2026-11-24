@@ -138,7 +138,7 @@ function tryRequireElectron() {
 
 /**
  * Check whether screen capture is available and permitted.
- * @param {{ desktopCapturer?: any, hasScreenPermission?: () => boolean | Promise<boolean>, electron?: any }} deps
+ * @param {{ desktopCapturer?: any, hasScreenPermission?: boolean | (() => boolean | Promise<boolean>), confirmCapture?: () => boolean | Promise<boolean>, electron?: any }} deps
  * @returns {Promise<{ available: boolean, reason?: 'capture_unavailable' }>}
  */
 async function probeCaptureAvailability(deps) {
@@ -150,16 +150,36 @@ async function probeCaptureAvailability(deps) {
     try {
       const allowed = await deps.hasScreenPermission();
       if (!allowed) return { available: false, reason: 'capture_unavailable' };
+      return { available: true };
     } catch {
       return { available: false, reason: 'capture_unavailable' };
     }
-  } else if (process.platform === 'darwin') {
+  }
+  if (typeof deps.hasScreenPermission === 'boolean') {
+    return deps.hasScreenPermission
+      ? { available: true }
+      : { available: false, reason: 'capture_unavailable' };
+  }
+  if (process.platform === 'darwin') {
     const status = deps.electron?.systemPreferences?.getMediaAccessStatus?.('screen');
-    if (status && status !== 'granted') {
+    if (status !== 'granted') {
+      return { available: false, reason: 'capture_unavailable' };
+    }
+    if (typeof deps.confirmCapture !== 'function') {
+      return { available: true };
+    }
+  }
+  if (typeof deps.confirmCapture === 'function') {
+    try {
+      const confirmed = await deps.confirmCapture();
+      return confirmed
+        ? { available: true }
+        : { available: false, reason: 'capture_unavailable' };
+    } catch {
       return { available: false, reason: 'capture_unavailable' };
     }
   }
-  return { available: true };
+  return { available: false, reason: 'capture_unavailable' };
 }
 
 /**
@@ -223,6 +243,24 @@ function buildUntrustedObservationPrompt({ frames, goal = '', appHint = '' }) {
 }
 
 /**
+ * Strip any leading YAML frontmatter blocks emitted by untrusted model output.
+ * @param {string} raw
+ * @returns {string}
+ */
+function stripYamlFrontmatter(raw) {
+  let text = String(raw ?? '').trimStart();
+  while (/^---\r?\n/.test(text)) {
+    const match = /^---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|$)/.exec(text);
+    if (!match) {
+      text = text.replace(/^---\r?\n?/, '').trimStart();
+      break;
+    }
+    text = text.slice(match[0].length).trimStart();
+  }
+  return text;
+}
+
+/**
  * Format a sanitized `SKILL.md` draft from structured analyzer output.
  * @param {{
  *   name?: unknown,
@@ -236,7 +274,9 @@ function buildUntrustedObservationPrompt({ frames, goal = '', appHint = '' }) {
  */
 function formatSkillDraftMarkdown(draft = {}) {
   const skillName = normalizeSkillSlug(draft.name);
-  const description = sanitizeSkillContent(draft.description || '根据桌面操作录屏整理的可复用技能草稿');
+  const description = sanitizeSkillContent(draft.description || '根据桌面操作录屏整理的可复用技能草稿')
+    .replace(/[\r\n]+/g, ' ')
+    .trim() || '根据桌面操作录屏整理的可复用技能草稿';
   /** @param {unknown} value */
   const toList = (value) => (Array.isArray(value) ? value : [])
     .map((item) => sanitizeSkillContent(item))
@@ -246,11 +286,9 @@ function formatSkillDraftMarkdown(draft = {}) {
   const caveats = toList(draft.caveats);
 
   if (typeof draft.markdown === 'string' && draft.markdown.trim()) {
-    const cleanBody = sanitizeSkillContent(draft.markdown);
-    const hasFrontmatter = cleanBody.startsWith('---');
-    const markdown = hasFrontmatter
-      ? cleanBody
-      : `---\nname: ${skillName}\ndescription: ${description}\n---\n\n${cleanBody}\n`;
+    const cleanBody = stripYamlFrontmatter(sanitizeSkillContent(draft.markdown)).trim();
+    const body = cleanBody || `# ${skillName}\n\n${description}`;
+    const markdown = `---\nname: ${skillName}\ndescription: ${description}\n---\n\n${body}\n`;
     return { skillName, description, steps, triggers, caveats, markdown };
   }
 
@@ -310,12 +348,14 @@ function waitWithSignal(ms, signal) {
  * @param {{
  *   desktopCapturer?: any,
  *   electron?: any,
- *   hasScreenPermission?: () => boolean | Promise<boolean>,
+ *   hasScreenPermission?: boolean | (() => boolean | Promise<boolean>),
+ *   confirmCapture?: () => boolean | Promise<boolean>,
  *   analyzeFrames?: (observation: {
  *     prompt: string,
  *     frames: Array<{ index: number, capturedAt: number, sourceName: string, mimeType: string, base64: string }>,
  *     goal: string,
  *     appHint: string,
+ *     signal: AbortSignal,
  *   }) => Promise<Record<string, unknown>> | Record<string, unknown>,
  *   fps?: number,
  *   maxFrames?: number,
@@ -343,6 +383,7 @@ function createSkillRecorder(options = {}) {
       desktopCapturer,
       electron,
       hasScreenPermission: options.hasScreenPermission,
+      confirmCapture: options.confirmCapture,
     });
   }
 
@@ -370,18 +411,9 @@ function createSkillRecorder(options = {}) {
    * }} [captureOpts]
    */
   async function captureFrames(captureOpts = {}) {
-    const avail = await checkAvailability();
-    if (!avail.available) {
-      return { ok: false, reason: /** @type {const} */ ('capture_unavailable'), frames: [] };
+    if (recording) {
+      return { ok: false, reason: /** @type {const} */ ('recording_in_progress'), frames: [] };
     }
-    const fps = clampCaptureFps(captureOpts.fps ?? defaultFps);
-    const intervalMs = Math.round(1000 / fps);
-    const targetCount = resolveTargetFrames(captureOpts, fps);
-    const sourceType = captureOpts.sourceType === 'window' ? 'window' : 'screen';
-    const thumbnailSize = captureOpts.thumbnailSize || DEFAULT_THUMBNAIL_SIZE;
-
-    /** @type {Array<{ index: number, capturedAt: number, sourceName: string, mimeType: string, base64: string }>} */
-    const frames = [];
     recording = true;
     activeAbort = new AbortController();
     const signal = captureOpts.signal
@@ -389,6 +421,21 @@ function createSkillRecorder(options = {}) {
       : activeAbort.signal;
 
     try {
+      if (signal.aborted) {
+        return { ok: false, reason: /** @type {const} */ ('capture_unavailable'), frames: [] };
+      }
+      const avail = await checkAvailability();
+      if (!avail.available || signal.aborted) {
+        return { ok: false, reason: /** @type {const} */ ('capture_unavailable'), frames: [] };
+      }
+      const fps = clampCaptureFps(captureOpts.fps ?? defaultFps);
+      const intervalMs = Math.round(1000 / fps);
+      const targetCount = resolveTargetFrames(captureOpts, fps);
+      const sourceType = captureOpts.sourceType === 'window' ? 'window' : 'screen';
+      const thumbnailSize = captureOpts.thumbnailSize || DEFAULT_THUMBNAIL_SIZE;
+
+      /** @type {Array<{ index: number, capturedAt: number, sourceName: string, mimeType: string, base64: string }>} */
+      const frames = [];
       for (let i = 0; i < targetCount && !signal.aborted; i += 1) {
         const sources = await desktopCapturer.getSources({ types: [sourceType], thumbnailSize });
         const source = Array.isArray(sources) ? sources[0] : null;
@@ -435,6 +482,9 @@ function createSkillRecorder(options = {}) {
     if (!capture.ok) {
       return { ok: false, reason: capture.reason };
     }
+    if (params.signal?.aborted) {
+      return { ok: false, reason: 'capture_unavailable' };
+    }
     if (typeof options.analyzeFrames !== 'function') {
       return { ok: false, reason: 'analyzer_unavailable', frameCount: capture.frames.length };
     }
@@ -445,12 +495,23 @@ function createSkillRecorder(options = {}) {
       goal,
       appHint,
     });
-    const rawDraft = await options.analyzeFrames({
-      prompt: observation.prompt,
-      frames: observation.frames,
-      goal: sanitizeSkillContent(goal),
-      appHint: sanitizeSkillContent(appHint),
-    });
+    const analyzeAbort = new AbortController();
+    activeAbort = analyzeAbort;
+    const analyzeSignal = params.signal
+      ? AbortSignal.any([analyzeAbort.signal, params.signal])
+      : analyzeAbort.signal;
+    let rawDraft;
+    try {
+      rawDraft = await options.analyzeFrames({
+        prompt: observation.prompt,
+        frames: observation.frames,
+        goal: sanitizeSkillContent(goal),
+        appHint: sanitizeSkillContent(appHint),
+        signal: analyzeSignal,
+      });
+    } finally {
+      if (activeAbort === analyzeAbort) activeAbort = null;
+    }
     const formatted = formatSkillDraftMarkdown(rawDraft && typeof rawDraft === 'object' ? rawDraft : {});
     return {
       ok: true,

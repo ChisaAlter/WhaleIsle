@@ -43,3 +43,31 @@ export async function createTaskCheckout(cwd, taskId, signal) {
   catch (error) { throw new Error(`Could not prepare task checkout at ${directory}; it is retained for recovery. ${error.message}`); }
   return { cwd: directory, repositoryRoot: root, baseCommit: base };
 }
+
+/**
+ * Remove an orphaned task worktree created during a failed pre-admission preparation.
+ * Only operates on directories strictly inside `<repositoryRoot>/.agent-worktrees/`.
+ */
+export async function removeTaskCheckout(repositoryRoot, directory) {
+  if (!repositoryRoot || !directory) return false;
+  const worktreesRoot = path.resolve(repositoryRoot, WORKTREE_DIR);
+  const resolvedDir = path.resolve(directory);
+  const rel = path.relative(worktreesRoot, resolvedDir);
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return false;
+  try {
+    await run('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', 'worktree', 'remove', '--force', '--', resolvedDir], {
+      cwd: repositoryRoot, windowsHide: true, encoding: 'utf8', maxBuffer: 1024 * 1024,
+    });
+    return true;
+  } catch {
+    try {
+      fs.rmSync(resolvedDir, { recursive: true, force: true });
+      await run('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', 'worktree', 'prune'], {
+        cwd: repositoryRoot, windowsHide: true, encoding: 'utf8', maxBuffer: 1024 * 1024,
+      }).catch(() => { /* Best-effort metadata prune after forced worktree directory removal. */ });
+      return !fs.existsSync(resolvedDir);
+    } catch {
+      return false;
+    }
+  }
+}

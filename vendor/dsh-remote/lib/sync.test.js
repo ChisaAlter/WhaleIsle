@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -169,4 +169,89 @@ test('sync state round-trips atomically and malformed state loads as empty', (t)
   assert.deepEqual(loadSyncState(local), { 'a.txt': { size: 1, mtime: 1 } })
   writeFileSync(path.join(local, '.dsh-remote-sync-state.json'), '{broken')
   assert.deepEqual(loadSyncState(local), {})
+})
+
+test('syncTree rejects path traversal, drive prefixes, NUL bytes, and remote symlinks', async (t) => {
+  const { root, local, remote } = tempDir(t)
+  const evilNames = [
+    '../escape.txt',
+    '..\\escape2.txt',
+    'sub/nested.txt',
+    'sub\\nested2.txt',
+    'C:drive.txt',
+    'bad\0null.txt',
+    '.',
+    '..',
+    '',
+  ]
+  const rawEntries = [
+    ...evilNames.map((filename) => ({
+      filename,
+      attrs: { isDirectory: () => false, isSymbolicLink: () => false, size: 4, mtime: 100 },
+    })),
+    {
+      filename: '../evil-dir',
+      attrs: { isDirectory: () => true, isSymbolicLink: () => false, size: 0, mtime: 100 },
+    },
+    {
+      filename: 'sym-by-fn.txt',
+      attrs: { isDirectory: () => false, isSymbolicLink: () => true, size: 4, mtime: 100 },
+    },
+    {
+      filename: 'sym-by-mode.txt',
+      attrs: { isDirectory: () => false, mode: 0o120777, size: 4, mtime: 100 },
+    },
+    {
+      filename: 'sym-by-lstat.txt',
+      attrs: { isDirectory: () => false, isSymbolicLink: () => false, size: 4, mtime: 100 },
+    },
+    {
+      filename: '..good.txt',
+      attrs: { isDirectory: () => false, isSymbolicLink: () => false, size: 4, mtime: 100 },
+    },
+  ]
+  const sftp = {
+    async readdir(dir) {
+      return dir === remote ? rawEntries : []
+    },
+    async lstat(target) {
+      if (target === `${remote}/sym-by-lstat.txt`) {
+        return { size: 4, mtime: 100, isDirectory: () => false, isSymbolicLink: () => true }
+      }
+      return { size: 4, mtime: 100, isDirectory: () => false, isSymbolicLink: () => false }
+    },
+    async stat() {
+      return { size: 4, mtime: 100, isDirectory: () => false }
+    },
+    async readFile() {
+      return Buffer.from('good')
+    },
+  }
+
+  const { stats } = await syncTree(sftp, remote, local)
+  assert.equal(stats.files, 1)
+  assert.deepEqual(stats.touched, [`${remote}/..good.txt`])
+  assert.equal(readFileSync(path.join(local, '..good.txt'), 'utf8'), 'good')
+  assert.equal(existsSync(path.join(root, 'escape.txt')), false)
+  assert.equal(existsSync(path.join(root, 'escape2.txt')), false)
+  assert.equal(existsSync(path.join(root, 'evil-dir')), false)
+  assert.equal(existsSync(path.join(local, 'sym-by-fn.txt')), false)
+  assert.equal(existsSync(path.join(local, 'sym-by-mode.txt')), false)
+  assert.equal(existsSync(path.join(local, 'sym-by-lstat.txt')), false)
+})
+
+test('syncTree refuses to traverse or write through a local symlink or junction', async (t) => {
+  const { root, local, remote } = tempDir(t)
+  const outside = path.join(root, 'outside')
+  fsMkdir(outside)
+  symlinkSync(outside, path.join(local, 'linked-dir'), process.platform === 'win32' ? 'junction' : 'dir')
+
+  const sftp = makeSftp([
+    { path: `${remote}/linked-dir/pwned.txt`, body: 'evil', size: 4, mtime: 200 },
+    { path: `${remote}/safe.txt`, body: 'safe', size: 4, mtime: 200 },
+  ])
+  const { stats } = await syncTree(sftp, remote, local)
+  assert.equal(existsSync(path.join(outside, 'pwned.txt')), false)
+  assert.equal(stats.files, 1)
+  assert.equal(readFileSync(path.join(local, 'safe.txt'), 'utf8'), 'safe')
 })

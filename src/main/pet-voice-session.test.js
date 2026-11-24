@@ -295,4 +295,90 @@ describe('pet voice session state machine', () => {
       await manager.dispose();
     }
   });
+
+  test('submitTranscript during speaking interrupts active TTS and supersedes cleanly', async () => {
+    const events = [];
+    let speakCount = 0;
+    let resolveFirstSpeak = null;
+    const adapters = makeAdapters({
+      llm: {
+        async generate(transcript) {
+          return `回复：${transcript}`;
+        },
+      },
+      tts: {
+        speak(text, { signal, onProgress }) {
+          speakCount += 1;
+          const idx = speakCount;
+          events.push(['speak-start', idx, text]);
+          return new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              events.push(['speak-abort', idx, signal.reason?.message || 'aborted']);
+              reject(new Error('tts_aborted'));
+            }, { once: true });
+            if (idx === 1) {
+              onProgress?.('回复：第一句');
+              resolveFirstSpeak = () => resolve();
+            } else {
+              queueMicrotask(() => {
+                onProgress?.(text);
+                events.push(['speak-done', idx]);
+                resolve();
+              });
+            }
+          });
+        },
+        stop() {
+          events.push(['tts-stop']);
+        },
+      },
+    });
+    const session = createPetVoiceSession({
+      asr: adapters.asr,
+      llm: adapters.llm,
+      tts: adapters.tts,
+    });
+
+    const firstTurn = session.submitTranscript('第一句话，播报很长的内容');
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(session.getState().state, VOICE_STATES.SPEAKING);
+
+    const secondTurn = await session.submitTranscript('第二句话');
+    assert.equal(secondTurn.ok, true);
+    assert.equal(secondTurn.replyText, '回复：第二句话');
+    assert.ok(events.some(([kind, idx, reason]) => kind === 'speak-abort' && idx === 1 && reason === 'superseded'));
+    assert.ok(events.some(([kind]) => kind === 'tts-stop'));
+    resolveFirstSpeak?.();
+    const firstResult = await firstTurn;
+    assert.equal(firstResult.ok, false);
+    assert.equal(firstResult.interrupted, true);
+    assert.equal(session.getState().state, VOICE_STATES.IDLE);
+    session.dispose();
+  });
+
+  test('keeps a bounded history window across many consecutive voice turns', async () => {
+    const seenHistories = [];
+    const adapters = makeAdapters({
+      llm: {
+        async generate(transcript, { history }) {
+          seenHistories.push(history.map((item) => ({ ...item })));
+          return `ack:${transcript}`;
+        },
+      },
+      autoTtsFinish: true,
+    });
+    const session = createPetVoiceSession({
+      asr: adapters.asr,
+      llm: adapters.llm,
+      tts: adapters.tts,
+    });
+    for (let i = 0; i < 30; i += 1) {
+      const res = await session.submitTranscript(`turn-${i}`);
+      assert.equal(res.ok, true);
+    }
+    assert.equal(seenHistories.length, 30);
+    assert.ok(seenHistories.every((h) => h.length <= 12));
+    assert.equal(seenHistories.at(-1).at(-1).text, 'turn-29');
+    session.dispose();
+  });
 });

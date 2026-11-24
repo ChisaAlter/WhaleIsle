@@ -222,16 +222,27 @@ async function copyDir(src, dest, deps = {}) {
   }
 }
 
+const RETRYABLE_RM_CODES = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY']);
+
 /** @param {string} dir
- * @param {LifecycleDeps} [deps]
+ * @param {LifecycleDeps & { removeRetryMs?: number }} [deps]
  */
 async function removeDir(dir, deps = {}) {
   const fsp = (deps.fs || fs).promises;
-  try {
-    await fsp.rm(dir, { recursive: true, force: true });
-    return true;
-  } catch {
-    return false;
+  const deadline = Date.now() + (deps.removeRetryMs ?? 1200);
+  let delayMs = 50;
+  for (;;) {
+    try {
+      await fsp.rm(dir, { recursive: true, force: true });
+      return true;
+    } catch (error) {
+      const code = /** @type {any} */ (error)?.code;
+      if (!RETRYABLE_RM_CODES.has(code) || Date.now() >= deadline) {
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      delayMs = Math.min(delayMs * 2, 250);
+    }
   }
 }
 

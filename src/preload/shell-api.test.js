@@ -658,3 +658,57 @@ test('window material mark and IPC stay inert without the flag, in subframes, or
     assert.deepEqual(sent.filter(([ch]) => ch === 'shell:window-material'), []);
   }
 });
+
+test('boot and launcher preload apply data-dsh-minimal without injecting inline style elements', async (t) => {
+  withMainFrame(t, true);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  t.after(() => {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+    else delete globalThis.window;
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+    else delete globalThis.document;
+  });
+
+  for (const role of ['boot', 'launcher']) {
+    const attrs = new Map();
+    const appended = [];
+    const created = [];
+    const root = {
+      dataset: {},
+      hasAttribute: (name) => attrs.has(name),
+      toggleAttribute: (name, value) => {
+        if (value) attrs.set(name, '');
+        else attrs.delete(name);
+      },
+    };
+    globalThis.window = { addEventListener() {} };
+    globalThis.document = {
+      documentElement: root,
+      readyState: 'complete',
+      createElement: (tag) => {
+        created.push(tag);
+        return { dataset: {} };
+      },
+      head: { appendChild: (el) => appended.push(el) },
+      dispatchEvent() {},
+    };
+    loadPreload(['electron', `--dshd-shell-role=${role}`, '--dshd-minimal=1'], {
+      ipcRenderer: { ...fakeRenderer(), invoke: async (ch) => (ch === 'shell:get-render-mode' ? true : undefined) },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(attrs.has('data-dsh-minimal'), true);
+    assert.equal(created.includes('style'), false);
+    assert.equal(appended.length, 0);
+  }
+
+  for (const page of ['boot.html', 'launcher.html', 'magpie-shell.html', 'update-center.html', 'update-dialog.html']) {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', page), 'utf8');
+    assert.match(html, /base-uri 'none'/);
+    assert.match(html, /form-action 'none'/);
+    assert.match(html, /object-src 'none'/);
+    if (page === 'boot.html' || page === 'launcher.html') {
+      assert.match(html, /href="render-policy\.css"/);
+    }
+  }
+});

@@ -836,6 +836,8 @@ export class DingtalkHarnessBridge {
       this.#state,
       key,
       {
+        channel: 'dingtalk',
+        accountId: this.#accessGate?.botId ?? this.#clientId,
         signal: this.#signal,
         hasImages: hasInboundImages(prompt),
         hasFiles: hasInboundFiles(prompt),
@@ -944,7 +946,10 @@ export class DingtalkHarnessBridge {
         return;
       }
       if (isPlainText && !hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+        if (await sharedWhaleSessionId(this.#harness, {
+          channel: 'dingtalk',
+          accountId: this.#accessGate?.botId ?? this.#clientId,
+        }) || await isWhaleEnforcedForHarness(this.#harness)) {
           await this.#send(sessionWebhook, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(key);
@@ -995,6 +1000,8 @@ export class DingtalkHarnessBridge {
         harness: this.#harness,
         state: this.#state,
         key,
+        channel: 'dingtalk',
+        accountId: this.#accessGate?.botId ?? this.#clientId,
         ...(hasImages ? { content } : { text }),
         speaker: message.speaker,
         createOptions: { signal: this.#signal },

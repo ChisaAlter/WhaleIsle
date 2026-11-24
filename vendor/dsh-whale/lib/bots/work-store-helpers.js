@@ -210,10 +210,10 @@ export function normalizeAutomationInput(input, existing, now) {
   return {
     botId: String(input.botId),
     enabled: enabledFlag ? 1 : 0,
-    nextRunAt: input.nextRunAt ?? existing?.nextRunAt ?? null,
-    lastRunAt: input.lastRunAt ?? existing?.lastRunAt ?? null,
-    lastStatus: input.lastStatus ?? existing?.lastStatus ?? null,
-    lastError: input.lastError ?? existing?.lastError ?? null,
+    nextRunAt: input.nextRunAt !== undefined ? input.nextRunAt : (existing?.nextRunAt ?? null),
+    lastRunAt: input.lastRunAt !== undefined ? input.lastRunAt : (existing?.lastRunAt ?? null),
+    lastStatus: input.lastStatus !== undefined ? input.lastStatus : (existing?.lastStatus ?? null),
+    lastError: input.lastError !== undefined ? input.lastError : (existing?.lastError ?? null),
     createdAt: existing?.createdAt ?? (Number.isFinite(input.createdAt) ? input.createdAt : now),
     rest,
   };

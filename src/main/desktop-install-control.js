@@ -6,9 +6,11 @@ const fs = require('fs');
 const path = require('path');
 
 const { isValidGithubSpec, normalizeAllowBuilds } = require('../host/install-dsh-plugin-client.js');
-const { effectOf, NEVER_ALWAYS_LEVELS } = require('../shared/model-tool-effects.js');
+const { effectOf, NEVER_ALWAYS_LEVELS, TOOLS } = require('../shared/model-tool-effects.js');
 const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 const { tryGetDesktopDshHome } = require('../shared/dsh-home');
+
+const SENSITIVE_CONFIG_KEYS = new Set(TOOLS.whale_desktop_config?.keys ?? []);
 
 const RESTART_DELAY_MS = 500;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -271,13 +273,8 @@ function normalizeInstallResult(result, fallbackSpec) {
 }
 
 async function handleInstall(req, res, { installPlugin, startHarness, restartDelayMs, confirmModelAction }) {
-  let payload;
-  try {
-    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
-  } catch {
-    badRequest(res, 'invalid json');
-    return;
-  }
+  const payload = await readJsonPayload(req, res);
+  if (!payload) return;
   const spec = String(payload.spec || '').trim();
   const allowBuilds = normalizeAllowBuilds(payload.allowBuilds);
   if (!isValidGithubSpec(spec)) {
@@ -327,13 +324,8 @@ async function handleInstall(req, res, { installPlugin, startHarness, restartDel
  * validation), so this layer only normalizes the envelope.
  */
 async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarness, restartDelayMs, confirmModelAction }) {
-  let payload;
-  try {
-    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
-  } catch {
-    badRequest(res, 'invalid json');
-    return;
-  }
+  const payload = await readJsonPayload(req, res);
+  if (!payload) return;
   const action = String(payload.action || '').trim();
   const allowBuilds = normalizeAllowBuilds(payload.allowBuilds);
   if (allowBuilds === null) {
@@ -522,14 +514,68 @@ function auditConfirmOutcome(request, scope, outcome) {
   });
 }
 
-async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed }) {
-  let payload;
+async function readJsonPayload(/** @type {any} */ req, /** @type {any} */ res) {
   try {
-    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
+    return JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
   } catch {
     badRequest(res, 'invalid json');
-    return;
+    return null;
   }
+}
+
+function consumeOnceGrant(/** @type {Map<string, number> | undefined} */ onceGrants, /** @type {string} */ key) {
+  const count = onceGrants?.get(key) || 0;
+  if (count <= 0) return false;
+  if (count === 1) onceGrants?.delete(key);
+  else onceGrants?.set(key, count - 1);
+  return true;
+}
+
+async function confirmSensitiveConfigPatch(/** @type {any} */ res, /** @type {Record<string, unknown>} */ patch, /** @type {any} */ ops) {
+  const sensitive = Object.keys(patch).filter((key) => SENSITIVE_CONFIG_KEYS.has(key)).sort();
+  if (sensitive.length === 0) return true;
+  const touchesCredential = sensitive.includes('githubToken');
+  const action = touchesCredential ? 'patch-credentials' : 'patch';
+  const effect = effectOf('whale_desktop_config', action) || (touchesCredential ? 'destructive' : 'external');
+  const scope = sensitive.join(',');
+  const memoryKey = `whale_desktop_config ${action} ${scope}`;
+  const rememberable = !NEVER_ALWAYS_LEVELS.has(effect);
+  if (rememberable && ops.sessionAllowed.has(memoryKey)) return true;
+  if (consumeOnceGrant(ops.onceGrants, memoryKey)) return true;
+  const request = buildConfirmRequest({
+    summary: `修改敏感桌面配置：${scope}`,
+    details: JSON.stringify(redactAuditSecrets(patch), null, 2),
+  }, 'whale_desktop_config', action, effect);
+  const confirmation = await confirmForRequest(res, ops.confirmModelAction, request, ACTION_WORDING);
+  const grantedAlways = confirmation.allowed && confirmation.always && rememberable;
+  if (grantedAlways) ops.sessionAllowed.add(memoryKey);
+  appendConfirmAudit({
+    route: '/desktop/config', decision: interactiveConfirmDecision(confirmation, rememberable),
+    allowed: confirmation.allowed, always: grantedAlways, scope, keys: sensitive, reason: confirmation.error || '',
+  });
+  if (!confirmation.allowed) { sendJson(res, 200, declinedBody(confirmation.error)); return false; }
+  return true;
+}
+
+async function handleDesktopConfig(/** @type {any} */ req, /** @type {any} */ res, /** @type {any} */ desktop, /** @type {any} */ ops) {
+  const payload = await readJsonPayload(req, res);
+  if (!payload) return;
+  const patch = payload?.patch;
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) { badRequest(res, 'missing config patch'); return; }
+  if (!(await confirmSensitiveConfigPatch(res, patch, ops))) return;
+  sendJson(res, 200, await desktop.applyConfig(patch));
+}
+
+function recordConfigOnceGrant(/** @type {Map<string, number> | undefined} */ onceGrants, /** @type {string} */ tool, /** @type {string} */ action, /** @type {string} */ memoryKey) {
+  if (!onceGrants || tool !== 'whale_desktop_config') return;
+  if (action !== 'patch' && action !== 'patch-credentials') return;
+  onceGrants.set(memoryKey, (onceGrants.get(memoryKey) || 0) + 1);
+}
+
+/** @param {any} req @param {any} res @param {any} ops */
+async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed, onceGrants }) {
+  const payload = await readJsonPayload(req, res);
+  if (!payload) return;
   const tool = String(payload?.tool || '').slice(0, 200);
   const effect = String(payload?.effect || '').slice(0, 40);
   if (!tool || !effect) {
@@ -555,9 +601,8 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
   }
   const confirmation = await confirmForRequest(res, confirmModelAction, request, ACTION_WORDING);
   const grantedAlways = confirmation.allowed && confirmation.always && rememberable;
-  if (grantedAlways) {
-    sessionAllowed.add(memoryKey);
-  }
+  if (grantedAlways) sessionAllowed.add(memoryKey);
+  else if (confirmation.allowed) recordConfigOnceGrant(onceGrants, tool, action, memoryKey);
   auditConfirmOutcome(request, scope, {
     decision: interactiveConfirmDecision(confirmation, rememberable),
     allowed: confirmation.allowed,
@@ -573,13 +618,8 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
  * model. It is serialized behind pending confirmations so dialogs never stack.
  */
 async function handleShowSecret(req, res, { showSecret }) {
-  let payload;
-  try {
-    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
-  } catch {
-    badRequest(res, 'invalid json');
-    return;
-  }
+  const payload = await readJsonPayload(req, res);
+  if (!payload) return;
   const secret = String(payload?.secret || '');
   if (!secret) {
     badRequest(res, 'missing secret');
@@ -608,6 +648,65 @@ async function handleShowSecret(req, res, { showSecret }) {
   sendJson(res, 200, await run);
 }
 
+async function handleHtmlPreview(/** @type {any} */ req, /** @type {any} */ res, /** @type {any} */ desktop) {
+  if (typeof desktop.htmlPreview !== 'function') {
+    sendJson(res, 503, { error: 'HTML preview rendering service is unavailable' });
+    return;
+  }
+  // Base64 local images are already part of the prepared page; reserve
+  // room for JSON escaping while keeping this route independently bounded.
+  let payload;
+  try { payload = JSON.parse(await readBodyLimited(req, 52 * 1024 * 1024, { res })); }
+  catch { badRequest(res, 'invalid or oversized HTML preview request'); return; }
+  const cancellation = new AbortController();
+  const cancel = () => cancellation.abort(new Error('HTML preview request closed.'));
+  req.once('aborted', cancel);
+  res.once('close', cancel);
+  try {
+    const value = await desktop.htmlPreview(payload, cancellation.signal);
+    if (!res.destroyed) sendJson(res, 200, value);
+  } finally {
+    req.removeListener('aborted', cancel);
+    res.removeListener('close', cancel);
+  }
+}
+
+async function handleDesktopProject(/** @type {any} */ req, /** @type {any} */ res, /** @type {any} */ desktop) {
+  const payload = await readJsonPayload(req, res);
+  if (!payload) return;
+  if (typeof payload !== 'object' || Array.isArray(payload) || typeof desktop.project !== 'function') {
+    badRequest(res, 'Project capability is unavailable or invalid');
+    return;
+  }
+  sendJson(res, 200, await desktop.project(payload));
+}
+
+async function dispatchDesktopRoute(/** @type {any} */ req, /** @type {any} */ res, /** @type {string} */ pathname, /** @type {any} */ desktop, /** @type {any} */ ops) {
+  if (req.method === 'POST' && pathname === '/desktop/html-preview') return handleHtmlPreview(req, res, desktop);
+  if (req.method === 'GET' && pathname === '/desktop/state') return sendJson(res, 200, await desktop.state());
+  if (req.method === 'POST' && pathname === '/desktop/project') return handleDesktopProject(req, res, desktop);
+  if (req.method === 'GET' && pathname === '/desktop/marketplace') {
+    const { searchParams } = new URL(req.url ?? '/', 'http://dshd.internal');
+    return sendJson(res, 200, await desktop.listMarketplace({
+      q: searchParams.get('q') || '',
+      refresh: searchParams.get('refresh') === '1',
+    }));
+  }
+  return dispatchDesktopSettingsOrPlugin(req, res, pathname, desktop, ops);
+}
+
+async function dispatchDesktopSettingsOrPlugin(/** @type {any} */ req, /** @type {any} */ res, /** @type {string} */ pathname, /** @type {any} */ desktop, /** @type {any} */ ops) {
+  if (req.method === 'POST' && pathname === '/desktop/config') return handleDesktopConfig(req, res, desktop, ops);
+  if (req.method === 'GET' && pathname === '/desktop/pet-settings') return sendJson(res, 200, await desktop.petSettings());
+  if (req.method === 'POST' && pathname === '/desktop/pet-settings') {
+    const payload = await readJsonPayload(req, res);
+    if (payload) sendJson(res, 200, await desktop.applyPetSettings(payload.patch));
+    return;
+  }
+  if (req.method === 'POST' && pathname === '/desktop/plugin') return handleDesktopPlugin(req, res, desktop, ops);
+  sendJson(res, 404, { ok: false, error: 'not found' });
+}
+
 function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, confirmModelAction, showSecret }) {
   const delay = Number.isFinite(restartDelayMs) ? restartDelayMs : RESTART_DELAY_MS;
   const ops = {
@@ -620,6 +719,7 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
     // with the control server instance so an app restart re-asks; never
     // populated for destructive/code effects.
     sessionAllowed: new Set(),
+    onceGrants: new Map(),
   };
   return async (req, res) => {
     const pathname = new URL(req.url ?? '/', 'http://dshd.internal').pathname;
@@ -631,100 +731,15 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
       unauthorized(res);
       return;
     }
-    if (req.method === 'POST' && pathname === '/install') {
-      await handleInstall(req, res, ops);
-      return;
-    }
-    if (req.method === 'POST' && pathname === '/desktop/confirm') {
-      await handleDesktopConfirm(req, res, ops);
-      return;
-    }
-    if (req.method === 'POST' && pathname === '/desktop/show-secret') {
-      await handleShowSecret(req, res, ops);
-      return;
-    }
+    if (req.method === 'POST' && pathname === '/install') return handleInstall(req, res, ops);
+    if (req.method === 'POST' && pathname === '/desktop/confirm') return handleDesktopConfirm(req, res, ops);
+    if (req.method === 'POST' && pathname === '/desktop/show-secret') return handleShowSecret(req, res, ops);
     if (!desktop) {
       sendJson(res, 404, { ok: false, error: 'not found' });
       return;
     }
     try {
-      if (req.method === 'POST' && pathname === '/desktop/html-preview') {
-        if (typeof desktop.htmlPreview !== 'function') {
-          sendJson(res, 503, { error: 'HTML preview rendering service is unavailable' });
-          return;
-        }
-        // Base64 local images are already part of the prepared page; reserve
-        // room for JSON escaping while keeping this route independently bounded.
-        let payload;
-        try { payload = JSON.parse(await readBodyLimited(req, 52 * 1024 * 1024, { res })); }
-        catch { badRequest(res, 'invalid or oversized HTML preview request'); return; }
-        const cancellation = new AbortController();
-        const cancel = () => cancellation.abort(new Error('HTML preview request closed.'));
-        req.once('aborted', cancel);
-        res.once('close', cancel);
-        try {
-          const value = await desktop.htmlPreview(payload, cancellation.signal);
-          if (!res.destroyed) sendJson(res, 200, value);
-        } finally {
-          req.removeListener('aborted', cancel);
-          res.removeListener('close', cancel);
-        }
-        return;
-      }
-      if (req.method === 'GET' && pathname === '/desktop/state') {
-        sendJson(res, 200, await desktop.state());
-        return;
-      }
-      if (req.method === 'POST' && pathname === '/desktop/project') {
-        let payload;
-        try { payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}'); }
-        catch { badRequest(res, 'invalid json'); return; }
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof desktop.project !== 'function') {
-          badRequest(res, 'Project capability is unavailable or invalid');
-          return;
-        }
-        sendJson(res, 200, await desktop.project(payload));
-        return;
-      }
-      if (req.method === 'GET' && pathname === '/desktop/marketplace') {
-        const { searchParams } = new URL(req.url ?? '/', 'http://dshd.internal');
-        sendJson(res, 200, await desktop.listMarketplace({
-          q: searchParams.get('q') || '',
-          refresh: searchParams.get('refresh') === '1',
-        }));
-        return;
-      }
-      if (req.method === 'POST' && pathname === '/desktop/config') {
-        let payload;
-        try {
-          payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
-        } catch {
-          badRequest(res, 'invalid json');
-          return;
-        }
-        sendJson(res, 200, await desktop.applyConfig(payload.patch));
-        return;
-      }
-      if (req.method === 'GET' && pathname === '/desktop/pet-settings') {
-        sendJson(res, 200, await desktop.petSettings());
-        return;
-      }
-      if (req.method === 'POST' && pathname === '/desktop/pet-settings') {
-        let payload;
-        try {
-          payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
-        } catch {
-          badRequest(res, 'invalid json');
-          return;
-        }
-        sendJson(res, 200, await desktop.applyPetSettings(payload.patch));
-        return;
-      }
-      if (req.method === 'POST' && pathname === '/desktop/plugin') {
-        await handleDesktopPlugin(req, res, desktop, ops);
-        return;
-      }
-      sendJson(res, 404, { ok: false, error: 'not found' });
+      await dispatchDesktopRoute(req, res, pathname, desktop, ops);
     } catch (error) {
       serverError(res, error);
     }
@@ -763,26 +778,14 @@ function startDesktopInstallControl(options = {}) {
 
 function stopDesktopInstallControl() {
   activeAuditLogPath = '';
-  if (!active) {
-    return;
-  }
-  if (active.restartTimer) {
-    clearTimeout(active.restartTimer);
-  }
-  try {
-    active.server.close();
-  } catch {
-    // already closed
-  }
+  if (!active) return;
+  if (active.restartTimer) clearTimeout(active.restartTimer);
+  try { active.server.close(); } catch { /* already closed */ }
   active = null;
 }
 
 module.exports = {
-  desktopInstallEnv,
-  desktopInstallToken,
-  desktopInstallReady,
-  startDesktopInstallControl,
-  stopDesktopInstallControl,
-  redactAuditSecrets,
-  resolveConfirmAuditPath,
+  desktopInstallEnv, desktopInstallToken, desktopInstallReady,
+  startDesktopInstallControl, stopDesktopInstallControl,
+  redactAuditSecrets, resolveConfirmAuditPath,
 };
