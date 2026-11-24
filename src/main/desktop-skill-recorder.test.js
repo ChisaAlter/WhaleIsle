@@ -214,10 +214,12 @@ describe('desktop skill recorder', () => {
       assert.deepEqual(await noGate.checkAvailability(), { available: false, reason: 'capture_unavailable' });
       assert.deepEqual(await noGate.captureFrames({ maxFrames: 1 }), { ok: false, reason: 'capture_unavailable', frames: [] });
     }
-    const deniedConfirm = createSkillRecorder({ desktopCapturer: capturer, confirmCapture: async () => false });
+    const darwinGrantedElectron = { systemPreferences: { getMediaAccessStatus: () => 'granted' } };
+    const deniedConfirm = createSkillRecorder({ desktopCapturer: capturer, electron: darwinGrantedElectron, confirmCapture: async () => false });
     assert.deepEqual(await deniedConfirm.checkAvailability(), { available: false, reason: 'capture_unavailable' });
     const confirmed = createSkillRecorder({
       desktopCapturer: capturer,
+      electron: darwinGrantedElectron,
       confirmCapture: async () => true,
       wait: async () => {},
     });

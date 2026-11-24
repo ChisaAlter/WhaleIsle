@@ -165,7 +165,9 @@ async function probeCaptureAvailability(deps) {
     if (status !== 'granted') {
       return { available: false, reason: 'capture_unavailable' };
     }
-    return { available: true };
+    if (typeof deps.confirmCapture !== 'function') {
+      return { available: true };
+    }
   }
   if (typeof deps.confirmCapture === 'function') {
     try {

@@ -150,7 +150,7 @@ export function registerStickerTools(ctx) {
         : null;
       if (meta && 'ok' in meta && meta.ok !== true) return undefined;
       const fallbackText = Array.isArray(result.content)
-        ? result.content.map((/** @param {any} b */ b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
+        ? result.content.map((/** @type {any} */ b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
         : '';
       return {
         card: 'generic',
