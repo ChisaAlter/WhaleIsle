@@ -38,6 +38,14 @@ const freshSignal = () => new AbortController().signal;
 
 const INTERNAL_RPC_PREFIXES = ['bot-kickoff-', 'bot-item-mail-', 'bot-turn-', 'bot-takeover-', 'whale-pulse-'];
 
+/** @param {any} res */
+function extractSessionOpenFailure(res) {
+  return {
+    error: res && 'error' in res && res.error ? res.error : 'session-controller-unavailable',
+    refusal: res && 'refusal' in res && res.refusal ? res.refusal : undefined,
+  };
+}
+
 /** @param {string} action */
 export function buildControllerUnavailableRefusal(action = 'start-session') {
   return {
@@ -376,10 +384,10 @@ export function createSessionRuntime(deps) {
         ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
       };
     }
-    if (previousSessionId) {
+    const nextSessionId = ensured.sessionId || requestedSessionId;
+    if (previousSessionId && previousSessionId !== nextSessionId) {
       botsStore.closeChat(previousSessionId, now);
     }
-    const nextSessionId = ensured.sessionId || requestedSessionId;
     botsStore.upsertChat({
       sessionId: nextSessionId,
       botId: bot.id,
@@ -434,14 +442,15 @@ export function createSessionRuntime(deps) {
     setKickoffState(bot.id, { status: 'running', step: 'start', prompt, error: null });
     const opened = await openHomeChat(bot.id);
     const controller = controllerOf();
-    if (!controller || typeof controller.prompt !== 'function') {
+    if (!opened.ok || !opened.sessionId || !controller || typeof controller.prompt !== 'function') {
+      const failure = extractSessionOpenFailure(opened);
       setKickoffState(bot.id, { status: 'ready', step: 'done', prompt, error: null });
       return {
         ok: false,
-        sessionId: opened.sessionId,
+        sessionId: opened.sessionId ?? null,
         queued: false,
-        error: 'session-controller-unavailable',
-        refusal: buildControllerUnavailableRefusal('kickoff'),
+        error: failure.error,
+        refusal: failure.refusal ?? buildControllerUnavailableRefusal('kickoff'),
       };
     }
     setKickoffState(bot.id, { status: 'running', step: 'first-message', prompt, error: null });
@@ -481,6 +490,17 @@ export function createSessionRuntime(deps) {
     const target = chat === 'new'
       ? await startSideChat(bot.id, { title: title || path.basename(cwd), cwd: entry.worktreeId })
       : await openHomeChat(bot.id);
+    if (!target || target.ok === false || !target.sessionId) {
+      const failure = extractSessionOpenFailure(target);
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        cwd: entry.worktreeId,
+        error: failure.error,
+        ...(failure.refusal ? { refusal: failure.refusal } : {}),
+      };
+    }
     const text = prompt || `已将工作区 \`${entry.worktreeId}\` 移交给你负责。请先了解当前仓库状态并回报。`;
     const controller = controllerOf();
     if (typeof controller?.prompt === 'function') {

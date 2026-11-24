@@ -921,5 +921,71 @@ test('look-around & automations: background execution, idempotent dismiss, and s
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(workStore.getAutomation(auto.id).lastStatus, 'failed');
     assert.ok(errors.some((e) => e.ctx?.phase === 'runNow:background' && /bg_auto_err/.test(e.err?.message || '')));
+
+    // 7. Concurrent startSuggestion double-click while opening chat does not spawn duplicate side chat or turn
+    const sRace = lookSvc.addSuggestion(bot.id, { title: 'Race Suggestion', why: 'double click', ask: 'run once' }).suggestion;
+    let sideChatCalls = 0;
+    let resolveOpenSide;
+    sessionRuntime.startSideChat = () => {
+      sideChatCalls += 1;
+      return new Promise((r) => { resolveOpenSide = r; });
+    };
+    turnHandler = async () => ({ ok: true, reply: 'race-done' });
+
+    const firstStartPromise = lookSvc.startSuggestion(bot.id, sRace.id, { chat: 'new', background: true });
+    const secondStartRes = await lookSvc.startSuggestion(bot.id, sRace.id, { chat: 'new', background: true });
+    assert.equal(secondStartRes.ok, false);
+    assert.equal(secondStartRes.alreadyResolved, true);
+    assert.equal(secondStartRes.status, 'starting');
+    assert.equal(sideChatCalls, 1, 'concurrent startSuggestion must not open a second side chat');
+
+    resolveOpenSide({ ok: true, botId: bot.id, sessionId: 'side-race-1' });
+    const firstStartRes = await firstStartPromise;
+    assert.equal(firstStartRes.ok, true);
+    assert.equal(firstStartRes.sessionId, 'side-race-1');
+    sessionRuntime.startSideChat = async () => startSideResult;
+
+    // 8. lookNow cleans up runningBots after thrown error so subsequent sweeps are never wedged
+    turnHandler = async () => { throw new Error('boom_sweep'); };
+    const failedRun = await lookSvc.lookNow(bot.id);
+    assert.equal(failedRun.ok, false);
+    assert.equal(lookSvc.getState(bot.id).running, false);
+    turnHandler = async () => ({ ok: true, reply: 'NO_REPLY' });
+    const recoveredRun = await lookSvc.lookNow(bot.id);
+    assert.equal(recoveredRun.ok, true);
+    assert.equal(recoveredRun.alreadyRunning, undefined);
+
+    // 9. Concurrent automationsService.runNow during async budgetGuard blocks duplicate execution
+    let resolveBudget;
+    let asyncAutoTurns = 0;
+    const guardedAutoSvc = createAutomationsService({
+      botsStore: dbHandle.bots,
+      workStore,
+      sessionRuntime: {
+        ...sessionRuntime,
+        async runSingleTurn() {
+          asyncAutoTurns += 1;
+          return { ok: true, reply: 'guarded-ok' };
+        },
+      },
+      eventBus,
+      budgetGuard: () => new Promise((r) => { resolveBudget = r; }),
+      enableScheduler: false,
+      enableFolderWatcher: false,
+    });
+    onClose(() => guardedAutoSvc.close());
+
+    const guardedAuto = guardedAutoSvc.create({ botId: bot.id, name: 'Guarded Job', prompt: 'Check', intervalMinutes: 60 });
+    const run1Promise = guardedAutoSvc.runNow(guardedAuto.id, { background: true });
+    const run2Res = await guardedAutoSvc.runNow(guardedAuto.id, { background: true });
+    assert.equal(run2Res.ok, true);
+    assert.equal(run2Res.alreadyRunning, true);
+
+    resolveBudget({ allowed: true });
+    const run1Res = await run1Promise;
+    assert.equal(run1Res.ok, true);
+    assert.equal(run1Res.started, true);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(asyncAutoTurns, 1);
   });
 });

@@ -550,50 +550,58 @@ export function createAutomationsService(deps) {
     const bot = requireBot(auto.botId);
     if (runningIds.has(auto.id)) return { ok: true, alreadyRunning: true, automationId: auto.id };
 
-    const runId = `run-${crypto.randomUUID().slice(0, 12)}`;
-    const slotAt = Number.isFinite(options.slotAt) ? Math.trunc(options.slotAt) : nextUniqueSlotAt(now);
-    const claimRes = typeof workStore.claimAutomationSlot === 'function'
-      ? workStore.claimAutomationSlot({ automationId: auto.id, botId: bot.id, slotAt, triggerKind, coalescedCount, runId }, now)
-      : { claimed: true, claim: { claimId: `ephemeral-${runId}`, status: 'claimed' } };
-
-    if (!claimRes.claimed) {
-      return {
-        ok: true, deduplicated: true, alreadyClaimed: true,
-        claimId: claimRes.claim.claimId, claim: claimRes.claim, automationId: auto.id,
-      };
-    }
-
-    const budgetCheck = await evaluateBudgetGuard(deps.budgetGuard, { botId: bot.id, automation: auto, triggerKind, now });
-    if (!budgetCheck.allowed) return recordBudgetSkip(auto, bot, claimRes.claim, budgetCheck, options, now);
-
     runningIds.add(auto.id);
-    const runExecution = async () => {
-      try {
-        return await executeClaimedAutomation(auto, bot, claimRes.claim, {
-          now, runId, triggerKind, coalescedCount,
-          nextRunAtOverride: options.nextRunAtOverride, triggerContext: options.triggerContext,
-        });
-      } catch (error) {
-        if (closed) return { ok: false, closed: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
-        return handleAutomationRunFailure(auto, bot, runId, claimRes.claim, error, now);
-      } finally {
-        runningIds.delete(auto.id);
-      }
-    };
+    let handedOff = false;
+    try {
+      const runId = `run-${crypto.randomUUID().slice(0, 12)}`;
+      const slotAt = Number.isFinite(options.slotAt) ? Math.trunc(options.slotAt) : nextUniqueSlotAt(now);
+      const claimRes = typeof workStore.claimAutomationSlot === 'function'
+        ? workStore.claimAutomationSlot({ automationId: auto.id, botId: bot.id, slotAt, triggerKind, coalescedCount, runId }, now)
+        : { claimed: true, claim: { claimId: `ephemeral-${runId}`, status: 'claimed' } };
 
-    if (options.background === true) {
-      eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
-      void runExecution().then((res) => {
-        if (res && res.ok === false && !('closed' in res && res.closed)) {
-          const errMsg = 'error' in res && res.error ? String(res.error) : 'automation_failed';
-          reportError(new Error(errMsg), { phase: 'runNow:background', automationId: auto.id, botId: bot.id, runId });
+      if (!claimRes.claimed) {
+        return {
+          ok: true, deduplicated: true, alreadyClaimed: true,
+          claimId: claimRes.claim.claimId, claim: claimRes.claim, automationId: auto.id,
+        };
+      }
+
+      const budgetCheck = await evaluateBudgetGuard(deps.budgetGuard, { botId: bot.id, automation: auto, triggerKind, now });
+      if (closed) return { ok: false, closed: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
+      if (!budgetCheck.allowed) return recordBudgetSkip(auto, bot, claimRes.claim, budgetCheck, options, now);
+
+      const runExecution = async () => {
+        try {
+          return await executeClaimedAutomation(auto, bot, claimRes.claim, {
+            now, runId, triggerKind, coalescedCount,
+            nextRunAtOverride: options.nextRunAtOverride, triggerContext: options.triggerContext,
+          });
+        } catch (error) {
+          if (closed) return { ok: false, closed: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
+          return handleAutomationRunFailure(auto, bot, runId, claimRes.claim, error, now);
+        } finally {
+          runningIds.delete(auto.id);
         }
-      }).catch((error) => {
-        reportError(error, { phase: 'runNow:background', automationId: auto.id, botId: bot.id, runId });
-      });
-      return { ok: true, started: true, background: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
+      };
+
+      const executionPromise = runExecution();
+      handedOff = true;
+      if (options.background === true) {
+        void executionPromise.then((res) => {
+          if (res && res.ok === false && !('closed' in res && res.closed)) {
+            const errMsg = 'error' in res && res.error ? String(res.error) : 'automation_failed';
+            reportError(new Error(errMsg), { phase: 'runNow:background', automationId: auto.id, botId: bot.id, runId });
+          }
+        }).catch((error) => {
+          reportError(error, { phase: 'runNow:background', automationId: auto.id, botId: bot.id, runId });
+        });
+        eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
+        return { ok: true, started: true, background: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
+      }
+      return executionPromise;
+    } finally {
+      if (!handedOff) runningIds.delete(auto.id);
     }
-    return runExecution();
   }
 
   /** @param {any} auto @param {number} lateMs @param {number} now */

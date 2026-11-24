@@ -307,6 +307,8 @@ export function createLookAroundService(deps) {
   const file = stateFilePath(metaRoot);
   /** @type {Set<string>} */
   const runningBots = new Set();
+  /** @type {Set<string>} */
+  const startingSuggestions = new Set();
   /** @type {Map<string, number>} */
   const deferredUntil = new Map();
   let closed = false;
@@ -535,13 +537,13 @@ export function createLookAroundService(deps) {
     const blocked = checkBudgetGate(bot.id, now, options);
     if (blocked) return blocked;
 
-    runningBots.add(bot.id);
     const runId = `look-${crypto.randomUUID().slice(0, 8)}`;
     const beforeState = readBotState(bot.id, now);
     const priorOpenIds = new Set(
       beforeState.suggestions.filter((/** @type {any} */ s) => s.status === 'open').map((/** @type {any} */ s) => s.id),
     );
     const prompt = buildLookAroundPrompt(bot, botLookAround(bot), beforeState);
+    runningBots.add(bot.id);
 
     const runAndSettle = async () => {
       /** @type {{ ok: boolean, summary?: string }} */
@@ -601,6 +603,22 @@ export function createLookAroundService(deps) {
     return { state, entry };
   }
 
+  /** @param {any} bot @param {any} entry @param {string} chat */
+  async function openSuggestionTarget(bot, entry, chat) {
+    const target = chat === 'new'
+      ? await sessionRuntime.startSideChat(bot.id, { title: entry.title })
+      : await sessionRuntime.openHomeChat(bot.id);
+    if (!target || target.ok === false || !target.sessionId) {
+      return {
+        ok: false,
+        error: String(target?.error ?? 'session_unavailable'),
+        ...(target?.refusal ? { refusal: target.refusal } : {}),
+        suggestion: entry,
+      };
+    }
+    return { ok: true, sessionId: target.sessionId };
+  }
+
   /** @param {string} botId @param {string} suggestionId @param {{ chat?: string, now?: number, background?: boolean }} [opts] */
   async function startSuggestion(botId, suggestionId, { chat = 'home', now = Date.now(), background = false } = {}) {
     const bot = botsStore.getBot(botId);
@@ -609,43 +627,43 @@ export function createLookAroundService(deps) {
     if (initial.entry.status !== 'open') {
       return { ok: false, alreadyResolved: true, status: initial.entry.status, suggestion: initial.entry };
     }
-
-    const target = chat === 'new'
-      ? await sessionRuntime.startSideChat(bot.id, { title: initial.entry.title })
-      : await sessionRuntime.openHomeChat(bot.id);
-    if (!target || target.ok === false || !target.sessionId) {
-      return {
-        ok: false,
-        error: String(target?.error ?? 'session_unavailable'),
-        ...(target?.refusal ? { refusal: target.refusal } : {}),
-        suggestion: initial.entry,
-      };
+    const lockKey = `${bot.id}:${suggestionId}`;
+    if (startingSuggestions.has(lockKey)) {
+      return { ok: false, alreadyResolved: true, status: 'starting', suggestion: initial.entry };
     }
 
-    const latest = readOpenSuggestion(bot.id, suggestionId, now);
-    if (latest.entry.status !== 'open') {
-      return { ok: false, alreadyResolved: true, status: latest.entry.status, suggestion: latest.entry };
-    }
-    latest.entry.status = 'started';
-    latest.entry.resolvedAt = now;
-    writeBotState(bot.id, latest.state, now);
-    eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
+    startingSuggestions.add(lockKey);
+    let sessionId = '';
+    let startedEntry = initial.entry;
+    try {
+      const target = await openSuggestionTarget(bot, initial.entry, chat);
+      if (!target.ok) return target;
+      if (closed) return { ok: false, closed: true, error: 'service_closed', suggestion: initial.entry };
 
-    const prompt = latest.entry.link ? `${latest.entry.ask}\n\nLink: ${latest.entry.link}` : latest.entry.ask;
+      const latest = readOpenSuggestion(bot.id, suggestionId, now);
+      if (latest.entry.status !== 'open') {
+        return { ok: false, alreadyResolved: true, status: latest.entry.status, suggestion: latest.entry };
+      }
+      latest.entry.status = 'started';
+      latest.entry.resolvedAt = now;
+      writeBotState(bot.id, latest.state, now);
+      eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
+      sessionId = target.sessionId;
+      startedEntry = latest.entry;
+    } finally {
+      startingSuggestions.delete(lockKey);
+    }
+
+    const prompt = startedEntry.link ? `${startedEntry.ask}\n\nLink: ${startedEntry.link}` : startedEntry.ask;
     if (background === true) {
-      void runSuggestionTurn(bot, suggestionId, target.sessionId, prompt).catch((error) => {
-        reportError(error, { phase: 'startSuggestion:background', botId: bot.id, suggestionId, sessionId: target.sessionId });
+      void runSuggestionTurn(bot, suggestionId, sessionId, prompt).catch((error) => {
+        reportError(error, { phase: 'startSuggestion:background', botId: bot.id, suggestionId, sessionId });
       });
-      return { ok: true, started: true, background: true, suggestion: latest.entry, sessionId: target.sessionId };
+      return { ok: true, started: true, background: true, suggestion: startedEntry, sessionId };
     }
 
-    const turnError = await runSuggestionTurn(bot, suggestionId, target.sessionId, prompt);
-    return {
-      ok: true,
-      suggestion: latest.entry,
-      sessionId: target.sessionId,
-      ...(turnError ? { turnError } : {}),
-    };
+    const turnError = await runSuggestionTurn(bot, suggestionId, sessionId, prompt);
+    return { ok: true, suggestion: startedEntry, sessionId, ...(turnError ? { turnError } : {}) };
   }
 
   /** @param {string} botId @param {string} suggestionId @param {number} [now] */
