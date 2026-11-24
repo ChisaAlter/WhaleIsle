@@ -3520,7 +3520,7 @@
     },
     "scripts/run-whale-big-fish-qa.mjs": {
       "TS2339": {
-        "Property '__dshWhaleOpen' does not exist on type 'Window & typeof globalThis'.": 4,
+        "Property '__dshWhaleOpen' does not exist on type 'Window & typeof globalThis'.": 3,
         "Property 'port' does not exist on type 'string | AddressInfo'.": 1
       },
       "TS2345": {
@@ -4111,7 +4111,6 @@
       },
       "TS7006": {
         "Parameter 'buf' implicitly has an 'any' type.": 2,
-        "Parameter 'chunk' implicitly has an 'any' type.": 1,
         "Parameter 'crcIn' implicitly has an 'any' type.": 1,
         "Parameter 'dest' implicitly has an 'any' type.": 1,
         "Parameter 'entries' implicitly has an 'any' type.": 1,
@@ -4218,7 +4217,7 @@
         "Property 'route' does not exist on type '{}'.": 2,
         "Property 'spawn' does not exist on type '{}'.": 1,
         "Property 'statSync' does not exist on type '{}'.": 2,
-        "Property 'stateDir' does not exist on type '{}'.": 6,
+        "Property 'stateDir' does not exist on type '{}'.": 4,
         "Property 'stopGraceMs' does not exist on type '{}'.": 1,
         "Property 'tag' does not exist on type '{}'.": 2,
         "Property 'target' does not exist on type '{}'.": 6,
@@ -4716,7 +4715,7 @@
         "Property 'port' does not exist on type 'string | AddressInfo'.": 1
       },
       "TS2345": {
-        "Argument of type 'string | Buffer<ArrayBufferLike>' is not assignable to parameter of type 'string'.": 8,
+        "Argument of type 'string | Buffer<ArrayBufferLike>' is not assignable to parameter of type 'string'.": 2,
         "Argument of type '{}' is not assignable to parameter of type '{ installPlugin: any; startHarness: any; desktop: any; restartDelayMs: any; confirmModelAction: any; showSecret: any; }'.": 1
       },
       "TS7005": {
@@ -4729,20 +4728,19 @@
         "Parameter 'desktop' implicitly has an 'any' type.": 1,
         "Parameter 'error' implicitly has an 'any' type.": 3,
         "Parameter 'fallbackSpec' implicitly has an 'any' type.": 1,
-        "Parameter 'req' implicitly has an 'any' type.": 5,
+        "Parameter 'req' implicitly has an 'any' type.": 4,
         "Parameter 'request' implicitly has an 'any' type.": 2,
-        "Parameter 'res' implicitly has an 'any' type.": 10,
+        "Parameter 'res' implicitly has an 'any' type.": 9,
         "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 'startHarness' implicitly has an 'any' type.": 1,
         "Parameter 'status' implicitly has an 'any' type.": 1,
         "Parameter 'wording' implicitly has an 'any' type.": 1
       },
       "TS7031": {
-        "Binding element 'confirmModelAction' implicitly has an 'any' type.": 4,
+        "Binding element 'confirmModelAction' implicitly has an 'any' type.": 3,
         "Binding element 'desktop' implicitly has an 'any' type.": 1,
         "Binding element 'installPlugin' implicitly has an 'any' type.": 3,
         "Binding element 'restartDelayMs' implicitly has an 'any' type.": 3,
-        "Binding element 'sessionAllowed' implicitly has an 'any' type.": 1,
         "Binding element 'showSecret' implicitly has an 'any' type.": 2,
         "Binding element 'startHarness' implicitly has an 'any' type.": 3
       },
@@ -5152,11 +5150,6 @@
       }
     },
     "src/main/editors.js": {
-      "TS2339": {
-        "Property 'env' does not exist on type '{}'.": 1,
-        "Property 'execFile' does not exist on type '{}'.": 1,
-        "Property 'platform' does not exist on type '{}'.": 1
-      },
       "TS2739": {
         "Type '{}' is missing the following properties from type '{ cwd: string; relativePath: string; }': cwd, relativePath": 1,
         "Type '{}' is missing the following properties from type '{ editor: string; cwd: string; relativePath: string; line?: number | undefined; column?: number | undefined; }': editor, cwd, relativePath": 1
@@ -5173,7 +5166,6 @@
         "Parameter 'cwd' implicitly has an 'any' type.": 1,
         "Parameter 'deps' implicitly has an 'any' type.": 1,
         "Parameter 'editor' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 1,
         "Parameter 'line' implicitly has an 'any' type.": 1,
         "Parameter 'message' implicitly has an 'any' type.": 1,
         "Parameter 'relativePath' implicitly has an 'any' type.": 1
@@ -6357,17 +6349,14 @@
       },
       "TS7006": {
         "Parameter 'bounds' implicitly has an 'any' type.": 1,
-        "Parameter 'callback' implicitly has an 'any' type.": 1,
         "Parameter 'contents' implicitly has an 'any' type.": 1,
         "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'details' implicitly has an 'any' type.": 1,
         "Parameter 'error' implicitly has an 'any' type.": 1,
-        "Parameter 'event' implicitly has an 'any' type.": 1,
         "Parameter 'input' implicitly has an 'any' type.": 1,
-        "Parameter 'next' implicitly has an 'any' type.": 4,
+        "Parameter 'next' implicitly has an 'any' type.": 3,
         "Parameter 'ok' implicitly has an 'any' type.": 1,
         "Parameter 'session' implicitly has an 'any' type.": 4,
-        "Parameter 'view' implicitly has an 'any' type.": 2
+        "Parameter 'view' implicitly has an 'any' type.": 1
       },
       "TS7031": {
         "Binding element 'bounds' implicitly has an 'any' type.": 1,
@@ -6470,7 +6459,6 @@
         "Variable 'previewWindow' implicitly has an 'any' type.": 4
       },
       "TS7006": {
-        "Parameter 'event' implicitly has an 'any' type.": 1,
         "Parameter 'options' implicitly has an 'any' type.": 1,
         "Parameter 'relativePath' implicitly has an 'any' type.": 2,
         "Parameter 'theme' implicitly has an 'any' type.": 1,
@@ -7352,14 +7340,7 @@
     "src/main/task-protection.js": {
       "TS2339": {
         "Property 'commit' does not exist on type '{}'.": 2,
-        "Property 'drainTimeoutMs' does not exist on type '{ commit?: (() => void | Promise<void>) | undefined; terminal?: boolean | undefined; }'.": 1,
-        "Property 'force' does not exist on type '{ commit?: (() => void | Promise<void>) | undefined; terminal?: boolean | undefined; }'.": 1,
-        "Property 'hostLock' does not exist on type '{ commit?: (() => void | Promise<void>) | undefined; terminal?: boolean | undefined; }'.": 3,
-        "Property 'message' does not exist on type '{}'.": 2,
-        "Property 'preConfirmed' does not exist on type '{ commit?: (() => void | Promise<void>) | undefined; terminal?: boolean | undefined; }'.": 2
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'forced' does not exist in type '{ proceeded: boolean; code?: string | undefined; inspection?: object | undefined; }'.": 1
+        "Property 'message' does not exist on type '{}'.": 2
       },
       "TS7005": {
         "Variable 'commitCleanups' implicitly has an 'any[]' type.": 1,
@@ -7450,7 +7431,7 @@
         "Parameter 'event' implicitly has an 'any' type.": 2,
         "Parameter 'parent' implicitly has an 'any' type.": 1,
         "Parameter 'releaseNotes' implicitly has an 'any' type.": 1,
-        "Parameter 'sender' implicitly has an 'any' type.": 2,
+        "Parameter 'sender' implicitly has an 'any' type.": 1,
         "Parameter 'snapshot' implicitly has an 'any' type.": 1,
         "Parameter 'view' implicitly has an 'any' type.": 2
       }
@@ -9665,7 +9646,7 @@
     },
     "src/renderer/welcome-renderer.child.cjs": {
       "TS2322": {
-        "Type 'string' is not assignable to type '\"light\" | \"dark\" | \"system\"'.": 1
+        "Type 'string' is not assignable to type '\"dark\" | \"light\" | \"system\"'.": 1
       }
     },
     "src/renderer/window-controls.js": {

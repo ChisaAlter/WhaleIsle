@@ -59,6 +59,7 @@ const handoffOutput = {
     },
   },
   render: (_args, value) => [{ type: 'text', text: String(value?.detail ?? '') }],
+  /** @param {any} _args @param {any} value */
   presentationMeta: (_args, value) => ({ ok: Boolean(value?.ok), detail: String(value?.detail ?? '') }),
 };
 
@@ -345,7 +346,7 @@ export function registerProjectBridgeTools(ctx, { getSelfId = () => '' } = {}) {
         : null;
       if (meta && 'ok' in meta && meta.ok !== true) return undefined;
       const fallbackText = Array.isArray(result.content)
-        ? result.content.map((b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
+        ? result.content.map((/** @param {any} b */ b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
         : '';
       return {
         card: 'generic',

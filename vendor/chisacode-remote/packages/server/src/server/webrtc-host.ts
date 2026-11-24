@@ -19,6 +19,7 @@ import {
   RTC_SERIAL_SEND_MAX_BYTES,
   RTC_SERIAL_SEND_MAX_FRAMES,
   type RtcIceCandidateInit,
+  type TransportMode,
   type WebRtcTransportMode,
   tryParseRtcUpgradeClientMessage,
 } from "@chisacode/protocol/webrtc-signaling";
@@ -614,7 +615,7 @@ export interface WebRtcHostSessionControllerOptions {
   channel: EncryptedChannel;
   logger: pino.Logger;
   iceServers?: readonly IceServerConfig[];
-  onTransportModeChange?: (mode: WebRtcTransportMode) => void;
+  onTransportModeChange?: (mode: TransportMode) => void;
   attemptTtlMs?: number;
   activateTimeoutMs?: number;
   drainTimeoutMs?: number;
@@ -626,7 +627,7 @@ export class WebRtcHostSessionController {
   private readonly channel: EncryptedChannel;
   private readonly logger: pino.Logger;
   private readonly configuredIceServers: readonly IceServerConfig[];
-  private readonly onTransportModeChange?: (mode: WebRtcTransportMode) => void;
+  private readonly onTransportModeChange?: (mode: TransportMode) => void;
   private readonly attemptTtlMs: number;
   private readonly activateTimeoutMs: number;
   private readonly drainTimeoutMs: number;

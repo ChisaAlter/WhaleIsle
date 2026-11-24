@@ -336,9 +336,10 @@ export function createSessionWorkOps(deps) {
 
 /** @type {Promise<((input: any) => any) | null> | null} */
 let cachedCreateUserMessage = null;
+const DSH_LLM_MODULE = '@deepseek-ai/dsh-llm';
 function loadCreateUserMessage() {
   if (!cachedCreateUserMessage) {
-    cachedCreateUserMessage = import('@deepseek-ai/dsh-llm')
+    cachedCreateUserMessage = import(DSH_LLM_MODULE)
       .then((mod) => (typeof mod?.createUserMessage === 'function' ? mod.createUserMessage : null))
       .catch(() => null);
   }
