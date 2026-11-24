@@ -156,15 +156,17 @@ function readWhalePolicy(home = process.env.DSH_HOME) {
   return { enabled, imDefault };
 }
 
+const WHALE_MANAGED_PRESETS = new Set(['whale-girl', 'dsh-bot', 'dsh-bot-worker']);
+
 /**
  * Determine whether a bot is subject to Whale single-owner private-assistant
- * enforcement. Bots explicitly bound to a non-whale-girl preset retain their
- * original channel policy.
+ * enforcement. Bots explicitly bound to a non-whale-girl / non-dsh-bot preset
+ * retain their original channel policy.
  */
 export function isWhalePolicyEnforced({ preset = null, home = process.env.DSH_HOME } = {}) {
   const normalizedPreset = cleanString(preset);
-  if (normalizedPreset && normalizedPreset !== 'whale-girl') return false;
-  if (normalizedPreset === 'whale-girl') return true;
+  if (normalizedPreset && !WHALE_MANAGED_PRESETS.has(normalizedPreset)) return false;
+  if (WHALE_MANAGED_PRESETS.has(normalizedPreset)) return true;
   const { enabled, imDefault } = readWhalePolicy(home);
   return enabled && imDefault;
 }

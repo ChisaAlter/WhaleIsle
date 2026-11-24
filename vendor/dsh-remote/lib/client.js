@@ -31,7 +31,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// vendor/dsh-remote/plugin-src/client/index.js
+// plugin-src/client/index.js
 var index_exports = {};
 __export(index_exports, {
   REMOTE_EXPLORER_ID: () => REMOTE_EXPLORER_ID,
@@ -42,7 +42,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// vendor/dsh-remote/plugin-src/client/i18n.js
+// plugin-src/client/i18n.js
 var NS = "dsh-remote";
 var zh = {
   "settings.nav": "\u8FDC\u7A0B\u5DE5\u4F5C\u533A",
@@ -343,7 +343,7 @@ var en = {
   "common.close": "Close"
 };
 
-// vendor/dsh-remote/plugin-src/client/api.js
+// plugin-src/client/api.js
 function withSessionQuery(path, sessionId) {
   if (!sessionId) return path;
   return path + (path.includes("?") ? "&" : "?") + "sessionId=" + encodeURIComponent(sessionId);
@@ -437,7 +437,7 @@ function remoteCrumbs(p) {
   return { sep, parts: out, windows: win };
 }
 
-// vendor/dsh-remote/plugin-src/client/styles.js
+// plugin-src/client/styles.js
 var STYLE_ID = "dsh-remote";
 var CSS = `
 .dshr-page { display: flex; flex-direction: column; gap: 12px; color: var(--dsw-alias-label-primary); font-size: 13px; }
@@ -528,15 +528,15 @@ function installRemoteStyles() {
   return () => style.remove();
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteSettingsSection.jsx
+// plugin-src/client/RemoteSettingsSection.jsx
 var React3 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
 
-// vendor/dsh-remote/plugin-src/client/MachineForm.jsx
+// plugin-src/client/MachineForm.jsx
 var React2 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
 
-// vendor/dsh-remote/plugin-src/client/Feedback.jsx
+// plugin-src/client/Feedback.jsx
 var React = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime = require("react/jsx-runtime");
@@ -551,7 +551,7 @@ function RemoteFeedback({ error, message, onClearMessage, t, actions }) {
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/MachineForm.jsx
+// plugin-src/client/MachineForm.jsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
 var EMPTY_FORM = {
   name: "",
@@ -583,7 +583,7 @@ function formFromMachine(m) {
     username: m.username || "root",
     password: "",
     privateKeyPath: m.privateKeyPath || "",
-    passphrase: m.passphrase || "",
+    passphrase: "",
     workspace: m.workspace || "",
     hostKeyMode: m.hostKeyMode || "",
     useAgent: !!m.useAgent,
@@ -697,7 +697,16 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
         }
       )),
       field(t("form.privateKeyPath"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.privateKeyPath, onChange: set("privateKeyPath"), placeholder: t("form.privateKeyPlaceholder"), className: "dshr-grow" })),
-      field(t("form.passphrase"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { type: "password", value: form.passphrase, onChange: set("passphrase"), placeholder: t("form.passphrasePlaceholder"), className: "dshr-grow" })),
+      field(t("form.passphrase"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        import_dsh_client_ui_primitives2.Input,
+        {
+          type: "password",
+          value: form.passphrase,
+          onChange: set("passphrase"),
+          placeholder: editing && editing.passphraseSet ? t("form.passwordKeep") : t("form.passphrasePlaceholder"),
+          className: "dshr-grow"
+        }
+      )),
       field(t("form.hostKeyMode"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         import_dsh_client_ui_primitives2.SettingsSelect,
         {
@@ -724,7 +733,16 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
           field(t("form.proxyHost"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyHost, onChange: set("proxyHost"), className: "dshr-grow" })),
           field(t("form.proxyPort"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyPort, onChange: set("proxyPort"), inputMode: "numeric", className: "dshr-grow" })),
           field(t("form.proxyUser"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyUser, onChange: set("proxyUser"), className: "dshr-grow" })),
-          field(t("form.proxyPassword"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { type: "password", value: form.proxyPassword, onChange: set("proxyPassword"), className: "dshr-grow" })),
+          field(t("form.proxyPassword"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+            import_dsh_client_ui_primitives2.Input,
+            {
+              type: "password",
+              value: form.proxyPassword,
+              onChange: set("proxyPassword"),
+              placeholder: editing && editing.proxy && editing.proxy.passwordSet ? t("form.passwordKeep") : "",
+              className: "dshr-grow"
+            }
+          )),
           field(t("form.proxyKey"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyKey, onChange: set("proxyKey"), className: "dshr-grow" }))
         ] })
       ] })
@@ -738,7 +756,7 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteSettingsSection.jsx
+// plugin-src/client/RemoteSettingsSection.jsx
 var import_jsx_runtime3 = require("react/jsx-runtime");
 var EMPTY_FORWARD = { direction: "local", listenPort: "", targetHost: "127.0.0.1", targetPort: "", autoStart: false };
 function RemoteSettingsSection({ t }) {
@@ -811,7 +829,6 @@ function RemoteSettingsSection({ t }) {
       port: m.port,
       username: m.username,
       privateKeyPath: m.privateKeyPath,
-      passphrase: m.passphrase,
       hostKeyMode: m.hostKeyMode || void 0,
       useAgent: m.useAgent,
       keyboardInteractive: m.keyboardInteractive,
@@ -1090,7 +1107,7 @@ function RemoteSettingsSection({ t }) {
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteFlowPane.jsx
+// plugin-src/client/RemoteFlowPane.jsx
 var React4 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime4 = require("react/jsx-runtime");
@@ -1362,7 +1379,7 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteExplorerBody.jsx
+// plugin-src/client/RemoteExplorerBody.jsx
 var React5 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives5 = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime5 = require("react/jsx-runtime");
@@ -1670,7 +1687,7 @@ ${mirrorDir}` : root, children: root }),
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteExplorerTitle.jsx
+// plugin-src/client/RemoteExplorerTitle.jsx
 var React6 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives6 = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime6 = require("react/jsx-runtime");
@@ -1682,7 +1699,7 @@ function RemoteExplorerTitle({ useTabInfo }) {
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteFileBody.jsx
+// plugin-src/client/RemoteFileBody.jsx
 var React7 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives7 = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime7 = require("react/jsx-runtime");
@@ -1808,7 +1825,7 @@ function RemoteFileBody({ useTabInfo, t }) {
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/RemoteFileTitle.jsx
+// plugin-src/client/RemoteFileTitle.jsx
 var React8 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives8 = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime8 = require("react/jsx-runtime");
@@ -1825,7 +1842,7 @@ function RemoteFileTitle({ useTabInfo }) {
   ] });
 }
 
-// vendor/dsh-remote/plugin-src/client/index.js
+// plugin-src/client/index.js
 var name = "dsh-remote";
 var inject = ["slots", "locale"];
 var REMOTE_EXPLORER_ID = "dsh-remote/explorer";

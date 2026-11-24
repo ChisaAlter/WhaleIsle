@@ -572,13 +572,8 @@ if (isMainFrame && typeof document !== 'undefined' && role !== null && ['boot', 
   };
   const initializeRendering = async () => {
     if (process.argv.includes('--dshd-minimal=1')) applyRendering(true);
-    const style = document.createElement('style');
-    style.dataset.dshRenderPolicy = '';
-    style.textContent = `html[data-dsh-minimal] *,html[data-dsh-minimal] *::before,html[data-dsh-minimal] *::after {
-      animation:none!important;transition:none!important;backdrop-filter:none!important;
-      -webkit-backdrop-filter:none!important;box-shadow:none!important;text-shadow:none!important;scroll-behavior:auto!important;
-    }`;
-    document.head.appendChild(style);
+    // Minimal rendering CSS is loaded via external static stylesheets (render-policy.css / ui-theme minimal.css)
+    // so pages enforcing `style-src 'self'` never hit inline <style> CSP violations.
     // Harness receives the authoritative profile mode in its boot theme payload.
     if (role !== 'harness') applyRendering((await ipcRenderer.invoke('shell:get-render-mode')) === true);
   };

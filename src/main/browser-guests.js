@@ -181,6 +181,18 @@ class BrowserGuests {
   }
 }
 
+function matchesOrigin(/** @type {unknown} */ frameUrl, /** @type {unknown} */ expectedOrigin) {
+  if (typeof expectedOrigin !== 'string' || expectedOrigin.trim() === '') return false;
+  if (typeof frameUrl !== 'string' || frameUrl.trim() === '') return false;
+  try {
+    const actual = new URL(frameUrl).origin;
+    const expected = new URL(expectedOrigin).origin;
+    return actual !== 'null' && actual === expected;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Lease-scoped IPC for the product document. acquire/release are invoke
  * handlers gated to the harness view's main frame.
@@ -191,9 +203,10 @@ class BrowserGuests {
 function installBrowserGuestIpc(guests, { ipcMain, getView, getOrigin }) {
   const assertSender = (event) => {
     const target = getView();
-    if (target === undefined || event.sender !== target.webContents
+    if (!target || !target.webContents || target.webContents.isDestroyed?.()
+      || event.sender !== target.webContents
       || event.senderFrame !== target.webContents.mainFrame
-      || !event.senderFrame.url.startsWith(getOrigin())) {
+      || !matchesOrigin(event.senderFrame?.url, getOrigin())) {
       throw new Error('dshd browser: rejected sender');
     }
     return target;

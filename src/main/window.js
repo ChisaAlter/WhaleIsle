@@ -228,7 +228,7 @@ function attachPrivilegedNavigationGuards(contents, options) {
 }
 
 const getMainWindow = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
-const getHarnessView = () => (harnessView && !harnessView.webContents.isDestroyed() ? harnessView : null);
+const getHarnessView = () => (harnessView && harnessView.webContents && !harnessView.webContents.isDestroyed() ? harnessView : null);
 function getHarnessWebContents(win) {
   if (!harnessView || harnessView.webContents.isDestroyed()) return null;
   const owner = getMainWindow();

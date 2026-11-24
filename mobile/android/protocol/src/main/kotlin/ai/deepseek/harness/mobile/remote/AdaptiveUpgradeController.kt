@@ -99,6 +99,11 @@ class AdaptiveUpgradeController(
     private val messageIdGen = RtcMessageIdGenerator()
     private var reorderBuffer: SequencedCiphertextReorderBuffer? = null
 
+    private data class InboundAction(val plaintext: String, val shouldCloseRelay: Boolean)
+
+    private val inboundDispatchQueue = ArrayDeque<InboundAction>()
+    private var inboundDispatchActive: Boolean = false
+
     private data class QueuedFrame(val text: String, val byteSize: Int)
 
     private val sendQueue = ArrayDeque<QueuedFrame>()
@@ -300,6 +305,7 @@ class AdaptiveUpgradeController(
         synchronized(inboundLock) {
             chunkDecoder.clear()
             reorderBuffer?.clear()
+            inboundDispatchQueue.clear()
         }
         runCatching { dc?.setObserver(null) }
         runCatching { dc?.close() }
@@ -550,21 +556,36 @@ class AdaptiveUpgradeController(
     }
 
     private fun deliverEncryptedBundle(seq: Long, bundle: ByteArray, fromDataChannel: Boolean) {
-        val readyToDecrypt: List<Pair<Long, ByteArray>>
         val shouldStartGapTimer: Boolean
         val shouldCancelGapTimer: Boolean
+        var isDispatchOwner = false
 
         synchronized(inboundLock) {
             if (state == State.CLOSED) return
             val buffer = reorderBuffer
-            if (buffer == null) {
-                readyToDecrypt = listOf(seq to bundle)
+            val readyToDecrypt = if (buffer == null) {
                 shouldStartGapTimer = false
                 shouldCancelGapTimer = false
+                listOf(seq to bundle)
             } else {
-                readyToDecrypt = buffer.push(seq, bundle)
-                shouldStartGapTimer = buffer.hasGap()
-                shouldCancelGapTimer = !buffer.hasGap()
+                buffer.push(seq, bundle).also {
+                    shouldStartGapTimer = buffer.hasGap()
+                    shouldCancelGapTimer = !buffer.hasGap()
+                }
+            }
+
+            // Keep reorderBuffer.push, crypto.decryptFromBytes, and relay-drain check
+            // under the same inboundLock so concurrent WS/DC threads can never
+            // advance RelayCrypto.receivedSeq out of order.
+            for ((orderedSeq, orderedBundle) in readyToDecrypt) {
+                val plaintext = crypto.decryptFromBytes(orderedBundle)
+                val shouldCloseRelay = tryClaimRelayDrainLocked(orderedSeq)
+                inboundDispatchQueue.addLast(InboundAction(plaintext, shouldCloseRelay))
+            }
+
+            if (!inboundDispatchActive && inboundDispatchQueue.isNotEmpty()) {
+                inboundDispatchActive = true
+                isDispatchOwner = true
             }
         }
 
@@ -583,22 +604,51 @@ class AdaptiveUpgradeController(
             }
         }
 
-        for ((orderedSeq, orderedBundle) in readyToDecrypt) {
-            val plaintext = crypto.decryptFromBytes(orderedBundle)
-            onDecryptedPlaintext(plaintext)
-            checkDrainComplete(orderedSeq)
+        if (!isDispatchOwner) return
+        drainInboundDispatchQueue()
+    }
+
+    private fun drainInboundDispatchQueue() {
+        try {
+            while (true) {
+                val next = synchronized(inboundLock) {
+                    if (state == State.CLOSED || inboundDispatchQueue.isEmpty()) {
+                        inboundDispatchActive = false
+                        null
+                    } else {
+                        inboundDispatchQueue.removeFirst()
+                    }
+                } ?: return
+
+                onDecryptedPlaintext(next.plaintext)
+                if (next.shouldCloseRelay) {
+                    drainTimeoutJob?.cancel()
+                    drainTimeoutJob = null
+                    closeDrainedRelay(1000, "upgraded_to_webrtc")
+                }
+            }
+        } catch (error: Throwable) {
+            synchronized(inboundLock) {
+                inboundDispatchQueue.clear()
+                inboundDispatchActive = false
+            }
+            throw error
         }
     }
 
-    private fun checkDrainComplete(decryptedSeq: Long) {
-        val shouldClose = synchronized(stateLock) {
-            state == State.ACTIVE &&
+    private fun tryClaimRelayDrainLocked(decryptedSeq: Long): Boolean {
+        return synchronized(stateLock) {
+            if (
+                state == State.ACTIVE &&
                 !relayClosed &&
                 hostPreviousLegEndSeq != null &&
                 java.lang.Long.compareUnsigned(decryptedSeq, hostPreviousLegEndSeq!!) >= 0
-        }
-        if (shouldClose) {
-            completeRelayDrain()
+            ) {
+                relayClosed = true
+                true
+            } else {
+                false
+            }
         }
     }
 

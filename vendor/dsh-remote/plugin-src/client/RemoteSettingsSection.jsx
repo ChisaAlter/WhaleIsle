@@ -69,7 +69,7 @@ export function RemoteSettingsSection({ t }) {
     remoteApi.testConnect({
       machineId: m.id,
       host: m.host, port: m.port, username: m.username,
-      privateKeyPath: m.privateKeyPath, passphrase: m.passphrase,
+      privateKeyPath: m.privateKeyPath,
       hostKeyMode: m.hostKeyMode || undefined,
       useAgent: m.useAgent, keyboardInteractive: m.keyboardInteractive,
       proxy: m.proxy && m.proxy.host ? m.proxy : undefined,

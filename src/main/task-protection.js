@@ -70,6 +70,10 @@ function createTaskProtection(options = {}) {
   let coordinating = null;
   let committed = false;
   let currentLock = null;
+  /** @type {AbortController | null} */
+  let activeAbort = null;
+  /** @type {Promise<unknown> | null} */
+  let activePromise = null;
 
   function baseUrl() {
     const value = typeof options.getBaseUrl === 'function' ? options.getBaseUrl() : '';
@@ -149,9 +153,9 @@ function createTaskProtection(options = {}) {
     };
   }
 
-  async function confirmWithUser(operation, inspection) {
-    if (typeof options.confirm !== 'function') return false;
-    return (await options.confirm(operation, inspection)) === true;
+  async function confirmWithUser(operation, inspection, /** @type {AbortSignal | undefined} */ signal) {
+    if (typeof options.confirm !== 'function' || signal?.aborted) return false;
+    return (await /** @type {any} */ (options.confirm)(operation, inspection, { signal })) === true && !signal?.aborted;
   }
 
   async function runCommitCleanups() {
@@ -190,10 +194,82 @@ function createTaskProtection(options = {}) {
   }
 
   /**
+   * Acquire the Host lock if running and re-confirm if work arrived in between.
+   * @param {string} operation
+   * @param {any} opts
+   * @param {any} first
+   * @param {AbortSignal} signal
+   * @returns {Promise<{ proceed: true, forced: object | null } | { proceed: false, result: { proceeded: boolean, code?: string, detail?: string, pendingCount?: number, pendingLabels?: string[], inspection?: object } }>}
+   */
+  async function acquireAndReconfirm(operation, opts, first, signal) {
+    if (!hostRunning() || opts.hostLock === false) return { proceed: true, forced: null };
+    const acquired = await acquire(operation, opts.drainTimeoutMs);
+    let forced = null;
+    if (acquired.ok !== true) {
+      const failure = {
+        code: acquired.code || 'acquire-failed',
+        detail: acquired.detail,
+        pendingCount: acquired.pendingCount,
+        pendingLabels: acquired.pendingLabels,
+      };
+      if (opts.force !== true) return { proceed: false, result: { proceeded: false, ...failure } };
+      forced = failure;
+      log(`task-protection ${operation}: proceeding without Host admission ${JSON.stringify(failure)}`);
+    }
+    const second = forced ? first : mergedInspection(await inspect());
+    if (!forced && !inspectionClean(second) && inspectionClean(first) && opts.preConfirmed !== true) {
+      // Work arrived between the first look and the lock — re-confirm
+      // against the fresh picture rather than riding an obsolete prompt.
+      if (!(await confirmWithUser(operation, second, signal))) {
+        await release();
+        return { proceed: false, result: { proceeded: false, code: 'cancelled', inspection: second } };
+      }
+    }
+    return { proceed: true, forced };
+  }
+
+  async function runCoordinate(/** @type {string} */ operation, /** @type {any} */ opts, /** @type {AbortSignal} */ signal) {
+    const first = mergedInspection(await inspect());
+    if (!inspectionClean(first) && opts.preConfirmed !== true) {
+      if (!(await confirmWithUser(operation, first, signal))) {
+        return { proceeded: false, code: 'cancelled', inspection: first };
+      }
+    }
+    const lockStep = await acquireAndReconfirm(operation, opts, first, signal);
+    if (!lockStep.proceed) return lockStep.result;
+    const { forced } = lockStep;
+    if (signal?.aborted) {
+      if (opts.hostLock !== false) await release();
+      return { proceeded: false, code: 'cancelled' };
+    }
+    try {
+      if (typeof opts.commit === 'function') {
+        await opts.commit();
+      }
+    } catch (error) {
+      // A failed commit must not freeze Host admissions for the TTL —
+      // release before the error propagates.
+      if (opts.hostLock !== false) await release();
+      throw error;
+    }
+    // Keep supervised services and their cleanup registrations intact when
+    // a terminal commit fails (for example, an installer rejected at spawn).
+    // A successful terminal commit is followed by cleanup before app.quit.
+    if (opts.terminal === true) await runCommitCleanups();
+    if (opts.terminal === true) committed = true;
+    else if (opts.hostLock !== false) {
+      // The Host may have survived a failed non-terminal commit; release so
+      // admissions are not frozen for the TTL.
+      await release();
+    }
+    return forced ? { proceeded: true, forced } : { proceeded: true };
+  }
+
+  /**
    * Run one protected operation. `commit` is invoked only after the decision
    * is final; returning early leaves every side effect untouched.
    * @param {string} operation - quit | restart | reload | stop | update | install | delta
-   * @param {{ commit?: () => (void|Promise<void>), terminal?: boolean }} [opts]
+   * @param {{ commit?: () => (void|Promise<void>), terminal?: boolean, hostLock?: boolean, preConfirmed?: boolean, force?: boolean, drainTimeoutMs?: number }} [opts]
    *   `terminal` latches the committed flag — use for operations whose commit
    *   ends the process (quit/update); stop/restart keep coordinating.
    *   `hostLock: false` skips the Host acquire — reload keeps the Host alive,
@@ -203,7 +279,7 @@ function createTaskProtection(options = {}) {
    *   `force: true` commits even when the Host admission fails (drain
    *   timeout, unreachable Host): an explicit update or close is never held
    *   back by unfinished work. `drainTimeoutMs` shortens the drain wait.
-   * @returns {Promise<{ proceeded: boolean, code?: string, inspection?: object }>}
+   * @returns {Promise<{ proceeded: boolean, code?: string, detail?: string, pendingCount?: number, pendingLabels?: string[], forced?: object, inspection?: object, local?: boolean }>}
    */
   async function coordinate(operation, opts = {}) {
     if (committed) {
@@ -213,68 +289,40 @@ function createTaskProtection(options = {}) {
       return { proceeded: true };
     }
     if (coordinating !== null) {
-      return { proceeded: false, code: 'busy' };
+      return { proceeded: false, code: 'busy', local: true };
     }
     coordinating = operation;
+    activeAbort = new AbortController();
+    const run = runCoordinate(operation, opts, activeAbort.signal);
+    activePromise = run;
     try {
-      const first = mergedInspection(await inspect());
-      if (!inspectionClean(first) && opts.preConfirmed !== true) {
-        if (!(await confirmWithUser(operation, first))) {
-          return { proceeded: false, code: 'cancelled', inspection: first };
-        }
-      }
-      let forced = null;
-      if (hostRunning() && opts.hostLock !== false) {
-        const acquired = await acquire(operation, opts.drainTimeoutMs);
-        if (acquired.ok !== true) {
-          const failure = {
-            code: acquired.code || 'acquire-failed',
-            detail: acquired.detail,
-            pendingCount: acquired.pendingCount,
-            pendingLabels: acquired.pendingLabels,
-          };
-          if (opts.force !== true) return { proceeded: false, ...failure };
-          forced = failure;
-          log(`task-protection ${operation}: proceeding without Host admission ${JSON.stringify(failure)}`);
-        }
-        const second = forced ? first : mergedInspection(await inspect());
-        if (!forced && !inspectionClean(second) && inspectionClean(first) && opts.preConfirmed !== true) {
-          // Work arrived between the first look and the lock — re-confirm
-          // against the fresh picture rather than riding an obsolete prompt.
-          if (!(await confirmWithUser(operation, second))) {
-            await release();
-            return { proceeded: false, code: 'cancelled', inspection: second };
-          }
-        }
-      }
-      try {
-        if (typeof opts.commit === 'function') {
-          await opts.commit();
-        }
-      } catch (error) {
-        // A failed commit must not freeze Host admissions for the TTL —
-        // release before the error propagates.
-        if (opts.hostLock !== false) await release();
-        throw error;
-      }
-      // Keep supervised services and their cleanup registrations intact when
-      // a terminal commit fails (for example, an installer rejected at spawn).
-      // A successful terminal commit is followed by cleanup before app.quit.
-      if (opts.terminal === true) await runCommitCleanups();
-      if (opts.terminal === true) committed = true;
-      else if (opts.hostLock !== false) {
-        // The Host may have survived a failed non-terminal commit; release so
-        // admissions are not frozen for the TTL.
-        await release();
-      }
-      return forced ? { proceeded: true, forced } : { proceeded: true };
+      return await run;
     } finally {
       coordinating = null;
+      activeAbort = null;
+      activePromise = null;
+    }
+  }
+
+  async function cancelAndWait(timeoutMs = 5000) {
+    if (activeAbort) activeAbort.abort();
+    const pending = activePromise;
+    if (!pending) return true;
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    try {
+      return await Promise.race([
+        pending.then(() => true, () => true),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
   return {
     coordinate,
+    cancelAndWait,
     isCommitted: () => committed,
     isCoordinating: () => coordinating !== null,
     /** Register cleanup that runs inside a terminal commit, after the
@@ -307,6 +355,7 @@ function passThroughProtection() {
       if (typeof opts.commit === 'function') await opts.commit();
       return { proceeded: true };
     },
+    cancelAndWait: async () => true,
     isCommitted: () => false,
     isCoordinating: () => false,
     onCommitCleanup: () => {},

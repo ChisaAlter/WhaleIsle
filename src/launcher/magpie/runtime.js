@@ -78,7 +78,9 @@ function logTail(logFile, from) {
 async function waitHttpReady(url, fetchImpl) {
   try {
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(1500) });
-    return response.status >= 200 && response.status < 500;
+    return (response.status >= 200 && response.status < 400)
+      || response.status === 401
+      || response.status === 403;
   } catch {
     return false;
   }

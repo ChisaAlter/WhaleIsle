@@ -103,6 +103,13 @@ async function waitForDrain(state, timeoutMs) {
   }
 }
 
+/** @param {unknown} raw */
+function parseDrainTimeoutMs(raw) {
+  if (raw === undefined || raw === null || raw === '') return 30000;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30000;
+}
+
 /**
  * Take the admission lock: refuse new work, drain previously admitted work,
  * and verify the lock was not superseded during the drain.
@@ -118,13 +125,14 @@ export async function acquireLock(state, request) {
   const ttlMs = typeof request.ttlMs === 'number' && request.ttlMs > 0 ? request.ttlMs : 60000;
   let lock = state.lock;
   if (lock !== null && lock.expiresAt > now) {
-    if (lock.owner === owner) {
-      // Same-owner re-acquire renews and re-drains; the lock identity is stable
-      // so a held lockId remains valid.
-      lock.expiresAt = now + ttlMs;
-    } else {
+    if (lock.owner !== owner) {
       return { ok: false, code: 'dshd/lock-held', owner: lock.owner };
     }
+    // Same-owner re-acquire renews the held lockId while advancing generation so
+    // concurrent re-entrant drainers cannot share a generation or release each
+    // other's lock on timeout.
+    lock.expiresAt = now + ttlMs;
+    lock.generation = ++state.lockEpoch;
   } else {
     state.lock = lock = {
       lockId: randomUUID(),
@@ -136,9 +144,11 @@ export async function acquireLock(state, request) {
     };
   }
   const generation = lock.generation;
-  const drain = await waitForDrain(state, Number(request.drainTimeoutMs) || 30000);
+  const drain = await waitForDrain(state, parseDrainTimeoutMs(request.drainTimeoutMs));
   if (state.stopping) {
-    releaseLock(state, { lockId: lock.lockId, owner });
+    if (state.lock?.generation === generation) {
+      releaseLock(state, { lockId: lock.lockId, owner, generation });
+    }
     return { ok: false, code: 'dshd/host-stopping' };
   }
   // Expiry is lazy — prune BEFORE the generation check so a lock whose TTL
@@ -148,7 +158,7 @@ export async function acquireLock(state, request) {
     return { ok: false, code: 'dshd/lock-superseded' };
   }
   if (!drain.drained) {
-    releaseLock(state, { lockId: lock.lockId, owner });
+    releaseLock(state, { lockId: lock.lockId, owner, generation });
     return { ok: false, code: 'dshd/drain-timeout', pendingCount: drain.count, pendingLabels: drain.labels };
   }
   return {
@@ -164,11 +174,14 @@ export async function acquireLock(state, request) {
 
 /**
  * @param {ReturnType<typeof createControlState>} state
- * @param {{ lockId: string, owner: string }} request
+ * @param {{ lockId: string, owner: string, generation?: number }} request
  */
 export function releaseLock(state, request) {
   if (state.lock === null) return { ok: true, released: false };
   if (state.lock.lockId !== request.lockId || state.lock.owner !== request.owner) {
+    return { ok: false, code: 'dshd/lock-mismatch' };
+  }
+  if (request.generation !== undefined && state.lock.generation !== request.generation) {
     return { ok: false, code: 'dshd/lock-mismatch' };
   }
   state.lock = null;

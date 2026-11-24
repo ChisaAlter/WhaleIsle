@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const DEFAULT_FOLDER_DEBOUNCE_MS = 1500;
+export const DEFAULT_SELF_WRITE_SUPPRESS_MS = 2000;
 export const DEFAULT_IGNORED_SEGMENTS = Object.freeze(['.git', 'node_modules']);
 
 /**
@@ -73,6 +74,7 @@ function collectFolderSubscriptions(automations) {
  *     detectedAt: number,
  *   }) => any,
  *   debounceMs?: number,
+ *   selfWriteSuppressMs?: number,
  *   watchFactory?: typeof fs.watch,
  *   onError?: (error: unknown, context?: Record<string, any>) => void,
  * }} options
@@ -83,6 +85,12 @@ export function createFolderWatcher(options) {
     throw new Error('createFolderWatcher requires an onChange callback');
   }
   const debounceMs = Math.max(0, typeof options?.debounceMs === 'number' && Number.isFinite(options.debounceMs) ? options.debounceMs : DEFAULT_FOLDER_DEBOUNCE_MS);
+  const selfWriteSuppressMs = Math.max(
+    0,
+    typeof options?.selfWriteSuppressMs === 'number' && Number.isFinite(options.selfWriteSuppressMs)
+      ? options.selfWriteSuppressMs
+      : DEFAULT_SELF_WRITE_SUPPRESS_MS,
+  );
   const watchFactory = typeof options?.watchFactory === 'function' ? options.watchFactory : fs.watch;
   /** @type {(error: unknown, context?: Record<string, any>) => void} */
   const reportError = typeof options?.onError === 'function'
@@ -93,7 +101,39 @@ export function createFolderWatcher(options) {
   const active = new Map();
   /** @type {Map<string, { timer: any, automationId: string, botId: string, watchPath: string, paths: Set<string>, eventTypes: Set<string> }>} */
   const pending = new Map();
+  /** @type {Map<string, number>} */
+  const subSuppressUntil = new Map();
+  /** @type {Map<string, number>} */
+  const pathSuppressUntil = new Map();
   let closed = false;
+
+  /** @param {string} targetPath @param {number} [durationMs] */
+  function suppressSelfWrite(targetPath, durationMs = selfWriteSuppressMs) {
+    const clean = String(targetPath ?? '').trim();
+    if (!clean) return;
+    const ms = Math.max(0, Number(durationMs) || 0);
+    if (ms <= 0) return;
+    pathSuppressUntil.set(normalizeWatchKey(clean), Date.now() + ms);
+  }
+
+  /** @param {string} watchPath @param {string} relName @param {number} now */
+  function isPathSuppressed(watchPath, relName, now) {
+    const dirKey = normalizeWatchKey(watchPath);
+    const dirUntil = pathSuppressUntil.get(dirKey);
+    if (dirUntil !== undefined) {
+      if (dirUntil > now) return true;
+      pathSuppressUntil.delete(dirKey);
+    }
+    if (relName) {
+      const fullKey = normalizeWatchKey(path.join(watchPath, relName));
+      const fileUntil = pathSuppressUntil.get(fullKey);
+      if (fileUntil !== undefined) {
+        if (fileUntil > now) return true;
+        pathSuppressUntil.delete(fullKey);
+      }
+    }
+    return false;
+  }
 
   /** @param {string} pendingKey */
   function flushPending(pendingKey) {
@@ -109,9 +149,19 @@ export function createFolderWatcher(options) {
       eventTypes: [...bucket.eventTypes],
       detectedAt: Date.now(),
     };
+    if (selfWriteSuppressMs > 0) {
+      subSuppressUntil.set(pendingKey, Number.POSITIVE_INFINITY);
+    }
     Promise.resolve()
       .then(() => onChange(payload))
-      .then(undefined, (err) => { reportError(err, payload); });
+      .then(undefined, (err) => { reportError(err, payload); })
+      .finally(() => {
+        if (selfWriteSuppressMs > 0 && !closed) {
+          subSuppressUntil.set(pendingKey, Date.now() + selfWriteSuppressMs);
+        } else {
+          subSuppressUntil.delete(pendingKey);
+        }
+      });
   }
 
   /** @param {string} watchKey @param {string} eventType @param {string | Buffer | null} filename */
@@ -120,10 +170,17 @@ export function createFolderWatcher(options) {
     const entry = active.get(watchKey);
     if (!entry) return;
     const relName = filename ? (Buffer.isBuffer(filename) ? filename.toString('utf8') : String(filename)) : '';
+    const now = Date.now();
+    if (isPathSuppressed(entry.watchPath, relName, now)) return;
 
     for (const sub of entry.subscribers) {
       if (relName && shouldIgnoreWatchedPath(relName, sub.ignore)) continue;
       const pendingKey = `${sub.automationId}::${watchKey}`;
+      const suppressUntil = subSuppressUntil.get(pendingKey);
+      if (suppressUntil !== undefined) {
+        if (suppressUntil > now) continue;
+        subSuppressUntil.delete(pendingKey);
+      }
       let bucket = pending.get(pendingKey);
       if (!bucket) {
         bucket = {
@@ -157,13 +214,25 @@ export function createFolderWatcher(options) {
       watcher = watchFactory(watchPath, { recursive: true }, listener);
     } catch (err) {
       if (/** @type {any} */ (err)?.code === 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM') {
-        watcher = watchFactory(watchPath, {}, listener);
+        try {
+          watcher = watchFactory(watchPath, {}, listener);
+        } catch (fallbackErr) {
+          reportError(fallbackErr, { watchPath });
+          return null;
+        }
       } else {
         reportError(err, { watchPath });
         return null;
       }
     }
-    watcher.on?.('error', (err) => { reportError(err, { watchPath }); });
+    watcher.on?.('error', (err) => {
+      reportError(err, { watchPath });
+      if (active.get(watchKey)?.watcher === watcher) {
+        closeWatcherKey(watchKey);
+      } else {
+        try { watcher.close?.(); } catch { /* Best-effort close on unattached watcher. */ }
+      }
+    });
     return watcher;
   }
 
@@ -214,6 +283,8 @@ export function createFolderWatcher(options) {
       if (bucket.timer) clearTimeout(bucket.timer);
     }
     pending.clear();
+    subSuppressUntil.clear();
+    pathSuppressUntil.clear();
     for (const key of [...active.keys()]) {
       closeWatcherKey(key);
     }
@@ -222,6 +293,7 @@ export function createFolderWatcher(options) {
   return {
     syncWatches,
     listWatches,
+    suppressSelfWrite,
     close,
   };
 }

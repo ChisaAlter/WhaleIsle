@@ -79,6 +79,7 @@ const {
   sanitizePackagedDshHomeEnv,
 } = require('../shared/dsh-home');
 const { recoverInterruptedImport } = require('../main/data-import');
+const { recoverPendingDeltas } = require('../launcher/delta/apply');
 const runtimeInstall = require('../launcher/runtime-install');
 const {
   runColdStartGate,
@@ -297,6 +298,18 @@ if (!gotLock) {
     win.on('show', () => {
       void drainParkedUpdateCheck.drain({ generation: win });
     });
+
+    try {
+      const installed = runtimeInstall.installedInfo({ fresh: true });
+      if (installed?.installPath) {
+        const res = recoverPendingDeltas(installed.installPath);
+        if (res.recovered > 0) {
+          trace(`delta-recover restored ${res.recovered} interrupted transaction(s)`);
+        }
+      }
+    } catch (error) {
+      trace(`delta-recover failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     await runColdStartGate({
       config: loadConfig(),

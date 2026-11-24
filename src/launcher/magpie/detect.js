@@ -16,15 +16,34 @@ function readJsonSafe(file) {
   }
 }
 
+const EPHEMERAL_RUNTIME_ENTRIES = new Set([
+  'gateway.json',
+  'web-page.json',
+  'gateway.key',
+  'state.json',
+  'cache',
+  'component.log',
+]);
+
 /**
  * Whether `~/.config/magpie` already carries user Magpie config/accounts.
+ * Any entry outside known ephemeral runtime markers counts as user data so
+ * uninstall never wipes shared or unrecognized files.
  * @param {string} configDir
  * @returns {boolean}
  */
 function hasSharedUserConfig(configDir) {
   if (!configDir) return false;
-  for (const name of ['providers.json', 'logins.json', 'settings.json']) {
-    if (fs.existsSync(path.join(configDir, name))) return true;
+  let entries;
+  try {
+    entries = fs.readdirSync(configDir);
+  } catch {
+    return false;
+  }
+  for (const name of entries) {
+    if (!EPHEMERAL_RUNTIME_ENTRIES.has(name) && !name.endsWith('.lock')) {
+      return true;
+    }
   }
   return false;
 }
@@ -70,14 +89,31 @@ function resolveGatewayCandidate(configDir) {
 
 /**
  * Normalize a listen address such as `0.0.0.0:3425` or `:3425` to loopback connect host.
+ * Rejects non-loopback hosts, userinfo, paths, queries, and fragments.
  * @param {string} addr
  * @returns {string}
  */
 function toLoopbackHostPort(addr) {
   const raw = String(addr || '').trim();
   if (!raw) return `127.0.0.1:${DEFAULT_GATEWAY_PORT}`;
-  if (raw.startsWith(':')) return `127.0.0.1${raw}`;
-  return raw.replace(/^0\.0\.0\.0:/, '127.0.0.1:').replace(/^\[::\]:/, '127.0.0.1:');
+  const stripped = raw.replace(/^https?:\/\//i, '');
+  const normalized = stripped.startsWith(':')
+    ? `127.0.0.1${stripped}`
+    : stripped.replace(/^0\.0\.0\.0(?=:|$)/, '127.0.0.1').replace(/^\[::\](?=:|$)/, '127.0.0.1');
+  let parsed;
+  try {
+    parsed = new URL(`http://${normalized}`);
+  } catch {
+    throw new Error(`非法 Magpie 网关地址：${raw}`);
+  }
+  const host = parsed.hostname.toLowerCase();
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+  if (!isLoopback || parsed.username || parsed.password || (parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) {
+    throw new Error(`拒绝非回环 Magpie 网关地址：${raw}`);
+  }
+  const port = parsed.port || String(DEFAULT_GATEWAY_PORT);
+  const formattedHost = (host === '::1' || host === '[::1]') ? '[::1]' : host;
+  return `${formattedHost}:${port}`;
 }
 
 /**
@@ -98,8 +134,8 @@ async function defaultFetchJson(url, fetchImpl) {
  * @param {{ fetchJson?: (url: string, init?: RequestInit) => Promise<any>, fetchImpl?: (url: string, init?: RequestInit) => Promise<Response> }} [options]
  */
 async function probeGateway(addr, options = {}) {
-  const target = toLoopbackHostPort(addr);
   try {
+    const target = toLoopbackHostPort(addr);
     const data = options.fetchJson
       ? await options.fetchJson(`http://${target}/`, { signal: AbortSignal.timeout(2500) })
       : await defaultFetchJson(`http://${target}/`, options.fetchImpl || fetch);
@@ -123,8 +159,8 @@ async function probeGateway(addr, options = {}) {
  * @returns {Promise<{ requests: number, waiting: number, tools: number } | null>}
  */
 async function probeConcurrency(addr, options = {}) {
-  const target = toLoopbackHostPort(addr);
   try {
+    const target = toLoopbackHostPort(addr);
     const data = options.fetchJson
       ? await options.fetchJson(`http://${target}/v1/magpie/concurrency`, { signal: AbortSignal.timeout(2500) })
       : await defaultFetchJson(`http://${target}/v1/magpie/concurrency`, options.fetchImpl || fetch);
@@ -140,7 +176,7 @@ async function probeConcurrency(addr, options = {}) {
 }
 
 /**
- * Check whether a loopback HTTP endpoint responds (2xx/3xx/401/403).
+ * Check whether a loopback HTTP endpoint responds (2xx/3xx/401/403, rejecting 404).
  * @param {string} url
  * @param {{ fetchImpl?: (url: string, init?: RequestInit) => Promise<Response> }} [options]
  */
@@ -148,7 +184,9 @@ async function probeHttpReachable(url, options = {}) {
   const doFetch = options.fetchImpl || fetch;
   try {
     const response = await doFetch(url, { signal: AbortSignal.timeout(2000) });
-    return response.status >= 200 && response.status < 500;
+    return (response.status >= 200 && response.status < 400)
+      || response.status === 401
+      || response.status === 403;
   } catch {
     return false;
   }
@@ -272,8 +310,12 @@ async function detectMagpieState(options) {
 }
 
 module.exports = {
+  EPHEMERAL_RUNTIME_ENTRIES,
+  hasSharedUserConfig,
+  toLoopbackHostPort,
   resolveGatewayCandidate,
   probeGateway,
   probeConcurrency,
+  probeHttpReachable,
   detectMagpieState,
 };

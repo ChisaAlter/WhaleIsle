@@ -291,4 +291,45 @@ describe("EncryptedChannel WebRTC hot-cutover", () => {
     dcB.onmessage?.(firstWireFrame);
     expect(daemonClosed).toHaveBeenCalledWith(1011, "E2EE replay protection violation");
   });
+
+  it("falls back to primary Relay WS when DataChannel closes before primary leg drain completes", async () => {
+    const {
+      wsPair,
+      clientChannel,
+      daemonChannel,
+      clientReceived,
+      daemonReceived,
+      clientClosed,
+      daemonClosed,
+    } = await createPairedChannels();
+    const { dcA, dcB } = createMockDcPair();
+
+    const daemonFallbacks: string[] = [];
+    daemonChannel.onWebRtcFallback((reason) => daemonFallbacks.push(reason));
+
+    // Daemon activated WebRTC leg while still draining primary Relay WS (seq 5n not yet seen)
+    daemonChannel.activateWebRtcLeg({
+      dcTransport: dcB,
+      peerPreviousLegEndSeq: 5n,
+      drainTimeoutMs: 3000,
+    });
+    expect(daemonChannel.isWebRtcActive()).toBe(true);
+    expect(daemonChannel.isPrimaryLegDrained()).toBe(false);
+
+    // Client aborts and closes DataChannel before drain completes
+    dcA.close(1000, "aborted");
+
+    // Daemon channel must NOT emit close or close Relay WS — it reverts to primary Relay WS!
+    expect(daemonClosed).not.toHaveBeenCalled();
+    expect(clientClosed).not.toHaveBeenCalled();
+    expect(wsPair.b.closedWith).toBeNull();
+    expect(daemonChannel.isWebRtcActive()).toBe(false);
+    expect(daemonFallbacks).toEqual(["dc_closed_before_drain"]);
+
+    // Bidirectional encrypted traffic continues cleanly over Relay WS
+    await daemonChannel.send("after-fallback-from-daemon");
+    await clientChannel.send("after-fallback-from-client");
+    expect(clientReceived).toEqual(["after-fallback-from-daemon"]);
+    expect(daemonReceived).toEqual(["after-fallback-from-client"]);
+  });
 });

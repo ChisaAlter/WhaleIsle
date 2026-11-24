@@ -253,3 +253,15 @@ test('custom and built-in action arguments remain lazy until each step resolves'
   assert.equal(assistant.message, '5');
   assert.deepEqual(assistant.context, { value: 5 });
 });
+
+test('evaluator array member pluck ignores prototype properties', () => {
+  const ctx = { getState: () => [{ name: 'ok' }, {}], resolveRef: () => null };
+  for (const field of ['constructor', 'toString', '__proto__']) {
+    const ast = core.parseExpression(core.tokenize(`$rows.${field}`));
+    assert.deepEqual(core.evaluate(ast, ctx), [null, null]);
+  }
+  const ownAst = core.parseExpression(core.tokenize('$rows.name'));
+  assert.deepEqual(core.evaluate(ownAst, ctx), ['ok', null]);
+  const lenAst = core.parseExpression(core.tokenize('$rows.length'));
+  assert.equal(core.evaluate(lenAst, ctx), 2);
+});

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const vm = require('node:vm');
 const {
   createPreviewController,
@@ -247,7 +248,8 @@ function fakeAttach() {
         view.visible = visible;
       },
       webRequest: {
-        onBeforeRequest(_filter, listener) {
+        onBeforeRequest(filterOrListener, maybeListener) {
+          const listener = typeof filterOrListener === 'function' ? filterOrListener : maybeListener;
           requestListeners.push(listener);
         },
       },
@@ -273,6 +275,11 @@ function fakeAttach() {
         const event = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
         for (const listener of listeners.get('will-navigate') ?? []) listener(event, next);
         navigations.push({ url: next, prevented: event.defaultPrevented });
+        return event;
+      },
+      emitFrameNavigate(next) {
+        const event = { url: next, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+        for (const listener of listeners.get('will-frame-navigate') ?? []) listener(event);
         return event;
       },
       emitRedirect(next) {
@@ -483,6 +490,33 @@ test('will-navigate allows http(s) and prevents file:', async () => {
   assert.equal(fileRedirect.defaultPrevented, true);
 });
 
+test('preview isolation blocks credentials, control loopback origins, and subframe non-http navigations', async () => {
+  const opts = { blockedOrigins: ['http://127.0.0.1:3080', 'http://127.0.0.1:49152'] };
+  assert.equal(isAllowedPreviewUrl('http://user:pass@127.0.0.1:3000/', opts), false);
+  assert.equal(isAllowedPreviewUrl('https://user@example.com/', opts), false);
+  assert.equal(isAllowedPreviewUrl('http://127.0.0.1:3080/', opts), false);
+  assert.equal(isAllowedPreviewUrl('http://localhost:3080/api', opts), false);
+  assert.equal(isAllowedPreviewUrl('http://[::1]:3080/', opts), false);
+  assert.equal(isAllowedPreviewUrl('http://0.0.0.0:49152/desktop/config', opts), false);
+  assert.deepEqual(previewRequestFilter({ url: 'file:///etc/passwd', resourceType: 'stylesheet' }, opts), { cancel: true });
+  assert.deepEqual(previewRequestFilter({ url: 'data:text/html,hi', resourceType: 'subFrame' }, opts), { cancel: true });
+  assert.deepEqual(previewRequestFilter({ url: 'data:image/png;base64,AA==', resourceType: 'image' }, opts), { cancel: false });
+  assert.deepEqual(previewRequestFilter({ url: 'http://127.0.0.1:3080/api', resourceType: 'xhr' }, opts), { cancel: true });
+
+  const fake = fakeAttach();
+  const preview = createPreviewController({ attach: fake.attach, ...opts });
+  assert.equal((await preview.open({ url: 'http://0.0.0.0:3080/' })).ok, false);
+  assert.equal((await preview.open({ url: 'http://user:pass@127.0.0.1:3000/' })).ok, false);
+  const opened = await preview.open({ url: 'http://127.0.0.1:3000/' });
+  assert.equal(opened.ok, true);
+  const view = fake.views[0];
+  assert.equal(view.emitFrameNavigate('file:///etc/passwd').defaultPrevented, true);
+  assert.equal(view.emitFrameNavigate('http://127.0.0.1:49152/desktop/config').defaultPrevented, true);
+  assert.equal(view.emitFrameNavigate('https://example.com/embed').defaultPrevented, false);
+  assert.deepEqual(view.emitRequest('file:///C:/secret.txt', 'subFrame'), { cancel: true });
+  assert.deepEqual(view.emitRequest('file:///C:/secret.txt', 'image'), { cancel: true });
+});
+
 test('previewNavigate loads a public http(s) URL', async () => {
   const fake = fakeAttach();
   const preview = createPreviewController({ attach: fake.attach });
@@ -661,6 +695,7 @@ test('floating-window IPC normalizes an absolute scratch file through the real p
   };
   const windows = [];
   const live = createPreviewController({ attach: fakeAttach().attach });
+  const htmlPath = path.join(__dirname, '..', 'renderer', 'file-preview.html');
   registerPreviewIpc(ipcMain, live, {
     authorize() {},
     workspaceAuthority: authority,
@@ -669,10 +704,9 @@ test('floating-window IPC normalizes an absolute scratch file through the real p
       let onClosed = null;
       const calls = [];
       const webContents = {
-        mainFrame: null,
+        mainFrame: { url: pathToFileURL(htmlPath).href },
         setWindowOpenHandler() {},
       };
-      webContents.mainFrame = webContents;
       const win = {
         calls,
         webContents,
@@ -699,7 +733,7 @@ test('floating-window IPC normalizes an absolute scratch file through the real p
     getTheme: () => ({ scheme: 'light' }),
     getLocale: () => 'en',
     filePreviewPreloadPath: 'preview-preload.js',
-    filePreviewHtmlPath: 'preview.html',
+    filePreviewHtmlPath: htmlPath,
   });
   t.after(async () => {
     await live.closeAll();
@@ -1271,6 +1305,7 @@ async function realPreviewPair(t) {
       filePreviewHandlers.set(channel, handler);
     },
   };
+  const htmlPath = path.join(__dirname, '..', 'renderer', 'file-preview.html');
   const filePreviewWindow = createFilePreviewWindowController({
     ipcMain,
     workspacePreview,
@@ -1281,7 +1316,7 @@ async function realPreviewPair(t) {
       const webContents = {
         setWindowOpenHandler() {},
       };
-      webContents.mainFrame = webContents;
+      webContents.mainFrame = { url: pathToFileURL(htmlPath).href };
       const win = {
         calls,
         webContents,
@@ -1312,7 +1347,7 @@ async function realPreviewPair(t) {
     getTheme: () => ({ scheme: 'light' }),
     getLocale: () => 'en',
     preloadPath: 'preview-preload.js',
-    htmlPath: 'preview.html',
+    htmlPath,
     platform: 'win32',
   });
   t.after(async () => {

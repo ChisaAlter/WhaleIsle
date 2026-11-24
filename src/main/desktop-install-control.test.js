@@ -1151,4 +1151,60 @@ describe('desktop install control', { concurrency: false }, () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  test('/desktop/config enforces server-side confirmation for sensitive keys and fails closed on decline', async () => {
+    const asked = [];
+    const applied = [];
+    let nextDecision = false;
+    startDesktopInstallControl({
+      installPlugin: async () => ({ ok: true }),
+      startHarness: async () => {},
+      confirmModelAction: async (request) => {
+        asked.push(request);
+        return nextDecision;
+      },
+      desktop: {
+        applyConfig: async (patch) => {
+          applied.push(patch);
+          return { ok: true };
+        },
+      },
+    });
+    const { url, token } = await desktopInstallReady();
+    const post = (body) => fetch(new URL('/desktop/config', url), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    // Non-object patch -> 400
+    assert.equal((await post({ patch: ['bad'] })).status, 400);
+
+    // Non-sensitive keys pass without confirmation
+    const themeRes = await (await post({ patch: { theme: 'ocean' } })).json();
+    assert.equal(themeRes.ok, true);
+    assert.equal(asked.length, 0);
+
+    // Direct call with sensitive key without prior /desktop/confirm triggers dialog and blocks when declined
+    const declinedRes = await (await post({ patch: { openDevTools: true, dshImEnabled: true } })).json();
+    assert.equal(declinedRes.ok, false);
+    assert.equal(declinedRes.declined, true);
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].effect, 'external');
+    assert.equal(applied.length, 1);
+
+    // Credential patch triggers destructive confirmation, redacts token in details, and never remembers 'always'
+    nextDecision = 'always';
+    const cred1 = await (await post({ patch: { githubToken: 'ghp_1234567890abcdefghij' } })).json();
+    const cred2 = await (await post({ patch: { githubToken: 'ghp_1234567890abcdefghij' } })).json();
+    assert.equal(cred1.ok, true);
+    assert.equal(cred2.ok, true);
+    assert.equal(asked.length, 3);
+    assert.equal(asked[1].effect, 'destructive');
+    assert.equal(asked[1].details.includes('ghp_1234567890abcdefghij'), false);
+    assert.equal(applied.length, 3);
+  });
 });

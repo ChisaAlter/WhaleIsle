@@ -412,7 +412,9 @@ export function createGroupsService(deps) {
       rootSequence: ownerMessage.sequence,
     });
     try {
-      const turnOpts = images.length > 0 ? { timeoutMs: 120_000, images } : { timeoutMs: 120_000 };
+      const turnOpts = images.length > 0
+        ? { timeoutMs: 120_000, botId, images, sourceKind: 'dsh-bots:group', source: { kind: 'dsh-bots:group', groupId, operationId } }
+        : { timeoutMs: 120_000, botId, sourceKind: 'dsh-bots:group', source: { kind: 'dsh-bots:group', groupId, operationId } };
       return await sessionRuntime.runSingleTurn(sessionId, prompt, turnOpts);
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error), reply: '' };
@@ -576,9 +578,9 @@ export function createGroupsService(deps) {
 
   /**
    * Run an automation directly inside a member bot's group-room session.
-   * @param {{ groupId: string, threadId?: string, botId: string, automation: any, prompt: string }} params
+   * @param {{ groupId: string, threadId?: string, botId: string, automation: any, prompt: string, triggerKind?: string, sourceKind?: string }} params
    */
-  async function runAutomationInGroup({ groupId, threadId = '', botId, automation, prompt }) {
+  async function runAutomationInGroup({ groupId, threadId = '', botId, automation, prompt, triggerKind = 'schedule', sourceKind = 'dsh-bots:automation' }) {
     const cleanGroupId = String(groupId ?? '').trim();
     const bot = botsStore.getBot(botId);
     if (!cleanGroupId || !bot) {
@@ -589,7 +591,13 @@ export function createGroupsService(deps) {
       if (!group) throw Object.assign(new Error(`Group not found: ${cleanGroupId}`), { code: 'not_found' });
       return ensureMemberSession(group, bot, String(threadId ?? ''));
     });
-    const turn = await sessionRuntime.runSingleTurn(sessionId, prompt, { timeoutMs: 120_000 });
+    const turn = await sessionRuntime.runSingleTurn(sessionId, prompt, {
+      timeoutMs: 120_000,
+      botId: bot.id,
+      isBackground: true,
+      sourceKind,
+      source: { kind: sourceKind, automationId: automation?.id ?? null, groupId: cleanGroupId, triggerKind },
+    });
     const rawReply = String(turn?.reply ?? '').trim();
     const quiet = Boolean(turn?.ok) && isQuietResult(rawReply);
     const cleanReply = quiet ? stripQuietMarker(rawReply).trim() : rawReply;

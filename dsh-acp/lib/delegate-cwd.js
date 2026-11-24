@@ -52,14 +52,36 @@ function systemDataAnchors(userHome) {
   });
 }
 
+const ELECTRON_USERDATA_MARKERS = [
+  'chisacode-home',
+  'Local Storage',
+  'Session Storage',
+  'IndexedDB',
+  'Partitions',
+  'Network',
+  'Preferences',
+  'Local State',
+  'Cookies',
+  'Code Cache',
+  'GPUCache',
+  'Crashpad',
+  'blob_storage',
+  'WebStorage',
+];
+
+function isSensitiveUserDataSubdir(userData, candidate) {
+  const tmpDir = os.tmpdir() ? path.resolve(os.tmpdir()) : '';
+  const userDataInTmp = tmpDir && within(tmpDir, userData) && identity(userData) !== identity(tmpDir);
+  if (!userDataInTmp) return true;
+  if (ELECTRON_USERDATA_MARKERS.some((marker) => fs.existsSync(path.join(userData, marker)))) return true;
+  const rel = path.relative(identity(userData), identity(candidate));
+  const firstSegment = rel.split(path.sep)[0];
+  return ELECTRON_USERDATA_MARKERS.some((marker) => identity(marker) === firstSegment || marker === firstSegment);
+}
+
 /** @param {string} candidate @param {string} dshHome */
 function checkForbidden(candidate, dshHome) {
   if (isFilesystemRoot(candidate)) return '目标目录不能指向磁盘根目录。';
-  const rawHome = os.homedir();
-  const homes = rawHome ? [path.resolve(rawHome), canonicalIfExists(rawHome)].filter(Boolean) : [];
-  if (homes.some((anchor) => within(candidate, anchor))) return '目标目录不能指向用户主目录或其上级目录。';
-  if (homes.some((anchor) => within(path.join(anchor, '.ssh'), candidate))) return '目标目录不能指向系统配置或凭据目录。';
-  if (systemDataAnchors(rawHome).some((anchor) => within(candidate, anchor))) return '目标目录不能指向系统配置或凭据目录。';
   if (dshHome) {
     const resolvedHome = path.resolve(dshHome);
     const realHome = canonicalIfExists(resolvedHome);
@@ -72,11 +94,31 @@ function checkForbidden(candidate, dshHome) {
     if (path.basename(resolvedHome).toLowerCase() === 'dsh-home') {
       const userData = path.dirname(resolvedHome);
       const userDataReal = canonicalIfExists(userData);
-      if ([userData, userDataReal].filter(Boolean).some((anchor) => within(candidate, anchor))) {
+      const userDatas = [userData, userDataReal].filter(Boolean);
+      if (userDatas.some((anchor) => within(candidate, anchor))) {
+        return '目标目录不能指向应用数据目录或其上级目录。';
+      }
+      if (userDatas.some((anchor) => within(anchor, candidate) && isSensitiveUserDataSubdir(anchor, candidate))) {
         return '目标目录不能指向应用数据目录或其上级目录。';
       }
     }
   }
+  const rawHome = os.homedir();
+  const homes = rawHome ? [path.resolve(rawHome), canonicalIfExists(rawHome)].filter(Boolean) : [];
+  if (homes.some((anchor) => within(candidate, anchor))) return '目标目录不能指向用户主目录或其上级目录。';
+  if (homes.some((anchor) => within(path.join(anchor, '.ssh'), candidate))) return '目标目录不能指向系统配置或凭据目录。';
+  const tmpDirs = os.tmpdir() ? [path.resolve(os.tmpdir()), canonicalIfExists(os.tmpdir())].filter(Boolean) : [];
+  const strictlyInsideTmp = tmpDirs.some((tmpRoot) => within(tmpRoot, candidate) && identity(candidate) !== identity(tmpRoot));
+  if (systemDataAnchors(rawHome).some((anchor) => {
+    if (within(candidate, anchor)) return true;
+    if (!within(anchor, candidate)) return false;
+    // On Windows os.tmpdir() lives inside %LOCALAPPDATA%\Temp; allow temp workdirs strictly under os.tmpdir()
+    // while still blocking %LOCALAPPDATA% itself, os.tmpdir() itself, and all non-temp %LOCALAPPDATA%\* paths.
+    if (strictlyInsideTmp && tmpDirs.some((tmpRoot) => within(anchor, tmpRoot) && identity(anchor) !== identity(tmpRoot))) {
+      return false;
+    }
+    return true;
+  })) return '目标目录不能指向系统配置或凭据目录。';
   return '';
 }
 

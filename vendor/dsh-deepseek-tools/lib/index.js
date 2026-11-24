@@ -16,7 +16,7 @@ export const Config = Schema.object({
 });
 
 const textOutput = {
-  schema: { type: 'json' },
+  schema: /** @type {const} */ ({ type: 'json' }),
   render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
 };
 
@@ -43,8 +43,17 @@ export function apply(ctx, config) {
         voice: { type: 'string', enum: ['stella', 'tide'], description: 'stella: female; tide: male. Omit for the configured default.' },
       },
       output: {
-        schema: { type: 'json' },
-        render: (_args, value) => [{ type: 'file', attachment: value.attachment }, { type: 'text', text: JSON.stringify(value) }],
+        schema: /** @type {const} */ ({ type: 'json' }),
+        render: (_args, value) => {
+          const obj = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+          const attachment = obj && 'attachment' in obj && obj.attachment && typeof obj.attachment === 'object'
+            ? /** @type {any} */ (obj.attachment)
+            : null;
+          return [
+            ...(attachment ? [/** @type {const} */ ({ type: 'file', attachment })] : []),
+            { type: 'text', text: JSON.stringify(value) },
+          ];
+        },
       },
       async execute(args, exec) {
         const text = args.text;

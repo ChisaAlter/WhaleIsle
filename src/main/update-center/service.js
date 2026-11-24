@@ -460,6 +460,10 @@ function createUpdateCenter(deps) {
     try {
       const result = await install(saved.target, file, { installerArgs });
       if (result?.launched) return snapshot();
+      if (result?.cancelled === true) {
+        set({ phase: 'ready', error: null });
+        return snapshot();
+      }
       if (result?.manualInstall) {
         set({ phase: 'ready', error: { operation: 'install', message: result.message || '', manual: true } });
         return snapshot();

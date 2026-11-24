@@ -7,6 +7,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 
 const BOTS_LIB_DIR = path.resolve(__dirname, '../../vendor/dsh-whale/lib/bots');
 const WHALE_IM_SESSION = path.resolve(__dirname, '../../vendor/dsh-im/src/channels/shared/whale-session.mjs');
@@ -479,10 +480,11 @@ test('Prompt hooks, tamper restore, all 25 native tools, Harness-governed auto-r
     assert.equal(listToolsRes.ok, true);
     assert.equal(confirmCalls.length, 0);
 
-    // Cross-boundary tools still require desktop confirm and fail closed when declined
+    // Cross-boundary & worker tools require desktop confirm and fail closed when declined
     const desktopGuardedCalls = [
       ['bot_tools_manage', { action: 'add', server: { name: 'mcp1', url: 'https://example.com' } }, 'add', 'code'],
       ['bot_reply', { text: 'External reply' }, 'reply', 'external'],
+      ['bot_work_start', { cwd: root, prompt: 'Run tests' }, 'start', 'code'],
     ];
     for (const [name, args, expAction, expEffect] of desktopGuardedCalls) {
       const res = await byName.get(name).execute(args, execCtx);
@@ -491,17 +493,17 @@ test('Prompt hooks, tamper restore, all 25 native tools, Harness-governed auto-r
       assert.deepEqual(last, { tool: name, action: expAction, effect: expEffect });
     }
     assert.equal((await runtime.botsService.toolsList(bot.id)).servers.length, 0);
+    assert.equal(runtime.workStore.listWork({ botId: bot.id }).length, 0);
 
     // Non-owner IM turn stays blocked for Harness-governed/local bot tools without desktop prompts
     const secondBot = await runtime.botsService.createBot({ name: 'Helper', skipKickoff: true });
     const harnessGovernedCalls = [
-      ['bot_work_start', { cwd: root, prompt: 'Run tests' }],
       ['bot_send', { toBotId: secondBot.bot.id, purpose: 'question', text: 'Status?' }],
       ['bot_automation_create', { action: 'create', name: 'Job', prompt: 'Check' }],
       ['bot_new_chat', { title: 'Side topic' }],
     ];
     const confirmCountBefore = confirmCalls.length;
-    for (const [name, args] of harnessGovernedCalls) {
+    for (const [name, args] of [...harnessGovernedCalls, ['bot_work_start', { cwd: root, prompt: 'Run tests' }], ['bot_tools_manage', { action: 'list' }]]) {
       const blockedRes = await byName.get(name).execute(args, nonOwnerImCtx);
       assert.equal(blockedRes.ok, false, `${name} must refuse non-owner IM turns`);
       assert.match(blockedRes.detail, /非主人 IM/);
@@ -516,11 +518,13 @@ test('Prompt hooks, tamper restore, all 25 native tools, Harness-governed auto-r
       assert.equal(okRes.ok, true, `${name} must run without desktop confirmation in owner turns`);
     }
     assert.equal(confirmCalls.length, confirmCountBefore);
-    assert.equal(runtime.workStore.listWork({ botId: bot.id }).length, 1);
     assert.equal(runtime.automationsService.list({ botId: bot.id }).length, 1);
 
-    // When desktop confirm approves, cross-boundary tools execute cleanly
+    // When desktop confirm approves, cross-boundary & worker tools execute cleanly
     allowConfirm = true;
+    const workOk = await byName.get('bot_work_start').execute({ cwd: root, prompt: 'Run tests' }, execCtx);
+    assert.equal(workOk.ok, true);
+    assert.equal(runtime.workStore.listWork({ botId: bot.id }).length, 1);
     const replyOk = await byName.get('bot_reply').execute({ text: 'External reply' }, execCtx);
     assert.equal(replyOk.ok, true);
     const toolAddOk = await byName.get('bot_tools_manage').execute({ action: 'add', server: { name: 'mcp1', url: 'https://example.com' } }, execCtx);
@@ -1491,5 +1495,198 @@ test('Wave 3 RPC contracts: owner.snooze single/uids/items, work.stop sessionId/
     const list3 = await call('bots.upNext.list', { botId });
     assert.ok(list3.openSuggestions.every((s) => s.seen === true && s.unread === false));
     assert.equal(list3.unseenCount, 0);
+  });
+});
+
+test('Audit regressions: P0-2 internal source.kind + call-origin, P0-3 cwd/verifyCmd guards, P1 #9/#25/#29', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+  const { buildBotToolDefinitions } = await importBots('bot-tools-registry.js');
+  const { createMailReconciler } = await importBots('mail-reconciler.js');
+  const { classifyCallOrigin, isUnattendedPulseTurn } = await import(pathToFileURL(path.resolve(__dirname, '../../vendor/dsh-whale/lib/call-origin.js')).href);
+  const { isTrustedOwnerMessage } = await import(pathToFileURL(path.resolve(__dirname, '../../vendor/dsh-whale/lib/memory-store.js')).href);
+
+  await withTempDir('audit-regressions', async ({ root, onClose }) => {
+    const dshHome = path.join(root, 'dsh-home');
+    fs.mkdirSync(dshHome, { recursive: true });
+    const workDir = path.join(root, 'workspace');
+    fs.mkdirSync(workDir, { recursive: true });
+
+    const followups = [];
+    const promptFallbacks = [];
+    const mock = createMockHarness();
+    mock.controller.runTurnForTest = undefined;
+    mock.controller.resolveAgent = async (sid) => ({
+      agent: {
+        id: sid,
+        followup(msg) {
+          followups.push({ sid, msg });
+          mock.ctx.emit('session/event', { id: sid }, { type: 'user/message', data: { source: msg.source } });
+          mock.ctx.emit('session/event', { id: sid }, { type: 'assistant/message', data: { content: [{ type: 'text', text: 'done' }] } });
+          mock.ctx.emit('session/event', { id: sid }, { type: 'turn/end', data: { reason: { kind: 'completed' } } });
+        },
+      },
+    });
+    mock.controller.prompt = async (spec) => {
+      promptFallbacks.push(spec);
+      return { ok: true };
+    };
+
+    const bridgeSent = [];
+    const runtime = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome,
+      enableSchedulers: false,
+      getController: () => mock.controller,
+      imOutboundBridge: {
+        async sendText(msg) {
+          bridgeSent.push(msg);
+          return { ok: true, delivered: true, channel: msg.channel || 'feishu', messageId: 'm-1' };
+        },
+      },
+    });
+    onClose(() => runtime.close());
+    await runtime.recoveryPromise;
+
+    const botA = await runtime.botsService.createBot({ name: 'BotA', skipKickoff: true });
+    const botB = await runtime.botsService.createBot({ name: 'BotB', skipKickoff: true });
+
+    // [P0-2] Webhook/folder/bot-send runSingleTurn injects dsh-bots:* via followup (never controller.prompt),
+    // and call-origin + isTrustedOwnerMessage classify it as unattended/untrusted.
+    const autoWh = runtime.automationsService.create({
+      botId: botA.bot.id,
+      name: 'WH',
+      prompt: 'Inspect webhook',
+      triggers: [{ kind: 'webhook', webhookId: 'wh-1' }],
+    });
+    await runtime.automationsService.triggerWebhook({ automationId: autoWh.id, payload: { evil: true } });
+    assert.equal(promptFallbacks.length, 0);
+    const whMsg = followups.at(-1).msg;
+    assert.equal(whMsg.source.kind, 'dsh-bots:webhook');
+    assert.equal(isTrustedOwnerMessage({ type: 'user/message', data: { source: whMsg.source } }), false);
+    const whExec = {
+      agent: {
+        id: botA.sessionId,
+        session: {
+          snapshotEvents: () => [
+            { seq: 1, type: 'turn/start', data: {} },
+            { seq: 2, type: 'user/message', data: { source: whMsg.source } },
+          ],
+        },
+      },
+    };
+    assert.equal(classifyCallOrigin(whExec).kind, 'pulse');
+    assert.equal(isUnattendedPulseTurn(whExec), true);
+
+    const defs = buildBotToolDefinitions(() => runtime, { confirmAction: async () => ({ ok: true }) });
+    const byName = new Map(defs.map((d) => [d.name, d]));
+    const execA = { agent: { id: botA.sessionId, session: { id: botA.sessionId } } };
+    const execB = { agent: { id: botB.sessionId, session: { id: botB.sessionId } } };
+
+    // bot_work_start blocked in unattended webhook turn
+    const unattendedWork = await byName.get('bot_work_start').execute({ cwd: workDir, prompt: 'Run' }, whExec);
+    assert.equal(unattendedWork.ok, false);
+    assert.match(unattendedWork.detail, /无人值守/);
+
+    // bot_send injects dsh-bots:bot-send
+    const sendRes = await byName.get('bot_send').execute({
+      toBotId: botB.bot.id,
+      purpose: 'question',
+      text: 'Status?',
+      awaitReply: true,
+    }, execA);
+    assert.equal(sendRes.ok, true);
+    assert.equal(followups.at(-1).msg.source.kind, 'dsh-bots:bot-send');
+
+    // [P0-3] cwd sensitive boundary + verifyCmd injection guard
+    const homeBlocked = await byName.get('bot_work_start').execute({ cwd: os.homedir(), prompt: 'x' }, execA);
+    assert.equal(homeBlocked.ok, false);
+    assert.match(homeBlocked.detail, /broad base directory|sensitive/i);
+    const metaBlocked = await byName.get('bot_work_start').execute({ cwd: path.join(dshHome, 'data', 'bots', '_meta'), prompt: 'x' }, execA);
+    assert.equal(metaBlocked.ok, false);
+    assert.match(metaBlocked.detail, /metadata directory/i);
+
+    for (const badCmd of ['node -e 1 && echo pwned', 'echo a | cat', 'bash -c "echo hi"', 'node $(whoami)']) {
+      const badVerify = await byName.get('bot_work_start').execute({ cwd: workDir, prompt: 'x', verifyCmd: badCmd }, execA);
+      assert.equal(badVerify.ok, false, `Must reject verifyCmd: ${badCmd}`);
+    }
+
+    // [P1 #9] bot_automation_create cross-bot update/delete blocked; resolveCallerBot has no cross-session fallback
+    const autoB = runtime.automationsService.create({ botId: botB.bot.id, name: 'BJob', prompt: 'Ping' });
+    const crossUpdate = await byName.get('bot_automation_create').execute({ action: 'update', id: autoB.id, name: 'Hacked' }, execA);
+    assert.equal(crossUpdate.ok, false);
+    assert.match(crossUpdate.detail, /another bot/);
+    const crossDelete = await byName.get('bot_automation_create').execute({ action: 'delete', id: autoB.id }, execA);
+    assert.equal(crossDelete.ok, false);
+    assert.match(crossDelete.detail, /another bot/);
+    assert.ok(runtime.workStore.getAutomation(autoB.id));
+
+    const foreignExec = { agent: { id: 'unrelated-session-xyz', session: { id: 'unrelated-session-xyz' } } };
+    const noFallback = await byName.get('bot_chats').execute({}, foreignExec);
+    assert.equal(noFallback.ok, false);
+    assert.match(noFallback.detail, /Caller bot context unavailable/);
+
+    // [P1 #25] deliverReplyViaBridge passes caller.chat.externalId when args.chatId is omitted
+    const imChat = runtime.botsStore.upsertChat({
+      botId: botA.bot.id,
+      sessionId: `${botA.sessionId}-feishu-1`,
+      kind: 'im',
+      title: 'Feishu Chat',
+      externalSource: 'feishu',
+      externalId: 'oc_feishu_chat_999',
+    }, Date.now());
+    const imExec = { agent: { id: imChat.sessionId, session: { id: imChat.sessionId } } };
+    const bridgeReply = await byName.get('bot_reply').execute({ text: 'Reply without explicit chatId' }, imExec);
+    assert.equal(bridgeReply.ok, true);
+    assert.equal(bridgeSent.length, 1);
+    assert.equal(bridgeSent[0].chatId, 'oc_feishu_chat_999');
+
+    // [P1 #29] mail-reconciler paginates >50 owed actions and startup with wakeBot runs single drain
+    const item = runtime.itemsStore.add({
+      ownerBotId: botA.bot.id,
+      chatId: botA.sessionId,
+      source: { kind: 'home', title: null },
+      title: 'Paged Item',
+      status: 'working',
+    }, { kind: 'bot', botId: botA.bot.id, chatId: botA.sessionId }).item;
+    for (let i = 0; i < 55; i += 1) {
+      runtime.itemsStore.ownerComment(item.uid, { text: `msg-${i}`, requestId: `req-page-${i}` });
+    }
+    const wokeActions = [];
+    const pagedReconciler = createMailReconciler({
+      itemsStore: runtime.itemsStore,
+      botsStore: runtime.botsStore,
+      sessionRuntime: runtime.sessionRuntime,
+      wakeBot: async (payload) => {
+        wokeActions.push(payload.group.action);
+        return { ok: true };
+      },
+    });
+    const recRes = await pagedReconciler.reconcileOwedMail();
+    assert.equal(recRes.ok, true);
+    assert.equal(recRes.totalGroups, 55);
+    assert.equal(wokeActions.length, 55);
+    assert.equal(runtime.itemsStore.owedMail().length, 0);
+
+    // Startup single-drain test with pre-populated owed mail and wakeBot
+    runtime.itemsStore.ownerComment(item.uid, { text: 'wake-once', requestId: 'req-wake-once' });
+    runtime.close();
+
+    const startupWakes = [];
+    const mockStartup = createMockHarness();
+    const runtimeWake = createBotsRuntime({
+      ctx: mockStartup.ctx,
+      dshHome,
+      enableSchedulers: false,
+      getController: () => mockStartup.controller,
+      wakeBot: async (payload) => {
+        startupWakes.push(payload);
+        return { ok: true };
+      },
+    });
+    onClose(() => runtimeWake.close());
+    await runtimeWake.recoveryPromise;
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(startupWakes.length, 1);
+    assert.equal(mockStartup.prompted.filter((p) => String(p.requestId || '').startsWith('bot-item-mail-')).length, 0);
   });
 });

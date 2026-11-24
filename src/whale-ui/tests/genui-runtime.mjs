@@ -179,3 +179,19 @@ test('Mermaid comments do not hide explicit kinds or acquire a flowchart header'
   assert.match(api.repairMermaidSource(flow), /A\["中文 标签"\]/)
   assert.equal(api.ensureFlowchartKind(flow), flow)
 })
+
+test('sanitizeEChartOption rejects __proto__, constructor, and prototype keys', () => {
+  const malicious = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"bad":1},"prototype":{"bad":2},"series":[{"type":"bar","data":[1,2]}]}')
+  const processed = api.processGenuiSpec({ items: [{ type: 'echart', option: malicious }] })
+  assert.deepEqual(processed.errors, [])
+  const opt = processed.spec.items[0].option
+  assert.equal(Object.getPrototypeOf(opt), Object.prototype)
+  assert.equal(opt.polluted, undefined)
+  assert.equal(Object.hasOwn(opt, '__proto__'), false)
+  assert.equal(Object.hasOwn(opt, 'constructor'), false)
+  assert.equal(Object.hasOwn(opt, 'prototype'), false)
+  assert.deepEqual(opt.series, [{ type: 'bar', data: [1, 2] }])
+  const onlyProto = JSON.parse('{"__proto__":{"polluted":true}}')
+  const dropped = api.processGenuiSpec({ items: [{ type: 'echart', option: onlyProto }] })
+  assert.equal(dropped.spec.items.length, 0)
+})

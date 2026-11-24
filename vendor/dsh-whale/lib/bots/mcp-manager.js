@@ -230,6 +230,7 @@ export function createMcpManager(deps) {
         lastSyncedAt: cached?.syncedAt ?? null,
         _raw: entry,
         _resolvedCreds: validated.resolvedCreds,
+        _staticProblems: validated.problems,
       });
     }
 
@@ -250,7 +251,7 @@ export function createMcpManager(deps) {
   function stripInternalFields(snapshot) {
     return {
       ...snapshot,
-      servers: snapshot.servers.map((/** @type {any} */ { _raw, _resolvedCreds, ...pub }) => pub),
+      servers: snapshot.servers.map((/** @type {any} */ { _raw, _resolvedCreds, _staticProblems, ...pub }) => pub),
     };
   }
 
@@ -286,7 +287,7 @@ export function createMcpManager(deps) {
 
     if (typeof probeServer === 'function') {
       for (const srv of initial.servers) {
-        if (!srv.enabled || !srv.name || srv.problems.some((p) => p.severity === 'error')) continue;
+        if (!srv.enabled || !srv.name || srv._staticProblems.some((/** @type {any} */ p) => p.severity === 'error')) continue;
         try {
           const res = await probeServer(srv._raw, srv._resolvedCreds, { botId: bot.id });
           if (res && res.ok === false) {

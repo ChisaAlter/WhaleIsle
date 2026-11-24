@@ -87,6 +87,7 @@ class ShellConfirmDialog {
     this.parent = undefined;
     this.closing = undefined;
     this.active = undefined;
+    this.queue = Promise.resolve();
     const register = createRegisterIpc(ipcMain);
     const owned = (event) => this.owned(event);
     register({
@@ -205,6 +206,41 @@ class ShellConfirmDialog {
       window.webContents.on('will-navigate', (event, url) => { if (url !== this.page) event.preventDefault(); });
       window.webContents.once('render-process-gone', failed);
       void window.loadURL(this.page).catch(failed);
+    });
+  }
+
+  /**
+   * Serialize concurrent dialog requests so a new prompt never silently cancels
+   * an already-visible prompt with its cancelId.
+   * @param {any} parent
+   * @param {Record<string, any>} options
+   */
+  showQueued(parent, options) {
+    const buttons = options.buttons ?? [this.text.acknowledge];
+    const cancelId = options.cancelId ?? buttons.length - 1;
+    if (this.disposed || options.signal?.aborted === true) {
+      return Promise.resolve({ response: cancelId });
+    }
+    const run = this.queue.then(() => {
+      if (this.disposed || options.signal?.aborted === true) {
+        return { response: cancelId };
+      }
+      const targetParent = typeof parent === 'function' ? parent() : parent;
+      if (!targetParent || targetParent.isDestroyed()) {
+        return { response: cancelId };
+      }
+      return this.show(targetParent, options);
+    });
+    this.queue = run.then(() => undefined, () => undefined);
+    if (!options.signal) return run;
+    /** @type {(() => void) | undefined} */
+    let onAbort;
+    const aborted = new Promise((resolve) => {
+      onAbort = () => resolve({ response: cancelId });
+      options.signal.addEventListener('abort', onAbort, { once: true });
+    });
+    return Promise.race([run, aborted]).finally(() => {
+      options.signal.removeEventListener('abort', onAbort);
     });
   }
 

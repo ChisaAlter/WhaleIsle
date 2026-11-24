@@ -508,6 +508,8 @@ export class WeixinHarnessBridge {
     this.#status.messagesReceived += 1;
     this.#status.lastMessageAt = new Date().toISOString();
     const result = await runner(text, this.#harness, this.#state, key, {
+      channel: 'weixin',
+      accountId: this.#accessGate?.botId ?? null,
       signal: this.#signal,
       hasImages: hasWeixinImageItems(message),
       hasFiles: hasWeixinFileItems(message),
@@ -580,7 +582,10 @@ export class WeixinHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+        if (await sharedWhaleSessionId(this.#harness, {
+          channel: 'weixin',
+          accountId: this.#accessGate?.botId ?? null,
+        }) || await isWhaleEnforcedForHarness(this.#harness)) {
           await this.#send(sender, whaleRestrictedCommandReply('/new'), contextToken, runId);
         } else {
           await this.#state.clearSession(key);
@@ -627,6 +632,8 @@ export class WeixinHarnessBridge {
           harness: this.#harness,
           state: this.#state,
           key,
+          channel: 'weixin',
+          accountId: this.#accessGate?.botId ?? null,
           ...(hasImages ? { content } : { text }),
           speaker: message.speaker,
           createOptions: { signal: this.#signal },

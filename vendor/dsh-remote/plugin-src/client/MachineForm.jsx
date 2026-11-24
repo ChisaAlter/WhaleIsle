@@ -22,7 +22,7 @@ function formFromMachine(m) {
     username: m.username || 'root',
     password: '',
     privateKeyPath: m.privateKeyPath || '',
-    passphrase: m.passphrase || '',
+    passphrase: '',
     workspace: m.workspace || '',
     hostKeyMode: m.hostKeyMode || '',
     useAgent: !!m.useAgent,
@@ -135,7 +135,11 @@ export function MachineForm({ t, machine, onSaved, onCancel }) {
             className="dshr-grow" />
         ))}
         {field(t('form.privateKeyPath'), <Input value={form.privateKeyPath} onChange={set('privateKeyPath')} placeholder={t('form.privateKeyPlaceholder')} className="dshr-grow" />)}
-        {field(t('form.passphrase'), <Input type="password" value={form.passphrase} onChange={set('passphrase')} placeholder={t('form.passphrasePlaceholder')} className="dshr-grow" />)}
+        {field(t('form.passphrase'), (
+          <Input type="password" value={form.passphrase} onChange={set('passphrase')}
+            placeholder={editing && editing.passphraseSet ? t('form.passwordKeep') : t('form.passphrasePlaceholder')}
+            className="dshr-grow" />
+        ))}
         {field(t('form.hostKeyMode'), (
           <SettingsSelect variant="block" value={form.hostKeyMode} options={hostKeyOptions}
             onChange={(id) => setForm((f) => ({ ...f, hostKeyMode: id }))} aria-label={t('form.hostKeyMode')} className="dshr-grow" />
@@ -159,7 +163,11 @@ export function MachineForm({ t, machine, onSaved, onCancel }) {
             {field(t('form.proxyHost'), <Input value={form.proxyHost} onChange={set('proxyHost')} className="dshr-grow" />)}
             {field(t('form.proxyPort'), <Input value={form.proxyPort} onChange={set('proxyPort')} inputMode="numeric" className="dshr-grow" />)}
             {field(t('form.proxyUser'), <Input value={form.proxyUser} onChange={set('proxyUser')} className="dshr-grow" />)}
-            {field(t('form.proxyPassword'), <Input type="password" value={form.proxyPassword} onChange={set('proxyPassword')} className="dshr-grow" />)}
+            {field(t('form.proxyPassword'), (
+              <Input type="password" value={form.proxyPassword} onChange={set('proxyPassword')}
+                placeholder={editing && editing.proxy && editing.proxy.passwordSet ? t('form.passwordKeep') : ''}
+                className="dshr-grow" />
+            ))}
             {field(t('form.proxyKey'), <Input value={form.proxyKey} onChange={set('proxyKey')} className="dshr-grow" />)}
           </div>
         </div>

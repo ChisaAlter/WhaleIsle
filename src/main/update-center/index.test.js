@@ -32,3 +32,51 @@ test('planDelta reports why a delta is unavailable instead of throwing', async (
   });
   assert.deepEqual(result, { ok: false, reason: 'missing-base-release', message: 'no base' });
 });
+
+test('UpdateCenterWindow guards will-navigate/will-redirect and owns() validates mainFrame + page URL', () => {
+  const { EventEmitter } = require('node:events');
+  const path = require('node:path');
+  const { pathToFileURL } = require('node:url');
+  const { UpdateCenterWindow } = require('./ipc');
+  const pageUrl = pathToFileURL(path.join(__dirname, '..', '..', 'renderer', 'update-center.html')).href;
+
+  class FakeWin extends EventEmitter {
+    constructor() {
+      super();
+      this.webContents = Object.assign(new EventEmitter(), {
+        mainFrame: { url: `${pageUrl}?scheme=dark` },
+      });
+    }
+    isDestroyed() { return false; }
+    focus() {}
+    destroy() {}
+    loadURL() { return Promise.resolve(); }
+  }
+
+  const fakeWin = new FakeWin();
+  const centerWin = new UpdateCenterWindow({
+    overlays: { create: () => fakeWin },
+    preload: 'preload.js',
+    page: pageUrl,
+    theme: () => ({ scheme: 'dark' }),
+    isMaximized: () => false,
+  });
+
+  const parent = { isDestroyed: () => false };
+  centerWin.open(parent);
+
+  // Navigation guard rejects external / foreign file URLs and allows update-center.html
+  for (const evName of ['will-navigate', 'will-redirect']) {
+    let blocked = false;
+    fakeWin.webContents.emit(evName, { preventDefault() { blocked = true; } }, 'https://evil.example/');
+    assert.equal(blocked, true, `${evName} must block https`);
+    let allowed = true;
+    fakeWin.webContents.emit(evName, { preventDefault() { allowed = false; } }, `${pageUrl}?scheme=light`);
+    assert.equal(allowed, true, `${evName} must allow update-center.html`);
+  }
+
+  assert.equal(centerWin.owns(fakeWin.webContents, fakeWin.webContents.mainFrame), true);
+  assert.equal(centerWin.owns(fakeWin.webContents, { url: pageUrl }), false);
+  fakeWin.webContents.mainFrame.url = 'https://evil.example/';
+  assert.equal(centerWin.owns(fakeWin.webContents, fakeWin.webContents.mainFrame), false);
+});

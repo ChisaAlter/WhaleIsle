@@ -658,7 +658,7 @@ class AdaptiveUpgradeTest {
             assertEquals(TransportMode.P2P, client.transportMode.value)
             assertTrue(client.connected)
 
-            // Perform a 72 KiB RPC exclusively over WebRTC DataChannel (Relay WS is already closed!)
+            // Perform a 72 KiB (72 * 1024) RPC exclusively over WebRTC DataChannel (Relay WS is already closed!)
             val huge = "Z".repeat(72 * 1024)
             val rpcResult = withTimeout(5_000) { client.host("session.echo", obj("blob" to huge)).objectValue() }
             assertEquals("session.echo", rpcResult.string("method"))
@@ -666,6 +666,124 @@ class AdaptiveUpgradeTest {
             assertTrue(activeDc.sentChunks.size >= 9)
         } finally {
             client.close()
+        }
+    }
+
+    @Test
+    fun concurrentCrossLegDeliverySerializesDecryptAndCallbacksInExactSeqOrder() = runBlocking {
+        val hostCrypto = MockHostCrypto()
+        val clientCrypto = RelayCrypto(hostCrypto.publicKeyB64)
+        hostCrypto.attachClient(clientCrypto.publicKeyB64)
+
+        val peerFactory = FakeWebRtcPeerFactory()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val offerDef = CompletableDeferred<JsonObject>()
+        val activateDef = CompletableDeferred<JsonObject>()
+        val modeDef = CompletableDeferred<TransportMode>()
+        val observedIndices = CopyOnWriteArrayList<Int>()
+        val fatalErrors = CopyOnWriteArrayList<Throwable>()
+        lateinit var ctrl: AdaptiveUpgradeController
+
+        ctrl = AdaptiveUpgradeController(
+            scope = scope,
+            crypto = clientCrypto,
+            peerFactory = peerFactory,
+            iceServers = listOf(IceServerConfig(listOf("stun:stun.cloudflare.com:3478"))),
+            sendRelayEncrypted = { b64 ->
+                val (_, plain) = hostCrypto.decryptBase64(b64)
+                val frame = Json.parseToJsonElement(plain).objectValue()
+                when (frame.string("type")) {
+                    "rtc_upgrade_offer" -> offerDef.complete(frame)
+                    "rtc_upgrade_activate" -> activateDef.complete(frame)
+                }
+                true
+            },
+            closeDrainedRelay = { _, _ -> },
+            onDecryptedPlaintext = { plain ->
+                val frame = Json.parseToJsonElement(plain).objectValue()
+                when (frame.string("type")) {
+                    "rtc_upgrade_answer", "rtc_upgrade_ice", "rtc_upgrade_activated", "rtc_upgrade_abort" ->
+                        ctrl.onSignalingFrame(frame)
+                    "race_event" -> {
+                        // Simulate non-trivial callback work to widen any race window
+                        Thread.yield()
+                        observedIndices.add(frame["idx"].number()!!.toInt())
+                    }
+                }
+            },
+            onModeChanged = { mode -> modeDef.complete(mode) },
+            onFatalError = { err -> fatalErrors.add(err) },
+        )
+
+        try {
+            ctrl.startUpgrade()
+            val offer = withTimeout(3_000) { offerDef.await() }
+            val attemptId = offer.string("attemptId")
+            val pc = withTimeout(3_000) { peerFactory.firstConnection.await() }
+            val dc = withTimeout(3_000) { pc.channelCreated.await() }
+
+            val (_, answerB64) = hostCrypto.encryptBase64WithSeq(
+                obj("type" to "rtc_upgrade_answer", "attemptId" to attemptId, "sdp" to "v=0\r\ns=answer\r\n").toString(),
+            )
+            ctrl.onRelayEncryptedFrame(answerB64)
+            withTimeout(3_000) { pc.remoteDescriptionSet.await() }
+            dc.simulateOpen()
+            withTimeout(3_000) { activateDef.await() }
+
+            val total = 120
+            val hostEndSeq = hostCrypto.sendSeq
+            val (_, activatedB64) = hostCrypto.encryptBase64WithSeq(
+                obj(
+                    "type" to "rtc_upgrade_activated",
+                    "attemptId" to attemptId,
+                    "mode" to "p2p",
+                    "hostPreviousLegEndSeq" to (hostEndSeq + total),
+                ).toString(),
+            )
+            ctrl.onRelayEncryptedFrame(activatedB64)
+            assertEquals(TransportMode.P2P, withTimeout(3_000) { modeDef.await() })
+
+            val msgIdGen = RtcMessageIdGenerator()
+            val wsFrames = ArrayList<String>()
+            val dcFrames = ArrayList<List<ByteArray>>()
+            for (i in 0 until total) {
+                val payload = obj("type" to "race_event", "idx" to i).toString()
+                if (i % 2 == 0) {
+                    val (_, b64) = hostCrypto.encryptBase64WithSeq(payload)
+                    wsFrames.add(b64)
+                } else {
+                    val (seq, raw) = hostCrypto.encryptRawWithSeq(payload)
+                    val dshu = DshuFrameCodec.encode(seq, raw)
+                    dcFrames.add(RtcChunkCodec.encode(dshu, msgIdGen::next))
+                }
+            }
+
+            val wsThread = Thread {
+                try {
+                    for (b64 in wsFrames) {
+                        ctrl.onRelayEncryptedFrame(b64)
+                    }
+                } catch (t: Throwable) {
+                    fatalErrors.add(t)
+                }
+            }
+            val dcThread = Thread {
+                for (chunks in dcFrames) {
+                    for (chunk in chunks) {
+                        dc.simulateMessage(chunk)
+                    }
+                }
+            }
+            wsThread.start()
+            dcThread.start()
+            wsThread.join(5_000)
+            dcThread.join(5_000)
+
+            assertTrue(fatalErrors.isEmpty())
+            assertEquals((0 until total).toList(), observedIndices.toList())
+        } finally {
+            ctrl.close()
+            scope.cancel()
         }
     }
 }

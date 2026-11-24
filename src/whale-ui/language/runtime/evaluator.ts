@@ -344,7 +344,9 @@ function evaluateInternal(node: ASTNode, context: EvaluationContext, schemaCtx?:
       // Array pluck: if obj is an array, extract field from every element
       if (Array.isArray(obj)) {
         if (node.field === "length") return obj.length;
-        return obj.map((item: any) => item?.[node.field] ?? null);
+        return obj.map((item: any) =>
+          item != null && Object.hasOwn(item, node.field) ? (item[node.field] ?? null) : null
+        );
       }
       return Object.prototype.hasOwnProperty.call(obj, node.field) ? obj[node.field] : null;
     }

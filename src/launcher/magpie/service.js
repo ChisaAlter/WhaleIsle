@@ -14,7 +14,7 @@ const {
   resolveMagpieConfigDir,
 } = require('./platform');
 const { resolveLatestMagpieRelease } = require('./release');
-const { detectMagpieState, probeConcurrency } = require('./detect');
+const { EPHEMERAL_RUNTIME_ENTRIES, detectMagpieState, hasSharedUserConfig, probeConcurrency } = require('./detect');
 const {
   detachMagpieDshChannels,
   readDshDefaultModel,
@@ -295,10 +295,14 @@ function createMagpieService(deps = {}) {
       fs.mkdirSync(root, { recursive: true });
       if (fs.existsSync(lock)) {
         let owner = null;
+        let stat = null;
         try { owner = readJsonSafe(lock); } catch { /* ignore half-written lock */ }
-        if (owner?.pid && alive(owner.pid)) return { ok: false, error: 'busy' };
-        if (!owner?.pid && Date.now() - fs.statSync(lock).mtimeMs < 10_000) return { ok: false, error: 'busy' };
-        safeRemoveSync(lock);
+        try { stat = fs.statSync(lock); } catch { /* removed concurrently */ }
+        if (stat) {
+          if (owner?.pid && alive(owner.pid)) return { ok: false, error: 'busy' };
+          if (!owner?.pid && Date.now() - stat.mtimeMs < 10_000) return { ok: false, error: 'busy' };
+          safeRemoveSync(lock);
+        }
       }
       fs.writeFileSync(lock, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
       held = true;
@@ -315,7 +319,10 @@ function createMagpieService(deps = {}) {
   /** @param {string} gatewayAddr */
   async function assertIdleBeforeStop(gatewayAddr) {
     const busy = await probeConcurrency(gatewayAddr, { fetchJson: deps.fetchJson, fetchImpl: deps.fetchImpl });
-    if (busy && (busy.requests > 0 || busy.waiting > 0 || busy.tools > 0)) {
+    if (!busy) {
+      throw new Error('无法确认 Magpie 并发状态（探测超时或异常），已拒绝停机');
+    }
+    if (busy.requests > 0 || busy.waiting > 0 || busy.tools > 0) {
       throw new Error('Magpie 正在处理请求或等待工具结果，请稍后再试');
     }
   }
@@ -382,7 +389,7 @@ function createMagpieService(deps = {}) {
 
   async function syncDshAndRemap(/** @type {string} */ gatewayAddr, /** @type {any} */ migrationResult) {
     if (!dshHome) return;
-    await syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson: deps.fetchJson });
+    await syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson: deps.fetchJson, fetchImpl: deps.fetchImpl });
     const prev = migrationResult?.previousDefault || readDshDefaultModel(dshHome);
     if (prev?.provider === 'whalebridge') {
       remapDshDefaultModel(dshHome, 'whalebridge', 'magpie');
@@ -506,11 +513,17 @@ function createMagpieService(deps = {}) {
       const liveManaged = readJsonSafe(managedStateFile);
       if (liveManaged) await quitProcess(liveManaged, managedStateFile);
       writeJsonSafe(installedFile, oldRec);
+      let rollbackNote = '';
       if (wasRunning && oldRec?.version) {
-        await spawnWeb(oldRec.version, true);
+        try {
+          const restored = await spawnWeb(oldRec.version, true);
+          await syncDshAndRemap(restored.gatewayAddr || '', null);
+        } catch (rollbackError) {
+          rollbackNote = `（回滚恢复失败：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}）`;
+        }
       }
       await inspect();
-      throw new Error(`更新未生效，已恢复原版本：${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`更新未生效，已恢复原版本${rollbackNote}：${error instanceof Error ? error.message : String(error)}`);
     }
     pruneVersions(root, [nextVersion, ...(previousVersion ? [previousVersion] : [])]);
     await inspect();
@@ -566,8 +579,18 @@ function createMagpieService(deps = {}) {
       safeRemoveSync(installedFile);
       const versionsDir = path.join(root, 'versions');
       removeDirWithRetry(versionsDir);
-      if (options.removeData === true && !current.sharedConfig) {
-        safeRemoveSync(configDir);
+      if (options.removeData === true && !current.sharedConfig && !hasSharedUserConfig(configDir)) {
+        for (const name of EPHEMERAL_RUNTIME_ENTRIES) {
+          safeRemoveSync(path.join(configDir, name));
+        }
+        try {
+          for (const name of fs.readdirSync(configDir)) {
+            if (name.endsWith('.lock')) safeRemoveSync(path.join(configDir, name));
+          }
+          fs.rmdirSync(configDir);
+        } catch {
+          // Non-empty or already absent; never rm -rf unknown user files.
+        }
       }
       await inspect();
       emit(progress, 'done', 100);

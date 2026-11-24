@@ -9,6 +9,7 @@ const path = require('path');
 const store = require('./store');
 const registry = require('./registry');
 const lifecycle = require('./lifecycle');
+const { renameWithRetry } = require('../../shared/fs-safe');
 
 const START_GRACE_MS = 1500;
 const START_POLL_MS = 150;
@@ -187,7 +188,7 @@ function createComponentsService(deps = {}) {
     const fsp = (deps.fs || require('fs')).promises;
     await fsp.mkdir(path.dirname(target), { recursive: true });
     try {
-      await fsp.rename(staging, target);
+      await renameWithRetry(staging, target, { rename: fsp.rename.bind(fsp) });
     } catch (error) {
       await lifecycle.removeDir(staging, deps);
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: 'switch-failed' });
@@ -330,9 +331,15 @@ function createComponentsService(deps = {}) {
       try {
         await lifecycle.killPidTree(pid, { graceMs: 1500 }, deps);
       } catch {
-        // A stubborn tree that outlived the escalation still gets the
-        // recorded-stopped bookkeeping below; give it the rest of the window.
         await waitStopped(pid, STOP_GRACE_MS);
+      }
+      if (lifecycle.isPidAlive(pid, deps)) {
+        if (proc) {
+          proc.expectedExit = false;
+        }
+        rec.lastError = `无法结束组件进程（PID ${pid} 仍在运行），请关闭后重试。`;
+        writeRegistry();
+        return { ok: false, error: 'stop-failed', state: rec.state, id, pid, message: rec.lastError };
       }
     }
     procs.delete(id);
@@ -539,7 +546,11 @@ function createComponentsService(deps = {}) {
       const wasRunning = rec.state === 'running' && rec.pid && lifecycle.isPidAlive(rec.pid, deps);
       if (wasRunning) {
         emit(onProgress, { id, op: 'update', phase: 'stop', percent: 10 });
-        await stopComponent(id, onProgress, 'update');
+        const stopped = await stopComponent(id, onProgress, 'update');
+        if (!stopped.ok) {
+          emit(onProgress, { id, op: 'update', phase: 'error', percent: 100, message: stopped.message });
+          return { ok: false, error: stopped.error || 'stop-failed', id, from, to: from, message: stopped.message };
+        }
       }
       try {
         await stagePayload(id, latest, onProgress, 'update');
@@ -548,7 +559,8 @@ function createComponentsService(deps = {}) {
         emit(onProgress, { id, op: 'update', phase: 'error', percent: 100, message: err.message });
         return { ok: false, error: err.code || 'update-failed', id, from, to: from, message: err.message };
       }
-      // Keep exactly one rollback payload: the superseded previous dir goes.
+      // Keep exactly one rollback payload: the superseded previous dir goes
+      // only after the new version starts cleanly (when it was running).
       const oldPrevious = rec.previous;
       rec.previous = from;
       rec.version = latest.version;
@@ -559,14 +571,15 @@ function createComponentsService(deps = {}) {
       rec.lastError = '';
       rec.updatedAt = new Date().toISOString();
       writeRegistry();
-      if (oldPrevious && oldPrevious !== rec.previous && oldPrevious !== rec.version) {
-        await lifecycle.removeDir(store.versionDir(root, id, oldPrevious), deps);
-      }
       if (wasRunning) {
         const restarted = await startComponent(id, onProgress, 'update');
         if (!restarted.ok) {
-          return { ok: true, from, to: latest.version, id, state: 'error', message: restarted.message };
+          emit(onProgress, { id, op: 'update', phase: 'error', percent: 100, message: restarted.message });
+          return { ok: false, error: restarted.error || 'start-failed', from, to: latest.version, id, state: 'error', message: restarted.message };
         }
+      }
+      if (oldPrevious && oldPrevious !== rec.previous && oldPrevious !== rec.version) {
+        await lifecycle.removeDir(store.versionDir(root, id, oldPrevious), deps);
       }
       emit(onProgress, { id, op: 'update', phase: 'done', percent: 100 });
       return { ok: true, from, to: latest.version, id };
@@ -599,7 +612,11 @@ function createComponentsService(deps = {}) {
       const wasRunning = rec.state === 'running' && rec.pid && lifecycle.isPidAlive(rec.pid, deps);
       if (wasRunning) {
         emit(onProgress, { id, op: 'rollback', phase: 'stop', percent: 15 });
-        await stopComponent(id, onProgress, 'rollback');
+        const stopped = await stopComponent(id, onProgress, 'rollback');
+        if (!stopped.ok) {
+          emit(onProgress, { id, op: 'rollback', phase: 'error', percent: 100, message: stopped.message });
+          return { ok: false, error: stopped.error || 'stop-failed', id, to: rec.version, message: stopped.message };
+        }
       }
       emit(onProgress, { id, op: 'rollback', phase: 'switch', percent: 60 });
       // After rollback the rolled-forward version becomes the previous one —
@@ -615,7 +632,8 @@ function createComponentsService(deps = {}) {
       if (wasRunning) {
         const restarted = await startComponent(id, onProgress, 'rollback');
         if (!restarted.ok) {
-          return { ok: true, to: target, id, state: 'error', message: restarted.message };
+          emit(onProgress, { id, op: 'rollback', phase: 'error', percent: 100, message: restarted.message });
+          return { ok: false, error: restarted.error || 'start-failed', to: target, id, state: 'error', message: restarted.message };
         }
       }
       emit(onProgress, { id, op: 'rollback', phase: 'done', percent: 100 });
@@ -636,7 +654,11 @@ function createComponentsService(deps = {}) {
       }
       if (rec.state === 'running' || procs.has(id)) {
         emit(onProgress, { id, op: 'uninstall', phase: 'stop', percent: 20 });
-        await stopComponent(id, onProgress, 'uninstall');
+        const stopped = await stopComponent(id, onProgress, 'uninstall');
+        if (!stopped.ok) {
+          emit(onProgress, { id, op: 'uninstall', phase: 'error', percent: 100, message: stopped.message });
+          return { ok: false, error: stopped.error || 'stop-failed', id, message: stopped.message };
+        }
       }
       emit(onProgress, { id, op: 'uninstall', phase: 'remove', percent: 60 });
       await lifecycle.removeDir(store.versionsDir(root, id), deps);

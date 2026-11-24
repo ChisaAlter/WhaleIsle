@@ -349,36 +349,47 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
         }
         return shutdownPromise;
       };
+      const runQuitCoordinate = () => taskProtection.coordinate('quit', /** @type {Record<string, any>} */ ({
+        terminal: true,
+        preConfirmed: true,
+        // Quit gives no feedback until the drain ends; a 30 s wait read as
+        // an ignored click. Work still running is cleaned up either way.
+        drainTimeoutMs: 3000,
+        commit: async () => {
+          state.stoppingForQuit = true;
+          state.closingOverlayActive = true;
+          const win = getMainWindow();
+          await showClosingOverlay(win, loadConfig().locale,
+            getHarnessWebContents(win) || win?.webContents).catch(() => undefined);
+          await shutdownForQuit();
+          // Keep the current surface until the native window closes.
+        },
+      }));
       try {
         /** @type {any} */
         let result;
         try {
-          result = await Promise.race([
-            taskProtection.coordinate('quit', /** @type {Record<string, any>} */ ({
-              terminal: true,
-              preConfirmed: true,
-              // Quit gives no feedback until the drain ends; a 30 s wait read as
-              // an ignored click. Work still running is cleaned up either way.
-              drainTimeoutMs: 3000,
-              commit: async () => {
-                state.stoppingForQuit = true;
-                state.closingOverlayActive = true;
-                const win = getMainWindow();
-                await showClosingOverlay(win, loadConfig().locale,
-                  getHarnessWebContents(win) || win?.webContents).catch(() => undefined);
-                await shutdownForQuit();
-                // Keep the current surface until the native window closes.
-              },
-            })),
-            new Promise(/** @type {(resolve: (value: any) => void, reject: (reason?: any) => void) => void} */ ((_, reject) => {
-              shutdownTimer = setTimeout(() => {
-                /** @type {Error & { code?: string }} */
-                const error = new Error('后台关停未在 30 秒内完成');
-                error.code = 'dshd/shutdown-timeout';
-                reject(error);
-              }, 30000);
-            })),
-          ]);
+          const coordinateWithTimeout = async () => {
+            clearTimeout(shutdownTimer);
+            return Promise.race([
+              runQuitCoordinate(),
+              new Promise(/** @type {(resolve: (value: any) => void, reject: (reason?: any) => void) => void} */ ((_, reject) => {
+                shutdownTimer = setTimeout(() => {
+                  /** @type {Error & { code?: string }} */
+                  const error = new Error('后台关停未在 30 秒内完成');
+                  error.code = 'dshd/shutdown-timeout';
+                  reject(error);
+                }, 30000);
+              })),
+            ]);
+          };
+          result = await coordinateWithTimeout();
+          if (!result.proceeded && result.code === 'busy' && result.local === true) {
+            const idle = await taskProtection.cancelAndWait?.(5000);
+            if (idle !== false) {
+              result = await coordinateWithTimeout();
+            }
+          }
         } catch (error) {
           result = { proceeded: false, code: /** @type {any} */ (error).code || 'dshd/shutdown-failed',
             detail: /** @type {any} */ (error).message || String(error) };

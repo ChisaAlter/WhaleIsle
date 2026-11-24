@@ -551,6 +551,7 @@ function createAutomationsAndAccess(db) {
 export function createWorkStore(db) {
   return {
     get isReadOnly() { return isDatabaseReadOnly(db); },
+    withTransaction: (/** @type {() => any} */ fn) => withTransaction(db, fn),
     ...createCoreWorkAccess(db),
     ...createRequestsAccess(db),
     ...createAutomationsAndAccess(db),

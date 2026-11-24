@@ -25,7 +25,7 @@ import { botsRootDir, readSoul } from './fs-home.js';
 import { resolveBotLaunchRoute } from './launch-route.js';
 import { BOT_PRESET_ID } from './prompt-engine.js';
 import { createOwedMailDrainer } from './session-mail.js';
-import { buildSideChatSpec, createSessionWorkOps } from './session-work.js';
+import { buildSideChatSpec, createSessionWorkOps, executeControllerTurn, resolveTurnSource } from './session-work.js';
 
 export const BOT_OWNER_HOME = 'dsh-bots:home';
 export const BOT_OWNER_CHAT = 'dsh-bots:chat';
@@ -523,104 +523,31 @@ export function createSessionRuntime(deps) {
   /**
    * @param {string} sessionId
    * @param {string} promptText
-   * @param {{ timeoutMs?: number, botId?: string | null, isBackground?: boolean, images?: any[] }} [opts]
+   * @param {{ timeoutMs?: number, botId?: string | null, isBackground?: boolean, images?: any[], sourceKind?: string | null, source?: Record<string, any> | null }} [opts]
    */
-  function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS, botId = null, isBackground = false } = {}) {
+  function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS, botId = null, isBackground = false, sourceKind = null, source = null } = {}) {
     const resolvedBotId = botId || botsStore.getChat(String(sessionId))?.botId || null;
     if (resolvedBotId) {
       const gate = checkBudgetGate(resolvedBotId, { isBackground });
       if (!gate.allowed) {
         return Promise.resolve({
-          ok: false,
-          blocked: true,
-          code: gate.reason,
-          deferUntilMs: gate.deferUntilMs ?? null,
-          error: gate.reason,
-          reply: '',
+          ok: false, blocked: true, code: gate.reason,
+          deferUntilMs: gate.deferUntilMs ?? null, error: gate.reason, reply: '',
         });
       }
     }
     const controller = controllerOf();
-    if (!controller || (typeof controller.prompt !== 'function' && typeof controller.runTurnForTest !== 'function')) {
+    const canDispatch = controller && (typeof controller.prompt === 'function' || typeof controller.runTurnForTest === 'function' || typeof controller.resolveAgent === 'function');
+    if (!canDispatch) {
       return Promise.resolve({
-        ok: false,
-        error: 'session-controller-unavailable',
-        refusal: buildControllerUnavailableRefusal('run-turn'),
-        reply: '',
-      });
-    }
-    if (typeof controller.runTurnForTest === 'function') {
-      const ac = new AbortController();
-      return new Promise((resolve) => {
-        let settled = false;
-        /** @type {(() => void) | null} */
-        let unregister = null;
-        /** @param {any} result */
-        const finish = (result) => {
-          if (settled) return;
-          settled = true;
-          try { unregister?.(); } catch { /* Best-effort unregister. */ }
-          resolve(result);
-        };
-        unregister = registerInFlight(sessionId, {
-          abort: () => {
-            ac.abort();
-            finish({ ok: false, error: 'aborted', reason: 'aborted', reply: '' });
-          },
-        });
-        Promise.resolve(controller.runTurnForTest(sessionId, promptText, ac.signal))
-          .then((res) => finish(res))
-          .catch((err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
+        ok: false, error: 'session-controller-unavailable',
+        refusal: buildControllerUnavailableRefusal('run-turn'), reply: '',
       });
     }
     const requestId = `bot-turn-${crypto.randomUUID()}`;
-    const ac = new AbortController();
-    return new Promise((resolve) => {
-      let mine = false;
-      let settled = false;
-      /** @type {string[]} */
-      const texts = [];
-      /** @type {(() => void) | null} */
-      let off = null;
-      /** @type {(() => void) | null} */
-      let unregister = null;
-      /** @param {any} result */
-      const finish = (result) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        try { unregister?.(); } catch { /* Best-effort unregister. */ }
-        try { off?.(); } catch { /* Best-effort dispose. */ }
-        ac.abort();
-        resolve(result);
-      };
-      unregister = registerInFlight(sessionId, {
-        abort: () => finish({ ok: false, error: 'aborted', reason: 'aborted', reply: texts.join('\n').trim() }),
-      });
-      const timer = setTimeout(() => finish({ ok: false, error: 'timeout', reply: texts.join('\n').trim() }), timeoutMs);
-      off = typeof ctx?.on === 'function'
-        ? ctx.on('session/event', (/** @type {any} */ session, /** @type {any} */ event) => {
-          if (String(session?.id ?? session ?? '') !== String(sessionId)) return;
-          const d = event?.data ?? {};
-          if (!mine) {
-            if (event?.type === 'user/message' && d.source?.rpcId === requestId) mine = true;
-            return;
-          }
-          if (event?.type === 'assistant/message') {
-            const t = eventText({ data: d }).trim();
-            if (t) texts.push(t);
-          } else if (event?.type === 'turn/end') {
-            const kind = d.reason?.kind ?? 'completed';
-            finish({ ok: kind === 'completed', reply: texts.join('\n').trim(), reason: kind });
-          }
-        }, { global: true })
-        : null;
-      if (!off) {
-        finish({ ok: false, error: 'event-bus-unavailable', reply: '' });
-        return;
-      }
-      controller.prompt({ requestId, sessionId, mode: 'queue', content: [{ type: 'text', text: promptText }] }, ac.signal)
-        .catch((/** @type {any} */ err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
+    const effectiveSource = resolveTurnSource(source, sourceKind, requestId);
+    return executeControllerTurn({
+      ctx, controller, sessionId, promptText, timeoutMs, requestId, effectiveSource, registerInFlight, eventText,
     });
   }
 

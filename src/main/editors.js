@@ -50,22 +50,39 @@ function fail(message) {
   return { ok: false, message };
 }
 
-function commandOnPath(command, deps = {}) {
+function pickWindowsCommandPath(/** @type {unknown} */ stdout, /** @type {string} */ fallback) {
+  const candidates = String(stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (candidates.length === 0) return fallback;
+  const preferred = candidates.find((item) => /\.(exe|com)$/i.test(item))
+    ?? candidates.find((item) => /\.(cmd|bat)$/i.test(item));
+  return preferred ?? candidates[0];
+}
+
+function resolveCommandOnPath(/** @type {string} */ command, /** @type {{ execFile?: Function, platform?: NodeJS.Platform, env?: NodeJS.ProcessEnv }} */ deps = {}) {
   const execFile = deps.execFile ?? nodeExecFile;
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   return new Promise((resolve) => {
     const file = platform === 'win32' ? 'where.exe' : '/bin/sh';
     const args = platform === 'win32' ? [command] : ['-c', `command -v ${JSON.stringify(command)}`];
-    execFile(file, args, { env, windowsHide: true }, (error) => {
-      resolve(!error);
+    execFile(file, args, { env, windowsHide: true }, (/** @type {unknown} */ error, /** @type {unknown} */ stdout) => {
+      if (error) {
+        resolve(null);
+        return;
+      }
+      resolve(platform === 'win32' ? pickWindowsCommandPath(stdout, command) : command);
     });
   });
 }
 
+function commandOnPath(command, deps = {}) {
+  return resolveCommandOnPath(command, deps).then((resolved) => Boolean(resolved));
+}
+
 async function firstAvailableCommand(commands, deps) {
   for (const command of commands) {
-    if (await commandOnPath(command, deps)) return command;
+    const resolved = await resolveCommandOnPath(command, deps);
+    if (resolved) return resolved;
   }
   return null;
 }
@@ -107,10 +124,45 @@ async function listAvailableEditors(deps = {}) {
   return available;
 }
 
+function buildEditorSpawnSpec(/** @type {string} */ command, /** @type {string[]} */ args, /** @type {{ platform?: NodeJS.Platform, env?: NodeJS.ProcessEnv }} */ deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const baseEnv = deps.env ?? process.env;
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    const batchEnv = /** @type {Record<string, string | undefined>} */ ({ ...baseEnv, DSHD_EDITOR_CMD: command });
+    const tokens = args.map((/** @type {string} */ value, /** @type {number} */ index) => {
+      const key = `DSHD_EDITOR_ARG_${index}`;
+      batchEnv[key] = String(value);
+      return `"%${key}%"`;
+    });
+    const cmdLine = [`"%DSHD_EDITOR_CMD%"`, ...tokens].join(' ');
+    return {
+      command: baseEnv.ComSpec || process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', `"${cmdLine}"`],
+      options: {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        windowsVerbatimArguments: true,
+        env: batchEnv,
+      },
+    };
+  }
+  return {
+    command,
+    args,
+    options: {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      ...(deps.env ? { env: deps.env } : {}),
+    },
+  };
+}
+
 /**
  * Launch a workspace file in a probed editor.
  * @param {{ editor: string, cwd: string, relativePath: string, line?: number, column?: number }} input
- * @param {{ spawn?: Function, execFile?: Function, platform?: NodeJS.Platform, env?: NodeJS.ProcessEnv }} [deps]
+ * @param {{ spawn?: Function, execFile?: Function, platform?: NodeJS.Platform, env?: NodeJS.ProcessEnv, onSpawnError?: (error: Error) => void }} [deps]
  */
 async function openInEditor(input = {}, deps = {}) {
   const def = EDITORS.find((item) => item.id === input.editor);
@@ -123,12 +175,15 @@ async function openInEditor(input = {}, deps = {}) {
   const args = resolveEditorArgs(def, target, input.line, input.column);
   try {
     const spawn = deps.spawn ?? nodeSpawn;
-    const child = spawn(command, args, {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    if (typeof child.unref === 'function') child.unref();
+    const spec = buildEditorSpawnSpec(command, args, deps);
+    const child = spawn(spec.command, spec.args, spec.options);
+    if (typeof child?.once === 'function') {
+      child.once('error', (/** @type {unknown} */ error) => {
+        if (typeof deps.onSpawnError === 'function') deps.onSpawnError(/** @type {Error} */ (error));
+        else console.warn('[editors] failed to launch editor:', error instanceof Error ? error.message : String(error));
+      });
+    }
+    if (typeof child?.unref === 'function') child.unref();
     return { ok: true };
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'Failed to launch editor');

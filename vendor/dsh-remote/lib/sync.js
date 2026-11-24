@@ -18,7 +18,7 @@
 // After a successful pull the local mtime is aligned to the remote mtime, and
 // after a successful push the local mtime is aligned to the remote mtime the
 // server assigned — so the invariant L==R==S holds and the next run is cheap.
-import { readdirSync, statSync, mkdirSync, existsSync, readFileSync, writeFileSync, utimesSync, renameSync } from 'node:fs'
+import { readdirSync, statSync, lstatSync, realpathSync, mkdirSync, readFileSync, writeFileSync, utimesSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { joinRemotePath, relPathUnder } from './paths.js'
 
@@ -40,6 +40,103 @@ const keyOf = (size, mtime) => `${size}:${Math.floor(mtime || 0)}`
 const localKey = (st) => (st ? keyOf(st.size, st.mtimeMs / 1000) : null)
 const remoteKey = (st) => (st ? keyOf(st.size, st.mtime) : null)
 
+function isSafeEntryName(name) {
+  if (typeof name !== 'string' || name.length === 0) return false
+  if (name === '.' || name === '..') return false
+  if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false
+  if (/^[a-zA-Z]:/.test(name)) return false
+  return true
+}
+
+function isInsideDir(rootResolved, candidateResolved) {
+  const rel = path.relative(rootResolved, candidateResolved)
+  if (!rel || rel === '..' || path.isAbsolute(rel)) return false
+  return !rel.startsWith('..' + path.sep) && !rel.startsWith('../') && !rel.startsWith('..\\')
+}
+
+function isSameOrInsideDir(rootResolved, candidateResolved) {
+  return candidateResolved === rootResolved || isInsideDir(rootResolved, candidateResolved)
+}
+
+function isRemoteSymlink(attrs) {
+  if (!attrs) return false
+  if (typeof attrs.isSymbolicLink === 'function' && attrs.isSymbolicLink()) return true
+  if (typeof attrs.mode === 'number' && (attrs.mode & 0o170000) === 0o120000) return true
+  return false
+}
+
+async function checkRemoteSymlink(sftp, attrs, rp) {
+  if (isRemoteSymlink(attrs)) return true
+  if (typeof sftp.lstat !== 'function') return false
+  try {
+    return isRemoteSymlink(await sftp.lstat(rp))
+  } catch {
+    return true
+  }
+}
+
+function lstatOrNull(p) {
+  try { return lstatSync(p) } catch { return null }
+}
+
+function realpathOrNull(p) {
+  try { return realpathSync(p) } catch { return null }
+}
+
+function prepareSafeLocalDir(resolvedLocalRoot, lDir, lp, dryRun) {
+  const localStat = lstatOrNull(lp)
+  if (localStat && (localStat.isSymbolicLink() || !localStat.isDirectory())) return false
+  if (dryRun) return true
+  const realRootBefore = realpathOrNull(resolvedLocalRoot)
+  if (realRootBefore) {
+    const realParent = realpathOrNull(lDir)
+    if (!realParent || !isSameOrInsideDir(realRootBefore, realParent)) return false
+  }
+  if (!localStat) mkdirSync(lp, { recursive: true })
+  const realRoot = realpathOrNull(resolvedLocalRoot)
+  const realTarget = realpathOrNull(lp)
+  return !!(realRoot && realTarget && isInsideDir(realRoot, realTarget))
+}
+
+function canWriteSafeLocalFile(resolvedLocalRoot, lp) {
+  const preWriteStat = lstatOrNull(lp)
+  if (preWriteStat && (preWriteStat.isSymbolicLink() || preWriteStat.isDirectory())) return false
+  const realRoot = realpathOrNull(resolvedLocalRoot)
+  if (!realRoot) return true
+  const realParent = realpathOrNull(path.dirname(lp))
+  return !!(realParent && isSameOrInsideDir(realRoot, realParent))
+}
+
+function classifyPullConflict(force, sk, rk, lk, rp) {
+  if (sk && rk === sk && lk && lk === sk) return 'unchanged'
+  if (force || !sk || !lk || lk === sk) return null
+  if (rk === sk) {
+    return { path: rp, reason: 'local-modified（本地改过而远端未变；如需覆盖请用 force / rw_push）' }
+  }
+  if (rk !== lk) {
+    return { path: rp, reason: 'both-modified（远端与本地都改过，跳过不覆盖）' }
+  }
+  return null
+}
+
+async function applyPulledFile({ sftp, rp, lp, r, rel, resolvedLocalRoot, dryRun, stats, nextState }) {
+  if (dryRun) {
+    stats.files++
+    stats.touched.push(rp)
+    nextState[rel] = { size: r.size, mtime: r.mtime }
+    return
+  }
+  try {
+    const buf = await sftp.readFile(rp)
+    if (!canWriteSafeLocalFile(resolvedLocalRoot, lp)) return
+    writeFileSync(lp, buf)
+    try { utimesSync(lp, new Date(r.mtime * 1000), new Date(r.mtime * 1000)) } catch { /* The file contents are already saved; unsupported mtime preservation is nonfatal. */ }
+    stats.files++
+    stats.touched.push(rp)
+    nextState[rel] = { size: r.size, mtime: r.mtime }
+  } catch { /* skip unreadable */ }
+}
+
 /** Recursively pull remote → local mirror (three-way, ignore-aware). */
 export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
   const {
@@ -53,78 +150,57 @@ export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
   } = opts
   const stats = { files: 0, dirs: 0, skippedUnchanged: 0, skippedLarge: 0, conflicts: [], staleRemote: 0, touched: [], truncated: false }
   const nextState = { ...state }
+  const resolvedLocalRoot = path.resolve(localDir)
+
+  const syncFileEntry = async (rDir, lDir, e) => {
+    if (stats.files >= maxFiles) { stats.truncated = true; return }
+    const name = e.filename
+    const lp = path.resolve(lDir, name)
+    if (!isInsideDir(resolvedLocalRoot, lp)) return
+    const rp = joinRemotePath(rDir, name)
+    const rel = relPathUnder(remoteDir, rp) || name
+    if (isIgnored(rel, false) || await checkRemoteSymlink(sftp, e.attrs, rp)) return
+    let r
+    try { r = await sftp.stat(rp) } catch { return }
+    if (isRemoteSymlink(r) || r.isDirectory?.()) return
+    if (maxFileBytes > 0 && r.size > maxFileBytes) { stats.skippedLarge++; return }
+    const localStat = lstatOrNull(lp)
+    if (localStat && (localStat.isSymbolicLink() || localStat.isDirectory())) return
+    const decision = classifyPullConflict(force, state[rel] ? keyOf(state[rel].size, state[rel].mtime) : null, remoteKey(r), localKey(localStat), rp)
+    if (decision === 'unchanged') { stats.skippedUnchanged++; return }
+    if (decision) { stats.conflicts.push(decision); return }
+    await applyPulledFile({ sftp, rp, lp, r, rel, resolvedLocalRoot, dryRun, stats, nextState })
+  }
 
   const walk = async (rDir, lDir, depth) => {
     const entries = await sftp.readdir(rDir).then((l) => l || [], () => [])
     // Directories first (sequential, depth-bounded) so every file has a home.
     for (const e of entries) {
-      const name = String(e.filename)
-      if (name === '.' || name === '..') continue
-      const isDir = !!(e.attrs && e.attrs.isDirectory && e.attrs.isDirectory())
-      if (!isDir) continue
-      if (depth <= 0 || stats.files >= maxFiles) {
-        stats.truncated = true
-        continue
-      }
+      const name = e && typeof e.filename === 'string' ? e.filename : ''
+      if (!isSafeEntryName(name) || isRemoteSymlink(e.attrs)) continue
+      if (!(e.attrs && e.attrs.isDirectory && e.attrs.isDirectory())) continue
+      if (depth <= 0 || stats.files >= maxFiles) { stats.truncated = true; continue }
+      const lp = path.resolve(lDir, name)
+      if (!isInsideDir(resolvedLocalRoot, lp)) continue
       const rp = joinRemotePath(rDir, name)
-      const lp = path.join(lDir, name)
+      if (await checkRemoteSymlink(sftp, e.attrs, rp)) continue
       const rel = relPathUnder(remoteDir, rp) || name
       if (isIgnored(rel, true)) continue
-      if (!existsSync(lp)) mkdirSync(lp, { recursive: true })
+      if (!prepareSafeLocalDir(resolvedLocalRoot, lDir, lp, dryRun)) continue
       await walk(rp, lp, depth - 1)
       stats.dirs++
       if (stats.files >= maxFiles) break
     }
     if (stats.files >= maxFiles) { stats.truncated = true; return }
 
-    const files = entries.filter(
-      (e) => !(e.attrs && e.attrs.isDirectory && e.attrs.isDirectory()) &&
-        String(e.filename) !== '.' && String(e.filename) !== '..',
-    )
-    await mapLimit(files, 4, async (e) => {
-      if (stats.files >= maxFiles) { stats.truncated = true; return }
-      const name = String(e.filename)
-      const rp = joinRemotePath(rDir, name)
-      const lp = path.join(lDir, name)
-      const rel = relPathUnder(remoteDir, rp) || name
-      if (isIgnored(rel, false)) return
-      let r
-      try { r = await sftp.stat(rp) } catch { return }
-      if (maxFileBytes > 0 && r.size > maxFileBytes) { stats.skippedLarge++; return }
-      const rk = remoteKey(r)
-      const sk = state[rel] ? keyOf(state[rel].size, state[rel].mtime) : null
-      let lk = null
-      if (existsSync(lp)) {
-        try { lk = localKey(statSync(lp)) } catch { lk = null }
-      }
-      if (sk && rk === sk && lk && lk === sk) { stats.skippedUnchanged++; return }
-      if (!force && sk && rk !== sk && lk && lk !== sk && rk !== lk) {
-        stats.conflicts.push({ path: rp, reason: 'both-modified（远端与本地都改过，跳过不覆盖）' })
-        return
-      }
-      if (!force && sk && rk === sk && lk && lk !== sk) {
-        // Pull would clobber a local edit; the remote never changed.
-        stats.conflicts.push({ path: rp, reason: 'local-modified（本地改过而远端未变；如需覆盖请用 force / rw_push）' })
-        return
-      }
-      if (dryRun) {
-        stats.files++
-        stats.touched.push(rp)
-        nextState[rel] = { size: r.size, mtime: r.mtime }
-        return
-      }
-      try {
-        const buf = await sftp.readFile(rp)
-        writeFileSync(lp, buf)
-        try { utimesSync(lp, new Date(r.mtime * 1000), new Date(r.mtime * 1000)) } catch { /* The file contents are already saved; unsupported mtime preservation is nonfatal. */ }
-        stats.files++
-        stats.touched.push(rp)
-        nextState[rel] = { size: r.size, mtime: r.mtime }
-      } catch { /* skip unreadable */ }
+    const files = entries.filter((e) => {
+      const name = e && typeof e.filename === 'string' ? e.filename : ''
+      return isSafeEntryName(name) && !isRemoteSymlink(e.attrs) && !(e.attrs && e.attrs.isDirectory && e.attrs.isDirectory())
     })
+    await mapLimit(files, 4, (e) => syncFileEntry(rDir, lDir, e))
   }
 
-  await walk(remoteDir, localDir, maxDepth)
+  await walk(remoteDir, resolvedLocalRoot, maxDepth)
   if (stats.files >= maxFiles) stats.truncated = true
   // Informational: remote entries in the snapshot that no longer exist remotely.
   for (const rel of Object.keys(state)) {

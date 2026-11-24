@@ -440,7 +440,12 @@ function modelErrorMessage(error, action) {
 
 async function boundSession(harness, state, key, options) {
   if (typeof state?.sessionFor !== 'function') return null;
-  const resolution = await whaleSessionResolution(harness, { state, key });
+  const resolution = await whaleSessionResolution(harness, {
+    state,
+    key,
+    channel: options?.channel ?? harness?.accessGate?.channel ?? null,
+    accountId: options?.accountId ?? harness?.accessGate?.botId ?? null,
+  });
   const selected = await selectConversationSession(harness, state, key, resolution);
   const sessionId = selected.sessionId;
   const whaleSessionId = selected.shared ? sessionId : null;
@@ -535,7 +540,11 @@ export async function runModelCommand(text, harness, state, key, options = {}) {
   if (options.hasImages) {
     return commandResult(t('模型和推理等级命令仅支持纯文字，请移除图片后重试。'));
   }
-  const requestOptions = rpcOptions(options.signal);
+  const requestOptions = {
+    ...rpcOptions(options.signal),
+    ...(options.channel !== undefined ? { channel: options.channel } : {}),
+    ...(options.accountId !== undefined ? { accountId: options.accountId } : {}),
+  };
 
   if (isModelsCommand(command)) {
     if (!/^\/models[ \t]*$/iu.test(command)) return commandResult(t(MODELS_USAGE));

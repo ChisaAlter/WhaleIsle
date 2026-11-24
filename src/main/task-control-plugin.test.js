@@ -903,3 +903,37 @@ test('wrapRouteEntry leaves WebResourceRoute without synthetic handler while pre
   assert.equal('handler' in preRoute, false);
   assert.equal('handler' in dynRoute, false);
 });
+
+test('Audit regression [P1 #31]: drainTimeoutMs=0 waits indefinitely and concurrent same-owner re-acquire isolates generations', async () => {
+  const { createControlState, admit, acquireLock, releaseLock } = await load('state.js');
+  const state = createControlState();
+
+  // 1. drainTimeoutMs === 0 waits for pending work instead of falling back to 30000ms
+  const pending = admit(state, 'slow-job');
+  assert.equal(pending.accepted, true);
+  let resolvedZero = false;
+  const zeroDrain = acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 0, ttlMs: 5000 }).then((res) => {
+    resolvedZero = true;
+    return res;
+  });
+  await new Promise((r) => setTimeout(r, 25));
+  assert.equal(resolvedZero, false);
+  pending.done();
+  const zeroRes = await zeroDrain;
+  assert.equal(zeroRes.ok, true);
+  assert.equal(releaseLock(state, { lockId: zeroRes.lockId, owner: 'desktop-update' }).released, true);
+
+  // 2. Concurrent same-owner re-acquire advances generation so a timed-out call cannot release the newer generation's lock
+  const p2 = admit(state, 'blocked-job');
+  const first = acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 25, ttlMs: 5000 });
+  await new Promise((r) => setImmediate(r));
+  const second = acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 5000, ttlMs: 5000 });
+  const firstRes = await first;
+  assert.equal(firstRes.ok, false);
+  assert.equal(firstRes.code, 'dshd/lock-superseded');
+  assert.ok(state.lock, 'superseded first call timeout must NOT release second call lock');
+  p2.done();
+  const secondRes = await second;
+  assert.equal(secondRes.ok, true);
+  assert.equal(releaseLock(state, { lockId: secondRes.lockId, owner: 'desktop-update' }).released, true);
+});

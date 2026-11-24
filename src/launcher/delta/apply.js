@@ -9,13 +9,20 @@
 //   4. commit by rename with rollback, then drop staging.
 const fs = require('fs');
 const path = require('path');
+const { checkInstallSpace } = require('../../main/install-space');
+const { renameWithRetrySync } = require('../../shared/fs-safe');
 const manifest = require('./manifest');
 const zip = require('./zip');
+
+const STAGING_PREFIX = '.dshd-delta-';
+const JOURNAL_FILE = 'journal.json';
 
 class DeltaApplyError extends Error {
   constructor(code, message, detail) {
     super(message);
     this.code = code;
+    /** @type {boolean | undefined} */
+    this.rollbackIncomplete = undefined;
     if (detail !== undefined) {
       this.detail = detail;
     }
@@ -117,6 +124,242 @@ function pruneEmptyDirs(targetDir, relPath, deps = {}) {
 }
 
 /**
+ * @param {string} from
+ * @param {string} to
+ * @param {any} fsx
+ * @param {any} [deps]
+ */
+function renameSyncWithRetry(from, to, fsx, deps = {}) {
+  return renameWithRetrySync(from, to, {
+    rename: fsx.renameSync.bind(fsx),
+    sleep: deps.sleep,
+  });
+}
+
+/**
+ * @param {string} journalPath
+ * @param {any} journal
+ * @param {any} fsx
+ */
+function writeJournalSync(journalPath, journal, fsx) {
+  const tmp = `${journalPath}.tmp`;
+  fsx.writeFileSync(tmp, JSON.stringify(journal), 'utf8');
+  fsx.renameSync(tmp, journalPath);
+}
+
+/**
+ * @param {string} candidate
+ * @param {string} parentDir
+ */
+function isInsideDir(candidate, parentDir) {
+  const resolved = path.resolve(candidate);
+  const root = path.resolve(parentDir);
+  return resolved === root || resolved.startsWith(root + path.sep);
+}
+
+/**
+ * @param {string} rolledBackDir
+ * @param {string} target
+ * @param {string} opPath
+ * @param {number} index
+ * @param {any} fsx
+ * @param {any} deps
+ */
+function tryUnplaceTarget(rolledBackDir, target, opPath, index, fsx, deps) {
+  try {
+    fsx.mkdirSync(rolledBackDir, { recursive: true });
+    renameSyncWithRetry(target, path.join(rolledBackDir, String(index)), fsx, deps);
+    return null;
+  } catch (err) {
+    return { path: opPath, step: 'unplace', error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * @param {string} backup
+ * @param {string} target
+ * @param {string} opPath
+ * @param {any} fsx
+ * @param {any} deps
+ */
+function tryRestoreBackup(backup, target, opPath, fsx, deps) {
+  try {
+    fsx.mkdirSync(path.dirname(target), { recursive: true });
+    renameSyncWithRetry(backup, target, fsx, deps);
+    return null;
+  } catch (err) {
+    return { path: opPath, step: 'restore', error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} stagingDir
+ * @param {string} rolledBackDir
+ * @param {any} op
+ * @param {number} index
+ * @param {any} fsx
+ * @param {any} deps
+ */
+function rollbackOneOp(targetDir, stagingDir, rolledBackDir, op, index, fsx, deps) {
+  if (!op || typeof op.path !== 'string') return [];
+  let target;
+  try {
+    target = resolveTarget(targetDir, op.path);
+  } catch (err) {
+    return [{ path: op.path, step: 'validate', error: err instanceof Error ? err.message : String(err) }];
+  }
+  const backup = typeof op.backup === 'string' && isInsideDir(op.backup, stagingDir) ? op.backup : null;
+  const hasBackup = Boolean(backup && fsx.existsSync(backup));
+  if ((op.op === 'add' || op.op === 'patch') && fsx.existsSync(target) && (op.op === 'add' || hasBackup)) {
+    const err = tryUnplaceTarget(rolledBackDir, target, op.path, index, fsx, deps);
+    if (err) return [err];
+  }
+  if ((op.op === 'patch' || op.op === 'delete') && hasBackup && backup && !fsx.existsSync(target)) {
+    const err = tryRestoreBackup(backup, target, op.path, fsx, deps);
+    if (err) return [err];
+  }
+  return [];
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} stagingDir
+ * @param {any} journal
+ * @param {any} fsx
+ * @param {any} [deps]
+ */
+function rollbackJournal(targetDir, stagingDir, journal, fsx, deps = {}) {
+  const errors = [];
+  const ops = Array.isArray(journal?.ops) ? journal.ops : [];
+  const rolledBackDir = path.join(stagingDir, 'rolledback');
+  for (let i = ops.length - 1; i >= 0; i -= 1) {
+    errors.push(...rollbackOneOp(targetDir, stagingDir, rolledBackDir, ops[i], i, fsx, deps));
+  }
+  return errors;
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} stagingDir
+ * @param {any} journal
+ * @param {any} fsx
+ * @param {any} deps
+ */
+function finalizeCommittedStaging(targetDir, stagingDir, journal, fsx, deps) {
+  for (const op of Array.isArray(journal.ops) ? journal.ops : []) {
+    if (op?.op === 'delete' && typeof op.path === 'string') {
+      try { pruneEmptyDirs(targetDir, op.path, deps); } catch { /* non-fatal */ }
+    }
+  }
+  try { fsx.rmSync(stagingDir, { recursive: true, force: true }); } catch { /* non-fatal */ }
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} stagingDir
+ * @param {any} fsx
+ * @param {any} deps
+ */
+function recoverSingleStagingDir(targetDir, stagingDir, fsx, deps) {
+  const journalPath = path.join(stagingDir, JOURNAL_FILE);
+  if (!fsx.existsSync(journalPath)) {
+    try { fsx.rmSync(stagingDir, { recursive: true, force: true }); } catch { /* non-fatal */ }
+    return null;
+  }
+  let journal;
+  try {
+    journal = JSON.parse(fsx.readFileSync(journalPath, 'utf8'));
+  } catch (err) {
+    return { stagingDir, errors: [{ path: JOURNAL_FILE, step: 'parse', error: err instanceof Error ? err.message : String(err) }] };
+  }
+  if (journal?.phase === 'committed') {
+    finalizeCommittedStaging(targetDir, stagingDir, journal, fsx, deps);
+    return null;
+  }
+  const errors = rollbackJournal(targetDir, stagingDir, journal, fsx, deps);
+  if (errors.length === 0) {
+    try { fsx.rmSync(stagingDir, { recursive: true, force: true }); } catch { /* non-fatal */ }
+    return null;
+  }
+  return { stagingDir, errors };
+}
+
+/**
+ * Scan `targetDir` for interrupted `.dshd-delta-*` staging directories and
+ * roll back or finalize them using their persisted `journal.json`. Preserves
+ * any staging directory whose rollback could not complete so backups survive.
+ * @param {string} targetDir
+ * @param {any} [deps]
+ */
+function recoverPendingDeltas(targetDir, deps = {}) {
+  const fsx = deps.fs || fs;
+  if (!targetDir || !fsx.existsSync(targetDir)) return { recovered: 0, failed: [] };
+  let names = [];
+  try { names = fsx.readdirSync(targetDir); } catch { return { recovered: 0, failed: [] }; }
+  let recovered = 0;
+  const failed = [];
+  for (const name of names) {
+    if (typeof name !== 'string' || !name.startsWith(STAGING_PREFIX)) continue;
+    const stagingDir = path.join(targetDir, name);
+    try { if (!fsx.statSync(stagingDir).isDirectory()) continue; } catch { continue; }
+    const failure = recoverSingleStagingDir(targetDir, stagingDir, fsx, deps);
+    if (failure) failed.push(failure);
+    else recovered += 1;
+  }
+  if (failed.length > 0) {
+    throw new DeltaApplyError(
+      'apply-failed',
+      `delta recovery incomplete (${failed.length} staging dir(s) retained)`,
+      { rollbackIncomplete: true, failed },
+    );
+  }
+  return { recovered, failed };
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} stagingDir
+ * @param {any[]} files
+ * @param {Set<string>} skip
+ * @param {Map<string, string>} staged
+ */
+function buildJournalOps(targetDir, stagingDir, files, skip, staged) {
+  let backupIdx = 0;
+  const ops = [];
+  for (const row of files) {
+    if (skip.has(row.path)) continue;
+    const target = resolveTarget(targetDir, row.path);
+    const backup = (row.op === 'patch' || row.op === 'delete')
+      ? path.join(stagingDir, 'old', String(backupIdx++))
+      : null;
+    ops.push({ path: row.path, op: row.op, target, backup, staged: staged.get(row.path) || null });
+  }
+  return ops;
+}
+
+/**
+ * @param {string} targetDir
+ * @param {any[]} files
+ * @param {any} fsx
+ * @param {any} deps
+ */
+function checkDeltaInstallSpace(targetDir, files, fsx, deps) {
+  const checkSpace = deps.checkInstallSpace || checkInstallSpace;
+  const requiredBytes = files.reduce(
+    (/** @type {number} */ sum, /** @type {any} */ row) => sum + ((row.op === 'add' || row.op === 'patch') ? row.size : 0),
+    0,
+  );
+  try {
+    checkSpace(targetDir, requiredBytes, { statfs: fsx.statfsSync, reserve: deps.spaceReserve });
+  } catch (error) {
+    if (error instanceof DeltaApplyError) throw error;
+    const err = /** @type {any} */ (error);
+    throw new DeltaApplyError('apply-failed', err?.message || String(error), err?.code);
+  }
+}
+
+/**
  * @returns {Promise<{ok:true, fromVersion, toVersion, applied:{added,patched,deleted,skipped}}|{ok:false}>}
  * @throws {DeltaApplyError} code ∈ artifact-sha512-mismatch | bad-zip |
  *   manifest-invalid | base-mismatch | payload-* | apply-failed — no partial
@@ -128,6 +371,7 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
   if (!targetDir || !fsx.existsSync(targetDir)) {
     throw new DeltaApplyError('target-missing', `target dir does not exist: ${targetDir}`);
   }
+  recoverPendingDeltas(targetDir, deps);
   if (options.expectedSha512) {
     const actual = await manifest.sha512File(zipFile, deps);
     if (actual !== String(options.expectedSha512).toLowerCase()) {
@@ -164,6 +408,7 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
   }
 
   const skip = await preflightBase(targetDir, doc.files, deps);
+  checkDeltaInstallSpace(targetDir, doc.files, fsx, deps);
   if (typeof options.beforeApply === 'function') {
     // Reject an invalid target or drifted base while the desktop stays live.
     // The protected shutdown owns the last boundary before any target write.
@@ -173,63 +418,70 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
     }
   }
 
-  const stagingDir = path.join(targetDir, `.dshd-delta-${process.pid}-${Date.now().toString(36)}`);
-  const backups = []; // { target, backup } — rename-restorable
-  const placed = [];  // { target } — committed adds/patches
+  const stagingDir = path.join(targetDir, `${STAGING_PREFIX}${process.pid}-${Date.now().toString(36)}`);
+  const journalPath = path.join(stagingDir, JOURNAL_FILE);
+  let journal = null;
   const applied = { added: 0, patched: 0, deleted: 0, skipped: 0 };
   try {
     fsx.mkdirSync(stagingDir, { recursive: true });
     const staged = await extractPayloads(zipFile, entries, doc.files, stagingDir, deps, onProgress);
     applied.skipped = skip.size;
+
+    const ops = buildJournalOps(targetDir, stagingDir, doc.files, skip, staged);
+    const nextJournal = {
+      version: 1,
+      phase: 'committing',
+      fromVersion: doc.fromVersion,
+      toVersion: doc.toVersion,
+      ops,
+    };
+    writeJournalSync(journalPath, nextJournal, fsx);
+    journal = nextJournal;
+
     if (typeof onProgress === 'function') {
       onProgress({ phase: 'apply', percent: 0 });
     }
     let step = 0;
-    const total = doc.files.length - skip.size || 1;
-    for (const row of doc.files) {
-      if (skip.has(row.path)) {
-        continue;
+    const total = ops.length || 1;
+    for (const op of ops) {
+      if ((op.op === 'patch' || op.op === 'delete') && op.backup && fsx.existsSync(op.target)) {
+        fsx.mkdirSync(path.dirname(op.backup), { recursive: true });
+        fsx.renameSync(op.target, op.backup);
       }
-      const target = resolveTarget(targetDir, row.path);
-      if ((row.op === 'patch' || row.op === 'delete') && fsx.existsSync(target)) {
-        const backup = path.join(stagingDir, 'old', String(backups.length));
-        fsx.mkdirSync(path.dirname(backup), { recursive: true });
-        fsx.renameSync(target, backup);
-        backups.push({ target, backup });
+      if ((op.op === 'add' || op.op === 'patch') && op.staged) {
+        fsx.mkdirSync(path.dirname(op.target), { recursive: true });
+        fsx.renameSync(op.staged, op.target);
       }
-      if (row.op === 'add' || row.op === 'patch') {
-        fsx.mkdirSync(path.dirname(target), { recursive: true });
-        fsx.renameSync(staged.get(row.path), target);
-        placed.push({ target });
-      }
-      applied[row.op === 'add' ? 'added' : row.op === 'patch' ? 'patched' : 'deleted'] += 1;
+      applied[op.op === 'add' ? 'added' : op.op === 'patch' ? 'patched' : 'deleted'] += 1;
       step += 1;
       if (typeof onProgress === 'function') {
         onProgress({ phase: 'apply', percent: Math.round((step / total) * 100) });
       }
     }
-    for (const row of doc.files) {
-      if (row.op === 'delete' && !skip.has(row.path)) {
-        pruneEmptyDirs(targetDir, row.path, deps);
+    journal.phase = 'committed';
+    writeJournalSync(journalPath, journal, fsx);
+    for (const op of ops) {
+      if (op.op === 'delete') {
+        pruneEmptyDirs(targetDir, op.path, deps);
       }
     }
   } catch (error) {
-    // Roll back: un-place committed writes, restore backups — a locked exe
-    // or an ACL denial mid-commit must leave the OLD tree, not a hybrid.
-    try { fsx.mkdirSync(path.join(stagingDir, 'rolledback'), { recursive: true }); } catch { /* best effort */ }
-    for (let i = placed.length - 1; i >= 0; i -= 1) {
-      try {
-        if (fsx.existsSync(placed[i].target)) {
-          fsx.renameSync(placed[i].target, path.join(stagingDir, 'rolledback', String(i)));
-        }
-      } catch { /* best effort */ }
-    }
-    for (let i = backups.length - 1; i >= 0; i -= 1) {
-      try {
-        if (!fsx.existsSync(backups[i].target) && fsx.existsSync(backups[i].backup)) {
-          fsx.renameSync(backups[i].backup, backups[i].target);
-        }
-      } catch { /* best effort */ }
+    // Roll back using persisted journal + retryable renames. Preserve stagingDir
+    // whenever rollback fails so backups are never destroyed.
+    if (journal) {
+      journal.phase = 'rolling-back';
+      try { writeJournalSync(journalPath, journal, fsx); } catch { /* best effort */ }
+      const rollbackErrors = rollbackJournal(targetDir, stagingDir, journal, fsx, deps);
+      if (rollbackErrors.length > 0) {
+        const baseMsg = error instanceof Error ? error.message : String(error);
+        const err = new DeltaApplyError(
+          'apply-failed',
+          `${baseMsg}; rollback incomplete (${rollbackErrors.length} error(s)), backup preserved`,
+          { rollbackIncomplete: true, stagingDir, errors: rollbackErrors },
+        );
+        err.rollbackIncomplete = true;
+        throw err;
+      }
     }
     try { fsx.rmSync(stagingDir, { recursive: true, force: true }); } catch { /* shell cleans */ }
     if (error instanceof DeltaApplyError) {
@@ -246,4 +498,4 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
   };
 }
 
-module.exports = { applyDeltaFile, DeltaApplyError };
+module.exports = { applyDeltaFile, recoverPendingDeltas, DeltaApplyError };

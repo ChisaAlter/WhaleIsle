@@ -333,3 +333,140 @@ export function createSessionWorkOps(deps) {
     buildActivity,
   };
 }
+
+/** @type {Promise<((input: any) => any) | null> | null} */
+let cachedCreateUserMessage = null;
+function loadCreateUserMessage() {
+  if (!cachedCreateUserMessage) {
+    cachedCreateUserMessage = import('@deepseek-ai/dsh-llm')
+      .then((mod) => (typeof mod?.createUserMessage === 'function' ? mod.createUserMessage : null))
+      .catch(() => null);
+  }
+  return cachedCreateUserMessage;
+}
+
+/** @param {string} text @param {Record<string, any>} source */
+async function buildInternalUserMessage(text, source) {
+  const createUserMessage = await loadCreateUserMessage();
+  const content = [{ type: 'text', text }];
+  if (createUserMessage) {
+    return Object.freeze({ ...createUserMessage({ source, content }) });
+  }
+  return { id: crypto.randomUUID(), ts: Date.now(), role: 'user', source, content };
+}
+
+/** @param {any} source @param {string | null} sourceKind @param {string} requestId */
+export function resolveTurnSource(source, sourceKind, requestId) {
+  const fromObj = typeof source?.kind === 'string' && source.kind.trim() ? source.kind.trim() : '';
+  const fromOpt = typeof sourceKind === 'string' && sourceKind.trim() ? sourceKind.trim() : '';
+  return {
+    ...(source && typeof source === 'object' ? source : {}),
+    kind: fromObj || fromOpt || 'dsh-bots:turn',
+    rpcId: requestId,
+  };
+}
+
+/** @param {any} params */
+export function executeControllerTurn(params) {
+  const { ctx, controller, sessionId, promptText, timeoutMs, requestId, effectiveSource, registerInFlight, eventText } = params;
+  if (typeof controller.runTurnForTest === 'function') {
+    const ac = new AbortController();
+    return new Promise((resolve) => {
+      let settled = false;
+      /** @type {(() => void) | null} */
+      let unregister = null;
+      /** @param {any} result */
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        try { unregister?.(); } catch { /* Best-effort unregister. */ }
+        resolve(result);
+      };
+      unregister = registerInFlight(sessionId, {
+        abort: () => {
+          ac.abort();
+          finish({ ok: false, error: 'aborted', reason: 'aborted', reply: '' });
+        },
+      });
+      Promise.resolve(controller.runTurnForTest(sessionId, promptText, ac.signal, { source: effectiveSource }))
+        .then((res) => finish(res))
+        .catch((err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
+    });
+  }
+
+  const ac = new AbortController();
+  return new Promise((resolve) => {
+    let mine = false;
+    let settled = false;
+    /** @type {string[]} */
+    const texts = [];
+    /** @type {(() => void) | null} */
+    let off = null;
+    /** @type {(() => void) | null} */
+    let unregister = null;
+    /** @param {any} result */
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { unregister?.(); } catch { /* Best-effort unregister. */ }
+      try { off?.(); } catch { /* Best-effort dispose. */ }
+      ac.abort();
+      resolve(result);
+    };
+    unregister = registerInFlight(sessionId, {
+      abort: () => finish({ ok: false, error: 'aborted', reason: 'aborted', reply: texts.join('\n').trim() }),
+    });
+    const timer = setTimeout(() => finish({ ok: false, error: 'timeout', reply: texts.join('\n').trim() }), timeoutMs);
+    off = typeof ctx?.on === 'function'
+      ? ctx.on('session/event', (/** @type {any} */ session, /** @type {any} */ event) => {
+        if (String(session?.id ?? session ?? '') !== String(sessionId)) return;
+        const d = event?.data ?? {};
+        if (!mine) {
+          if (event?.type === 'user/message' && d.source?.rpcId === requestId) mine = true;
+          return;
+        }
+        if (event?.type === 'assistant/message') {
+          const t = eventText({ data: d }).trim();
+          if (t) texts.push(t);
+        } else if (event?.type === 'turn/end') {
+          const kind = d.reason?.kind ?? 'completed';
+          finish({ ok: kind === 'completed', reply: texts.join('\n').trim(), reason: kind });
+        }
+      }, { global: true })
+      : null;
+    if (!off) {
+      finish({ ok: false, error: 'event-bus-unavailable', reply: '' });
+      return;
+    }
+    const dispatchInternalTurn = async () => {
+      const directAgent = ctx?.get?.('agents')?.get?.(sessionId);
+      let liveAgent = directAgent && typeof directAgent.followup === 'function' ? directAgent : null;
+      if (!liveAgent && typeof controller.resolveAgent === 'function') {
+        const resolved = await controller.resolveAgent(sessionId).catch(() => null);
+        const candidate = resolved && !resolved.error ? resolved.agent : null;
+        if (candidate && typeof candidate.followup === 'function') liveAgent = candidate;
+      }
+      if (settled || ac.signal.aborted) return;
+      if (liveAgent) {
+        const msg = await buildInternalUserMessage(promptText, effectiveSource);
+        if (settled || ac.signal.aborted) return;
+        await Promise.resolve(liveAgent.followup(msg));
+        return;
+      }
+      if (typeof controller.resolveAgent === 'function') {
+        finish({ ok: false, error: 'agent-unavailable-for-internal-turn', reply: '' });
+        return;
+      }
+      await controller.prompt({
+        requestId,
+        sessionId,
+        mode: 'queue',
+        source: effectiveSource,
+        content: [{ type: 'text', text: promptText }],
+      }, ac.signal);
+    };
+    dispatchInternalTurn()
+      .catch((/** @type {any} */ err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
+  });
+}

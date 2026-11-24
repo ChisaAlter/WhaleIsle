@@ -41,7 +41,7 @@ const { unknownPreviewId, failClosed, toBuffer, ensureDebugger, pipPreloadPath, 
 /**
  * In-process preview table. Tests inject `attach`; production uses BrowserView
  * on an isolated partition so the user API key never rides the guest session.
- * @param {{ attach?: Function, onState?: (state: object) => void, onRecordingFrame?: (frame: object) => void, sessionCache?: { listSessions?: Function, clearCookies?: Function, clearCache?: Function }, createPipWindow?: Function, userDataPath?: string, showItemInFolder?: Function, clipboard?: { writeImage?: Function }, nativeImage?: { createFromPath?: Function } }} [options]
+ * @param {{ attach?: Function, onState?: (state: object) => void, onRecordingFrame?: (frame: object) => void, sessionCache?: { listSessions?: Function, clearCookies?: Function, clearCache?: Function }, createPipWindow?: Function, userDataPath?: string, showItemInFolder?: Function, clipboard?: { writeImage?: Function }, nativeImage?: { createFromPath?: Function }, blockedOrigins?: string[], getHarnessOrigin?: () => string }} [options]
  */
 function createPreviewController(options = {}) {
   const attach = options.attach ?? defaultAttach;
@@ -56,6 +56,9 @@ function createPreviewController(options = {}) {
     clearCache: clearPreviewCache,
   };
   const injectedUserDataPath = typeof options.userDataPath === 'string' ? options.userDataPath : null;
+  const urlPolicyOptions = (options.blockedOrigins || options.getHarnessOrigin)
+    ? { blockedOrigins: options.blockedOrigins, getHarnessOrigin: options.getHarnessOrigin }
+    : undefined;
   const showItemInFolder = typeof options.showItemInFolder === 'function' ? options.showItemInFolder : null;
   const clipboard = options.clipboard ?? null;
   const nativeImage = options.nativeImage ?? null;
@@ -301,7 +304,7 @@ function createPreviewController(options = {}) {
 
   return {
     async open(input = {}) {
-      const loadUrl = resolvePreviewLoadUrl(input.url);
+      const loadUrl = resolvePreviewLoadUrl(input.url, urlPolicyOptions);
       if (!loadUrl) return rejectRemote();
       const id = randomUUID();
       const view = attach({
@@ -311,7 +314,7 @@ function createPreviewController(options = {}) {
         partition: previewPartitionForScope(previewScope(input.scope)),
         extraHeaders: null,
       });
-      guardView(view);
+      guardView(view, urlPolicyOptions);
       const session = {
         id,
         url: loadUrl,
@@ -329,7 +332,7 @@ function createPreviewController(options = {}) {
     },
 
     async navigate(id, url) {
-      const loadUrl = resolvePreviewLoadUrl(url);
+      const loadUrl = resolvePreviewLoadUrl(url, urlPolicyOptions);
       if (!loadUrl) return rejectRemote();
       const session = requireSession(id);
       session.view.webContents.loadURL(loadUrl);

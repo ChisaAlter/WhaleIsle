@@ -3,11 +3,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-function loadFilePreviewPreload() {
+function loadFilePreviewPreload({ isMainFrame = true, href = 'file:///app/src/renderer/file-preview.html' } = {}) {
   const electronPath = require.resolve('electron');
   const preloadPath = require.resolve('./file-preview.js');
   const cachedElectron = require.cache[electronPath];
   const cachedPreload = require.cache[preloadPath];
+  const prevMainFrame = Object.getOwnPropertyDescriptor(process, 'isMainFrame');
+  const prevLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
   const listeners = new Map();
   let exposed = null;
   const ipcRenderer = {
@@ -18,6 +20,8 @@ function loadFilePreviewPreload() {
     },
     emit(channel, payload) { listeners.get(channel)?.({}, payload); },
   };
+  Object.defineProperty(process, 'isMainFrame', { configurable: true, value: isMainFrame });
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { href } });
   require.cache[electronPath] = {
     id: electronPath,
     filename: electronPath,
@@ -32,6 +36,10 @@ function loadFilePreviewPreload() {
     require('./file-preview.js');
     return { exposed, ipcRenderer, listeners };
   } finally {
+    if (prevMainFrame) Object.defineProperty(process, 'isMainFrame', prevMainFrame);
+    else delete process.isMainFrame;
+    if (prevLocation) Object.defineProperty(globalThis, 'location', prevLocation);
+    else delete globalThis.location;
     if (cachedElectron) require.cache[electronPath] = cachedElectron;
     else delete require.cache[electronPath];
     if (cachedPreload) require.cache[preloadPath] = cachedPreload;
@@ -50,4 +58,10 @@ test('file preview preload exposes only state and theme methods', async () => {
   assert.deepEqual(themes, [{ scheme: 'dark' }]);
   dispose();
   assert.equal(listeners.has('shell:theme'), false);
+});
+
+test('file preview preload refuses subframes and non-file-preview URLs', () => {
+  assert.equal(loadFilePreviewPreload({ isMainFrame: false }).exposed, null);
+  assert.equal(loadFilePreviewPreload({ href: 'https://evil.example/file-preview.html' }).exposed, null);
+  assert.equal(loadFilePreviewPreload({ href: 'file:///app/src/renderer/other.html' }).exposed, null);
 });

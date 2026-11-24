@@ -730,3 +730,37 @@ test('Wecom, QQ, DingTalk, and Feishu bridges enforce fail-closed P2P, pairing, 
   await fsBridge.waitForIdle();
   assert.equal(presetDefaultCalled, false);
 });
+
+test('Audit regression [P1 #12]: isWhalePolicyEnforced covers dsh-bot and enforces single-owner private DM & group-forbidden policy', async (t) => {
+  const { home } = await createTempHome(t, { whaleEnabled: false, imDefault: false });
+  assert.equal(isWhalePolicyEnforced({ preset: 'dsh-bot', home }), true);
+  assert.equal(isWhalePolicyEnforced({ preset: 'dsh-bot-worker', home }), true);
+  assert.equal(isWhalePolicyEnforced({ preset: 'standard', home }), false);
+
+  const gate = new SingleOwnerAccessGate({ filePath: join(home, 'access.json'), defaultHome: home });
+  const groupDecision = await gate.evaluateInbound({
+    channel: 'feishu',
+    botId: 'bot-dsh',
+    botConfig: { id: 'bot-dsh', appId: 'app-1' },
+    senderId: 'ou_stranger',
+    chatType: 'group',
+    preset: 'dsh-bot',
+    home,
+  });
+  assert.equal(groupDecision.enforced, true);
+  assert.equal(groupDecision.allowed, false);
+  assert.equal(groupDecision.reason, 'group-forbidden');
+
+  const dmDecision = await gate.evaluateInbound({
+    channel: 'feishu',
+    botId: 'bot-dsh',
+    botConfig: { id: 'bot-dsh', appId: 'app-1' },
+    senderId: 'ou_stranger',
+    chatType: 'private',
+    preset: 'dsh-bot',
+    home,
+  });
+  assert.equal(dmDecision.enforced, true);
+  assert.equal(dmDecision.allowed, false);
+  assert.equal(dmDecision.reason, 'pairing-required');
+});

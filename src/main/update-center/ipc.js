@@ -4,8 +4,10 @@
 // updates: the update center overlay, the launcher and the Harness page
 // (dshDesktop.updates). The overlay is opened over whichever window asked.
 
+const { fileURLToPath } = require('node:url');
 const { createRegisterIpc, unauthorizedError } = require('../ipc-register');
 const { IPC_ROLES } = require('../ipc-authorization');
+const { isPackagedRendererFileUrl } = require('../local-url');
 
 const UPDATE_CENTER_IPC = Object.freeze({
   state: 'shell:update-center-state',
@@ -67,8 +69,29 @@ class UpdateCenterWindow {
     return this.window && !this.window.isDestroyed() ? this.window.webContents : null;
   }
 
-  owns(sender) {
-    return Boolean(sender && this.webContents === sender);
+  /** @param {unknown} targetUrl */
+  isAllowedUrl(targetUrl) {
+    if (typeof targetUrl !== 'string' || !targetUrl.startsWith('file:')) return false;
+    try {
+      const pagePath = fileURLToPath(this.options.page);
+      return isPackagedRendererFileUrl(targetUrl, 'update-center.html', {
+        resolvePath: () => pagePath,
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {any} sender
+   * @param {any} [senderFrame]
+   */
+  owns(sender, senderFrame) {
+    if (!sender || this.webContents !== sender) return false;
+    if (!sender.mainFrame) return false;
+    const frame = senderFrame !== undefined ? senderFrame : sender.mainFrame;
+    if (frame !== sender.mainFrame) return false;
+    return this.isAllowedUrl(frame?.url);
   }
 
   open(parent) {
@@ -84,6 +107,16 @@ class UpdateCenterWindow {
     const window = overlays.create(parent, preload, '更新', false);
     this.window = window;
     this.parent = parent;
+    const contents = window.webContents;
+    if (contents && typeof contents.on === 'function') {
+      const guardNavigation = (/** @type {Electron.Event} */ event, /** @type {string} */ targetUrl) => {
+        if (!this.isAllowedUrl(targetUrl)) {
+          event.preventDefault();
+        }
+      };
+      contents.on('will-navigate', guardNavigation);
+      contents.on('will-redirect', guardNavigation);
+    }
     window.once('closed', () => {
       if (this.window === window) {
         this.window = null;
@@ -114,7 +147,7 @@ function registerUpdateCenterIpc(deps) {
   // the center (harness page, launcher). The boot surface never binds the
   // update-center API, so its ipcSenderRole verdict is refused here too.
   const role = (event) => {
-    if (centerWindow.owns(event.sender)) return 'update-center';
+    if (centerWindow.owns(event.sender, event.senderFrame)) return 'update-center';
     const found = authorize(event);
     if (found !== IPC_ROLES.HARNESS && found !== IPC_ROLES.LAUNCHER) {
       throw unauthorizedError();
@@ -149,7 +182,7 @@ function registerUpdateCenterIpc(deps) {
     channel: UPDATE_CENTER_IPC.close,
     // Only the overlay may close itself; no other surface binds the channel.
     authorize: (event) => {
-      if (!centerWindow.owns(event.sender)) throw unauthorizedError();
+      if (!centerWindow.owns(event.sender, event.senderFrame)) throw unauthorizedError();
       return 'update-center';
     },
     handler: () => { centerWindow.close(); },

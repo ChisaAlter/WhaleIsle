@@ -52,3 +52,25 @@ test('setBinaryReadOnly and setDirWritable toggle write permissions cleanly', as
     assert.notEqual(fs.statSync(bin).mode & 0o200, 0);
   });
 });
+
+test('setDirWritable skips symlinks without throwing or mutating link targets', async () => {
+  await withOwnedTempDir('magpie-symlink-', async (dir) => {
+    const outside = path.join(dir, 'outside');
+    const inside = path.join(dir, 'inside');
+    fs.mkdirSync(outside, { recursive: true });
+    fs.mkdirSync(inside, { recursive: true });
+    const targetFile = path.join(outside, 'secret.txt');
+    fs.writeFileSync(targetFile, 'data');
+    const linkPath = path.join(inside, 'link-dir');
+    let linked = false;
+    try {
+      fs.symlinkSync(outside, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+      linked = true;
+    } catch {
+      // Windows without Developer Mode may forbid symlinkSync; junction works, ignore if EPERM.
+    }
+    setDirWritable(inside);
+    assert.equal(fs.readFileSync(targetFile, 'utf8'), 'data');
+    if (linked) fs.rmSync(linkPath, { recursive: true, force: true });
+  });
+});

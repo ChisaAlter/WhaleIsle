@@ -363,11 +363,12 @@ async function runHttp(source, timeoutMs, resolve, used, signal) {
   for (const [key, value] of Object.entries(source.headers ?? {})) headers[key] = await fillSecrets(value, resolve, used);
   const body = source.body === void 0 ? void 0 : await fillSecrets(source.body, resolve, used);
   const timeout = AbortSignal.timeout(timeoutMs);
+  const hasInterpolatedSecrets = used.size > 0;
   const response = await fetch(url, {
     method: source.method ?? "GET",
     headers: { "user-agent": "dsh-pad", ...headers },
     ...body === void 0 ? {} : { body },
-    redirect: "follow",
+    redirect: hasInterpolatedSecrets ? "manual" : "follow",
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout
   });
   const reader = response.body?.getReader();

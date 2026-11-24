@@ -151,21 +151,41 @@ function hasBinaryNullByte(target) {
   }
 }
 
+function hasGitSegment(/** @type {string} */ relativePath) {
+  return relativePath.split(/[\\/]+/).some((/** @type {string} */ seg) => seg.toLowerCase() === '.git');
+}
+
 function untrackedAsDiff(root, rel) {
-  const target = path.join(root, rel);
+  if (typeof rel !== 'string' || rel.trim() === '' || rel.includes('\0')) return null;
+  if (!isSafePatchTarget(root, rel)) return null;
+  const target = resolveInsideWorkspace(root, rel);
+  if (!target) return null;
   let stat;
   try {
-    stat = fs.statSync(target);
+    stat = fs.lstatSync(target);
   } catch {
     return null;
   }
-  if (!stat.isFile()) return null;
+  if (stat.isSymbolicLink() || !stat.isFile()) return null;
+  let realRoot;
+  let realTarget;
+  try {
+    realRoot = fs.realpathSync(root);
+    realTarget = fs.realpathSync(target);
+  } catch {
+    return null;
+  }
+  const relReal = path.relative(realRoot, realTarget);
+  if (relReal === '' || relReal === '..' || relReal.startsWith(`..${path.sep}`) || path.isAbsolute(relReal)) {
+    return null;
+  }
+  if (hasGitSegment(relReal)) return null;
   if (stat.size > MAX_UNTRACKED_BYTES) {
-    return hasBinaryNullByte(target)
+    return hasBinaryNullByte(realTarget)
       ? { path: rel, status: 'added', binary: true, hunks: [] }
       : { path: rel, status: 'added', tooLarge: true, hunks: [] };
   }
-  const buf = fs.readFileSync(target);
+  const buf = fs.readFileSync(realTarget);
   if (buf.includes(0)) {
     return { path: rel, status: 'added', binary: true, hunks: [] };
   }
@@ -634,4 +654,5 @@ module.exports = {
   gitDiff,
   gitStagePatch,
   gitUnstagePatch,
+  untrackedAsDiff,
 };

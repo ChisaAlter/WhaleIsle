@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 const { createWorkspaceAuthority } = require('./workspace-authority');
 const {
@@ -11,6 +12,9 @@ const {
   previewFileKind,
   createFilePreviewWindowController,
 } = require('./preview-file-window.js');
+
+const REAL_PREVIEW_HTML = path.join(__dirname, '..', 'renderer', 'file-preview.html');
+const REAL_PREVIEW_URL = pathToFileURL(REAL_PREVIEW_HTML).href;
 
 function fakeIpcMain() {
   const handlers = new Map();
@@ -24,10 +28,19 @@ function fakeIpcMain() {
 
 function fakeWindow() {
   const calls = [];
+  const listeners = new Map();
   let destroyed = false;
   let onClosed = null;
   const webContents = {
     setWindowOpenHandler(handler) { calls.push(['window-open-handler', handler({})]); },
+    on(event, handler) {
+      const list = listeners.get(event) ?? [];
+      list.push(handler);
+      listeners.set(event, list);
+    },
+    emit(event, ...args) {
+      for (const listener of listeners.get(event) ?? []) listener(...args);
+    },
   };
   return {
     calls,
@@ -81,7 +94,7 @@ test('file preview opens one always-on-top window and exposes state only to its 
     getTheme: () => ({ scheme: 'dark' }),
     getLocale: () => 'en',
     preloadPath: 'preview-preload.js',
-    htmlPath: 'preview.html',
+    htmlPath: REAL_PREVIEW_HTML,
     platform: 'win32',
   });
 
@@ -94,7 +107,7 @@ test('file preview opens one always-on-top window and exposes state only to its 
   assert.ok(windows[0].calls.some(call => call[0] === 'showInactive'));
 
   const stateHandler = ipcMain.handlers.get(FILE_PREVIEW_STATE_CHANNEL);
-  const topFrame = { url: 'file:///preview.html' };
+  const topFrame = { url: REAL_PREVIEW_URL };
   windows[0].webContents.mainFrame = topFrame;
   assert.deepEqual(await stateHandler({
     sender: windows[0].webContents,
@@ -117,10 +130,31 @@ test('file preview opens one always-on-top window and exposes state only to its 
   assert.throws(
     () => stateHandler({
       sender: windows[0].webContents,
-      senderFrame: { url: 'file:///preview.html' },
+      senderFrame: { url: REAL_PREVIEW_URL },
     }),
     { code: 'ERR_DSH_IPC_SENDER' },
   );
+  // Spoofed/navigated frame URL must be rejected even on the mainFrame reference.
+  const evilFrame = { url: 'https://evil.example/file-preview.html' };
+  windows[0].webContents.mainFrame = evilFrame;
+  assert.throws(
+    () => stateHandler({ sender: windows[0].webContents, senderFrame: evilFrame }),
+    { code: 'ERR_DSH_IPC_SENDER' },
+  );
+  windows[0].webContents.mainFrame = topFrame;
+
+  const navEvent = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  windows[0].webContents.emit('will-navigate', navEvent, 'https://evil.example/');
+  assert.equal(navEvent.defaultPrevented, true);
+  const redirEvent = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  windows[0].webContents.emit('will-redirect', redirEvent, 'file:///C:/Windows/win.ini');
+  assert.equal(redirEvent.defaultPrevented, true);
+  const okNav = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  windows[0].webContents.emit('will-navigate', okNav, REAL_PREVIEW_URL);
+  assert.equal(okNav.defaultPrevented, false);
+  const subFrameNav = { isMainFrame: false, url: 'http://127.0.0.1:9/token/doc.pdf', defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  windows[0].webContents.emit('will-frame-navigate', subFrameNav);
+  assert.equal(subFrameNav.defaultPrevented, false);
 
   await controller.open({ cwd: 'C:/repo', relativePath: 'image.png' });
   assert.equal(windows.length, 1);
@@ -144,10 +178,10 @@ test('binary text fallback opens an explicit unsupported state', async () => {
     getTheme: () => ({ scheme: 'light' }),
     getLocale: () => 'en',
     preloadPath: 'preview-preload.js',
-    htmlPath: 'preview.html',
+    htmlPath: REAL_PREVIEW_HTML,
   });
   await controller.open({ cwd: '/repo', relativePath: 'data.bin' });
-  win.webContents.mainFrame = { url: 'file:///preview.html' };
+  win.webContents.mainFrame = { url: REAL_PREVIEW_URL };
   const state = await ipcMain.handlers.get(FILE_PREVIEW_STATE_CHANNEL)({
     sender: win.webContents,
     senderFrame: win.webContents.mainFrame,

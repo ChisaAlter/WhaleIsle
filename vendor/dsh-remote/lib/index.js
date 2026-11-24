@@ -40,7 +40,7 @@ import { searchRemote } from './search.js'
 import { resolveMirror, poolKey, lookupSessionCwd, encodeSegmentSafe, readSessionHeaderCwd, requestSessionHint } from './binding.js'
 import { TaskManager } from './tasks.js'
 import { ForwardManager } from './forwards.js'
-import { loadMachines as _loadMachines, saveMachines as _saveMachines, sanitizeMachine as _sanitizeMachine, applyMachine as _applyMachine, machineId as _machineId } from './registry.js'
+import { loadMachines as _loadMachines, saveMachines as _saveMachines, sanitizeMachine as _sanitizeMachine, applyMachine as _applyMachine, machineId as _machineId, passphraseSecretId, proxyPasswordSecretId, buildAndPersistMachine, deleteMachineSecrets } from './registry.js'
 import { registerHttpTransports } from './http-transport.js'
 import { SshPool } from './pool.js'
 import { createFsRoutes } from './routes-fs.js'
@@ -252,27 +252,41 @@ export async function apply(ctx, config) {
   }
   const currentMachine = activeMachine
 
-  /** Resolve a machine's effective password (keychain backend support). */
-  const machinePassword = async (m) => {
-    if (m && m.password) return m.password
-    if (m && m.credentialBackend && m.credentialBackend !== 'plain') {
-      const p = await getSecret(m.id, secretsDir())
+  /** Resolve a machine's effective secrets (keychain backend support). */
+  const machineSecret = async (m, plainValue, secretKey) => {
+    if (plainValue) return plainValue
+    if (m && m.id && m.credentialBackend && m.credentialBackend !== 'plain') {
+      const p = await getSecret(secretKey, secretsDir())
       if (p) return p
     }
     return ''
   }
+  const machinePassword = (m) => machineSecret(m, m && m.password, m && m.id)
+  const machinePassphrase = (m) => machineSecret(m, m && m.passphrase, m && passphraseSecretId(m.id))
+  const machineProxyPassword = (m) => machineSecret(m, m && m.proxy && m.proxy.password, m && proxyPasswordSecretId(m.id))
 
-  // The pool resolves keychain-stored passwords lazily at connect time.
-  pool.passwordResolver = async () => {
-    const m = activeMachine()
-    return machinePassword(m)
-  }
+  // The pool resolves keychain-stored secrets lazily at connect time.
+  pool.passwordResolver = async () => machinePassword(activeMachine())
+  pool.passphraseResolver = async () => machinePassphrase(activeMachine())
+  pool.proxyPasswordResolver = async () => machineProxyPassword(activeMachine())
 
   const applyActiveMachine = async () => {
     const m = activeMachine()
     if (!m || !m.host) return
-    const pw = await machinePassword(m)
-    applyMachine(config, { ...m, password: pw || m.password || '' })
+    const [pw, passphrase, proxyPassword] = await Promise.all([
+      machinePassword(m),
+      machinePassphrase(m),
+      machineProxyPassword(m),
+    ])
+    const resolvedProxy = m.proxy && m.proxy.host
+      ? { ...m.proxy, password: proxyPassword || m.proxy.password || '' }
+      : undefined
+    applyMachine(config, {
+      ...m,
+      password: pw || m.password || '',
+      passphrase: passphrase || m.passphrase || '',
+      proxy: resolvedProxy,
+    })
     pool.setTarget({
       host: config.host, port: config.port, username: config.username,
       password: config.password, privateKeyPath: config.privateKeyPath,
@@ -376,8 +390,10 @@ export async function apply(ctx, config) {
       workspace: '',
     })
     const created = new SshPool(poolConfig, { knownHostsFile })
-    // Keychain-backed passwords resolve against THIS pool's machine record.
-    created.passwordResolver = async () => machinePassword(rec || { id: '', password: poolConfig.password })
+    // Keychain-backed secrets resolve against THIS pool's machine record.
+    created.passwordResolver = async () => machinePassword(machineRecordFor(target) || { id: '', password: poolConfig.password })
+    created.passphraseResolver = async () => machinePassphrase(machineRecordFor(target) || { id: '', passphrase: poolConfig.passphrase })
+    created.proxyPasswordResolver = async () => machineProxyPassword(machineRecordFor(target) || { id: '', proxy: poolConfig.proxy })
     machinePools.set(key, created)
     return created
   }
@@ -2089,61 +2105,20 @@ export async function apply(ctx, config) {
               const id = body.id || machineId()
               const i = machineIndex(id)
               const prev = i >= 0 ? machines[i] : null
-              const credBackend = body.credentialBackend === 'plain' ? 'plain'
+              const requestedBackend = body.credentialBackend === 'plain' ? 'plain'
                 : (body.encryptPassword ? platformBackend() : (prev && prev.credentialBackend ? prev.credentialBackend : 'plain'))
-              const rec = {
+              const savedResult = await buildAndPersistMachine({
                 id,
-                name: String(body.name || '').trim() || host,
-                host,
-                port: Number(body.port) || 22,
-                username: String(body.username || '').trim() || 'root',
-                password: '',
-                privateKeyPath: String(body.privateKeyPath || '').trim(),
-                passphrase: body.passphrase || '',
-                workspace: String(body.workspace || '').trim(),
-                hostKeyMode: body.hostKeyMode || '',
-                useAgent: !!body.useAgent,
-                keyboardInteractive: !!body.keyboardInteractive,
-                proxy: body.proxy && body.proxy.host ? {
-                  host: String(body.proxy.host),
-                  port: Number(body.proxy.port) || 22,
-                  username: String(body.proxy.username || '').trim(),
-                  // Blank means "keep the stored secret" (same rule as the
-                  // main password below): sanitizeMachine strips proxy
-                  // passwords, so an edit-form save would otherwise wipe them.
-                  password: String(body.proxy.password || '')
-                    || (prev && prev.proxy && prev.proxy.host === String(body.proxy.host)
-                      && prev.proxy.username === String(body.proxy.username || '').trim()
-                      ? prev.proxy.password || '' : ''),
-                  privateKeyPath: String(body.proxy.privateKeyPath || '').trim(),
-                } : undefined,
-                credentialBackend: credBackend,
-                recentWorkspaces: prev && prev.recentWorkspaces ? prev.recentWorkspaces : [],
-                lastConnectedAt: prev && prev.lastConnectedAt ? prev.lastConnectedAt : null,
-                latencyMs: prev && prev.latencyMs ? prev.latencyMs : null,
-              }
-              if (body.password) {
-                // Issue #30: `saveSecret()` is best-effort — the old code threw
-                // its result away and kept `password: ''`, so on Windows (DPAPI
-                // missing the System.Security assembly) the machine was saved
-                // WITHOUT any credential and every later connect failed with no
-                // visible reason. Now a failed OS-store write falls back to
-                // plaintext and is reported to the UI.
-                const persisted = await persistPassword({
-                  backend: credBackend,
-                  machineId: id,
-                  password: body.password,
-                  secretsDir: secretsDir(),
-                })
-                rec.credentialBackend = persisted.credentialBackend
-                rec.password = persisted.password
-                if (persisted.warning) {
-                  warning = persisted.warning
-                  warningDetail = persisted.error
-                }
-              } else if (prev && prev.password) {
-                rec.password = prev.password
-              }
+                body,
+                prev,
+                requestedBackend,
+                secretsDir: secretsDir(),
+                persistPassword,
+                deleteSecret,
+              })
+              const rec = savedResult.rec
+              warning = savedResult.warning
+              warningDetail = savedResult.warningDetail
               if (i >= 0) machines[i] = rec; else machines.push(rec)
               // Issue #13: saving a machine must NOT make it the active
               // remote context. `currentId` stays untouched on add/update —
@@ -2164,9 +2139,7 @@ export async function apply(ctx, config) {
               const i = machineIndex(String(body.id || ''))
               if (i < 0) return sendJson(res, 404, { ok: false, error: 'machine not found' })
               const m = machines[i]
-              if (m.credentialBackend && m.credentialBackend !== 'plain') {
-                await deleteSecret(m.id, secretsDir())
-              }
+              await deleteMachineSecrets(m, secretsDir(), deleteSecret)
               machines.splice(i, 1)
               const wasCurrent = store.currentId === m.id
               if (wasCurrent) {
@@ -2206,14 +2179,23 @@ export async function apply(ctx, config) {
           // the host, so a test of a password-auth machine must read its stored
           // credential here instead of demanding the client resend it.
           const saved = body.machineId ? machines.find((m) => m.id === String(body.machineId)) : null
+          const [savedPw, savedPassphrase, savedProxyPw] = saved
+            ? await Promise.all([
+                machinePassword(saved),
+                machinePassphrase(saved),
+                machineProxyPassword(saved),
+              ])
+            : ['', '', '']
+          const sameSavedProxy = saved && saved.proxy && body.proxy && body.proxy.host
+            && saved.proxy.host === String(body.proxy.host)
           const probe = new SshPool({
             ...config,
             host: String(body.host || (saved && saved.host) || config.host),
             port: Number(body.port) || (saved && saved.port) || config.port,
             username: String(body.username || (saved && saved.username) || config.username),
-            password: String(body.password || (saved && saved.password) || ''),
+            password: String(body.password || savedPw || ''),
             privateKeyPath: String(body.privateKeyPath || (saved && saved.privateKeyPath) || config.privateKeyPath),
-            passphrase: String(body.passphrase || (saved && saved.passphrase) || ''),
+            passphrase: String(body.passphrase || savedPassphrase || ''),
             hostKeyMode: body.hostKeyMode || (saved && saved.hostKeyMode) || config.hostKeyMode,
             useAgent: body.useAgent !== undefined ? !!body.useAgent : (saved ? !!saved.useAgent : config.useAgent),
             keyboardInteractive: body.keyboardInteractive !== undefined
@@ -2222,11 +2204,9 @@ export async function apply(ctx, config) {
               host: String(body.proxy.host),
               port: Number(body.proxy.port) || 22,
               username: String(body.proxy.username || ''),
-              password: String(body.proxy.password || '')
-                || (saved && saved.proxy && saved.proxy.host === String(body.proxy.host)
-                  ? saved.proxy.password || '' : ''),
+              password: String(body.proxy.password || '') || (sameSavedProxy ? savedProxyPw : ''),
               privateKeyPath: String(body.proxy.privateKeyPath || ''),
-            } : (saved && saved.proxy ? saved.proxy : undefined),
+            } : (saved && saved.proxy ? { ...saved.proxy, password: savedProxyPw } : undefined),
             connectTimeoutMs: Math.min(Math.max(Number(body.connectTimeoutMs) || config.connectTimeoutMs, 2000), 30000),
             commandTimeoutMs: 10000,
           }, { knownHostsFile })

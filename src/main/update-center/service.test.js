@@ -441,3 +441,15 @@ test('a network failure during a background download keeps the bytes for a resum
   assert.equal(view.error.suggestRoute, 'github');
   assert.equal(calls, 1);
 });
+
+test('installNow keeps ready phase when install returns cancelled: true', async (t) => {
+  const f = fixture(t);
+  f.deps.install = async () => ({ launched: false, cancelled: true });
+  const center = f.make();
+  center.start();
+  await center.command('check');
+  await settle(center, ['ready']);
+  const after = await center.command('install');
+  assert.equal(after.phase, 'ready');
+  assert.equal(after.error, null);
+});

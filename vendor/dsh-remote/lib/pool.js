@@ -41,10 +41,31 @@ export class SshPool {
     this._detecting = null
     /** Optional async resolver for a machine-stored (keychain) password. */
     this.passwordResolver = null
+    /** Optional async resolver for a machine-stored (keychain) key passphrase. */
+    this.passphraseResolver = null
+    /** Optional async resolver for a machine-stored (keychain) proxy password. */
+    this.proxyPasswordResolver = null
+    /** Cached healthy SFTP subsystem per live SSH client (avoids MaxSessions exhaustion). */
+    this._sftpClient = null
+    this._sftpPromise = null
+    this._sftpRaw = null
+    this._sftpEpoch = 0
     /** Optional hook called with the live client after a successful connect. */
     this.onReady = null
     /** Optional hook called when the pool closes. */
     this.onCloseHook = null
+  }
+
+  async _resolvePassphrase() {
+    let passphrase = this.config.passphrase || ''
+    if (!passphrase && this.passphraseResolver) {
+      try {
+        passphrase = (await this.passphraseResolver()) || ''
+      } catch (error) {
+        throw new Error('无法读取 SSH 凭据；请解锁系统密钥库或重新保存凭据后重试。', { cause: error })
+      }
+    }
+    return passphrase || undefined
   }
 
   resolveKeyPath() {
@@ -118,6 +139,9 @@ export class SshPool {
           passphrase: proxyCfg.passphrase || '',
           proxy: undefined,
         }, { knownHostsFile: this._knownHostsFile })
+        if (!proxyCfg.password && this.proxyPasswordResolver) {
+          this.proxyPool.passwordResolver = this.proxyPasswordResolver
+        }
         const pclient = await this.proxyPool.connect()
         if (!isCurrent()) throw new Error('ssh target changed during proxy connect')
         sock = await new Promise((res, rej) => {
@@ -149,7 +173,10 @@ export class SshPool {
       })
       client.on('error', (e) => rejectOnce(e))
       client.on('close', () => {
-        if (isCurrent() && this.client === client) this.client = null
+        if (isCurrent() && this.client === client) {
+          this.client = null
+          this._clearSftp(null, client)
+        }
         rejectOnce(new Error('ssh connection closed'))
       })
 
@@ -190,7 +217,7 @@ export class SshPool {
             throw new Error(`cannot read private key "${keyPath}": ${err && err.message}`)
           }
           opts.privateKey = key
-          opts.passphrase = this.config.passphrase || undefined
+          opts.passphrase = await this._resolvePassphrase()
         } else if (!password && !opts.agent) {
           throw new Error('no credentials: set a password, a privateKeyPath, or enable useAgent to connect')
         }
@@ -409,71 +436,139 @@ export class SshPool {
     )
   }
 
-  /** Resolve a promisified SFTP client. All paths normalized via toSftpPath(). */
+  _clearSftp(expectedRaw = null, expectedClient = null) {
+    if (expectedRaw && this._sftpRaw !== expectedRaw) return
+    if (expectedClient && this._sftpClient !== expectedClient) return
+    this._sftpClient = null
+    this._sftpPromise = null
+    this._sftpRaw = null
+  }
+
+  _closeSftp() {
+    const raw = this._sftpRaw
+    this._clearSftp()
+    if (raw && typeof raw.end === 'function') {
+      try { raw.end() } catch { /* An already ended SFTP subsystem has no further teardown. */ }
+    }
+  }
+
+  /** Resolve a promisified SFTP client. Reuses a single healthy SFTP subsystem
+   *  per live SSH connection so repeated calls do not exhaust sshd MaxSessions.
+   *  All paths normalized via toSftpPath(). */
   sftp() {
-    return this.connect().then(
-      (client) =>
-        new Promise((resolve, reject) => {
-          let retried = false
-          const runOn = (c) => {
-            c.sftp((err, sftp) => {
-              if (err) {
-                // Same dead-connection recovery as exec(): a channel open
-                // failure — or a session termination (remote closed the
-                // SFTP subchannel, e.g. transient network blip / sshd idle
-                // drop) — means the pooled connection is stale: drop it and
-                // retry ONCE on a fresh connection.
-                if (!retried && /channel open failure|open failed|unexpected sftp session termination|session termination|disconnect/i.test(String((err && err.message) || err))) {
-                  retried = true
-                  this.invalidate()
-                  return this.connect().then(
-                    (fresh) => runOn(fresh),
-                    (e2) => reject(new Error('ssh sftp failed (reconnect): ' + ((e2 && e2.message) || e2))),
-                  )
-                }
-                return reject(new Error('ssh sftp failed: ' + ((err && err.message) || err)))
+    if (
+      this._sftpPromise &&
+      this._sftpEpoch === this.epoch &&
+      (!this.client || this._sftpClient === null || this._sftpClient === this.client)
+    ) {
+      return this._sftpPromise
+    }
+    let expectedEpoch = this.epoch
+    const pending = this.connect().then((client) => {
+      if (this.epoch !== expectedEpoch) {
+        throw new Error('ssh target changed during sftp open')
+      }
+      if (this._sftpPromise && this._sftpPromise !== pending && this._sftpClient === client) {
+        return this._sftpPromise
+      }
+      this._sftpClient = client
+      return new Promise((resolve, reject) => {
+        let retried = false
+        const runOn = (c) => {
+          c.sftp((err, sftp) => {
+            if (err) {
+              // Same dead-connection recovery as exec(): a channel open
+              // failure — or a session termination (remote closed the
+              // SFTP subchannel, e.g. transient network blip / sshd idle
+              // drop) — means the pooled connection is stale: drop it and
+              // retry ONCE on a fresh connection.
+              if (!retried && /channel open failure|open failed|unexpected sftp session termination|session termination|disconnect/i.test(String((err && err.message) || err))) {
+                retried = true
+                this.invalidate()
+                expectedEpoch = this.epoch
+                this._sftpEpoch = expectedEpoch
+                this._sftpPromise = pending
+                return this.connect().then(
+                  (fresh) => {
+                    this._sftpClient = fresh
+                    runOn(fresh)
+                  },
+                  (e2) => reject(new Error('ssh sftp failed (reconnect): ' + ((e2 && e2.message) || e2))),
+                )
               }
-              const withTimeout = (fn) => (...args) =>
-                new Promise((r2, j2) => {
-                  const timer = setTimeout(() => j2(new Error('sftp operation timed out')), this.config.commandTimeoutMs)
-                  const done = (e, v) => {
-                    clearTimeout(timer)
-                    e ? j2(e) : r2(v)
+              return reject(new Error('ssh sftp failed: ' + ((err && err.message) || err)))
+            }
+            if (this.epoch !== expectedEpoch || this.client !== c) {
+              if (sftp && typeof sftp.end === 'function') {
+                try { sftp.end() } catch { /* Discard SFTP opened on a superseded connection. */ }
+              }
+              return reject(new Error('ssh target changed during sftp open'))
+            }
+            this._sftpClient = c
+            this._sftpRaw = sftp
+            const clearThis = () => this._clearSftp(sftp)
+            if (typeof sftp.on === 'function') {
+              sftp.on('end', clearThis)
+              sftp.on('close', clearThis)
+              sftp.on('error', clearThis)
+            }
+            const withTimeout = (fn) => (...args) =>
+              new Promise((r2, j2) => {
+                const timer = setTimeout(() => j2(new Error('sftp operation timed out')), this.config.commandTimeoutMs)
+                const done = (e, v) => {
+                  clearTimeout(timer)
+                  if (e) {
+                    if (/channel open failure|open failed|unexpected sftp session termination|session termination|no response from server|not connected|stream closed|disconnect/i.test(String((e && e.message) || e))) {
+                      clearThis()
+                    }
+                    j2(e)
+                  } else {
+                    r2(v)
                   }
-                  try { fn(...args, done) } catch (e) { clearTimeout(timer); j2(e) }
-                })
-              const P = (p) => toSftpPath(p)
-              resolve({
-                readdir: (dir) => withTimeout((d, cb) => sftp.readdir(d, cb))(P(dir)),
-                stat: (p) => withTimeout((d, cb) => sftp.stat(d, cb))(P(p)),
-                lstat: (p) => withTimeout((d, cb) => sftp.lstat(d, cb))(P(p)),
-                mkdir: (dir) => withTimeout((d, cb) => sftp.mkdir(d, cb))(P(dir)),
-                rmdir: (dir) => withTimeout((d, cb) => sftp.rmdir(d, cb))(P(dir)),
-                unlink: (p) => withTimeout((d, cb) => sftp.unlink(d, cb))(P(p)),
-                rename: (p, d) => withTimeout((a, b, cb) => sftp.rename(a, b, cb))(P(p), P(d)),
-                realpath: (p) => withTimeout((d, cb) => sftp.realpath(d, cb))(P(p)),
-                readFile: (p) => withTimeout((d, cb) => sftp.readFile(d, cb))(P(p)),
-                writeFile: (p, data) => withTimeout((d, data2, cb) => sftp.writeFile(d, data2, cb))(P(p), data),
-                fastGet: (p, lp) => withTimeout((d, l, cb) => sftp.fastGet(d, l, cb))(P(p), lp),
-                fastPut: (lp, p) => withTimeout((l, d, cb) => sftp.fastPut(l, d, cb))(lp, P(p)),
-                // Range read for oversized previews: never downloads the whole file.
-                readPartial: (p, offset, length) => withTimeout((d, off, len, cb) => {
-                  sftp.open(d, 'r', (e, handle) => {
-                    if (e) return cb(e)
-                    const buf = Buffer.alloc(len)
-                    sftp.read(handle, buf, 0, len, off, (e2, bytesRead, data) => {
-                      sftp.close(handle, () => {})
-                      if (e2) return cb(e2)
-                      cb(null, Buffer.isBuffer(data) ? data.subarray(0, bytesRead) : buf.subarray(0, bytesRead))
-                    })
-                  })
-                })(P(p), offset, length),
+                }
+                try { fn(...args, done) } catch (e) { clearTimeout(timer); j2(e) }
               })
+            const P = (p) => toSftpPath(p)
+            resolve({
+              readdir: (dir) => withTimeout((d, cb) => sftp.readdir(d, cb))(P(dir)),
+              stat: (p) => withTimeout((d, cb) => sftp.stat(d, cb))(P(p)),
+              lstat: (p) => withTimeout((d, cb) => sftp.lstat(d, cb))(P(p)),
+              mkdir: (dir) => withTimeout((d, cb) => sftp.mkdir(d, cb))(P(dir)),
+              rmdir: (dir) => withTimeout((d, cb) => sftp.rmdir(d, cb))(P(dir)),
+              unlink: (p) => withTimeout((d, cb) => sftp.unlink(d, cb))(P(p)),
+              rename: (p, d) => withTimeout((a, b, cb) => sftp.rename(a, b, cb))(P(p), P(d)),
+              realpath: (p) => withTimeout((d, cb) => sftp.realpath(d, cb))(P(p)),
+              readFile: (p) => withTimeout((d, cb) => sftp.readFile(d, cb))(P(p)),
+              writeFile: (p, data) => withTimeout((d, data2, cb) => sftp.writeFile(d, data2, cb))(P(p), data),
+              fastGet: (p, lp) => withTimeout((d, l, cb) => sftp.fastGet(d, l, cb))(P(p), lp),
+              fastPut: (lp, p) => withTimeout((l, d, cb) => sftp.fastPut(l, d, cb))(lp, P(p)),
+              // Range read for oversized previews: never downloads the whole file.
+              readPartial: (p, offset, length) => withTimeout((d, off, len, cb) => {
+                sftp.open(d, 'r', (e, handle) => {
+                  if (e) return cb(e)
+                  const buf = Buffer.alloc(len)
+                  sftp.read(handle, buf, 0, len, off, (e2, bytesRead, data) => {
+                    sftp.close(handle, () => {})
+                    if (e2) return cb(e2)
+                    cb(null, Buffer.isBuffer(data) ? data.subarray(0, bytesRead) : buf.subarray(0, bytesRead))
+                  })
+                })
+              })(P(p), offset, length),
             })
-          }
-          runOn(client)
-        }),
-    )
+          })
+        }
+        runOn(client)
+      })
+    })
+    this._sftpEpoch = expectedEpoch
+    this._sftpClient = this.client || null
+    this._sftpPromise = pending
+    pending.catch(() => {
+      if (this._sftpPromise === pending) {
+        this._clearSftp()
+      }
+    })
+    return pending
   }
 
   /**
@@ -486,6 +581,7 @@ export class SshPool {
    */
   invalidate() {
     this.epoch++
+    this._closeSftp()
     const client = this.client
     this.client = null
     const pending = this.connecting
@@ -504,6 +600,7 @@ export class SshPool {
 
   close() {
     this.epoch++
+    this._closeSftp()
     const client = this.client
     this.client = null
     const pending = this.connecting

@@ -134,6 +134,7 @@ export function registerStickerTools(ctx) {
         },
       },
       render: (_args, value) => [{ type: 'text', text: value.detail }],
+      presentationMeta: (_args, value) => ({ ok: Boolean(value?.ok), name: String(value?.name ?? ''), detail: String(value?.detail ?? '') }),
     },
     presentCall: (args) => ({
       card: 'generic',
@@ -141,11 +142,21 @@ export function registerStickerTools(ctx) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.query ?? '') }],
     }),
-    presentResult: (_args, result) => (result.ok !== true ? undefined : {
-      card: 'generic',
-      title: 'Sticker picked',
-      content: [{ type: 'text', text: String(result.value?.name ?? '') }],
-    }),
+    presentResult: (_args, result) => {
+      if (!result || result.isError) return undefined;
+      const meta = result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta)
+        ? /** @type {Record<string, any>} */ (result.meta)
+        : null;
+      if (meta && 'ok' in meta && meta.ok !== true) return undefined;
+      const fallbackText = Array.isArray(result.content)
+        ? result.content.map((b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
+        : '';
+      return {
+        card: 'generic',
+        title: 'Sticker picked',
+        content: [{ type: 'text', text: String(meta?.name ?? meta?.detail ?? fallbackText) }],
+      };
+    },
     async execute(args) {
       const home = process.env.DSH_HOME || '';
       if (!home) return { ok: false, name: '', markdown: '', detail: 'DSH home is unavailable.' };

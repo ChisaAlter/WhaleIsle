@@ -133,13 +133,15 @@ test('host acp_result accepts the documented task_id, agent_id and wait_ms forms
   };
   registerDelegation(ctx, manager);
   const tool = tools.get('acp_result');
-  assert.ok(!Object.values(tool.parameters).some((parameter) => parameter.required));
+  assert.equal(tool.parameters.type, 'object');
+  assert.equal(tool.parameters.required, undefined);
+  assert.ok(!Object.values(tool.parameters.properties).some((parameter) => parameter.required));
   const exec = { agent: { id: 'parent' }, signal: new AbortController().signal };
   await tool.execute({ task_id: 'task-1' }, exec);
   await tool.execute({ agent_id: 'child-1', wait_ms: 500 }, exec);
   assert.deepEqual(waits, [['task-1', 0], ['task-1', 500]]);
-  assert.throws(() => tool.execute({}, exec), /task_id or agent_id/);
-  assert.throws(() => tool.execute({ task_id: 'task-1', wait_ms: 30000 }, exec), /wait_ms/);
+  await assert.rejects(tool.execute({}, exec), /task_id or agent_id/);
+  await assert.rejects(tool.execute({ task_id: 'task-1', wait_ms: 30000 }, exec), /wait_ms/);
 });
 
 test('existing loose stores and default profiles are restricted without removing temporary files', { skip: process.platform === 'win32' }, async () => {
@@ -230,7 +232,248 @@ test('host tools and the MCP bridge publish identical task-control schemas', asy
   for (const tool of [...AGENT_TOOLS, ...CONTROL_TOOLS]) {
     const remote = listed.find((item) => item.name === tool.name);
     assert.deepEqual(remote, tool, tool.name);
-    assert.equal(host.get(tool.name).description, tool.description);
-    assert.deepEqual(Object.keys(host.get(tool.name).parameters), Object.keys(tool.inputSchema.properties));
+    const compiled = host.get(tool.name);
+    assert.equal(typeof compiled.description, 'string', `${tool.name} root description must be a string`);
+    assert.equal(compiled.description, tool.description);
+    assert.equal(compiled.parameters.type, 'object');
+    assert.equal(compiled.parameters.description, undefined, `${tool.name} compiled parameters must not leak a root description`);
+    assert.deepEqual(Object.keys(compiled.parameters.properties), Object.keys(tool.inputSchema.properties));
+    assert.deepEqual(compiled.parameters.required, tool.inputSchema.required);
+  }
+  const delegateSchema = host.get('acp_delegate').parameters;
+  assert.deepEqual(delegateSchema.properties.options.items.properties.value, { oneOf: [{ type: 'string' }, { type: 'boolean' }] });
+  assert.deepEqual(delegateSchema.properties.options.items.required, ['id', 'value']);
+  assert.equal(delegateSchema.properties.timeout_ms.minimum, undefined);
+  assert.equal(delegateSchema.properties.timeout_ms.maximum, undefined);
+  assert.equal(host.get('acp_result').parameters.properties.wait_ms.minimum, undefined);
+  assert.equal(host.get('acp_result').parameters.properties.wait_ms.maximum, undefined);
+  await assert.rejects(host.get('acp_delegate').execute({ agent: 'a', prompt: 'p', timeout_ms: 20001 }, { agent: { id: 'p' }, signal: new AbortController().signal }), /timeout_ms/);
+  await assert.rejects(host.get('acp_delegate').execute({ agent: 'a', prompt: 'p', timeout_ms: -1 }, { agent: { id: 'p' }, signal: new AbortController().signal }), /timeout_ms/);
+});
+
+test('delegate cwd blocks APPDATA, LOCALAPPDATA, ~/.config and userData subdirectories', async (t) => {
+  const { validateExplicitDelegateCwd } = await import('../lib/delegate-cwd.js');
+  const root = tempDir('acp-cwd-guard-');
+  const prevEnv = {
+    APPDATA: process.env.APPDATA,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+    XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+  };
+  try {
+    const fakeHome = path.join(root, 'home');
+    const dotConfigSub = path.join(fakeHome, '.config', 'whale-secret');
+    const appDataSub = path.join(root, 'roaming-appdata', 'vendor-app');
+    const localAppDataSub = path.join(root, 'local-appdata', 'vendor-cache');
+    const xdgConfigSub = path.join(root, 'xdg-config', 'nested');
+    const userData = path.join(root, 'electron-userdata');
+    const dshHome = path.join(userData, 'dsh-home');
+    const siblingUserData = path.join(userData, 'chisacode-home');
+    const safeProject = path.join(root, 'workspace', 'my-project');
+    for (const dir of [dotConfigSub, appDataSub, localAppDataSub, xdgConfigSub, dshHome, siblingUserData, safeProject]) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    t.mock.method(os, 'homedir', () => fakeHome);
+    process.env.APPDATA = path.join(root, 'roaming-appdata');
+    process.env.LOCALAPPDATA = path.join(root, 'local-appdata');
+    process.env.XDG_CONFIG_HOME = path.join(root, 'xdg-config');
+    process.env.XDG_DATA_HOME = path.join(root, 'xdg-data');
+
+    for (const forbidden of [appDataSub, localAppDataSub, dotConfigSub, xdgConfigSub]) {
+      assert.throws(() => validateExplicitDelegateCwd(forbidden, { dshHome }), /系统配置或凭据目录/);
+    }
+    assert.throws(() => validateExplicitDelegateCwd(siblingUserData, { dshHome }), /应用数据目录/);
+    assert.equal(validateExplicitDelegateCwd(safeProject, { dshHome }), fs.realpathSync.native(safeProject));
+  } finally {
+    for (const [k, v] of Object.entries(prevEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('root session ACP connections release subprocesses and MCP tokens on ctx.effect or agent/disposed', async (t) => {
+  const { createAcpAgentsManager, apply } = await import('../lib/index.js');
+  const { AcpSessionConnection, AcpTurnExecution } = await import('../lib/acp-session.js');
+  const root = tempDir('acp-root-dispose-');
+  const storeFile = path.join(root, 'agents.json');
+  saveAgentsConfig([{ id: 'root-agent', name: 'Root Agent', enabled: true, command: process.execPath, models: [{ id: 'default' }] }], storeFile);
+  let closedCount = 0;
+  t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
+    this.api = { getConfigOptions: async () => [], setSessionModel: async () => {} };
+  });
+  t.mock.method(AcpSessionConnection.prototype, 'close', async function () {
+    if (!this.closed) {
+      this.closed = true;
+      closedCount += 1;
+    }
+  });
+  t.mock.method(AcpTurnExecution.prototype, 'beginPrompt', function () {
+    this.complete({ stopReason: 'end_turn' });
+  });
+
+  // 1) Root session disposed via agent.ctx.effect (IdleSessionRelease / handle.dispose)
+  const effectDisposers = [];
+  const rootHost = {
+    id: 'root-session-1',
+    options: { provider: 'acp:root-agent' },
+    session: { id: 'root-session-1', header: { cwd: root }, snapshotEvents: () => [], append() {} },
+    ctx: { effect: (gen) => { const it = gen(); const step = it.next(); if (typeof step.value === 'function') effectDisposers.push(step.value); } },
+  };
+  const manager = createAcpAgentsManager({
+    agents: { get: (id) => (id === rootHost.id ? rootHost : undefined) },
+    webServer: { getOrigin: () => 'http://127.0.0.1:0', register: () => () => {} },
+  }, { storeFile });
+  try {
+    for await (const _chunk of manager.adapter.stream({ provider: 'acp:root-agent', model: 'default', sessionId: rootHost.id, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hi' }] }], signal: new AbortController().signal })) { /* drain */ }
+    const active = (await manager.buildCatalog()).activeSessions;
+    assert.equal(active.length, 1);
+    const issuedTokens = [];
+    // Verify mcpToken was issued and is active before disposal
+    const prevRevoke = manager.whaleisleMcp.revokeToken.bind(manager.whaleisleMcp);
+    t.mock.method(manager.whaleisleMcp, 'revokeToken', (tok) => { issuedTokens.push(tok); return prevRevoke(tok); });
+    assert.equal(effectDisposers.length, 1);
+    await effectDisposers[0]();
+    assert.equal(closedCount, 1);
+    assert.equal(issuedTokens.length, 1);
+    assert.equal(manager.whaleisleMcp.sessionFor(issuedTokens[0]), null);
+    assert.equal((await manager.buildCatalog()).activeSessions.length, 0);
+
+    // 2) Root session disposed via agent/disposed event without agent.ctx.effect
+    const listeners = new Map();
+    const hostCtx = {
+      agents: { get: (id) => (id === 'root-session-2' ? rootHost2 : undefined) },
+      webServer: { getOrigin: () => 'http://127.0.0.1:0', register: () => () => {} },
+      llm: { registerAdapter: () => () => {} },
+      on(ev, fn) { if (!listeners.has(ev)) listeners.set(ev, []); listeners.get(ev).push(fn); return () => {}; },
+      inject() {},
+      effect() {},
+    };
+    const rootHost2 = {
+      id: 'root-session-2',
+      options: { provider: 'acp:root-agent' },
+      session: { id: 'root-session-2', header: { cwd: root }, snapshotEvents: () => [], append() {} },
+    };
+    // Verify releaseAgentConnections closes & revokes even without ctx.effect
+    for await (const _chunk of manager.adapter.stream({ provider: 'acp:root-agent', model: 'default', sessionId: rootHost2.id, messages: [{ id: 'm2', role: 'user', content: [{ type: 'text', text: 'hi2' }] }], signal: new AbortController().signal })) { /* drain */ }
+    assert.equal((await manager.buildCatalog()).activeSessions.length, 1);
+    await manager.releaseAgentConnections(rootHost2);
+    assert.equal(closedCount, 2);
+    assert.equal(issuedTokens.length, 2);
+    assert.equal(manager.whaleisleMcp.sessionFor(issuedTokens[1]), null);
+    assert.equal((await manager.buildCatalog()).activeSessions.length, 0);
+    // apply() registers agent/disposed listener
+    apply(hostCtx, { storeFile });
+    assert.ok((listeners.get('agent/disposed') || []).length >= 1);
+  } finally {
+    await manager.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('requestAcpApproval honors allowed-always, session/options guards non-object option, and failed worktree preparation cleans up', async (t) => {
+  const { createAcpAgentsManager } = await import('../lib/index.js');
+  const { AcpSessionConnection, AcpTurnExecution } = await import('../lib/acp-session.js');
+  const root = tempDir('acp-p2-fixes-');
+  const storeFile = path.join(root, 'agents.json');
+  saveAgentsConfig([{ id: 'p2-agent', name: 'P2 Agent', enabled: true, command: process.execPath, models: [{ id: 'default', options: [{ id: 'opt', type: 'boolean' }] }] }], storeFile);
+
+  // 1) session/options non-object option guard
+  const manager = createAcpAgentsManager({
+    approval: {
+      policyOf: () => 'ask',
+      request: async () => 'allowed-always',
+    },
+    sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
+    subagents: { getProvider: () => ({}), resolveMaxDepth: () => 2 },
+  }, { storeFile });
+
+  try {
+    for (const badOption of [null, 'bad', 123, ['arr']]) {
+      await assert.rejects(
+        manager.handleRpc('session/options', { sessionId: 's1', agentId: 'p2-agent', model: 'default', option: badOption }),
+        /plain object/,
+      );
+    }
+
+    // 2) allowed-always approval flows through requestApproval -> acceptForSession
+    t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
+      this.api = { getConfigOptions: async () => [], setSessionModel: async () => {} };
+    });
+    const hostAgent = {
+      id: 'root-approval',
+      session: { id: 'root-approval', header: { cwd: root }, snapshotEvents: () => [], append() {} },
+    };
+    let capturedRequestApproval;
+    const origResolve = AcpSessionConnection.prototype._resolvePermission;
+    t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
+      capturedRequestApproval = this.requestApproval;
+      this.api = { getConfigOptions: async () => [], setSessionModel: async () => {} };
+    });
+    t.mock.method(AcpTurnExecution.prototype, 'beginPrompt', function () { this.complete({ stopReason: 'end_turn' }); });
+    for await (const _c of manager.adapter.stream({ provider: 'acp:p2-agent', model: 'default', sessionId: 'root-approval', messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hi' }] }], signal: new AbortController().signal })) { /* drain */ }
+    // Verify directly via captured requestApproval & AcpSessionConnection._resolvePermission
+    assert.equal(typeof capturedRequestApproval, 'function');
+    const connForPerm = new AcpSessionConnection({
+      agentConfig: { name: 'P2' },
+      requestApproval: capturedRequestApproval,
+      getRuntimePolicy: () => ({
+        cwd: root,
+        runtimeMode: 'approval-required',
+        approvalPolicy: 'on-request',
+        sandboxPolicy: { type: 'workspaceWrite', writableRoots: [root] },
+      }),
+    });
+    connForPerm.activeTurn = new AcpTurnExecution({ connection: connForPerm, hostAgent, signal: new AbortController().signal });
+    const permRes = await origResolve.call(connForPerm, {
+      sessionId: 's',
+      toolCall: { toolCallId: 'tc1', title: 'Run cmd', kind: 'execute' },
+      options: [
+        { optionId: 'once', name: 'Once', kind: 'allow_once' },
+        { optionId: 'always', name: 'Always', kind: 'allow_always' },
+      ],
+    }, connForPerm.getRuntimePolicy());
+    assert.deepEqual(permRes, { outcome: { outcome: 'selected', optionId: 'always' } });
+
+    // 3) prepareDelegationConnection failure cleans up orphaned worktree
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(repo);
+    const git = (...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd: repo, encoding: 'utf8', windowsHide: true });
+    git('init', '-q');
+    fs.writeFileSync(path.join(repo, 'file.txt'), 'v1\n');
+    git('add', 'file.txt');
+    git('commit', '-q', '-m', 'init');
+
+    t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async () => {
+      throw new Error('simulated startup failure');
+    });
+    const parent = {
+      id: 'parent-wt',
+      status: 'idle',
+      followup() {},
+      session: { id: 'parent-wt', header: { cwd: repo }, snapshotEvents: () => [], append() {} },
+    };
+    const wtManager = createAcpAgentsManager({
+      sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' }) },
+      approval: { policyOf: () => 'never' },
+      subagents: { getProvider: () => ({}), resolveMaxDepth: () => 2 },
+    }, { storeFile });
+    try {
+      await assert.rejects(
+        wtManager.delegate({ agent: 'p2-agent', prompt: 'do work', isolation: 'worktree' }, parent, new AbortController().signal, 'caller'),
+        /simulated startup failure/,
+      );
+      const worktreeBase = path.join(repo, '.agent-worktrees');
+      const remaining = fs.existsSync(worktreeBase) ? fs.readdirSync(worktreeBase) : [];
+      assert.deepEqual(remaining, [], 'orphaned worktree must be removed when preparation fails');
+      const listedWorktrees = git('worktree', 'list', '--porcelain');
+      assert.doesNotMatch(listedWorktrees, /\.agent-worktrees/);
+    } finally {
+      await wtManager.dispose();
+    }
+  } finally {
+    await manager.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

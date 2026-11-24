@@ -763,3 +763,149 @@ test('launcher-notes walks the full real lifecycle v1 → v2 → rollback', asyn
   const finalRow = svc.list().components.find((item) => item.id === 'launcher-notes');
   assert.equal(finalRow.state, 'available');
 });
+
+test('stopComponent fails closed when PID stays alive and blocks update/uninstall', async (t) => {
+  const env = fakeEnv(t);
+  makeSample(env.samplesRoot, 'toy', '1.0.0');
+  makeSample(env.samplesRoot, 'toy', '2.0.0');
+  env.deps.execFileSync = (bin) => {
+    if (bin === 'taskkill') throw new Error('Access denied');
+    return '';
+  };
+  env.deps.execFile = (bin, _args, _opts, cb) => {
+    if (bin === 'taskkill') cb(new Error('Access denied'));
+    else cb(null, '');
+  };
+  const svc = createComponentsService(env.deps);
+  await svc.install({ id: 'toy', version: '1.0.0' });
+  const started = await svc.start('toy');
+  assert.equal(started.ok, true);
+
+  const stopped = await svc.stop('toy');
+  assert.equal(stopped.ok, false);
+  assert.equal(stopped.error, 'stop-failed');
+
+  const upd = await svc.update('toy');
+  assert.equal(upd.ok, false);
+  assert.equal(upd.error, 'stop-failed');
+  assert.equal(store.loadRegistry(env.root).components.toy.version, '1.0.0');
+
+  const uninst = await svc.uninstall('toy');
+  assert.equal(uninst.ok, false);
+  assert.equal(uninst.error, 'stop-failed');
+  assert.equal(fs.existsSync(store.versionDir(env.root, 'toy', '1.0.0')), true);
+
+  env.alive.delete(started.pid);
+});
+
+test('update preserves oldPrevious and returns ok:false when new version fails to start', async (t) => {
+  const env = fakeEnv(t);
+  for (const v of ['1.0.0', '2.0.0', '3.0.0']) {
+    makeSample(env.samplesRoot, 'toy', v);
+  }
+  const svc = createComponentsService(env.deps);
+  await svc.install({ id: 'toy', version: '1.0.0' });
+  const reg = store.loadRegistry(env.root);
+  reg.components.toy.previous = '0.9.0';
+  store.saveRegistry(env.root, reg);
+  fs.mkdirSync(store.versionDir(env.root, 'toy', '0.9.0'), { recursive: true });
+
+  const svc2 = createComponentsService(env.deps);
+  await svc2.start('toy');
+  const origSpawn = env.deps.spawn;
+  env.deps.spawn = (bin, args, opts) => {
+    if (String(args[0]).includes('3.0.0')) {
+      const child = new EventEmitter();
+      child.pid = 7777;
+      child.stdout = null;
+      child.stderr = null;
+      child.unref = () => {};
+      child.kill = () => true;
+      Object.defineProperty(child, 'exitCode', { get: () => 1 });
+      setImmediate(() => child.emit('exit', 1));
+      return child;
+    }
+    return origSpawn(bin, args, opts);
+  };
+
+  const upd = await svc2.update('toy');
+  assert.equal(upd.ok, false);
+  assert.equal(upd.state, 'error');
+  assert.equal(fs.existsSync(store.versionDir(env.root, 'toy', '0.9.0')), true);
+});
+
+test('lifecycle.removeDir retries transient EBUSY before succeeding', async (t) => {
+  const dir = tmpDir(t, 'dshd-rm-retry-');
+  let attempts = 0;
+  const fakeFs = {
+    promises: {
+      rm: async (target, opts) => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+        }
+        return fs.promises.rm(target, opts);
+      },
+    },
+  };
+  const ok = await lifecycle.removeDir(dir, { fs: fakeFs, removeRetryMs: 1000 });
+  assert.equal(ok, true);
+  assert.equal(attempts, 3);
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('ipc-components before-quit waits for stopCompanion before re-invoking app.quit', async (t) => {
+  const Module = require('node:module');
+  const originalLoad = Module._load;
+  const env = fakeEnv(t);
+  let resolveStop;
+  const stopPromise = new Promise((resolve) => { resolveStop = resolve; });
+  let stopCalls = 0;
+  let quitCalls = 0;
+  const appMock = new EventEmitter();
+  appMock.quit = () => { quitCalls += 1; };
+
+  const ipcCompPath = require.resolve('../../main/ipc-components');
+  delete require.cache[ipcCompPath];
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') return { app: appMock };
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  t.after(() => {
+    Module._load = originalLoad;
+    delete require.cache[ipcCompPath];
+  });
+
+  const freshIpc = require('../../main/ipc-components');
+  freshIpc._configureForTest({
+    ...env.deps,
+    magpie: {
+      id: 'magpie',
+      row: () => ({ id: 'magpie' }),
+      stopCompanion: () => {
+        stopCalls += 1;
+        return stopPromise;
+      },
+    },
+  });
+  freshIpc.register({
+    IPC_ROLES,
+    LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
+    handle() {},
+    send() {},
+  });
+
+  let prevented = false;
+  appMock.emit('before-quit', { preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(stopCalls, 1);
+  assert.equal(quitCalls, 0);
+
+  resolveStop();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(quitCalls, 1);
+
+  let preventedAgain = false;
+  appMock.emit('before-quit', { preventDefault() { preventedAgain = true; } });
+  assert.equal(preventedAgain, false);
+});

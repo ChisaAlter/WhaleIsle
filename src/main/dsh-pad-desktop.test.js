@@ -111,3 +111,97 @@ test('vendored pad runtime and license are included in desktop resources', () =>
   const desktop = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.ok(desktop.build.extraResources.find(resource => resource.from === 'vendor').filter.includes('dsh-pad/**'));
 });
+
+test('Audit regression [P2]: dsh-pad HTTP source with {{env:...}} interpolation uses redirect: manual to prevent credential leakage', async (t) => {
+  const http = require('node:http');
+  const { registerHooks } = require('node:module');
+  const { pathToFileURL } = require('node:url');
+  const { resolveHarnessPeerPath } = require('../../scripts/lib/harness-peer-hook.cjs');
+  const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
+
+  const hook = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if ((context.parentURL || '').includes('/vendor/dsh-pad/') && specifier.startsWith('@deepseek-ai/')) {
+        const target = resolveHarnessPeerPath(specifier);
+        if (target) return { url: pathToFileURL(target).href, shortCircuit: true };
+      }
+      return nextResolve(specifier, context);
+    },
+  });
+
+  const padPath = path.resolve(__dirname, '../../vendor/dsh-pad/lib/index.js');
+  const { registerTools } = await import(pathToFileURL(padPath).href);
+
+  const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
+  const prevSecret = process.env.PAD_TEST_SECRET;
+  const prevSecretsStore = globalThis[INTERNAL_SECRETS_KEY];
+
+  let leakedRequests = 0;
+  const targetServer = http.createServer((req, res) => {
+    if (req.url?.startsWith('/start')) {
+      res.writeHead(302, { location: '/leaked' });
+      res.end();
+      return;
+    }
+    if (req.url?.startsWith('/leaked')) {
+      leakedRequests += 1;
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('leaked-ok');
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  const confirmServer = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  });
+
+  await new Promise((r) => targetServer.listen(0, '127.0.0.1', r));
+  await new Promise((r) => confirmServer.listen(0, '127.0.0.1', r));
+
+  t.after(async () => {
+    hook.deregister();
+    await new Promise((r) => targetServer.close(r));
+    await new Promise((r) => confirmServer.close(r));
+    if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL; else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
+    if (prevSecret === undefined) delete process.env.PAD_TEST_SECRET; else process.env.PAD_TEST_SECRET = prevSecret;
+    if (prevSecretsStore === undefined) delete globalThis[INTERNAL_SECRETS_KEY]; else globalThis[INTERNAL_SECRETS_KEY] = prevSecretsStore;
+  });
+
+  process.env.DSH_DESKTOP_INSTALL_URL = `http://127.0.0.1:${confirmServer.address().port}`;
+  process.env.PAD_TEST_SECRET = 'super-secret-value';
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'pad-confirm-token']]);
+
+  const tools = new Map();
+  const mockCtx = {
+    effect(fn) { fn(); },
+    tools: { register(def) { tools.set(def.name, def); return () => tools.delete(def.name); } },
+  };
+  registerTools({
+    ctx: mockCtx,
+    store: { list: () => [] },
+    hub: {},
+    refresher: null,
+    limits: { minIntervalSec: 5, minAgentMinutes: 5 },
+    autoApprove: true,
+    resolveSecret: async (name) => process.env[name],
+  });
+
+  const testSourceTool = tools.get('pad_test_source');
+  assert.ok(testSourceTool);
+  const baseUrl = `http://127.0.0.1:${targetServer.address().port}`;
+  const resWithSecret = await testSourceTool.execute({
+    source: {
+      id: 's1',
+      kind: 'http',
+      url: `${baseUrl}/start`,
+      headers: { authorization: 'Bearer {{env:PAD_TEST_SECRET}}' },
+      parse: 'text',
+      intervalSec: 10,
+      timeoutMs: 5000,
+    },
+  }, { signal: new AbortController().signal });
+  assert.match(resWithSecret, /HTTP 302/);
+  assert.equal(leakedRequests, 0, 'HTTP source with {{env:...}} must NOT follow 3xx redirects');
+});

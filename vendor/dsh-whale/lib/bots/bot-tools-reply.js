@@ -104,24 +104,39 @@ async function deliverViaImSender(imSender, caller, payload, targetChannel, wal,
   }
 }
 
+/** @param {any} delivery @param {string | null} fallbackChannel */
+const resolvedBridgeChannel = (delivery, fallbackChannel) => delivery?.channel ?? fallbackChannel ?? 'im';
+
+/** @param {any} caller @param {any} args @param {string} text @param {string | null} channel */
+function buildBridgeDeliveryPayload(caller, args, text, channel) {
+  return {
+    botId: caller.bot.id,
+    sessionId: caller.sessionId,
+    channel,
+    accountId: args.accountId ?? null,
+    chatId: args.chatId ?? caller.chat?.externalId ?? null,
+    replyToMessageId: args.replyToMessageId ?? null,
+    text,
+  };
+}
+
 /** @param {any} sendFn @param {any} ctx */
 async function deliverReplyViaBridge(sendFn, { caller, args, text, channel, wal, walId }) {
-  const delivery = await sendFn({
-    botId: caller.bot.id, sessionId: caller.sessionId, channel,
-    accountId: args.accountId ?? null, chatId: args.chatId ?? null,
-    replyToMessageId: args.replyToMessageId ?? null, text,
-  });
-  const delivered = Boolean(delivery?.ok || delivery?.delivered);
-  if (delivered) {
-    wal?.commit(walId, { transport: 'im', channel: delivery.channel ?? channel, messageId: delivery.messageId ?? null });
+  const delivery = await sendFn(buildBridgeDeliveryPayload(caller, args, text, channel));
+  const outChannel = resolvedBridgeChannel(delivery, channel);
+  if (delivery?.ok || delivery?.delivered) {
+    wal?.commit(walId, { transport: 'im', channel: outChannel, messageId: delivery?.messageId ?? null });
     return okOut(JSON.stringify({
-      ok: true, delivered: true, transport: 'im', channel: delivery.channel ?? channel ?? 'im',
-      messageId: delivery.messageId ?? null, chars: text.length, walId,
+      ok: true, delivered: true, transport: 'im', channel: outChannel,
+      messageId: delivery?.messageId ?? null, chars: text.length, walId,
     }));
   }
   const reason = String(delivery?.error ?? delivery?.reason ?? 'im_delivery_failed');
   wal?.fail(walId, reason);
-  return okOut(JSON.stringify({ ok: true, delivered: false, transport: 'im', channel: channel ?? 'external', reason, chars: text.length, walId }));
+  return okOut(JSON.stringify({
+    ok: true, delivered: false, transport: 'im', channel: channel ?? 'external',
+    reason, chars: text.length, walId,
+  }));
 }
 
 /** @param {any} runtime @param {any} caller @param {any} text @param {string | null} channel @param {any} wal @param {string | null} walId */
@@ -232,7 +247,11 @@ export async function executeBotSend(runtime, caller, args, isWorkerCtx, reportE
   const msgText = `[From bot ${caller.bot.name} (${purpose})]\n${text}`;
   runtime.workStore.setRequestOutcome(reqRes.request.messageId, 'posted');
   const deliver = Promise.resolve()
-    .then(() => runtime.sessionRuntime.runSingleTurn(home.sessionId, msgText))
+    .then(() => runtime.sessionRuntime.runSingleTurn(home.sessionId, msgText, {
+      botId: target.id,
+      sourceKind: 'dsh-bots:bot-send',
+      source: { kind: 'dsh-bots:bot-send', fromBotId: caller.bot.id, messageId: reqRes.request.messageId },
+    }))
     .then((turn) => {
       const ok = turn?.ok !== false;
       runtime.workStore.setRequestOutcome(reqRes.request.messageId, ok ? 'delivered' : 'failed');

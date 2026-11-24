@@ -70,6 +70,18 @@ function writeFileAtomic(file, raw) {
   atomicWriteFileSync(file, raw, { encoding: 'utf8', mode: 0o600 });
 }
 
+function matchesOrigin(/** @type {unknown} */ frameUrl, /** @type {unknown} */ expectedOrigin) {
+  if (typeof expectedOrigin !== 'string' || expectedOrigin.trim() === '') return false;
+  if (typeof frameUrl !== 'string' || frameUrl.trim() === '') return false;
+  try {
+    const actual = new URL(frameUrl).origin;
+    const expected = new URL(expectedOrigin).origin;
+    return actual !== 'null' && actual === expected;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Install the desktop shortcut bridge.
  * @param {object} options
@@ -129,7 +141,7 @@ function createShortcutService(options) {
       onMenuChanged();
     }
     const contents = view()?.webContents;
-    if (contents !== undefined && contents.mainFrame.url.startsWith(getOrigin())) {
+    if (contents && matchesOrigin(contents.mainFrame?.url, getOrigin())) {
       contents.send(CHANNELS.changed, snapshot);
     }
   };
@@ -159,14 +171,14 @@ function createShortcutService(options) {
 
   const view = () => {
     const target = getView();
-    return target !== undefined && !target.webContents.isDestroyed() ? target : undefined;
+    return target && target.webContents && !target.webContents.isDestroyed() ? target : undefined;
   };
 
   const assertSender = (event) => {
     const target = view();
-    if (target === undefined || event.sender !== target.webContents
-      || event.senderFrame !== target.webContents.mainFrame
-      || !event.senderFrame.url.startsWith(getOrigin())) {
+    if (!target || event.sender !== target.webContents
+      || event.senderFrame !== event.sender.mainFrame
+      || !matchesOrigin(event.senderFrame?.url, getOrigin())) {
       throw new Error('desktop shortcuts: rejected sender');
     }
     return target;
@@ -229,7 +241,7 @@ function createShortcutService(options) {
     authorize: assertSender,
     handler: (_event, expected) => {
       const win = getWindow();
-      if (expected !== revision || revision === undefined || recording || win === undefined
+      if (expected !== revision || revision === undefined || recording || !win
         || win.isDestroyed() || !win.isFocused() || !win.isEnabled() || overlayInput(win).blocked) return;
       win.close();
     },
@@ -240,7 +252,7 @@ function createShortcutService(options) {
   const dispatchMenuCommand = (commandId) => {
     const win = getWindow();
     const contents = view()?.webContents;
-    if (win === undefined || contents === undefined || win.isDestroyed() || !win.isFocused()
+    if (!win || !contents || win.isDestroyed() || !win.isFocused()
       || !win.isEnabled() || revision === undefined || recording || overlayInput(win).blocked) {
       return false;
     }
@@ -394,7 +406,7 @@ function createShortcutService(options) {
       // The product document (harness BrowserView) owns the registry
       // dispatcher — guest/iframe inputs route to it, not the chrome window.
       const dispatcher = view()?.webContents;
-      if (dispatcher === undefined || dispatcher.isDestroyed()) return;
+      if (!dispatcher || dispatcher.isDestroyed()) return;
       dispatcher.send(CHANNELS.input, {
         kind: guestName === undefined ? (main ? 'keyboard' : 'iframe') : 'webview',
         revision,
@@ -413,7 +425,7 @@ function createShortcutService(options) {
       contents.off('before-input-event', beforeInput);
       contents.off('blur', resetInput);
       contents.off('destroyed', dispose);
-      if (guestName === undefined && window !== undefined) {
+      if (guestName === undefined && window) {
         window.off('blur', resetWindow);
         window.off('closed', closed);
       }
@@ -429,7 +441,7 @@ function createShortcutService(options) {
     contents.on('before-input-event', beforeInput);
     contents.on('blur', resetInput);
     contents.once('destroyed', dispose);
-    if (guestName === undefined && window !== undefined) {
+    if (guestName === undefined && window) {
       window.on('closed', closed);
       window.on('blur', resetWindow);
     }
@@ -465,7 +477,7 @@ function createShortcutService(options) {
     if (overlayInput(window).blocked || recording || !window.isEnabled()) return true;
     const contents = [...guestInputs].find(([guest, owner]) => owner.window === window && !guest.isDestroyed() && guest.isFocused())?.[0]
       ?? view()?.webContents;
-    if (contents === undefined || contents.isDestroyed()) return false;
+    if (!contents || contents.isDestroyed()) return false;
     contents.focus();
     const previous = editingInput;
     editingInput = contents;

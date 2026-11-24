@@ -300,3 +300,102 @@ test('external Magpie ownership blocks destructive lifecycle actions and returns
     assert.match(uninstallRes.message, /外部 Magpie/);
   });
 });
+
+test('assertIdleBeforeStop fails closed when concurrency probe fails, and rollback resyncs DSH', async () => {
+  await withOwnedTempDir('magpie-svc-failclosed-', async (sandbox) => {
+    const desktopStateDir = path.join(sandbox, 'state');
+    const root = path.join(desktopStateDir, 'components', 'magpie');
+    const dshHome = path.join(sandbox, 'dsh');
+    const configDir = path.join(sandbox, 'config-magpie');
+    const asset = platformAssetName('win32', 'x64');
+    const v1Bytes = Buffer.from('magpie-0.1.4708');
+    const v2Bytes = Buffer.from('magpie-0.1.4709-broken');
+    let upstreamVersion = '0.1.4708';
+    const livePids = new Map();
+    let probeShouldFail = false;
+    let pickPortNum = 3440;
+    const syncedAddrs = [];
+
+    const svc = createMagpieService({
+      desktopStateDir,
+      root,
+      dshHome,
+      configDir,
+      devPackage: '',
+      platform: 'win32',
+      arch: 'x64',
+      isPidAlive: (pid) => livePids.has(pid),
+      killPid: (pid) => livePids.delete(pid),
+      killProcessTree: async (pid) => livePids.delete(pid),
+      pickPort: async () => ++pickPortNum,
+      readyTimeoutMs: 1000,
+      exitTimeoutMs: 200,
+      fetchImpl: async (url) => {
+        const s = String(url);
+        if (s.endsWith('/releases/latest')) {
+          return new Response('', { status: 302, headers: { location: `https://github.com/yetone/magpie/releases/tag/v${upstreamVersion}` } });
+        }
+        if (s.endsWith(`/v${upstreamVersion}/SHA256SUMS`)) {
+          const buf = upstreamVersion === '0.1.4708' ? v1Bytes : v2Bytes;
+          return new Response(`${sha256(buf)}  ${asset}\n`, { status: 200 });
+        }
+        if (s.endsWith('/boot.js')) return new Response('boot', { status: livePids.size > 0 ? 200 : 503 });
+        if (s.endsWith('/api/window/quit?now=1')) { livePids.clear(); return new Response('ok', { status: 200 }); }
+        return new Response('', { status: 404 });
+      },
+      fetchJson: async (url) => {
+        const s = String(url);
+        if (s === 'http://127.0.0.1:3425/') {
+          const entry = [...livePids.entries()][0];
+          if (!entry) throw new Error('offline');
+          return { name: 'magpie', version: entry[1], pid: entry[0] };
+        }
+        if (s === 'http://127.0.0.1:3425/v1/magpie/concurrency') {
+          if (probeShouldFail) throw new Error('ETIMEDOUT');
+          return { requests: 0, waiting: 0, tools: 0 };
+        }
+        if (s === 'http://127.0.0.1:3425/v1/models') {
+          syncedAddrs.push(s);
+          return { data: [{ id: 'm1', api: 'openai-completions' }] };
+        }
+        throw new Error(`unexpected ${s}`);
+      },
+      downloadFile: async (url, dest) => {
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, String(url).includes('0.1.4709') ? v2Bytes : v1Bytes);
+      },
+      spawn: makeFakeSpawn({
+        failOnVersions: new Set(['0.1.4709']),
+        onProcessRunningChange: (ver, pid, up) => {
+          if (up) livePids.set(pid, ver);
+          else livePids.delete(pid);
+        },
+      }),
+    });
+
+    assert.equal((await svc.install()).ok, true);
+    const syncCountBefore = syncedAddrs.length;
+
+    // 1. Fail-closed stop when concurrency probe times out / errors
+    probeShouldFail = true;
+    const stopBlocked = await svc.stop();
+    assert.equal(stopBlocked.ok, false);
+    assert.match(stopBlocked.message, /无法确认 Magpie 并发状态/);
+    assert.equal(livePids.size, 1);
+
+    // 2. Rollback after failed update re-syncs DSH
+    probeShouldFail = false;
+    upstreamVersion = '0.1.4709';
+    const updFailed = await svc.update();
+    assert.equal(updFailed.ok, false);
+    assert.match(updFailed.message, /已恢复原版本/);
+    assert.ok(syncedAddrs.length > syncCountBefore, 'rollback restart must resync DSH');
+
+    // 3. Uninstall with removeData preserves unrecognized user files in configDir
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'custom-user.txt'), 'keep');
+    const uninst = await svc.uninstall({ removeData: true });
+    assert.equal(uninst.ok, true);
+    assert.equal(fs.readFileSync(path.join(configDir, 'custom-user.txt'), 'utf8'), 'keep');
+  });
+});

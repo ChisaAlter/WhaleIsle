@@ -38,7 +38,7 @@ import { createWhaleIsleMcp } from './mcp-server.js';
 import { DELEGATION_PROVIDER, registerDelegation } from './delegation.js';
 import { resolveDelegationCwd } from './delegate-cwd.js';
 import { createTaskStore, TASK_ADMISSION } from './tasks.js';
-import { createTaskCheckout } from './isolation.js';
+import { createTaskCheckout, removeTaskCheckout } from './isolation.js';
 import { TEAM_GUIDANCE, teamEnabled } from './team.js';
 import { appendPrivateLog, ensurePrivateDir, listStoreIssues } from './store-file.js';
 import { acpErrorMessage, preparationError } from './errors.js';
@@ -366,19 +366,23 @@ export function createAcpAgentsManager(ctx, options = {}) {
   }
 
   async function prepareDelegationConnection(args, parent, signal, agent, model, identity, connKey, setStage) {
-    if (args.isolation === 'worktree') {
-      setStage('worktree');
-      if (identity.interactionMode === 'plan' || identity.runtimeMode === 'read-only' || currentSandbox(parent) === 'read-only') throw new Error('Worktree creation requires a writable host policy.');
-      if (!(await askOperation(parent, signal, `Create an isolated checkout from committed HEAD for ${agent.name}?`))) throw new Error('Worktree creation was not approved.');
-      Object.assign(identity, await createTaskCheckout(identity.cwd, identity.taskId, signal));
-    }
-    setStage('connection/authentication');
-    await assertCredentialsStable(agent);
-    const conn = createConnection(agent, identity.cwd, identity.childId, parent, identity);
-    sessionConnections.set(connKey, conn);
-    const onAbortPreparation = () => { void conn.close().catch(() => { /* The aborted preparation owns its failure; release the pending connection. */ }); };
-    signal.addEventListener('abort', onAbortPreparation, { once: true });
+    let createdWorktree = null;
+    let conn = null;
+    let onAbortPreparation = null;
     try {
+      if (args.isolation === 'worktree') {
+        setStage('worktree');
+        if (identity.interactionMode === 'plan' || identity.runtimeMode === 'read-only' || currentSandbox(parent) === 'read-only') throw new Error('Worktree creation requires a writable host policy.');
+        if (!(await askOperation(parent, signal, `Create an isolated checkout from committed HEAD for ${agent.name}?`))) throw new Error('Worktree creation was not approved.');
+        createdWorktree = await createTaskCheckout(identity.cwd, identity.taskId, signal);
+        Object.assign(identity, createdWorktree);
+      }
+      setStage('connection/authentication');
+      await assertCredentialsStable(agent);
+      conn = createConnection(agent, identity.cwd, identity.childId, parent, identity);
+      sessionConnections.set(connKey, conn);
+      onAbortPreparation = () => { void conn.close().catch(() => { /* The aborted preparation owns its failure; release the pending connection. */ }); };
+      signal.addEventListener('abort', onAbortPreparation, { once: true });
       signal.throwIfAborted();
       await conn.ensureReady(signal);
       setStage('model');
@@ -390,10 +394,14 @@ export function createAcpAgentsManager(ctx, options = {}) {
       if (!getAgentById(agent.id)?.enabled) throw new Error('Agent was disabled while preparing the task.');
       return conn;
     } catch (error) {
-      error._failedConn = conn;
+      if (conn) error._failedConn = conn;
+      if (createdWorktree && await removeTaskCheckout(createdWorktree.repositoryRoot, createdWorktree.cwd)) {
+        delete identity.repositoryRoot;
+        delete identity.baseCommit;
+      }
       throw error;
     } finally {
-      signal.removeEventListener('abort', onAbortPreparation);
+      if (onAbortPreparation) signal.removeEventListener('abort', onAbortPreparation);
     }
   }
 
@@ -641,18 +649,26 @@ export function createAcpAgentsManager(ctx, options = {}) {
     return conn;
   }
 
+  async function closeTrackedConnection(key, conn) {
+    if (sessionConnections.get(key) === conn) sessionConnections.delete(key);
+    releaseConnMcpToken(conn);
+    await conn.close();
+  }
+
+  function releaseAgentConnections(agent) {
+    if (!agent?.id) return Promise.resolve();
+    const closing = [...sessionConnections]
+      .filter(([key]) => decodeConnKey(key)[0] === agent.id)
+      .map(([key, conn]) => closeTrackedConnection(key, conn).catch(() => { /* Continue closing after an already disconnected connection. */ }));
+    return Promise.all(closing);
+  }
+
   function ownConnection(agent) {
-    if (!agent?.session.header.parentSession) return;
+    if (!agent || typeof agent.ctx?.effect !== 'function') return;
     for (const [key, conn] of sessionConnections) {
       if (decodeConnKey(key)[0] !== agent.id || conn.ownerBound) continue;
       conn.ownerBound = true;
-      agent.ctx.effect(function* () {
-        yield async () => {
-          if (sessionConnections.get(key) === conn) sessionConnections.delete(key);
-          releaseConnMcpToken(conn);
-          await conn.close();
-        };
-      });
+      agent.ctx.effect(function* () { yield () => closeTrackedConnection(key, conn); });
     }
   }
 
@@ -1298,6 +1314,18 @@ export function createAcpAgentsManager(ctx, options = {}) {
     agentList = saveAgentsConfig(nextAgents, storeFile);
   }
 
+  function updateSessionOptionSelection(descriptors, selections, rawOption, key, modelId) {
+    if (!rawOption || typeof rawOption !== 'object' || Array.isArray(rawOption)) throw new Error('Option must be a plain object with id and value.');
+    const option = descriptors.find((item) => item.id === rawOption.id);
+    if (!option || /mode|permission|approval|sandbox/i.test(`${option.id} ${option.category || ''}`)) throw new Error('This setting is not an editable model option.');
+    const valid = option.type === 'boolean' ? typeof rawOption.value === 'boolean' : option.type === 'select' && option.options.some((choice) => choice.id === rawOption.value);
+    if (!valid) throw new Error('The selected value was not advertised by this agent.');
+    const updated = [...selections.filter((item) => item.id !== option.id), { id: option.id, value: rawOption.value }];
+    sessionStore[key] = { ...sessionStore[key], modelOptions: { ...sessionStore[key]?.modelOptions, [modelId]: updated } };
+    saveSessionStore(sessionStore, storeFile);
+    return updated;
+  }
+
   async function handleRpc(endpoint, input = {}) {
     switch (endpoint) {
       case 'delegation-status': {
@@ -1340,20 +1368,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
         const model = agent && getAllModelsForAgent(agent).find((item) => item.id === input?.model);
         if (!sessionId || !agent || !model) throw new Error('A conversation, configured agent and known model are required.');
         const key = encodeConnKey(sessionId, agent.id);
-        const descriptors = model.options || [];
         const selections = sessionStore[key]?.modelOptions?.[model.id] || [];
-        if (input.option !== undefined) {
-          const option = descriptors.find((item) => item.id === input.option.id);
-          if (!option || /mode|permission|approval|sandbox/i.test(`${option.id} ${option.category || ''}`)) throw new Error('This setting is not an editable model option.');
-          const value = input.option.value;
-          const valid = option.type === 'boolean' ? typeof value === 'boolean' : option.type === 'select' && option.options.some((choice) => choice.id === value);
-          if (!valid) throw new Error('The selected value was not advertised by this agent.');
-          const updated = [...selections.filter((item) => item.id !== option.id), { id: option.id, value }];
-          sessionStore[key] = { ...sessionStore[key], modelOptions: { ...sessionStore[key]?.modelOptions, [model.id]: updated } };
-          saveSessionStore(sessionStore, storeFile);
-          return { selections: updated };
-        }
-        return { selections };
+        return { selections: input.option !== undefined ? updateSessionOptionSelection(model.options || [], selections, input.option, key, model.id) : selections };
       }
       case 'agent/auth-action': {
         const agent = getAgentById(input?.id);
@@ -1746,7 +1762,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
       reason: perm.toolCall?.title || entry.title || `Allow ${connection.agentConfig?.name || 'ACP Agent'} to run ${entry.name}?`,
       signal: turn.signal,
     });
-    return decision === 'allowed-once' ? true : decision === 'cancelled' ? 'cancelled' : false;
+    const approvalMap = { 'allowed-always': 'allowed-always', 'allowed-once': true, cancelled: 'cancelled' };
+    return Object.hasOwn(approvalMap, decision) ? approvalMap[decision] : false;
   }
 
   async function executeTrackedToolCall(exec) {
@@ -1829,6 +1846,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
     dispose,
     closeAllConnections,
     ownConnection,
+    releaseAgentConnections,
     listDelegationAgents,
     delegate,
     tasks,
@@ -1839,6 +1857,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
 export function apply(ctx, config = {}) {
   const manager = createAcpAgentsManager(ctx, config);
   ctx.on('agent/created', ({ agent }) => manager.ownConnection(agent), { global: true });
+  ctx.on('agent/disposed', ({ agent }) => manager.releaseAgentConnections(agent), { global: true });
   ctx.inject(['subagents', 'tools'], (scope) => { manager.tasks.install(scope); registerDelegation(scope, manager); });
   // Surface vendored-runtime problems after boot settles rather than mid-boot
   // or first turn — parsing the ~3.2MB vendor bundle on setTimeout(0) lands

@@ -80,12 +80,19 @@ function setBinaryReadOnly(versionDir, binaryPath, platform = process.platform) 
  * @param {string} dir
  */
 function setDirWritable(dir) {
-  if (!fs.existsSync(dir)) return;
+  let st;
+  try {
+    st = fs.lstatSync(dir);
+  } catch {
+    return;
+  }
+  if (st.isSymbolicLink()) return;
   try {
     fs.chmodSync(dir, 0o755);
   } catch {
     // Ignore permission errors on exotic filesystems; removal will report real failure.
   }
+  if (!st.isDirectory()) return;
   let entries = [];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -93,6 +100,7 @@ function setDirWritable(dir) {
     return;
   }
   for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       setDirWritable(full);

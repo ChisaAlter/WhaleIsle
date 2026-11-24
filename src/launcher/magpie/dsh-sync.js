@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { atomicWriteFileSync } = require('../../shared/fs-safe');
+const { toLoopbackHostPort } = require('./detect');
 
 const WHALEBRIDGE_REF = 'WHALEBRIDGE_GATEWAY_KEY';
 const MAGPIE_REF = 'MAGPIE_GATEWAY_KEY';
@@ -307,19 +308,27 @@ function formatChannelLines(indent, channelName, api, baseUrl, models) {
 /**
  * @param {string} addr
  * @param {((url: string, init?: RequestInit) => Promise<any>) | undefined} fetchJson
+ * @param {((url: string, init?: RequestInit) => Promise<Response>) | undefined} [fetchImpl]
  * @returns {Promise<any[]>}
  */
-async function fetchGatewayModels(addr, fetchJson) {
-  try {
-    const headers = { Authorization: 'Bearer magpie' };
-    const data = fetchJson
-      ? await fetchJson(`http://${addr}/v1/models`, { headers })
-      : await (await fetch(`http://${addr}/v1/models`, { headers, signal: AbortSignal.timeout(4000) })).json();
-    return Array.isArray(data?.data) ? data.data : [];
-  } catch {
-    // Gateway may still be warming up or empty; keep empty model list safely.
-    return [];
+async function fetchGatewayModels(addr, fetchJson, fetchImpl) {
+  const safeAddr = toLoopbackHostPort(addr);
+  const headers = { Authorization: 'Bearer magpie' };
+  let data;
+  if (fetchJson) {
+    data = await fetchJson(`http://${safeAddr}/v1/models`, { headers });
+  } else {
+    const doFetch = fetchImpl || fetch;
+    const response = await doFetch(`http://${safeAddr}/v1/models`, { headers, signal: AbortSignal.timeout(4000) });
+    if (!response.ok) {
+      throw new Error(`Magpie /v1/models 返回 HTTP ${response.status}`);
+    }
+    data = await response.json();
   }
+  if (!data || !Array.isArray(data.data)) {
+    throw new Error('Magpie /v1/models 返回格式无效');
+  }
+  return data.data;
 }
 
 /**
@@ -356,16 +365,16 @@ function insertProviderBlocks(lines, blocks) {
  * Upsert Magpie provider channels into `<dshHome>/profiles/web/cordis.patch.yml`
  * when reusing an external Magpie instance that lacks `DSH_HOME` in its env.
  * Preserves any non-Magpie providers and skips channels with foreign `apiKeyEnv`.
- * @param {{ dshHome: string, gatewayAddr: string, fetchJson?: (url: string, init?: RequestInit) => Promise<any> }} options
+ * @param {{ dshHome: string, gatewayAddr: string, fetchJson?: (url: string, init?: RequestInit) => Promise<any>, fetchImpl?: (url: string, init?: RequestInit) => Promise<Response> }} options
  */
-async function syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson }) {
+async function syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson, fetchImpl }) {
   if (typeof dshHome !== 'string' || !dshHome.trim()) return { synced: false };
   ensureDshWebProfileExists(dshHome);
   if (!ensureMagpieCredentialRef(dshHome)) {
     return { synced: false, reason: 'foreign-gateway-ref' };
   }
-  const addr = String(gatewayAddr || '').replace(/^https?:\/\//, '');
-  const models = await fetchGatewayModels(addr, fetchJson);
+  const addr = toLoopbackHostPort(gatewayAddr);
+  const models = await fetchGatewayModels(addr, fetchJson, fetchImpl);
   const completions = [];
   const responses = [];
   const anthropic = [];

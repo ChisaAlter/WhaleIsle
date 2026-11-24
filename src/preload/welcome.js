@@ -20,24 +20,30 @@ const IPC = {
   takeNotice: 'dsh-welcome:take-notice',
 };
 
-const locale = ipcRenderer.sendSync(IPC.locale);
-if (locale === null || typeof locale !== 'object' || Array.isArray(locale)
-  || typeof locale.id !== 'string'
-  || locale.messages === null || typeof locale.messages !== 'object' || Array.isArray(locale.messages)) {
-  throw new Error('dshd welcome: missing window locale');
+if (process.isMainFrame === true
+  && typeof location === 'object'
+  && location !== null
+  && location.protocol === 'file:'
+  && /^file:.*\/welcome\.html(?:[?#].*)?$/iu.test(location.href)) {
+  const locale = ipcRenderer.sendSync(IPC.locale);
+  if (locale === null || typeof locale !== 'object' || Array.isArray(locale)
+    || typeof locale.id !== 'string'
+    || locale.messages === null || typeof locale.messages !== 'object' || Array.isArray(locale.messages)) {
+    throw new Error('dshd welcome: missing window locale');
+  }
+  const api = {
+    ...locale,
+    takeNotice: () => ipcRenderer.invoke(IPC.takeNotice),
+    startSignIn: () => ipcRenderer.invoke(IPC.start),
+    cancelSignIn: (/** @type {unknown} */ id) => ipcRenderer.invoke(IPC.cancel, id),
+    copySignInLink: (/** @type {unknown} */ id) => ipcRenderer.invoke(IPC.copyLink, id),
+    onAccountState: (/** @type {(state: unknown) => void} */ listener) => {
+      const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ state) => { listener(state); };
+      ipcRenderer.on(IPC.state, receive);
+      return () => { ipcRenderer.removeListener(IPC.state, receive); };
+    },
+    saveApiKey: (/** @type {unknown} */ value) => ipcRenderer.invoke(IPC.saveApiKey, value),
+    skip: () => ipcRenderer.invoke(IPC.skip),
+  };
+  contextBridge.exposeInMainWorld('dshWelcome', api);
 }
-const api = {
-  ...locale,
-  takeNotice: () => ipcRenderer.invoke(IPC.takeNotice),
-  startSignIn: () => ipcRenderer.invoke(IPC.start),
-  cancelSignIn: (/** @type {unknown} */ id) => ipcRenderer.invoke(IPC.cancel, id),
-  copySignInLink: (/** @type {unknown} */ id) => ipcRenderer.invoke(IPC.copyLink, id),
-  onAccountState: (/** @type {(state: unknown) => void} */ listener) => {
-    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ state) => { listener(state); };
-    ipcRenderer.on(IPC.state, receive);
-    return () => { ipcRenderer.removeListener(IPC.state, receive); };
-  },
-  saveApiKey: (/** @type {unknown} */ value) => ipcRenderer.invoke(IPC.saveApiKey, value),
-  skip: () => ipcRenderer.invoke(IPC.skip),
-};
-contextBridge.exposeInMainWorld('dshWelcome', api);

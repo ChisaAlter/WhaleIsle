@@ -646,6 +646,8 @@ export class QqHarnessBridge {
     this.#status.messagesReceived += 1;
     this.#status.lastMessageAt = new Date().toISOString();
     const result = await runner(text, this.#harness, this.#state, key, {
+      channel: 'qq',
+      accountId: this.#accessGate?.botId ?? null,
       signal: this.#signal,
       hasImages: hasQqImageAttachments(message),
       hasFiles: hasQqFileAttachments(message),
@@ -788,7 +790,10 @@ export class QqHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+        if (await sharedWhaleSessionId(this.#harness, {
+          channel: 'qq',
+          accountId: this.#accessGate?.botId ?? null,
+        }) || await isWhaleEnforcedForHarness(this.#harness)) {
           await this.#bot.sendText(target, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(key);
@@ -838,6 +843,8 @@ export class QqHarnessBridge {
           harness: this.#harness,
           state: this.#state,
           key,
+          channel: 'qq',
+          accountId: this.#accessGate?.botId ?? null,
           ...(hasImages ? { content } : { text }),
           speaker: message.speaker,
           createOptions: { signal: this.#signal },
