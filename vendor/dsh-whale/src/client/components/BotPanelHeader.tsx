@@ -266,6 +266,8 @@ export function BotPanelHeader({
         ref={avatarBtnRef}
         type="button"
         className="dsh-bots-panel-avatar-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(pickerRect)}
         title={zh ? '点击更换头像' : 'Change avatar'}
         onClick={() => {
           const rect = avatarBtnRef.current?.getBoundingClientRect() ?? null;
@@ -386,6 +388,7 @@ export function BotPanelHeader({
       <AvatarPickerPopover
         open={Boolean(pickerRect)}
         anchorRect={pickerRect}
+        triggerRef={avatarBtnRef}
         onClose={() => setPickerRect(null)}
         value={pickerValue}
         onChange={handleAvatarChange}

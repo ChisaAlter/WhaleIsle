@@ -2217,6 +2217,42 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByTestId('directory-flow')).toBeTruthy()
   })
 
+  it('closes an active add-workspace request when the header add button is clicked again', () => {
+    const shortcutStore = createSnapshotStore({
+      searchRequest: 0, addRequested: false, directoryBusy: false, renameTarget: null,
+    })
+    const requestAddWorkspace = vi.fn(() => {
+      shortcutStore.set({ ...shortcutStore.getSnapshot(), addRequested: true })
+    })
+    const closeAddWorkspace = vi.fn(() => {
+      shortcutStore.set({ ...shortcutStore.getSnapshot(), addRequested: false })
+    })
+    mount({
+      useWorkspaceShortcuts: bindSnapshotSelector(shortcutStore),
+      requestAddWorkspace,
+      closeAddWorkspace,
+    })
+    const add = screen.getByRole('button', { name: '添加工作区' })
+    // Open the directory flow so WorkspacePickFlow stays busy and does not
+    // immediately consume a subsequent `addRequested: true` via its auto-open effect.
+    fireEvent.click(add)
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    act(() => { shortcutStore.set({ ...shortcutStore.getSnapshot(), addRequested: true }) })
+    requestAddWorkspace.mockClear()
+    closeAddWorkspace.mockClear()
+
+    fireEvent.pointerDown(add)
+    fireEvent.click(add)
+    expect(closeAddWorkspace).toHaveBeenCalledOnce()
+    expect(requestAddWorkspace).not.toHaveBeenCalled()
+    expect(shortcutStore.getSnapshot().addRequested).toBe(false)
+
+    fireEvent.pointerDown(add)
+    fireEvent.click(add)
+    expect(requestAddWorkspace).toHaveBeenCalledOnce()
+    expect(shortcutStore.getSnapshot().addRequested).toBe(true)
+  })
+
   it('hides the add button when no directory-flow occupant is composed', () => {
     mount({
       useWorkspaces: hook(workspaceState([workspace('alpha', [])])),

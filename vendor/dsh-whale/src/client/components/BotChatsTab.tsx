@@ -30,6 +30,7 @@ import {
   type BotWorkerRow,
 } from '../store/rpc';
 import { BotChevron, BotDisclosure } from './BotDisclosure';
+import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 import {
   IconExternalLink,
   IconHome,
@@ -71,6 +72,7 @@ interface ChatContextMenuState {
   isRunning: boolean;
   x: number;
   y: number;
+  triggerEl: HTMLElement | null;
 }
 
 interface WorkerTooltipState {
@@ -269,31 +271,14 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
     }
   }, [bot.id, changeSeq]);
 
-  // Dismiss context menu on outside pointerdown / Escape / scroll
-  useEffect(() => {
-    if (!menuState) {
-      return undefined;
-    }
-    const handlePointer = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuState(null);
-      }
-    };
-    const handleKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setMenuState(null);
-      }
-    };
-    const handleScroll = () => setMenuState(null);
-    document.addEventListener('mousedown', handlePointer);
-    document.addEventListener('keydown', handleKey);
-    window.addEventListener('scroll', handleScroll, true);
-    return () => {
-      document.removeEventListener('mousedown', handlePointer);
-      document.removeEventListener('keydown', handleKey);
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [menuState]);
+  // Dismiss context menu on outside pointerdown / Escape / scroll (excluding its trigger button)
+  useAnchoredPopoverDismiss({
+    open: Boolean(menuState),
+    popoverRef: menuRef,
+    triggerEl: menuState?.triggerEl ?? null,
+    onClose: () => setMenuState(null),
+    closeOnScroll: true,
+  });
 
   useEffect(() => {
     return () => {
@@ -549,9 +534,10 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
     isRunning: boolean,
     x: number,
     y: number,
+    triggerEl: HTMLElement | null = null,
   ) => {
     setTooltip(null);
-    setMenuState({ chat, isHome, isRunning, x, y });
+    setMenuState({ chat, isHome, isRunning, x, y, triggerEl });
   };
 
   const showWorkerTooltip = (worker: ExtendedWorkerRow, el: HTMLElement) => {
@@ -713,8 +699,12 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
                   aria-expanded={menuOpenForRow}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (menuState?.chat.chatId === chat.chatId) {
+                      setMenuState(null);
+                      return;
+                    }
                     const rect = e.currentTarget.getBoundingClientRect();
-                    openChatMenuAt(chat, isHome, isRunning, rect.right, rect.bottom + 4);
+                    openChatMenuAt(chat, isHome, isRunning, rect.right, rect.bottom + 4, e.currentTarget);
                   }}
                 >
                   <IconMoreHorizontal size={13} />
@@ -1078,10 +1068,12 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
           ref={menuRef}
           className="dsh-bots-popover"
           role="menu"
+          data-dsh-bots-popover="chats-row-menu"
           style={{
             left: Math.max(8, Math.min(menuState.x - 168, window.innerWidth - 208)),
             top: Math.max(8, Math.min(menuState.y, window.innerHeight - 116)),
           }}
+          onClick={(e) => e.stopPropagation()}
         >
           <button
             type="button"

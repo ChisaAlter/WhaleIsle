@@ -33,6 +33,7 @@ import { BotAvatar } from './BotAvatar';
 import { BotChevron, BotDisclosure, useBotsPresence } from './BotDisclosure';
 import { BotGroupSidebarCard } from './BotGroupSidebarCard';
 import { BotSidebarCard, type BotCardSearchMatch } from './BotSidebarCard';
+import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 import {
   IconBot,
   IconCheck,
@@ -56,19 +57,9 @@ type SidebarEntry =
   | { kind: 'bot'; id: string; bot: BotRecord }
   | { kind: 'group'; id: string; group: BotGroupRecord };
 
-function useAnchoredPopoverClose(open: boolean, ref: RefObject<HTMLDivElement | null>, onClose: () => void) {
-  useEffect(() => {
-    if (!open) return undefined;
-    const handleDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    const handleKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('mousedown', handleDown);
-    document.addEventListener('keydown', handleKey);
-    return () => { document.removeEventListener('mousedown', handleDown); document.removeEventListener('keydown', handleKey); };
-  }, [onClose, open, ref]);
-}
-
 function OptionsPopover({
   anchorRect,
+  triggerRef,
   open,
   motionState,
   view,
@@ -76,6 +67,7 @@ function OptionsPopover({
   onClose,
 }: {
   anchorRect: DOMRect;
+  triggerRef: RefObject<HTMLButtonElement | null>;
   open: boolean;
   motionState: 'open' | 'closed';
   view: BotSidebarView;
@@ -84,7 +76,7 @@ function OptionsPopover({
 }) {
   const { locale, tr } = useBotsLocale();
   const ref = useRef<HTMLDivElement | null>(null);
-  useAnchoredPopoverClose(open, ref, onClose);
+  useAnchoredPopoverDismiss({ open, popoverRef: ref, triggerRef, onClose });
   if (typeof document === 'undefined') return null;
 
   const sortLabels: Record<BotSidebarSort, { title: string; desc?: string }> = {
@@ -100,6 +92,8 @@ function OptionsPopover({
     <div
       ref={ref}
       className="dsh-bots-popover"
+      role="menu"
+      data-dsh-bots-popover="options"
       data-motion="presence"
       data-state={motionState}
       aria-hidden={open ? undefined : true}
@@ -159,12 +153,14 @@ function OptionsPopover({
 
 function CreateMenuPopover({
   anchorRect,
+  triggerRef,
   open,
   motionState,
   botCount,
   onClose,
 }: {
   anchorRect: DOMRect;
+  triggerRef: RefObject<HTMLButtonElement | null>;
   open: boolean;
   motionState: 'open' | 'closed';
   botCount: number;
@@ -172,7 +168,7 @@ function CreateMenuPopover({
 }) {
   const { tr } = useBotsLocale();
   const ref = useRef<HTMLDivElement | null>(null);
-  useAnchoredPopoverClose(open, ref, onClose);
+  useAnchoredPopoverDismiss({ open, popoverRef: ref, triggerRef, onClose });
   if (typeof document === 'undefined') return null;
 
   const left = Math.min(anchorRect.left, window.innerWidth - 224);
@@ -183,6 +179,8 @@ function CreateMenuPopover({
     <div
       ref={ref}
       className="dsh-bots-popover"
+      role="menu"
+      data-dsh-bots-popover="create"
       data-motion="presence"
       data-state={motionState}
       aria-hidden={open ? undefined : true}
@@ -380,6 +378,8 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const optionsBtnRef = useRef<HTMLButtonElement | null>(null);
+  const createBtnRef = useRef<HTMLButtonElement | null>(null);
   const lastOptionsAnchorRef = useRef<DOMRect | null>(null);
   const lastCreateAnchorRef = useRef<DOMRect | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -607,9 +607,12 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
             <IconSearch size={15} />
           </button>
           <button
+            ref={optionsBtnRef}
             type="button"
             className="dsh-bots-icon-btn"
             data-active={optionsAnchor ? 'true' : 'false'}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(optionsAnchor)}
             title={activeFilterCount > 0 ? tr('bots.options.activeFilters', 'Bot options ({{count}} filters active)', { count: activeFilterCount }) : tr('bots.options.title', 'Bot options')}
             onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setCreateAnchor(null); setOptionsAnchor((prev) => (prev ? null : rect)); }}
           >
@@ -617,9 +620,12 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
             {activeFilterCount > 0 && <span className="dsh-bots-filter-badge" />}
           </button>
           <button
+            ref={createBtnRef}
             type="button"
             className="dsh-bots-icon-btn"
             data-active={createAnchor ? 'true' : 'false'}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(createAnchor)}
             title={tr('bots.section.new', 'New bot or group')}
             onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setOptionsAnchor(null); setCreateAnchor((prev) => (prev ? null : rect)); }}
           >
@@ -725,6 +731,7 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
       {optionsPresence.present && activeOptionsAnchor && (
         <OptionsPopover
           anchorRect={activeOptionsAnchor}
+          triggerRef={optionsBtnRef}
           open={Boolean(optionsAnchor)}
           motionState={optionsPresence.state}
           view={view}
@@ -735,6 +742,7 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
       {createPresence.present && activeCreateAnchor && (
         <CreateMenuPopover
           anchorRect={activeCreateAnchor}
+          triggerRef={createBtnRef}
           open={Boolean(createAnchor)}
           motionState={createPresence.state}
           botCount={bots.length}

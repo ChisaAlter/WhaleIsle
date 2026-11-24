@@ -1723,6 +1723,40 @@ describe('SubagentHeaderLineage', () => {
     expect(within(current).getByText('indexer').className).toContain('currentLabel')
     expect(screen.queryByRole('treeitem', { name: /reviewer/ })).toBeNull()
   })
+
+  it('toggles a pinned or keyboard-opened switcher closed on a second click while keeping hover-to-pin', () => {
+    const input = {
+      ...props(catalog()),
+      lineageSessionId: CHILD,
+      displayTitle: 'worker',
+    }
+    render(<HeaderCatalog {...input} />)
+    const switcher = screen.getByRole('button', { name: '切换子智能体：worker' })
+    hoverCatalog(switcher)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    // Clicking while hovered pins the menu instead of closing it.
+    fireEvent.pointerDown(switcher)
+    fireEvent.click(switcher)
+    fireEvent.pointerLeave(switcher)
+    act(() => { vi.advanceTimersByTime(150) })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    // Clicking again while pinned toggles the menu closed.
+    fireEvent.pointerDown(switcher)
+    fireEvent.click(switcher)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(switcher.getAttribute('aria-expanded')).toBe('false')
+
+    // Clicking while opened by keyboard also toggles the menu closed.
+    switcher.focus()
+    fireEvent.keyDown(switcher, { key: 'ArrowDown' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.pointerDown(switcher)
+    fireEvent.click(switcher)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(switcher.getAttribute('aria-expanded')).toBe('false')
+  })
 })
 
 describe('SubagentReadOnlyComposer', () => {

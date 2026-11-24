@@ -23,7 +23,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// vendor/dsh-whale/src/client/index.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/index.tsx
 var index_exports = {};
 __export(index_exports, {
   apply: () => apply,
@@ -32,7 +32,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// vendor/dsh-whale/src/client/styles/bots.css
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots.css
 if (typeof document !== "undefined") {
   __id = "src/client/styles/bots.css";
   __head = document.head;
@@ -49,7 +49,7 @@ var __head;
 var __existing;
 var __style;
 
-// vendor/dsh-whale/src/client/styles/bots-panels.css
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots-panels.css
 if (typeof document !== "undefined") {
   __id2 = "src/client/styles/bots-panels.css";
   __head2 = document.head;
@@ -66,7 +66,7 @@ var __head2;
 var __existing2;
 var __style2;
 
-// vendor/dsh-whale/src/client/styles/bots-enhancements.css
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots-enhancements.css
 if (typeof document !== "undefined") {
   __id3 = "src/client/styles/bots-enhancements.css";
   __head3 = document.head;
@@ -83,7 +83,7 @@ var __head3;
 var __existing3;
 var __style3;
 
-// vendor/dsh-whale/src/client/styles/bots-group-enhancements.css
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots-group-enhancements.css
 if (typeof document !== "undefined") {
   __id4 = "src/client/styles/bots-group-enhancements.css";
   __head4 = document.head;
@@ -100,10 +100,10 @@ var __head4;
 var __existing4;
 var __style4;
 
-// vendor/dsh-whale/src/client/index.tsx
-var import_react37 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/index.tsx
+var import_react38 = require("react");
 
-// vendor/dsh-whale/src/shared/locales.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/locales.js
 var SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"]);
 var EN_US = Object.freeze({
   // Sidebar section header & empty state
@@ -593,14 +593,14 @@ function createTranslator(locale = "zh-CN") {
   };
 }
 
-// vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
-var import_react12 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
+var import_react13 = require("react");
 var import_react_dom8 = require("react-dom");
 
-// vendor/dsh-whale/src/client/store/bots-store.ts
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/store/bots-store.ts
 var import_react = require("react");
 
-// vendor/dsh-whale/src/shared/bot-groups.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-groups.js
 var BOT_GROUP_LIMITS = Object.freeze({
   minCreateMembers: 2,
   minEditMembers: 1,
@@ -775,7 +775,7 @@ function suggestGroupName(names, t = null) {
   return text.slice(0, BOT_GROUP_LIMITS.nameMaxLength);
 }
 
-// vendor/dsh-whale/src/shared/bot-sidebar-search.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-sidebar-search.js
 var PRINTABLE_ASCII = /^[ -~]*$/;
 var COMBINING_MARK = new RegExp("\\p{M}", "u");
 var COMBINING_MARKS = new RegExp("\\p{M}", "gu");
@@ -980,7 +980,7 @@ function searchBots(entries, query, options = {}) {
   return createBotSidebarSearchIndex({ shown, all, purposeOf })(query);
 }
 
-// vendor/dsh-whale/src/shared/bot-sidebar-logic.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-sidebar-logic.js
 function botStatusNeedsAttention(status) {
   return status === "permission" || status === "failed" || status === "unconfirmed";
 }
@@ -1373,7 +1373,7 @@ function normalizeSidebarBotsHeight(value) {
   return Math.min(SIDEBAR_BOTS_MAX_STORED_HEIGHT, Math.max(SIDEBAR_BOTS_MIN_HEIGHT, Math.round(value)));
 }
 
-// vendor/dsh-whale/src/shared/bot-avatar-color.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-avatar-color.js
 var DEFAULT_BOT_AVATAR_COLOR = "#b3dbf4";
 var BOT_AVATAR_COLORS = Object.freeze([
   DEFAULT_BOT_AVATAR_COLOR,
@@ -1484,7 +1484,7 @@ function tintMascotSvg(svgText, color = DEFAULT_BOT_AVATAR_COLOR, options = {}) 
   return result;
 }
 
-// vendor/dsh-whale/src/shared/bot-rpc-methods.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-rpc-methods.js
 var BOT_CHANGE_KINDS = Object.freeze([
   "bot",
   "chats",
@@ -1674,7 +1674,7 @@ var RPC_METHODS = Object.freeze({
   VOICE_TOGGLE: "bots.voice.toggle"
 });
 
-// vendor/dsh-whale/src/client/store/rpc.ts
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/store/rpc.ts
 var sharedMethods = RPC_METHODS;
 var RPC_METHODS2 = Object.freeze({
   ...RPC_METHODS,
@@ -2053,7 +2053,7 @@ async function togglePetVoice(enabled) {
   }
 }
 
-// vendor/dsh-whale/src/client/store/bots-store.ts
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/store/bots-store.ts
 var STORAGE_KEYS = {
   sectionCollapsed: "dsh-bots.sectionCollapsed",
   collapsedBots: "dsh-bots.collapsedBots",
@@ -2672,14 +2672,14 @@ function formatRelativeTime(ts, now, locale = "zh-CN") {
   return `${Math.floor(days / 30)}mo`;
 }
 
-// vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
 var import_react3 = require("react");
 var import_react_dom = require("react-dom");
 
-// vendor/dsh-whale/src/client/components/BotAvatar.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotAvatar.tsx
 var import_react2 = require("react");
 
-// vendor/dsh-whale/src/shared/bot-avatar.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-avatar.js
 var WHALE_BOT_MASCOT_IDS = Object.freeze([
   "W1",
   "W2",
@@ -2807,7 +2807,7 @@ function botFallback(bot) {
   return parsed?.kind === "emoji" ? parsed.emoji : botInitial(bot?.name ?? "");
 }
 
-// vendor/dsh-whale/src/client/components/Icons.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/Icons.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 function Svg({
   size = 15,
@@ -3109,7 +3109,7 @@ function IconSpinner(props) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Svg, { ...props, className: `dsh-bots-spin ${props.className ?? ""}`.trim(), children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M21 12a9 9 0 1 1-6.219-8.56" }) });
 }
 
-// vendor/dsh-whale/src/client/components/BotAvatar.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotAvatar.tsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
 function defaultRadiusForSize(size) {
   if (size <= 22) {
@@ -3351,7 +3351,7 @@ function BotGroupAvatar({
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
 var import_jsx_runtime3 = require("react/jsx-runtime");
 function BotGroupDialog({ open, groupId, onClose }) {
   const { locale, tr } = useBotsLocale();
@@ -3582,13 +3582,112 @@ function BotGroupDialog({ open, groupId, onClose }) {
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotImportDialog.tsx
-var import_react7 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotImportDialog.tsx
+var import_react8 = require("react");
 var import_react_dom4 = require("react-dom");
 
-// vendor/dsh-whale/src/client/components/AvatarPicker.tsx
-var import_react4 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/AvatarPicker.tsx
+var import_react5 = require("react");
 var import_react_dom2 = require("react-dom");
+
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/useAnchoredPopoverDismiss.ts
+var import_react4 = require("react");
+function isDomNode(value) {
+  return value !== null && typeof value === "object" && "nodeType" in value;
+}
+function useAnchoredPopoverDismiss({
+  open,
+  popoverRef,
+  triggerRef,
+  triggerEl,
+  onClose,
+  closeOnScroll = false
+}) {
+  const onCloseRef = (0, import_react4.useRef)(onClose);
+  onCloseRef.current = onClose;
+  (0, import_react4.useEffect)(() => {
+    if (!open || typeof document === "undefined") {
+      return void 0;
+    }
+    const isInside = (target) => {
+      if (!isDomNode(target)) {
+        return false;
+      }
+      if (popoverRef.current?.contains(target)) {
+        return true;
+      }
+      const trigger = triggerEl ?? triggerRef?.current ?? null;
+      if (trigger?.contains(target)) {
+        return true;
+      }
+      return false;
+    };
+    let suppressMouseDown = false;
+    let suppressTimer = null;
+    const clearSuppressTimer = () => {
+      if (suppressTimer !== null) {
+        clearTimeout(suppressTimer);
+        suppressTimer = null;
+      }
+    };
+    const handlePointerDown = (event) => {
+      if (isInside(event.target)) {
+        return;
+      }
+      suppressMouseDown = true;
+      clearSuppressTimer();
+      suppressTimer = setTimeout(() => {
+        suppressMouseDown = false;
+        suppressTimer = null;
+      }, 0);
+      onCloseRef.current();
+    };
+    const handleMouseDown = (event) => {
+      if (suppressMouseDown) {
+        suppressMouseDown = false;
+        clearSuppressTimer();
+        return;
+      }
+      if (isInside(event.target)) {
+        return;
+      }
+      onCloseRef.current();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const active = document.activeElement;
+      const focusWasInside = Boolean(active && popoverRef.current?.contains(active));
+      onCloseRef.current();
+      if (focusWasInside) {
+        (triggerEl ?? triggerRef?.current)?.focus();
+      }
+    };
+    const handleScroll = () => {
+      onCloseRef.current();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    if (closeOnScroll && typeof window !== "undefined") {
+      window.addEventListener("scroll", handleScroll, true);
+    }
+    return () => {
+      clearSuppressTimer();
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      if (closeOnScroll && typeof window !== "undefined") {
+        window.removeEventListener("scroll", handleScroll, true);
+      }
+    };
+  }, [open, popoverRef, triggerRef, triggerEl, closeOnScroll]);
+}
+
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/AvatarPicker.tsx
 var import_jsx_runtime4 = require("react/jsx-runtime");
 function rgbToHex(r, g, b) {
   const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
@@ -3741,26 +3840,26 @@ function AvatarPicker({
 }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const fileInputRef = (0, import_react4.useRef)(null);
-  const undoTimerRef = (0, import_react4.useRef)(null);
+  const fileInputRef = (0, import_react5.useRef)(null);
+  const undoTimerRef = (0, import_react5.useRef)(null);
   const parsed = parseBotAvatar(value.avatar);
   const parsedKind = parsed?.kind ?? null;
   const parsedMascotId = parsed?.kind === "mascot" ? parsed.id : null;
-  const [group, setGroup] = (0, import_react4.useState)(() => parsedMascotId && !isWhaleMascotId(parsedMascotId) ? "all" : "whale");
-  const [error, setError] = (0, import_react4.useState)(null);
-  const [draggingFile, setDraggingFile] = (0, import_react4.useState)(false);
-  const [undoSnapshot, setUndoSnapshot] = (0, import_react4.useState)(null);
+  const [group, setGroup] = (0, import_react5.useState)(() => parsedMascotId && !isWhaleMascotId(parsedMascotId) ? "all" : "whale");
+  const [error, setError] = (0, import_react5.useState)(null);
+  const [draggingFile, setDraggingFile] = (0, import_react5.useState)(false);
+  const [undoSnapshot, setUndoSnapshot] = (0, import_react5.useState)(null);
   const normalizedColor = normalizeHexColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
-  const [customHexText, setCustomHexText] = (0, import_react4.useState)(normalizedColor);
-  (0, import_react4.useEffect)(() => {
+  const [customHexText, setCustomHexText] = (0, import_react5.useState)(normalizedColor);
+  (0, import_react5.useEffect)(() => {
     setCustomHexText(normalizedColor);
   }, [normalizedColor]);
-  (0, import_react4.useEffect)(() => () => {
+  (0, import_react5.useEffect)(() => () => {
     if (undoTimerRef.current !== null) {
       window.clearTimeout(undoTimerRef.current);
     }
   }, []);
-  const slides = (0, import_react4.useMemo)(() => {
+  const slides = (0, import_react5.useMemo)(() => {
     const ids = group === "whale" ? WHALE_BOT_MASCOT_IDS : PICKABLE_BOT_MASCOT_IDS;
     const list = ids.map((id) => ({
       key: `mascot:${id}`,
@@ -3776,7 +3875,7 @@ function AvatarPicker({
     }
     return list;
   }, [group, value.uploadedImage?.dataUrl]);
-  const activeIndex = (0, import_react4.useMemo)(() => {
+  const activeIndex = (0, import_react5.useMemo)(() => {
     if (value.uploadedImage?.dataUrl && parsedKind === "upload") {
       return 0;
     }
@@ -3798,7 +3897,7 @@ function AvatarPicker({
       });
     }
   };
-  const selectIndex = (0, import_react4.useCallback)((nextIdx) => {
+  const selectIndex = (0, import_react5.useCallback)((nextIdx) => {
     const wrapped = (nextIdx % slides.length + slides.length) % slides.length;
     const target = slides[wrapped];
     if (!target) {
@@ -3818,7 +3917,7 @@ function AvatarPicker({
       });
     }
   }, [normalizedColor, onChange, slides, value.uploadedImage]);
-  const processFile = (0, import_react4.useCallback)(async (file) => {
+  const processFile = (0, import_react5.useCallback)(async (file) => {
     setError(null);
     const snapshot = { ...value };
     try {
@@ -4088,31 +4187,19 @@ var AVATAR_PICKER_POPOVER_WIDTH = 352;
 function AvatarPickerPopover({
   open,
   anchorRect,
+  triggerRef,
+  triggerEl,
   onClose,
   ...pickerProps
 }) {
-  const ref = (0, import_react4.useRef)(null);
-  (0, import_react4.useEffect)(() => {
-    if (!open) {
-      return void 0;
-    }
-    const handlePointerDown = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) {
-        onClose();
-      }
-    };
-    const handleEsc = (event) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEsc);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEsc);
-    };
-  }, [open, onClose]);
+  const ref = (0, import_react5.useRef)(null);
+  useAnchoredPopoverDismiss({
+    open,
+    popoverRef: ref,
+    triggerRef,
+    triggerEl,
+    onClose
+  });
   if (!open || !anchorRect || typeof document === "undefined") {
     return null;
   }
@@ -4125,6 +4212,7 @@ function AvatarPickerPopover({
       {
         ref,
         className: "dsh-bots-popover",
+        "data-dsh-bots-popover": "avatar-picker",
         style: { left, top, padding: 0, width: popoverWidth, boxSizing: "border-box" },
         children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(AvatarPicker, { ...pickerProps })
       }
@@ -4133,8 +4221,8 @@ function AvatarPickerPopover({
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotDisclosure.tsx
-var import_react5 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotDisclosure.tsx
+var import_react6 = require("react");
 var import_jsx_runtime5 = require("react/jsx-runtime");
 function prefersInstantMotion() {
   if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
@@ -4149,11 +4237,11 @@ function prefersInstantMotion() {
   return false;
 }
 function useBotsPresence(open, exitMs = 220) {
-  const [mounted, setMounted] = (0, import_react5.useState)(open);
-  const [entered, setEntered] = (0, import_react5.useState)(open);
-  const mountedRef = (0, import_react5.useRef)(mounted);
+  const [mounted, setMounted] = (0, import_react6.useState)(open);
+  const [entered, setEntered] = (0, import_react6.useState)(open);
+  const mountedRef = (0, import_react6.useRef)(mounted);
   mountedRef.current = mounted;
-  (0, import_react5.useEffect)(() => {
+  (0, import_react6.useEffect)(() => {
     const instant = prefersInstantMotion();
     if (open) {
       if (instant) {
@@ -4201,7 +4289,7 @@ function BotDisclosure({
   children
 }) {
   const { present, state } = useBotsPresence(open, exitMs);
-  (0, import_react5.useEffect)(() => {
+  (0, import_react6.useEffect)(() => {
     onPresenceChange?.(present);
   }, [onPresenceChange, present]);
   if (!present) {
@@ -4229,11 +4317,11 @@ function BotChevron({ open, size = 14, className }) {
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotShareDialog.tsx
-var import_react6 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotShareDialog.tsx
+var import_react7 = require("react");
 var import_react_dom3 = require("react-dom");
 
-// vendor/dsh-whale/src/shared/bot-memory-line-kinds.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-memory-line-kinds.js
 var BOT_MEMORY_LINE_KINDS = Object.freeze([
   "rule",
   "prefers",
@@ -4243,7 +4331,7 @@ var BOT_MEMORY_LINE_KINDS = Object.freeze([
 ]);
 var PROTECTED_MEMORY_KINDS = Object.freeze(["rule", "prefers", "decided"]);
 
-// vendor/dsh-whale/src/shared/bot-memory-lines.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-memory-lines.js
 var MEMORY_LOAD_LIMIT = 200;
 var SECRET_PATTERNS = [
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
@@ -4276,7 +4364,7 @@ function redactSecretLike(value) {
   return redacted;
 }
 
-// vendor/dsh-whale/src/shared/bot-tools-schema.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-tools-schema.js
 var BOT_TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 var BOT_TOOL_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 var BOT_TOOL_ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -4631,7 +4719,7 @@ var BOT_NATIVE_TOOL_PARAM_SCHEMAS = Object.freeze({
   bot_reply: BOT_REPLY_TOOL_SCHEMA
 });
 
-// vendor/dsh-whale/src/shared/bot-types.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-types.js
 var BOT_LIMITS = Object.freeze({
   nameMaxLength: 64,
   folderMaxLength: 40,
@@ -4787,7 +4875,7 @@ function hasBotNameConflict(trimmed, options) {
   );
 }
 
-// vendor/dsh-whale/src/shared/bot-package.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-package.js
 var BOT_PACKAGE_SCHEMA_VERSION = 1;
 var BOT_PACKAGE_AVATAR_PATH = BOT_AVATAR_FILE;
 var BOT_PACKAGE_MAX_MANIFEST_BYTES = 256 * 1024;
@@ -5167,7 +5255,7 @@ function scanBotText(text, options = {}) {
   };
 }
 
-// vendor/dsh-whale/src/client/components/BotShareDialog.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotShareDialog.tsx
 var import_jsx_runtime6 = require("react/jsx-runtime");
 var FALLBACK_RULES = [
   {
@@ -5462,13 +5550,13 @@ function tryParsePackageText(rawText, locale) {
 function ExportShareBody({ bot, onClose }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [loading, setLoading] = (0, import_react6.useState)(false);
-  const [prepared, setPrepared] = (0, import_react6.useState)(null);
-  const [error, setError] = (0, import_react6.useState)(null);
-  const [copied, setCopied] = (0, import_react6.useState)(false);
-  const [expandedFiles, setExpandedFiles] = (0, import_react6.useState)({});
-  const [showRawJson, setShowRawJson] = (0, import_react6.useState)(false);
-  (0, import_react6.useEffect)(() => {
+  const [loading, setLoading] = (0, import_react7.useState)(false);
+  const [prepared, setPrepared] = (0, import_react7.useState)(null);
+  const [error, setError] = (0, import_react7.useState)(null);
+  const [copied, setCopied] = (0, import_react7.useState)(false);
+  const [expandedFiles, setExpandedFiles] = (0, import_react7.useState)({});
+  const [showRawJson, setShowRawJson] = (0, import_react7.useState)(false);
+  (0, import_react7.useEffect)(() => {
     if (!bot) {
       return void 0;
     }
@@ -5490,7 +5578,7 @@ function ExportShareBody({ bot, onClose }) {
       cancelled = true;
     };
   }, [bot]);
-  const serialized = (0, import_react6.useMemo)(() => {
+  const serialized = (0, import_react7.useMemo)(() => {
     if (!prepared) {
       return "";
     }
@@ -5507,7 +5595,7 @@ function ExportShareBody({ bot, onClose }) {
       2
     );
   }, [prepared]);
-  const exportFiles = (0, import_react6.useMemo)(() => {
+  const exportFiles = (0, import_react7.useMemo)(() => {
     if (!prepared) return [];
     const list = [];
     if (typeof prepared.soul === "string" && prepared.soul) {
@@ -5523,7 +5611,7 @@ function ExportShareBody({ bot, onClose }) {
     }
     return list;
   }, [prepared]);
-  const scanReport = (0, import_react6.useMemo)(() => {
+  const scanReport = (0, import_react7.useMemo)(() => {
     if (!prepared) return { blockers: [], warnings: [] };
     const extra = prepared;
     const entries = exportFiles.map((f) => ({ file: f.path, text: f.content }));
@@ -5707,20 +5795,20 @@ function ExportShareBody({ bot, onClose }) {
 function ImportShareBody({ initialJson, onClose }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const fileRef = (0, import_react6.useRef)(null);
-  const [rawJson, setRawJson] = (0, import_react6.useState)(initialJson ?? "");
-  const [customName, setCustomName] = (0, import_react6.useState)("");
-  const [selectedTools, setSelectedTools] = (0, import_react6.useState)([]);
-  const [importing, setImporting] = (0, import_react6.useState)(false);
-  const [submitError, setSubmitError] = (0, import_react6.useState)(null);
-  const [expandedFiles, setExpandedFiles] = (0, import_react6.useState)({});
-  const [reviewedDigest, setReviewedDigest] = (0, import_react6.useState)(null);
-  const [changedAfterReview, setChangedAfterReview] = (0, import_react6.useState)(false);
-  const { review, error: parseError } = (0, import_react6.useMemo)(
+  const fileRef = (0, import_react7.useRef)(null);
+  const [rawJson, setRawJson] = (0, import_react7.useState)(initialJson ?? "");
+  const [customName, setCustomName] = (0, import_react7.useState)("");
+  const [selectedTools, setSelectedTools] = (0, import_react7.useState)([]);
+  const [importing, setImporting] = (0, import_react7.useState)(false);
+  const [submitError, setSubmitError] = (0, import_react7.useState)(null);
+  const [expandedFiles, setExpandedFiles] = (0, import_react7.useState)({});
+  const [reviewedDigest, setReviewedDigest] = (0, import_react7.useState)(null);
+  const [changedAfterReview, setChangedAfterReview] = (0, import_react7.useState)(false);
+  const { review, error: parseError } = (0, import_react7.useMemo)(
     () => tryParsePackageText(rawJson, locale),
     [locale, rawJson]
   );
-  const currentDigest = (0, import_react6.useMemo)(() => {
+  const currentDigest = (0, import_react7.useMemo)(() => {
     if (!review) return null;
     return computeContentDigest([
       JSON.stringify(review.manifest),
@@ -5729,7 +5817,7 @@ function ImportShareBody({ initialJson, onClose }) {
 ${f.content}`)
     ]);
   }, [review]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (reviewedDigest && currentDigest && reviewedDigest !== currentDigest) {
       setReviewedDigest(null);
       setChangedAfterReview(true);
@@ -5738,13 +5826,13 @@ ${f.content}`)
       setChangedAfterReview(false);
     }
   }, [currentDigest, reviewedDigest]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (review) {
       setCustomName(review.manifest.name);
       setSelectedTools(review.manifest.tools.map((t) => t.id));
     }
   }, [review]);
-  const scanReport = (0, import_react6.useMemo)(() => {
+  const scanReport = (0, import_react7.useMemo)(() => {
     if (!review) return { blockers: [], warnings: [] };
     const entries = [
       ...review.files.map((f) => ({ file: f.path, text: f.content }))
@@ -5961,7 +6049,7 @@ ${f.content}`)
 function BotShareDialog({ open, mode, botId, initialJson, onClose }) {
   const { locale } = useBotsLocale();
   const bot = useBotById(botId);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!open) {
       return void 0;
     }
@@ -6002,7 +6090,7 @@ function BotShareDialog({ open, mode, botId, initialJson, onClose }) {
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotImportDialog.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotImportDialog.tsx
 var import_jsx_runtime7 = require("react/jsx-runtime");
 var SOURCE_LABELS = {
   orca: "Orca",
@@ -6017,21 +6105,22 @@ function sourceKindOf(src) {
 function BotImportDialog({ open, onClose }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [sources, setSources] = (0, import_react7.useState)([]);
-  const [loading, setLoading] = (0, import_react7.useState)(false);
-  const [selectedId, setSelectedId] = (0, import_react7.useState)(null);
-  const [targetName, setTargetName] = (0, import_react7.useState)("");
-  const [avatarVal, setAvatarVal] = (0, import_react7.useState)(() => ({
+  const [sources, setSources] = (0, import_react8.useState)([]);
+  const [loading, setLoading] = (0, import_react8.useState)(false);
+  const [selectedId, setSelectedId] = (0, import_react8.useState)(null);
+  const [targetName, setTargetName] = (0, import_react8.useState)("");
+  const [avatarVal, setAvatarVal] = (0, import_react8.useState)(() => ({
     avatar: randomMascotAvatar(),
     avatarColor: DEFAULT_BOT_AVATAR_COLOR,
     uploadedImage: null
   }));
-  const [pickerAnchor, setPickerAnchor] = (0, import_react7.useState)(null);
-  const [importing, setImporting] = (0, import_react7.useState)(false);
-  const [error, setError] = (0, import_react7.useState)(null);
-  const [expandedFiles, setExpandedFiles] = (0, import_react7.useState)({});
-  const [reviewedDigestBySource, setReviewedDigestBySource] = (0, import_react7.useState)({});
-  const [changedAfterReview, setChangedAfterReview] = (0, import_react7.useState)(false);
+  const [pickerAnchor, setPickerAnchor] = (0, import_react8.useState)(null);
+  const avatarBtnRef = (0, import_react8.useRef)(null);
+  const [importing, setImporting] = (0, import_react8.useState)(false);
+  const [error, setError] = (0, import_react8.useState)(null);
+  const [expandedFiles, setExpandedFiles] = (0, import_react8.useState)({});
+  const [reviewedDigestBySource, setReviewedDigestBySource] = (0, import_react8.useState)({});
+  const [changedAfterReview, setChangedAfterReview] = (0, import_react8.useState)(false);
   const loadSources = async () => {
     setLoading(true);
     setError(null);
@@ -6058,23 +6147,28 @@ function BotImportDialog({ open, onClose }) {
       setLoading(false);
     }
   };
-  (0, import_react7.useEffect)(() => {
+  (0, import_react8.useEffect)(() => {
     if (!open) {
-      return void 0;
+      return;
     }
     setPickerAnchor(null);
     setChangedAfterReview(false);
     void loadSources();
+  }, [open]);
+  (0, import_react8.useEffect)(() => {
+    if (!open) {
+      return void 0;
+    }
     const handleEsc = (event) => {
-      if (event.key === "Escape" && !pickerAnchor) {
+      if (event.key === "Escape" && !event.defaultPrevented && !pickerAnchor) {
         onClose();
       }
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [onClose, open]);
+  }, [onClose, open, pickerAnchor]);
   const selected = sources.find((s) => s.id === selectedId) ?? null;
-  const inspectableFiles = (0, import_react7.useMemo)(() => {
+  const inspectableFiles = (0, import_react8.useMemo)(() => {
     if (!selected) return [];
     const list = [];
     const seen = /* @__PURE__ */ new Set();
@@ -6101,7 +6195,7 @@ function BotImportDialog({ open, onClose }) {
     }
     return list;
   }, [selected]);
-  const currentDigest = (0, import_react7.useMemo)(() => {
+  const currentDigest = (0, import_react8.useMemo)(() => {
     if (!selected) return null;
     return computeContentDigest([
       selected.id,
@@ -6111,7 +6205,7 @@ function BotImportDialog({ open, onClose }) {
 ${f.content}`)
     ]);
   }, [inspectableFiles, selected]);
-  (0, import_react7.useEffect)(() => {
+  (0, import_react8.useEffect)(() => {
     if (!selected || !currentDigest) {
       setChangedAfterReview(false);
       return;
@@ -6123,7 +6217,7 @@ ${f.content}`)
       setChangedAfterReview(false);
     }
   }, [currentDigest, reviewedDigestBySource, selected]);
-  const scanReport = (0, import_react7.useMemo)(() => {
+  const scanReport = (0, import_react8.useMemo)(() => {
     if (!selected) return { blockers: [], warnings: [] };
     const entries = [
       ...inspectableFiles.map((f) => ({ file: f.path, text: f.content })),
@@ -6292,7 +6386,10 @@ ${f.content}`)
                     /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
                       "button",
                       {
+                        ref: avatarBtnRef,
                         type: "button",
+                        "aria-haspopup": "dialog",
+                        "aria-expanded": Boolean(pickerAnchor),
                         onClick: (e) => {
                           const rect = e.currentTarget.getBoundingClientRect();
                           setPickerAnchor((prev) => prev ? null : rect);
@@ -6413,6 +6510,7 @@ ${f.content}`)
             {
               open: Boolean(pickerAnchor),
               anchorRect: pickerAnchor,
+              triggerRef: avatarBtnRef,
               onClose: () => setPickerAnchor(null),
               value: avatarVal,
               onChange: setAvatarVal
@@ -6425,10 +6523,10 @@ ${f.content}`)
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
-var import_react8 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
+var import_react9 = require("react");
 
-// vendor/dsh-whale/src/shared/bot-look-around.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-look-around.js
 var LOOK_AROUND_AGENTS = Object.freeze(["claude", "codex", "deepseek-harness"]);
 var LOOK_AROUND_EVERY_CHOICES = Object.freeze([
   "every-4h",
@@ -6503,7 +6601,7 @@ function nextLookAroundAt(setting, now = Date.now()) {
   return null;
 }
 
-// vendor/dsh-whale/src/shared/bot-tidy-up.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-tidy-up.js
 var TIDY_UP_EVERY_CHOICES = Object.freeze(["night", "week"]);
 var TIDY_UP_EVERY_LABELS = Object.freeze({
   night: "Each night after 3 AM",
@@ -6615,7 +6713,7 @@ function botTidyUp(bot) {
   };
 }
 
-// vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
 var import_jsx_runtime8 = require("react/jsx-runtime");
 var unsavedSoulBots = /* @__PURE__ */ new Set();
 var SOUL_DRAFT_SESSION_PREFIX = "dsh-bots.unsavedSoul:";
@@ -6674,7 +6772,7 @@ function BotAgentSubpage({ bot }) {
   const zh = locale === "zh-CN";
   const models = useBotsState((state) => state.models);
   const ext = bot;
-  (0, import_react8.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     if (models.length === 0) {
       void botsStore.refreshModels();
     }
@@ -6814,9 +6912,9 @@ function BotLookAroundSubpage({ bot }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const cfg = botLookAround(bot);
-  const [focusDraft, setFocusDraft] = (0, import_react8.useState)(cfg.focus ?? "");
-  const [running, setRunning] = (0, import_react8.useState)(false);
-  (0, import_react8.useEffect)(() => {
+  const [focusDraft, setFocusDraft] = (0, import_react9.useState)(cfg.focus ?? "");
+  const [running, setRunning] = (0, import_react9.useState)(false);
+  (0, import_react9.useEffect)(() => {
     setFocusDraft(cfg.focus ?? "");
   }, [cfg.focus]);
   const patchLook = async (patch) => {
@@ -6933,9 +7031,9 @@ function BotTidyUpSubpage({ bot }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const cfg = botTidyUp(bot);
-  const [status, setStatus] = (0, import_react8.useState)(null);
-  const [busy, setBusy] = (0, import_react8.useState)(false);
-  const load = (0, import_react8.useCallback)(async () => {
+  const [status, setStatus] = (0, import_react9.useState)(null);
+  const [busy, setBusy] = (0, import_react9.useState)(false);
+  const load = (0, import_react9.useCallback)(async () => {
     try {
       const res = await callBotRpc(RPC_METHODS2.TIDY_UP_GET, { botId: bot.id });
       setStatus(res);
@@ -6943,7 +7041,7 @@ function BotTidyUpSubpage({ bot }) {
       console.warn("[dsh-bots] tidyUp.get failed", err);
     }
   }, [bot.id]);
-  (0, import_react8.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     void load();
   }, [load]);
   const updateTidy = async (patch) => {
@@ -7075,27 +7173,27 @@ function BotTidyUpSubpage({ bot }) {
 function BotSoulSubpage({ bot, onRegisterLeaveGuard }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [mode, setMode] = (0, import_react8.useState)("read");
-  const [diskText, setDiskText] = (0, import_react8.useState)("");
-  const [draft, setDraft] = (0, import_react8.useState)("");
-  const [signature, setSignature] = (0, import_react8.useState)(void 0);
-  const [loading, setLoading] = (0, import_react8.useState)(true);
-  const [saving, setSaving] = (0, import_react8.useState)(false);
-  const [savedNotice, setSavedNotice] = (0, import_react8.useState)(false);
-  const [conflict, setConflict] = (0, import_react8.useState)(null);
-  const [leaveGuardPending, setLeaveGuardPending] = (0, import_react8.useState)(false);
-  const draftRef = (0, import_react8.useRef)(draft);
-  const diskTextRef = (0, import_react8.useRef)(diskText);
-  const signatureRef = (0, import_react8.useRef)(signature);
-  const conflictRef = (0, import_react8.useRef)(conflict);
-  const savingRef = (0, import_react8.useRef)(saving);
-  const leaveResolverRef = (0, import_react8.useRef)(null);
+  const [mode, setMode] = (0, import_react9.useState)("read");
+  const [diskText, setDiskText] = (0, import_react9.useState)("");
+  const [draft, setDraft] = (0, import_react9.useState)("");
+  const [signature, setSignature] = (0, import_react9.useState)(void 0);
+  const [loading, setLoading] = (0, import_react9.useState)(true);
+  const [saving, setSaving] = (0, import_react9.useState)(false);
+  const [savedNotice, setSavedNotice] = (0, import_react9.useState)(false);
+  const [conflict, setConflict] = (0, import_react9.useState)(null);
+  const [leaveGuardPending, setLeaveGuardPending] = (0, import_react9.useState)(false);
+  const draftRef = (0, import_react9.useRef)(draft);
+  const diskTextRef = (0, import_react9.useRef)(diskText);
+  const signatureRef = (0, import_react9.useRef)(signature);
+  const conflictRef = (0, import_react9.useRef)(conflict);
+  const savingRef = (0, import_react9.useRef)(saving);
+  const leaveResolverRef = (0, import_react9.useRef)(null);
   draftRef.current = draft;
   diskTextRef.current = diskText;
   signatureRef.current = signature;
   conflictRef.current = conflict;
   savingRef.current = saving;
-  const load = (0, import_react8.useCallback)(async () => {
+  const load = (0, import_react9.useCallback)(async () => {
     setLoading(true);
     try {
       const res = await callBotRpc(RPC_METHODS2.SOUL_READ, {
@@ -7113,15 +7211,15 @@ function BotSoulSubpage({ bot, onRegisterLeaveGuard }) {
       setLoading(false);
     }
   }, [bot.id]);
-  (0, import_react8.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     void load();
   }, [load]);
   const dirty = draft !== diskText;
   const lineCount = draft ? draft.split(/\r?\n/).length : 0;
-  (0, import_react8.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     setUnsavedSoulDraftFlag(bot.id, dirty || Boolean(conflict));
   }, [bot.id, conflict, dirty]);
-  const saveSoul = (0, import_react8.useCallback)(async (forceSignature) => {
+  const saveSoul = (0, import_react9.useCallback)(async (forceSignature) => {
     const contentToSave = draftRef.current;
     if (savingRef.current) {
       return "saved";
@@ -7159,7 +7257,7 @@ function BotSoulSubpage({ bot, onRegisterLeaveGuard }) {
       setSaving(false);
     }
   }, [bot.id]);
-  (0, import_react8.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     if (!onRegisterLeaveGuard) {
       return void 0;
     }
@@ -7194,7 +7292,7 @@ function BotSoulSubpage({ bot, onRegisterLeaveGuard }) {
       }
     };
   }, [onRegisterLeaveGuard, saveSoul]);
-  (0, import_react8.useEffect)(() => () => {
+  (0, import_react9.useEffect)(() => () => {
     if (draftRef.current !== diskTextRef.current && !conflictRef.current) {
       void callBotRpc(RPC_METHODS2.SOUL_WRITE, {
         botId: bot.id,
@@ -7386,11 +7484,11 @@ function BotSoulSubpage({ bot, onRegisterLeaveGuard }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
-var import_react9 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
+var import_react10 = require("react");
 var import_react_dom5 = require("react-dom");
 
-// vendor/dsh-whale/src/shared/bot-builtin-skills-a.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-builtin-skills-a.js
 var BOT_BUILTIN_SKILLS_PART_A = Object.freeze({
   "pr-review-checklist": `---
 name: pr-review-checklist
@@ -7647,7 +7745,7 @@ Before calling a risky coding change done, run two focused, independent checks i
 `
 });
 
-// vendor/dsh-whale/src/shared/bot-builtin-skills-b.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-builtin-skills-b.js
 var BOT_BUILTIN_SKILLS_PART_B = Object.freeze({
   "issue-triage": `---
 name: issue-triage
@@ -7838,7 +7936,7 @@ For every Work Item with non-trivial trade-offs or verification gates, append st
 `
 });
 
-// vendor/dsh-whale/src/shared/bot-builtin-skills.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-builtin-skills.js
 var BOT_BUILTIN_SKILL_IDS = Object.freeze([
   "pr-review-checklist",
   "bug-reproduction",
@@ -7869,7 +7967,7 @@ var BOT_BUILTIN_SKILLS = Object.freeze({
   ...BOT_BUILTIN_SKILLS_PART_B
 });
 
-// vendor/dsh-whale/src/shared/bot-template-catalog-a.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-template-catalog-a.js
 var BOT_TEMPLATES_CODING = Object.freeze([
   {
     id: "pr-review",
@@ -8360,7 +8458,7 @@ var BOT_TEMPLATES_SUPPORT = Object.freeze([
   }
 ]);
 
-// vendor/dsh-whale/src/shared/bot-template-catalog-b.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-template-catalog-b.js
 var BOT_TEMPLATES_PLANNING = Object.freeze([
   {
     id: "briefing",
@@ -8707,7 +8805,7 @@ var BOT_TEMPLATES_PERSONAL = Object.freeze([
   }
 ]);
 
-// vendor/dsh-whale/src/shared/bot-template-catalog.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-template-catalog.js
 var BOT_TEMPLATES_CAPTAIN = Object.freeze([
   {
     id: "engineering-captain",
@@ -8831,7 +8929,7 @@ var BOT_TEMPLATES_CAPTAIN = Object.freeze([
   }
 ]);
 
-// vendor/dsh-whale/src/shared/bot-templates.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-templates.js
 var LEGACY_BOT_TEMPLATE_IDS = Object.freeze([
   "support",
   "release",
@@ -8961,15 +9059,15 @@ function searchTemplates(query, category = "all") {
   });
 }
 
-// vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
 var import_jsx_runtime9 = require("react/jsx-runtime");
 function BotTemplatesDialog({ open, onClose }) {
   const { locale, tr } = useBotsLocale();
-  const [category, setCategory] = (0, import_react9.useState)("all");
-  const [query, setQuery] = (0, import_react9.useState)("");
-  const [selectedId, setSelectedId] = (0, import_react9.useState)(() => BOT_TEMPLATES[0]?.id ?? "");
-  const [narrowDetail, setNarrowDetail] = (0, import_react9.useState)(false);
-  (0, import_react9.useEffect)(() => {
+  const [category, setCategory] = (0, import_react10.useState)("all");
+  const [query, setQuery] = (0, import_react10.useState)("");
+  const [selectedId, setSelectedId] = (0, import_react10.useState)(() => BOT_TEMPLATES[0]?.id ?? "");
+  const [narrowDetail, setNarrowDetail] = (0, import_react10.useState)(false);
+  (0, import_react10.useEffect)(() => {
     if (!open) {
       return void 0;
     }
@@ -8981,13 +9079,13 @@ function BotTemplatesDialog({ open, onClose }) {
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
   }, [onClose, open]);
-  const filtered = (0, import_react9.useMemo)(
+  const filtered = (0, import_react10.useMemo)(
     () => searchTemplates(query, category).map(
       (entry) => localizeTemplate(entry, locale) ?? entry
     ),
     [category, locale, query]
   );
-  const selected = (0, import_react9.useMemo)(() => {
+  const selected = (0, import_react10.useMemo)(() => {
     const match = filtered.find((item) => item.id === selectedId);
     return match ?? filtered[0] ?? null;
   }, [filtered, selectedId]);
@@ -9232,8 +9330,8 @@ function BotTemplatesDialog({ open, onClose }) {
   );
 }
 
-// vendor/dsh-whale/src/client/components/HandToBotDialog.tsx
-var import_react10 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/HandToBotDialog.tsx
+var import_react11 = require("react");
 var import_react_dom6 = require("react-dom");
 var import_jsx_runtime10 = require("react/jsx-runtime");
 function basenameOfPath(rawPath) {
@@ -9253,13 +9351,13 @@ function HandToBotDialog({
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const bots = useBotsState((s) => s.bots);
-  const [selectedBotId, setSelectedBotId] = (0, import_react10.useState)(initialBotId);
-  const [chatTarget, setChatTarget] = (0, import_react10.useState)("home");
-  const [goal, setGoal] = (0, import_react10.useState)(initialPrompt);
-  const [search, setSearch] = (0, import_react10.useState)("");
-  const [submitting, setSubmitting] = (0, import_react10.useState)(false);
-  const [error, setError] = (0, import_react10.useState)(null);
-  (0, import_react10.useEffect)(() => {
+  const [selectedBotId, setSelectedBotId] = (0, import_react11.useState)(initialBotId);
+  const [chatTarget, setChatTarget] = (0, import_react11.useState)("home");
+  const [goal, setGoal] = (0, import_react11.useState)(initialPrompt);
+  const [search, setSearch] = (0, import_react11.useState)("");
+  const [submitting, setSubmitting] = (0, import_react11.useState)(false);
+  const [error, setError] = (0, import_react11.useState)(null);
+  (0, import_react11.useEffect)(() => {
     if (!open) {
       return;
     }
@@ -9271,7 +9369,7 @@ function HandToBotDialog({
     setSubmitting(false);
     setError(null);
   }, [bots, initialBotId, initialPrompt, open, workspace?.cwd]);
-  (0, import_react10.useEffect)(() => {
+  (0, import_react11.useEffect)(() => {
     if (!open) {
       return void 0;
     }
@@ -9283,7 +9381,7 @@ function HandToBotDialog({
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
   }, [onClose, open, submitting]);
-  const filteredBots = (0, import_react10.useMemo)(() => {
+  const filteredBots = (0, import_react11.useMemo)(() => {
     const q = search.trim().toLowerCase();
     if (!q) {
       return bots;
@@ -9602,8 +9700,8 @@ function HandToBotDialog({
   );
 }
 
-// vendor/dsh-whale/src/client/components/NewBotDialog.tsx
-var import_react11 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/NewBotDialog.tsx
+var import_react12 = require("react");
 var import_react_dom7 = require("react-dom");
 var import_jsx_runtime11 = require("react/jsx-runtime");
 var NAME_MAX = 64;
@@ -9612,35 +9710,36 @@ function NewBotDialog({ open, draft, onClose }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const models = useBotsState((s) => s.models);
-  const template = (0, import_react11.useMemo)(() => {
+  const template = (0, import_react12.useMemo)(() => {
     const raw = draft?.templateId ? botTemplate(draft.templateId) : null;
     return raw ? localizeTemplate(raw, locale) ?? raw : null;
   }, [draft?.templateId, locale]);
-  const [name2, setName] = (0, import_react11.useState)("");
-  const [purpose, setPurpose] = (0, import_react11.useState)("");
-  const [avatarVal, setAvatarVal] = (0, import_react11.useState)(() => ({
+  const [name2, setName] = (0, import_react12.useState)("");
+  const [purpose, setPurpose] = (0, import_react12.useState)("");
+  const [avatarVal, setAvatarVal] = (0, import_react12.useState)(() => ({
     avatar: randomMascotAvatar(),
     avatarColor: DEFAULT_BOT_AVATAR_COLOR,
     uploadedImage: null
   }));
-  const [selectedModel, setSelectedModel] = (0, import_react11.useState)("");
-  const [reasoningEffort, setReasoningEffort] = (0, import_react11.useState)("");
-  const [selectedSkills, setSelectedSkills] = (0, import_react11.useState)([]);
-  const [includeSchedules, setIncludeSchedules] = (0, import_react11.useState)(true);
-  const [includeEvents, setIncludeEvents] = (0, import_react11.useState)(true);
-  const [activeChipPopover, setActiveChipPopover] = (0, import_react11.useState)(null);
-  const [watches, setWatches] = (0, import_react11.useState)("");
-  const [doesText, setDoesText] = (0, import_react11.useState)("");
-  const [reports, setReports] = (0, import_react11.useState)("");
-  const [pickerAnchor, setPickerAnchor] = (0, import_react11.useState)(null);
-  const [submitting, setSubmitting] = (0, import_react11.useState)(false);
-  const [error, setError] = (0, import_react11.useState)(null);
-  const [importCount, setImportCount] = (0, import_react11.useState)(0);
-  const [draggingFile, setDraggingFile] = (0, import_react11.useState)(false);
-  const nameRef = (0, import_react11.useRef)(null);
-  const purposeRef = (0, import_react11.useRef)(null);
-  const chipsBarRef = (0, import_react11.useRef)(null);
-  (0, import_react11.useEffect)(() => {
+  const [selectedModel, setSelectedModel] = (0, import_react12.useState)("");
+  const [reasoningEffort, setReasoningEffort] = (0, import_react12.useState)("");
+  const [selectedSkills, setSelectedSkills] = (0, import_react12.useState)([]);
+  const [includeSchedules, setIncludeSchedules] = (0, import_react12.useState)(true);
+  const [includeEvents, setIncludeEvents] = (0, import_react12.useState)(true);
+  const [activeChipPopover, setActiveChipPopover] = (0, import_react12.useState)(null);
+  const [watches, setWatches] = (0, import_react12.useState)("");
+  const [doesText, setDoesText] = (0, import_react12.useState)("");
+  const [reports, setReports] = (0, import_react12.useState)("");
+  const [pickerAnchor, setPickerAnchor] = (0, import_react12.useState)(null);
+  const [submitting, setSubmitting] = (0, import_react12.useState)(false);
+  const [error, setError] = (0, import_react12.useState)(null);
+  const [importCount, setImportCount] = (0, import_react12.useState)(0);
+  const [draggingFile, setDraggingFile] = (0, import_react12.useState)(false);
+  const nameRef = (0, import_react12.useRef)(null);
+  const purposeRef = (0, import_react12.useRef)(null);
+  const chipsBarRef = (0, import_react12.useRef)(null);
+  const avatarBtnRef = (0, import_react12.useRef)(null);
+  (0, import_react12.useEffect)(() => {
     if (!activeChipPopover) {
       return void 0;
     }
@@ -9652,7 +9751,7 @@ function NewBotDialog({ open, draft, onClose }) {
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [activeChipPopover]);
-  (0, import_react11.useEffect)(() => {
+  (0, import_react12.useEffect)(() => {
     if (!open) {
       return;
     }
@@ -9708,7 +9807,7 @@ function NewBotDialog({ open, draft, onClose }) {
       window.setTimeout(() => nameRef.current?.focus(), 30);
     }
   }, [draft, models.length, open, template]);
-  (0, import_react11.useEffect)(() => {
+  (0, import_react12.useEffect)(() => {
     if (!open || models.length === 0) {
       return;
     }
@@ -9719,7 +9818,7 @@ function NewBotDialog({ open, draft, onClose }) {
       return models.find((m) => m.default)?.id ?? models[0]?.id ?? "";
     });
   }, [models, open]);
-  (0, import_react11.useEffect)(() => {
+  (0, import_react12.useEffect)(() => {
     if (!open || template || draft?.takeOverWorkspace) {
       setImportCount(0);
       return void 0;
@@ -9738,11 +9837,11 @@ function NewBotDialog({ open, draft, onClose }) {
       cancelled = true;
     };
   }, [draft?.takeOverWorkspace, open, template]);
-  const activeModelObj = (0, import_react11.useMemo)(
+  const activeModelObj = (0, import_react12.useMemo)(
     () => models.find((m) => m.id === selectedModel) ?? null,
     [models, selectedModel]
   );
-  (0, import_react11.useEffect)(() => {
+  (0, import_react12.useEffect)(() => {
     const efforts = activeModelObj?.reasoningEfforts ?? [];
     if (efforts.length === 0) {
       setReasoningEffort("");
@@ -9758,7 +9857,7 @@ function NewBotDialog({ open, draft, onClose }) {
     el.style.height = "auto";
     el.style.height = `${Math.min(132, Math.max(54, el.scrollHeight))}px`;
   };
-  const applyImageFile = (0, import_react11.useCallback)(async (file) => {
+  const applyImageFile = (0, import_react12.useCallback)(async (file) => {
     setError(null);
     try {
       const cropped = await cropImageFileToPng512(file);
@@ -9931,7 +10030,10 @@ function NewBotDialog({ open, draft, onClose }) {
                   /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
                     "button",
                     {
+                      ref: avatarBtnRef,
                       type: "button",
+                      "aria-haspopup": "dialog",
+                      "aria-expanded": Boolean(pickerAnchor),
                       onClick: (e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         setPickerAnchor((prev) => prev ? null : rect);
@@ -10237,6 +10339,7 @@ function NewBotDialog({ open, draft, onClose }) {
                 {
                   open: Boolean(pickerAnchor),
                   anchorRect: pickerAnchor,
+                  triggerRef: avatarBtnRef,
                   onClose: () => setPickerAnchor(null),
                   value: avatarVal,
                   onChange: setAvatarVal
@@ -10251,7 +10354,7 @@ function NewBotDialog({ open, draft, onClose }) {
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
 var import_jsx_runtime12 = require("react/jsx-runtime");
 function detectUnsavedDraftsForBot(botId, homeSessionId) {
   const soulDirty = hasUnsavedSoulDraft(botId);
@@ -10337,7 +10440,7 @@ function ConfirmDialogShell({
   onConfirm
 }) {
   const { tr } = useBotsLocale();
-  (0, import_react12.useEffect)(() => {
+  (0, import_react13.useEffect)(() => {
     if (!open) {
       return void 0;
     }
@@ -10399,14 +10502,14 @@ function DeleteBotConfirmDialog({
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const bot = useBotById(botId);
-  const [busy, setBusy] = (0, import_react12.useState)(false);
-  const [blockers, setBlockers] = (0, import_react12.useState)({
+  const [busy, setBusy] = (0, import_react13.useState)(false);
+  const [blockers, setBlockers] = (0, import_react13.useState)({
     soulDirty: false,
     homeDraft: false,
     itemDraftKeys: []
   });
   const homeSessionId = bot?.chatSessionId ?? bot?.homeSessionId ?? null;
-  (0, import_react12.useEffect)(() => {
+  (0, import_react13.useEffect)(() => {
     if (open && bot) {
       setBusy(false);
       setBlockers(detectUnsavedDraftsForBot(bot.id, homeSessionId));
@@ -10521,9 +10624,9 @@ function NewHomeChatConfirmDialog({
 }) {
   const { tr } = useBotsLocale();
   const bot = useBotById(botId);
-  const [dontAsk, setDontAsk] = (0, import_react12.useState)(false);
-  const [busy, setBusy] = (0, import_react12.useState)(false);
-  (0, import_react12.useEffect)(() => {
+  const [dontAsk, setDontAsk] = (0, import_react13.useState)(false);
+  const [busy, setBusy] = (0, import_react13.useState)(false);
+  (0, import_react13.useEffect)(() => {
     if (open) {
       setDontAsk(false);
       setBusy(false);
@@ -10582,7 +10685,7 @@ function DeleteGroupConfirmDialog({
 }) {
   const { locale } = useBotsLocale();
   const group = useGroupById(groupId);
-  const [busy, setBusy] = (0, import_react12.useState)(false);
+  const [busy, setBusy] = (0, import_react13.useState)(false);
   if (!group) {
     return null;
   }
@@ -10749,12 +10852,12 @@ function BotsModalHost() {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotConversationChrome.tsx
-var import_react13 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConversationChrome.tsx
+var import_react14 = require("react");
 var import_jsx_runtime13 = require("react/jsx-runtime");
 function useDropdownDismiss(open, onClose) {
-  const ref = (0, import_react13.useRef)(null);
-  (0, import_react13.useEffect)(() => {
+  const ref = (0, import_react14.useRef)(null);
+  (0, import_react14.useEffect)(() => {
     if (!open) {
       return void 0;
     }
@@ -10795,10 +10898,10 @@ function BotConversationLeading({ sessionId }) {
   const bot = useBotBySessionId(sessionId);
   const { locale, tr } = useBotsLocale();
   const chatTree = useBotsState((state) => bot ? state.chatsByBot[bot.id] : void 0);
-  const [menuOpen, setMenuOpen] = (0, import_react13.useState)(false);
-  const [pillRevealed, setPillRevealed] = (0, import_react13.useState)(false);
+  const [menuOpen, setMenuOpen] = (0, import_react14.useState)(false);
+  const [pillRevealed, setPillRevealed] = (0, import_react14.useState)(false);
   const menuRef = useDropdownDismiss(menuOpen, () => setMenuOpen(false));
-  const allChats = (0, import_react13.useMemo)(
+  const allChats = (0, import_react14.useMemo)(
     () => bot ? resolveChatsForBot(chatTree?.chats, bot) : [],
     [bot, chatTree?.chats]
   );
@@ -10938,7 +11041,7 @@ function BotConversationActions({ sessionId }) {
   const bot = useBotBySessionId(sessionId);
   const { locale, tr } = useBotsLocale();
   const needsYouCount = useBotsState((state) => bot ? state.needsYou[bot.id] ?? bot.needsYouCount ?? 0 : 0);
-  const [toolbarRevealed, setToolbarRevealed] = (0, import_react13.useState)(false);
+  const [toolbarRevealed, setToolbarRevealed] = (0, import_react14.useState)(false);
   if (!bot) {
     return null;
   }
@@ -11025,8 +11128,8 @@ function BotConversationFrame({
   }) ?? null;
   const fallbackSessionId = useBotsState((state) => state.activeSessionId);
   const bot = useBotBySessionId(mainSessionId ?? fallbackSessionId);
-  const [dismissedIds, setDismissedIds] = (0, import_react13.useState)({});
-  (0, import_react13.useEffect)(() => {
+  const [dismissedIds, setDismissedIds] = (0, import_react14.useState)({});
+  (0, import_react14.useEffect)(() => {
     if (mainSessionId) {
       botsStore.setActiveSelection({
         sessionId: mainSessionId,
@@ -11069,8 +11172,8 @@ function BotConversationFrame({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotFirstScreen.tsx
-var import_react14 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotFirstScreen.tsx
+var import_react15 = require("react");
 var import_jsx_runtime14 = require("react/jsx-runtime");
 var STEP_ORDER = ["create", "start", "first-message", "done"];
 function stepStateOf(currentStep, targetStep, status) {
@@ -11092,10 +11195,10 @@ function BotFirstScreen({ bot, className, onDismiss }) {
   const zh = locale === "zh-CN";
   const bots = useBotsState((state) => state.bots);
   const needsYouMap = useBotsState((state) => state.needsYou);
-  const [collapsed, setCollapsed] = (0, import_react14.useState)(false);
-  const [retrying, setRetrying] = (0, import_react14.useState)(false);
-  const [offerPrompt, setOfferPrompt] = (0, import_react14.useState)("");
-  const [creatingOffer, setCreatingOffer] = (0, import_react14.useState)(false);
+  const [collapsed, setCollapsed] = (0, import_react15.useState)(false);
+  const [retrying, setRetrying] = (0, import_react15.useState)(false);
+  const [offerPrompt, setOfferPrompt] = (0, import_react15.useState)("");
+  const [creatingOffer, setCreatingOffer] = (0, import_react15.useState)(false);
   const kickoff = bot.kickoff;
   if (!kickoff) {
     return null;
@@ -11395,11 +11498,11 @@ function BotFirstScreen({ bot, className, onDismiss }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
-var import_react16 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
+var import_react17 = require("react");
 
-// vendor/dsh-whale/src/client/components/BotGroupReplyPicker.tsx
-var import_react15 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupReplyPicker.tsx
+var import_react16 = require("react");
 var import_jsx_runtime15 = require("react/jsx-runtime");
 function BotGroupReplyPicker({
   replyMode,
@@ -11411,12 +11514,12 @@ function BotGroupReplyPicker({
 }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [open, setOpen] = (0, import_react15.useState)(false);
-  const [saving, setSaving] = (0, import_react15.useState)(false);
-  const wrapRef = (0, import_react15.useRef)(null);
-  const triggerRef = (0, import_react15.useRef)(null);
-  const menuRef = (0, import_react15.useRef)(null);
-  (0, import_react15.useEffect)(() => {
+  const [open, setOpen] = (0, import_react16.useState)(false);
+  const [saving, setSaving] = (0, import_react16.useState)(false);
+  const wrapRef = (0, import_react16.useRef)(null);
+  const triggerRef = (0, import_react16.useRef)(null);
+  const menuRef = (0, import_react16.useRef)(null);
+  (0, import_react16.useEffect)(() => {
     if (!open) {
       return void 0;
     }
@@ -11633,7 +11736,7 @@ function BotGroupReplyPicker({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
 var import_jsx_runtime16 = require("react/jsx-runtime");
 var PAGE_LIMIT = 40;
 var NEAR_BOTTOM_PX = 88;
@@ -11721,7 +11824,7 @@ function renderTextWithMentions(text, memberNames, keyPrefix) {
     return text;
   }
   const segs = botGroupMentionSegments(text, memberNames, true);
-  return segs.map((seg, idx) => seg.mention ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "dsh-bots-group-mention", children: seg.text }, `${keyPrefix}-m-${idx}`) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react16.Fragment, { children: seg.text }, `${keyPrefix}-t-${idx}`));
+  return segs.map((seg, idx) => seg.mention ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "dsh-bots-group-mention", children: seg.text }, `${keyPrefix}-m-${idx}`) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react17.Fragment, { children: seg.text }, `${keyPrefix}-t-${idx}`));
 }
 var INLINE_TOKEN_RE = /(`[^`\n]+`)|(\[([^\]\n]+)\]\(([^)\s]+)\))|(\*\*([^*\n]+)\*\*|__([^_\n]+)__)|(~~([^~\n]+)~~)|(\*([^*\n]+)\*)/gu;
 function renderInlineMarkdown(text, memberNames, keyPrefix) {
@@ -11732,7 +11835,7 @@ function renderInlineMarkdown(text, memberNames, keyPrefix) {
     const start = match.index ?? 0;
     if (start > cursor) {
       nodes.push(
-        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react16.Fragment, { children: renderTextWithMentions(text.slice(cursor, start), memberNames, `${keyPrefix}-pm-${tokenIdx}`) }, `${keyPrefix}-p-${tokenIdx++}`)
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react17.Fragment, { children: renderTextWithMentions(text.slice(cursor, start), memberNames, `${keyPrefix}-pm-${tokenIdx}`) }, `${keyPrefix}-p-${tokenIdx++}`)
       );
     }
     const [full, inlineCode, , linkLabel, linkHref, , boldStar, boldUnder, , strike, , italic] = match;
@@ -11745,7 +11848,7 @@ function renderInlineMarkdown(text, memberNames, keyPrefix) {
           /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("a", { href: linkHref, target: "_blank", rel: "noopener noreferrer", className: "dsh-bots-md-link", children: linkLabel }, k)
         );
       } else {
-        nodes.push(/* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react16.Fragment, { children: linkLabel }, k));
+        nodes.push(/* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react17.Fragment, { children: linkLabel }, k));
       }
     } else if (boldStar || boldUnder) {
       nodes.push(
@@ -11756,19 +11859,19 @@ function renderInlineMarkdown(text, memberNames, keyPrefix) {
     } else if (italic) {
       nodes.push(/* @__PURE__ */ (0, import_jsx_runtime16.jsx)("em", { children: italic }, k));
     } else {
-      nodes.push(/* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react16.Fragment, { children: full }, k));
+      nodes.push(/* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react17.Fragment, { children: full }, k));
     }
     cursor = start + full.length;
   }
   if (cursor < text.length) {
     nodes.push(
-      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react16.Fragment, { children: renderTextWithMentions(text.slice(cursor), memberNames, `${keyPrefix}-tm`) }, `${keyPrefix}-tail`)
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(import_react17.Fragment, { children: renderTextWithMentions(text.slice(cursor), memberNames, `${keyPrefix}-tm`) }, `${keyPrefix}-tail`)
     );
   }
   return nodes;
 }
 function CodeBlockView({ lang, code, zh }) {
-  const [copied, setCopied] = (0, import_react16.useState)(false);
+  const [copied, setCopied] = (0, import_react17.useState)(false);
   const handleCopy = async () => {
     const ok = await botsStore.copyToClipboard(code);
     if (ok) {
@@ -11797,7 +11900,7 @@ function CodeBlockView({ lang, code, zh }) {
   ] });
 }
 function SafeMarkdown({ text, memberNames, zh }) {
-  const blocks = (0, import_react16.useMemo)(() => {
+  const blocks = (0, import_react17.useMemo)(() => {
     const src = String(text ?? "").replace(/\r\n/g, "\n");
     const lines = src.split("\n");
     const out = [];
@@ -11894,15 +11997,15 @@ function SafeMarkdown({ text, memberNames, zh }) {
     if (block.kind === "ol") {
       return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("ol", { children: block.items.map((item, ii) => /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("li", { children: renderInlineMarkdown(item, memberNames, `${key}-ol-${ii}`) }, `${key}-ol-${ii}`)) }, key);
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { children: block.lines.map((l, li) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_react16.Fragment, { children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { children: block.lines.map((l, li) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_react17.Fragment, { children: [
       li > 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("br", {}),
       renderInlineMarkdown(l, memberNames, `${key}-p-${li}`)
     ] }, `${key}-p-${li}`)) }, key);
   }) });
 }
 function TurnStepsDisclosure({ turn, zh }) {
-  const [open, setOpen] = (0, import_react16.useState)(false);
-  const steps = (0, import_react16.useMemo)(() => {
+  const [open, setOpen] = (0, import_react17.useState)(false);
+  const steps = (0, import_react17.useMemo)(() => {
     const list = [];
     const thought = (turn.thinking || turn.reasoning || "").trim();
     if (thought) {
@@ -11989,8 +12092,8 @@ function HandoffDivider({ text, tone = "normal" }) {
   return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "dsh-bots-handoff-line", role: "separator", "aria-label": text, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "dsh-bots-handoff-pill", "data-tone": tone, children: text }) });
 }
 function useLiveTick(active) {
-  const [tick, setTick] = (0, import_react16.useState)(() => Date.now());
-  (0, import_react16.useEffect)(() => {
+  const [tick, setTick] = (0, import_react17.useState)(() => Date.now());
+  (0, import_react17.useEffect)(() => {
     if (!active) {
       return void 0;
     }
@@ -12009,52 +12112,52 @@ function BotGroupRoomView() {
   const bots = useBotsState((state) => state.bots);
   const changeSeq = useBotsState((state) => state.changeSeq);
   const storeGroup = useGroupById(activeGroupId ?? groups[0]?.id ?? null);
-  const [groupDetail, setGroupDetail] = (0, import_react16.useState)(null);
-  const [threadId, setThreadId] = (0, import_react16.useState)("");
-  const [messages, setMessages] = (0, import_react16.useState)([]);
-  const [hasMore, setHasMore] = (0, import_react16.useState)(false);
-  const [loadingEarlier, setLoadingEarlier] = (0, import_react16.useState)(false);
-  const [draft, setDraft] = (0, import_react16.useState)("");
-  const [pendingImages, setPendingImages] = (0, import_react16.useState)([]);
-  const [caret, setCaret] = (0, import_react16.useState)(0);
-  const [mentionIdx, setMentionIdx] = (0, import_react16.useState)(0);
-  const [sending, setSending] = (0, import_react16.useState)(false);
-  const [stopping, setStopping] = (0, import_react16.useState)(false);
-  const [approvingMsgId, setApprovingMsgId] = (0, import_react16.useState)(null);
-  const [stopNotice, setStopNotice] = (0, import_react16.useState)(null);
-  const [isNearBottom, setIsNearBottom] = (0, import_react16.useState)(true);
-  const [unseenCount, setUnseenCount] = (0, import_react16.useState)(0);
-  const feedRef = (0, import_react16.useRef)(null);
-  const feedEndRef = (0, import_react16.useRef)(null);
-  const textareaRef = (0, import_react16.useRef)(null);
-  const fileInputRef = (0, import_react16.useRef)(null);
-  const nearBottomRef = (0, import_react16.useRef)(true);
-  const lastLatestSeqRef = (0, import_react16.useRef)(0);
+  const [groupDetail, setGroupDetail] = (0, import_react17.useState)(null);
+  const [threadId, setThreadId] = (0, import_react17.useState)("");
+  const [messages, setMessages] = (0, import_react17.useState)([]);
+  const [hasMore, setHasMore] = (0, import_react17.useState)(false);
+  const [loadingEarlier, setLoadingEarlier] = (0, import_react17.useState)(false);
+  const [draft, setDraft] = (0, import_react17.useState)("");
+  const [pendingImages, setPendingImages] = (0, import_react17.useState)([]);
+  const [caret, setCaret] = (0, import_react17.useState)(0);
+  const [mentionIdx, setMentionIdx] = (0, import_react17.useState)(0);
+  const [sending, setSending] = (0, import_react17.useState)(false);
+  const [stopping, setStopping] = (0, import_react17.useState)(false);
+  const [approvingMsgId, setApprovingMsgId] = (0, import_react17.useState)(null);
+  const [stopNotice, setStopNotice] = (0, import_react17.useState)(null);
+  const [isNearBottom, setIsNearBottom] = (0, import_react17.useState)(true);
+  const [unseenCount, setUnseenCount] = (0, import_react17.useState)(0);
+  const feedRef = (0, import_react17.useRef)(null);
+  const feedEndRef = (0, import_react17.useRef)(null);
+  const textareaRef = (0, import_react17.useRef)(null);
+  const fileInputRef = (0, import_react17.useRef)(null);
+  const nearBottomRef = (0, import_react17.useRef)(true);
+  const lastLatestSeqRef = (0, import_react17.useRef)(0);
   const group = groupDetail && groupDetail.id === storeGroup?.id ? groupDetail : storeGroup;
-  const memberBots = (0, import_react16.useMemo)(() => {
+  const memberBots = (0, import_react17.useMemo)(() => {
     if (!group) {
       return [];
     }
     return (group.members ?? []).map((m) => bots.find((b) => b.id === m.botId)).filter((b) => Boolean(b));
   }, [bots, group]);
-  const replyModeObj = (0, import_react16.useMemo)(
+  const replyModeObj = (0, import_react17.useMemo)(
     () => normalizeReplyMode(group?.replyMode, memberBots[0]?.id),
     [group?.replyMode, memberBots]
   );
-  const botNameLookup = (0, import_react16.useCallback)((id, fallback) => {
+  const botNameLookup = (0, import_react17.useCallback)((id, fallback) => {
     if (id) {
       const found = bots.find((b) => b.id === id);
       if (found) return found.name;
     }
     return fallback || id || (zh ? "\u961F\u53CB" : "Teammate");
   }, [bots, zh]);
-  const scrollToBottom = (0, import_react16.useCallback)((behavior = "smooth") => {
+  const scrollToBottom = (0, import_react17.useCallback)((behavior = "smooth") => {
     feedEndRef.current?.scrollIntoView?.({ behavior, block: "end" });
     setUnseenCount(0);
     nearBottomRef.current = true;
     setIsNearBottom(true);
   }, []);
-  const loadMessages = (0, import_react16.useCallback)(async (options = {}) => {
+  const loadMessages = (0, import_react17.useCallback)(async (options = {}) => {
     if (!storeGroup?.id) {
       return;
     }
@@ -12141,17 +12244,17 @@ function BotGroupRoomView() {
       setLoadingEarlier(false);
     }
   };
-  (0, import_react16.useEffect)(() => {
+  (0, import_react17.useEffect)(() => {
     setThreadId("");
     setMessages([]);
     setHasMore(false);
     setStopNotice(null);
     lastLatestSeqRef.current = 0;
   }, [storeGroup?.id]);
-  (0, import_react16.useEffect)(() => {
+  (0, import_react17.useEffect)(() => {
     void loadMessages({ reset: true });
   }, [storeGroup?.id, threadId]);
-  (0, import_react16.useEffect)(() => {
+  (0, import_react17.useEffect)(() => {
     if (changeSeq > 0) {
       void loadMessages({ reset: false });
     }
@@ -12167,13 +12270,13 @@ function BotGroupRoomView() {
       setUnseenCount(0);
     }
   };
-  const hasRunningTurns = (0, import_react16.useMemo)(
+  const hasRunningTurns = (0, import_react17.useMemo)(
     () => messages.some((m) => (m.turns ?? []).some(isTurnLive)),
     [messages]
   );
   const liveNow = useLiveTick(hasRunningTurns);
-  const mentionMatch = (0, import_react16.useMemo)(() => findMentionQuery(draft, caret), [draft, caret]);
-  const mentionCandidates = (0, import_react16.useMemo)(() => {
+  const mentionMatch = (0, import_react17.useMemo)(() => findMentionQuery(draft, caret), [draft, caret]);
+  const mentionCandidates = (0, import_react17.useMemo)(() => {
     if (!mentionMatch) {
       return [];
     }
@@ -12617,7 +12720,7 @@ function BotGroupRoomView() {
                 return null;
               })();
               const handoffInfo = turnHandoff ? formatHandoffLabel(turnHandoff, botNameLookup, zh) : null;
-              return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_react16.Fragment, { children: [
+              return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_react17.Fragment, { children: [
                 handoffInfo && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(HandoffDivider, { text: handoffInfo.text, tone: handoffInfo.tone }),
                 /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
                   "div",
@@ -12846,13 +12949,13 @@ function BotGroupRoomView() {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotRightPanel.tsx
-var import_react30 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotRightPanel.tsx
+var import_react31 = require("react");
 
-// vendor/dsh-whale/src/client/components/BotActivityTab.tsx
-var import_react20 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotActivityTab.tsx
+var import_react21 = require("react");
 
-// vendor/dsh-whale/src/shared/bot-items.js
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-items.js
 var BOT_ITEM_STATUSES = Object.freeze(["planned", "working", "needs_you", "done", "canceled"]);
 var BOT_ITEM_OPEN_STATUSES = Object.freeze(["planned", "working", "needs_you"]);
 var BOT_ITEM_ERROR_CODES = Object.freeze([
@@ -13112,8 +13215,8 @@ function isBotItemStale(item, staleDays = BOT_ITEM_DEFAULT_STALE_DAYS, now = Dat
   return false;
 }
 
-// vendor/dsh-whale/src/client/components/BotActivityUpcoming.tsx
-var import_react17 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotActivityUpcoming.tsx
+var import_react18 = require("react");
 var import_jsx_runtime17 = require("react/jsx-runtime");
 var MAX_VISIBLE_AUTOMATIONS = 5;
 var AUTOMATION_DRAFT_PREFILL_EVENT = "dsh-bots:prefill-chat-draft";
@@ -13190,24 +13293,24 @@ function BotActivityUpcoming({
 }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [lookingNow, setLookingNow] = (0, import_react17.useState)(false);
-  const [creatingAuto, setCreatingAuto] = (0, import_react17.useState)(false);
-  const [autoName, setAutoName] = (0, import_react17.useState)("");
-  const [autoPrompt, setAutoPrompt] = (0, import_react17.useState)("");
-  const [autoInterval, setAutoInterval] = (0, import_react17.useState)("60");
-  const [autosSectionOpen, setAutosSectionOpen] = (0, import_react17.useState)(true);
-  const [showAllAutos, setShowAllAutos] = (0, import_react17.useState)(false);
-  const [localUnreadIds, setLocalUnreadIds] = (0, import_react17.useState)({});
-  const markedSeenForBotRef = (0, import_react17.useRef)(null);
-  const scheduledAutos = (0, import_react17.useMemo)(
+  const [lookingNow, setLookingNow] = (0, import_react18.useState)(false);
+  const [creatingAuto, setCreatingAuto] = (0, import_react18.useState)(false);
+  const [autoName, setAutoName] = (0, import_react18.useState)("");
+  const [autoPrompt, setAutoPrompt] = (0, import_react18.useState)("");
+  const [autoInterval, setAutoInterval] = (0, import_react18.useState)("60");
+  const [autosSectionOpen, setAutosSectionOpen] = (0, import_react18.useState)(true);
+  const [showAllAutos, setShowAllAutos] = (0, import_react18.useState)(false);
+  const [localUnreadIds, setLocalUnreadIds] = (0, import_react18.useState)({});
+  const markedSeenForBotRef = (0, import_react18.useRef)(null);
+  const scheduledAutos = (0, import_react18.useMemo)(
     () => sortAutomations(automations.filter((a) => !a.once)),
     [automations]
   );
-  const failedAutos = (0, import_react17.useMemo)(
+  const failedAutos = (0, import_react18.useMemo)(
     () => scheduledAutos.filter(isAutomationFailed),
     [scheduledAutos]
   );
-  const visibleAutos = (0, import_react17.useMemo)(() => {
+  const visibleAutos = (0, import_react18.useMemo)(() => {
     if (showAllAutos || scheduledAutos.length <= MAX_VISIBLE_AUTOMATIONS) {
       return scheduledAutos;
     }
@@ -13222,11 +13325,11 @@ function BotActivityUpcoming({
   const tidyCfg = botTidyUp(bot);
   const nextLookTs = bot.paused ? null : nextLookAroundAt(lookCfg, now);
   const nextTidyTs = bot.paused ? null : computeNextTidyUpAt(tidyCfg, now);
-  const unreadSuggestions = (0, import_react17.useMemo)(
+  const unreadSuggestions = (0, import_react18.useMemo)(
     () => suggestions.filter((sug) => localUnreadIds[sug.id] !== void 0 ? localUnreadIds[sug.id] : isSuggestionUnread(sug, upNextSeenAt)),
     [localUnreadIds, suggestions, upNextSeenAt]
   );
-  (0, import_react17.useEffect)(() => {
+  (0, import_react18.useEffect)(() => {
     const serverUnread = suggestions.filter((sug) => isSuggestionUnread(sug, upNextSeenAt));
     if (serverUnread.length === 0) {
       return;
@@ -13637,11 +13740,11 @@ function BotActivityUpcoming({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
-var import_react19 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
+var import_react20 = require("react");
 
-// vendor/dsh-whale/src/client/components/BotItemQuestionStep.tsx
-var import_react18 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemQuestionStep.tsx
+var import_react19 = require("react");
 var import_jsx_runtime18 = require("react/jsx-runtime");
 function buildOptionSummary(decision, picks) {
   return picks.map((idx) => decision.replies[idx]?.label).filter((label) => Boolean(label)).join("\u3001");
@@ -13674,15 +13777,15 @@ function BotItemQuestionStep({
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
   const total = shape.decisions.length;
-  const [step, setStep] = (0, import_react18.useState)(0);
-  const [heldPicks, setHeldPicks] = (0, import_react18.useState)({});
-  (0, import_react18.useEffect)(() => {
+  const [step, setStep] = (0, import_react19.useState)(0);
+  const [heldPicks, setHeldPicks] = (0, import_react19.useState)({});
+  (0, import_react19.useEffect)(() => {
     setStep(0);
     setHeldPicks({});
   }, [questionKey]);
   const safeStep = Math.min(Math.max(step, 0), Math.max(0, total - 1));
   const currentDecision = shape.decisions[safeStep];
-  const answeredIndices = (0, import_react18.useMemo)(() => {
+  const answeredIndices = (0, import_react19.useMemo)(() => {
     const list = [];
     for (let i = 0; i < total; i += 1) {
       if ((heldPicks[i]?.length ?? 0) > 0) {
@@ -13691,7 +13794,7 @@ function BotItemQuestionStep({
     }
     return list;
   }, [heldPicks, total]);
-  const heldOtherIndices = (0, import_react18.useMemo)(
+  const heldOtherIndices = (0, import_react19.useMemo)(
     () => answeredIndices.filter((idx) => idx !== safeStep),
     [answeredIndices, safeStep]
   );
@@ -13898,7 +14001,7 @@ function BotItemQuestionStep({
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotItemReplyingTo.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemReplyingTo.tsx
 var import_jsx_runtime19 = require("react/jsx-runtime");
 function BotItemReplyingTo({
   summary,
@@ -13937,7 +14040,7 @@ function BotItemReplyingTo({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
 var import_jsx_runtime20 = require("react/jsx-runtime");
 var DRAFT_STORAGE_PREFIX = "dsh-bots.itemDraft:";
 function draftStorageKey(botId, itemUid) {
@@ -14050,36 +14153,36 @@ function BotItemDetailView({
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const now = useNow(6e4);
-  const rootRef = (0, import_react19.useRef)(null);
-  const composerRef = (0, import_react19.useRef)(null);
-  const fileInputRef = (0, import_react19.useRef)(null);
-  const prevBtnRef = (0, import_react19.useRef)(null);
-  const nextBtnRef = (0, import_react19.useRef)(null);
-  const cancelInputRef = (0, import_react19.useRef)(null);
-  const focusAfterStepRef = (0, import_react19.useRef)(null);
-  const flashTimerRef = (0, import_react19.useRef)(null);
-  const [item, setItem] = (0, import_react19.useState)(null);
-  const [events, setEvents] = (0, import_react19.useState)([]);
-  const [links, setLinks] = (0, import_react19.useState)([]);
-  const [decisionRows, setDecisionRows] = (0, import_react19.useState)([]);
-  const [decisionsPath, setDecisionsPath] = (0, import_react19.useState)("");
-  const [decisionsOpen, setDecisionsOpen] = (0, import_react19.useState)(false);
-  const [evidenceOpen, setEvidenceOpen] = (0, import_react19.useState)(false);
-  const [loading, setLoading] = (0, import_react19.useState)(true);
-  const [comment, setComment] = (0, import_react19.useState)(() => readBotItemDraft(botId, itemUid));
-  const [attachments, setAttachments] = (0, import_react19.useState)([]);
-  const [dragActive, setDragActive] = (0, import_react19.useState)(false);
-  const [pendingComments, setPendingComments] = (0, import_react19.useState)([]);
-  const [submitting, setSubmitting] = (0, import_react19.useState)(false);
-  const [snoozeOpen, setSnoozeOpen] = (0, import_react19.useState)(false);
-  const [customSnooze, setCustomSnooze] = (0, import_react19.useState)("");
-  const [cancelDialogOpen, setCancelDialogOpen] = (0, import_react19.useState)(false);
-  const [cancelReason, setCancelReason] = (0, import_react19.useState)("");
-  const [canceling, setCanceling] = (0, import_react19.useState)(false);
-  const [dismissedQuestionKey, setDismissedQuestionKey] = (0, import_react19.useState)(null);
-  const [flashedEventId, setFlashedEventId] = (0, import_react19.useState)(null);
-  const [composerGlow, setComposerGlow] = (0, import_react19.useState)(false);
-  (0, import_react19.useEffect)(() => {
+  const rootRef = (0, import_react20.useRef)(null);
+  const composerRef = (0, import_react20.useRef)(null);
+  const fileInputRef = (0, import_react20.useRef)(null);
+  const prevBtnRef = (0, import_react20.useRef)(null);
+  const nextBtnRef = (0, import_react20.useRef)(null);
+  const cancelInputRef = (0, import_react20.useRef)(null);
+  const focusAfterStepRef = (0, import_react20.useRef)(null);
+  const flashTimerRef = (0, import_react20.useRef)(null);
+  const [item, setItem] = (0, import_react20.useState)(null);
+  const [events, setEvents] = (0, import_react20.useState)([]);
+  const [links, setLinks] = (0, import_react20.useState)([]);
+  const [decisionRows, setDecisionRows] = (0, import_react20.useState)([]);
+  const [decisionsPath, setDecisionsPath] = (0, import_react20.useState)("");
+  const [decisionsOpen, setDecisionsOpen] = (0, import_react20.useState)(false);
+  const [evidenceOpen, setEvidenceOpen] = (0, import_react20.useState)(false);
+  const [loading, setLoading] = (0, import_react20.useState)(true);
+  const [comment, setComment] = (0, import_react20.useState)(() => readBotItemDraft(botId, itemUid));
+  const [attachments, setAttachments] = (0, import_react20.useState)([]);
+  const [dragActive, setDragActive] = (0, import_react20.useState)(false);
+  const [pendingComments, setPendingComments] = (0, import_react20.useState)([]);
+  const [submitting, setSubmitting] = (0, import_react20.useState)(false);
+  const [snoozeOpen, setSnoozeOpen] = (0, import_react20.useState)(false);
+  const [customSnooze, setCustomSnooze] = (0, import_react20.useState)("");
+  const [cancelDialogOpen, setCancelDialogOpen] = (0, import_react20.useState)(false);
+  const [cancelReason, setCancelReason] = (0, import_react20.useState)("");
+  const [canceling, setCanceling] = (0, import_react20.useState)(false);
+  const [dismissedQuestionKey, setDismissedQuestionKey] = (0, import_react20.useState)(null);
+  const [flashedEventId, setFlashedEventId] = (0, import_react20.useState)(null);
+  const [composerGlow, setComposerGlow] = (0, import_react20.useState)(false);
+  (0, import_react20.useEffect)(() => {
     setComment(readBotItemDraft(botId, itemUid));
     setAttachments([]);
     setPendingComments([]);
@@ -14088,10 +14191,10 @@ function BotItemDetailView({
     setCancelReason("");
     setDismissedQuestionKey(null);
   }, [botId, itemUid]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     writeBotItemDraft(botId, itemUid, comment);
   }, [botId, itemUid, comment]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     const target = focusAfterStepRef.current;
     if (!target) {
       return;
@@ -14105,12 +14208,12 @@ function BotItemDetailView({
       rootRef.current?.focus();
     }
   }, [itemUid]);
-  (0, import_react19.useEffect)(() => () => {
+  (0, import_react20.useEffect)(() => () => {
     if (flashTimerRef.current !== null) {
       window.clearTimeout(flashTimerRef.current);
     }
   }, []);
-  const load = (0, import_react19.useCallback)(async () => {
+  const load = (0, import_react20.useCallback)(async () => {
     setLoading(true);
     try {
       const [showRes, decRes] = await Promise.allSettled([
@@ -14153,18 +14256,18 @@ function BotItemDetailView({
       setLoading(false);
     }
   }, [botId, itemUid]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     void load();
   }, [load]);
   const idx = orderedUids.indexOf(itemUid);
   const prevUid = idx > 0 ? orderedUids[idx - 1] : null;
   const nextUid = idx >= 0 && idx < orderedUids.length - 1 ? orderedUids[idx + 1] : null;
-  const latestAskEvent = (0, import_react19.useMemo)(
+  const latestAskEvent = (0, import_react20.useMemo)(
     () => [...events].reverse().find((ev) => Boolean(ev.data?.ask) || ev.kind === "status" && ev.data?.to === "needs_you"),
     [events]
   );
   const askData = item?.question?.data ?? (item?.question?.ask ? { ask: item.question.ask } : latestAskEvent?.data);
-  const askShape = (0, import_react19.useMemo)(
+  const askShape = (0, import_react20.useMemo)(
     () => askData ? botItemQuestionShape(askData) : { body: "", decisions: [] },
     [askData]
   );
@@ -14174,7 +14277,7 @@ function BotItemDetailView({
     askShape.decisions.length > 0 || item.question?.text || askShape.body || latestAskEvent
   );
   const replyingActive = hasOpenQuestion && dismissedQuestionKey !== questionKey;
-  const questionSummary = (0, import_react19.useMemo)(() => {
+  const questionSummary = (0, import_react20.useMemo)(() => {
     if (item?.question?.gist) {
       return item.question.gist;
     }
@@ -14192,7 +14295,7 @@ function BotItemDetailView({
     }
     return zh ? "\u9700\u8981\u4F60\u786E\u8BA4\u5F53\u524D\u8FDB\u5C55" : "Needs your reply";
   }, [askShape, item?.question?.gist, item?.question?.text, latestAskEvent, zh]);
-  const originChatSessionId = (0, import_react19.useMemo)(() => {
+  const originChatSessionId = (0, import_react20.useMemo)(() => {
     const direct = item?.originSessionId || item?.askedInConversation || item?.sessionId || item?.chatId;
     if (direct && typeof direct === "string") {
       return direct;
@@ -14205,7 +14308,7 @@ function BotItemDetailView({
     }
     return null;
   }, [events, item?.askedInConversation, item?.chatId, item?.originSessionId, item?.sessionId]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     if (replyingActive && askShape.decisions.length === 0) {
       setComposerGlow(true);
       const timer = window.setTimeout(() => setComposerGlow(false), 1200);
@@ -14213,7 +14316,7 @@ function BotItemDetailView({
     }
     return void 0;
   }, [askShape.decisions.length, questionKey, replyingActive]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     const el = composerRef.current;
     if (!el) {
       return;
@@ -14224,12 +14327,12 @@ function BotItemDetailView({
     const next = Math.min(maxHeight, Math.max(minHeight, el.scrollHeight));
     el.style.height = `${next}px`;
   }, [comment, replyingActive, itemUid]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     if (cancelDialogOpen) {
       window.setTimeout(() => cancelInputRef.current?.focus(), 0);
     }
   }, [cancelDialogOpen]);
-  (0, import_react19.useEffect)(() => {
+  (0, import_react20.useEffect)(() => {
     const handleKeyDown = (event) => {
       if (event.isComposing) {
         return;
@@ -15082,7 +15185,7 @@ ${text}` : text);
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotActivityTab.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotActivityTab.tsx
 var import_jsx_runtime21 = require("react/jsx-runtime");
 var STATUS_GROUPS = [
   "needs_you",
@@ -15145,28 +15248,28 @@ function BotActivityTab({ bot, filterOpen }) {
   const now = useNow(6e4);
   const selectedItemId = useBotsState((state) => state.rightPanelItemId);
   const changeSeq = useBotsState((state) => state.changeSeq);
-  const [scopeFilter, setScopeFilter] = (0, import_react20.useState)("all");
-  const [onlyNeedsYou, setOnlyNeedsYou] = (0, import_react20.useState)(false);
-  const [items, setItems] = (0, import_react20.useState)([]);
-  const [automations, setAutomations] = (0, import_react20.useState)([]);
-  const [accessRequests, setAccessRequests] = (0, import_react20.useState)([]);
-  const [suggestions, setSuggestions] = (0, import_react20.useState)([]);
-  const [budgetUsage, setBudgetUsage] = (0, import_react20.useState)(null);
-  const [digestInProgressOpen, setDigestInProgressOpen] = (0, import_react20.useState)(true);
-  const [digestAutoDoneOpen, setDigestAutoDoneOpen] = (0, import_react20.useState)(false);
-  const [upNextSeenAt, setUpNextSeenAt] = (0, import_react20.useState)(null);
-  const [collapsedGroups, setCollapsedGroups] = (0, import_react20.useState)({
+  const [scopeFilter, setScopeFilter] = (0, import_react21.useState)("all");
+  const [onlyNeedsYou, setOnlyNeedsYou] = (0, import_react21.useState)(false);
+  const [items, setItems] = (0, import_react21.useState)([]);
+  const [automations, setAutomations] = (0, import_react21.useState)([]);
+  const [accessRequests, setAccessRequests] = (0, import_react21.useState)([]);
+  const [suggestions, setSuggestions] = (0, import_react21.useState)([]);
+  const [budgetUsage, setBudgetUsage] = (0, import_react21.useState)(null);
+  const [digestInProgressOpen, setDigestInProgressOpen] = (0, import_react21.useState)(true);
+  const [digestAutoDoneOpen, setDigestAutoDoneOpen] = (0, import_react21.useState)(false);
+  const [upNextSeenAt, setUpNextSeenAt] = (0, import_react21.useState)(null);
+  const [collapsedGroups, setCollapsedGroups] = (0, import_react21.useState)({
     done: true,
     canceled: true
   });
-  const [selectedUids, setSelectedUids] = (0, import_react20.useState)([]);
-  const [snoozeTargetUid, setSnoozeTargetUid] = (0, import_react20.useState)(null);
-  const [customSnoozeVal, setCustomSnoozeVal] = (0, import_react20.useState)("");
-  const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = (0, import_react20.useState)(false);
-  const [bulkSnoozeMenuOpen, setBulkSnoozeMenuOpen] = (0, import_react20.useState)(false);
-  const [bulkCustomSnooze, setBulkCustomSnooze] = (0, import_react20.useState)("");
-  const [submittingAskUid, setSubmittingAskUid] = (0, import_react20.useState)(null);
-  const reloadAll = (0, import_react20.useCallback)(async () => {
+  const [selectedUids, setSelectedUids] = (0, import_react21.useState)([]);
+  const [snoozeTargetUid, setSnoozeTargetUid] = (0, import_react21.useState)(null);
+  const [customSnoozeVal, setCustomSnoozeVal] = (0, import_react21.useState)("");
+  const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = (0, import_react21.useState)(false);
+  const [bulkSnoozeMenuOpen, setBulkSnoozeMenuOpen] = (0, import_react21.useState)(false);
+  const [bulkCustomSnooze, setBulkCustomSnooze] = (0, import_react21.useState)("");
+  const [submittingAskUid, setSubmittingAskUid] = (0, import_react21.useState)(null);
+  const reloadAll = (0, import_react21.useCallback)(async () => {
     const [itemsRes, autoRes, accessRes, upNextRes, budgetRes] = await Promise.allSettled([
       callBotRpc(RPC_METHODS2.ITEMS_OWNER_LIST, { botId: bot.id, limit: 100 }),
       callBotRpc(RPC_METHODS2.AUTOMATIONS_LIST, { botId: bot.id }),
@@ -15211,12 +15314,12 @@ function BotActivityTab({ bot, filterOpen }) {
       setBudgetUsage(budgetRes.value);
     }
   }, [bot.id]);
-  (0, import_react20.useEffect)(() => {
+  (0, import_react21.useEffect)(() => {
     void reloadAll();
   }, [reloadAll, changeSeq]);
   const staleDays = bot.itemsStale ?? 5;
   const homeChatId = bot.chatSessionId ?? bot.homeSessionId ?? null;
-  const filteredItems = (0, import_react20.useMemo)(() => {
+  const filteredItems = (0, import_react21.useMemo)(() => {
     return items.filter((item) => {
       if (onlyNeedsYou && item.status !== "needs_you") {
         return false;
@@ -15230,27 +15333,27 @@ function BotActivityTab({ bot, filterOpen }) {
       return true;
     });
   }, [homeChatId, items, onlyNeedsYou, scopeFilter]);
-  const needsYouItems = (0, import_react20.useMemo)(
+  const needsYouItems = (0, import_react21.useMemo)(
     () => filteredItems.filter((item) => item.status === "needs_you" && !isBotItemSnoozed(item, now)),
     [filteredItems, now]
   );
-  const inProgressItems = (0, import_react20.useMemo)(
+  const inProgressItems = (0, import_react21.useMemo)(
     () => filteredItems.filter((item) => item.status === "working" || item.status === "planned"),
     [filteredItems]
   );
-  const autoDoneItems = (0, import_react20.useMemo)(
+  const autoDoneItems = (0, import_react21.useMemo)(
     () => filteredItems.filter((item) => item.status === "done"),
     [filteredItems]
   );
-  const workingItems = (0, import_react20.useMemo)(
+  const workingItems = (0, import_react21.useMemo)(
     () => filteredItems.filter((item) => item.status === "working"),
     [filteredItems]
   );
-  const staleItems = (0, import_react20.useMemo)(
+  const staleItems = (0, import_react21.useMemo)(
     () => staleDays === "never" ? [] : filteredItems.filter((item) => isBotItemStale(item, staleDays, now)),
     [filteredItems, now, staleDays]
   );
-  const orderedUids = (0, import_react20.useMemo)(() => filteredItems.map((i) => i.uid), [filteredItems]);
+  const orderedUids = (0, import_react21.useMemo)(() => filteredItems.map((i) => i.uid), [filteredItems]);
   const showAllClear = !bot.paused && needsYouItems.length === 0 && accessRequests.length === 0 && workingItems.length === 0 && (bot.workers?.working ?? 0) === 0 && (bot.workers?.permission ?? 0) === 0;
   if (selectedItemId) {
     return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
@@ -15869,8 +15972,8 @@ function BotActivityTab({ bot, filterOpen }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotChatsTab.tsx
-var import_react21 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotChatsTab.tsx
+var import_react22 = require("react");
 var import_react_dom9 = require("react-dom");
 var import_jsx_runtime22 = require("react/jsx-runtime");
 var INITIAL_CHATS_SHOWN = 8;
@@ -15953,8 +16056,8 @@ function highlightMatch(text, needle) {
   ] });
 }
 function useLiveSecondTick(active) {
-  const [tick, setTick] = (0, import_react21.useState)(() => Date.now());
-  (0, import_react21.useEffect)(() => {
+  const [tick, setTick] = (0, import_react22.useState)(() => Date.now());
+  (0, import_react22.useEffect)(() => {
     if (!active) {
       return void 0;
     }
@@ -15971,37 +16074,37 @@ function BotChatsTab({ bot }) {
   const activeSessionId = useBotsState((state) => state.activeSessionId);
   const cachedTree = useBotsState((state) => state.chatsByBot[bot.id]);
   const changeSeq = useBotsState((state) => state.changeSeq);
-  const [query, setQuery] = (0, import_react21.useState)("");
-  const [remoteChats, setRemoteChats] = (0, import_react21.useState)(null);
-  const [remoteWorkers, setRemoteWorkers] = (0, import_react21.useState)(null);
-  const [searching, setSearching] = (0, import_react21.useState)(false);
-  const [loadingTree, setLoadingTree] = (0, import_react21.useState)(!cachedTree);
-  const [loadError, setLoadError] = (0, import_react21.useState)(null);
-  const [expandedIds, setExpandedIds] = (0, import_react21.useState)({});
-  const [workerCaps, setWorkerCaps] = (0, import_react21.useState)({});
-  const [visibleLimit, setVisibleLimit] = (0, import_react21.useState)(INITIAL_CHATS_SHOWN);
-  const [starting, setStarting] = (0, import_react21.useState)(false);
-  const [crewList, setCrewList] = (0, import_react21.useState)([]);
-  const [crewOpen, setCrewOpen] = (0, import_react21.useState)(true);
-  const [adoptModalOpen, setAdoptModalOpen] = (0, import_react21.useState)(false);
-  const [adoptSessionId, setAdoptSessionId] = (0, import_react21.useState)("");
-  const [adoptTitle, setAdoptTitle] = (0, import_react21.useState)("");
-  const [adoptCwd, setAdoptCwd] = (0, import_react21.useState)("");
-  const [adoptRole, setAdoptRole] = (0, import_react21.useState)("crew");
-  const [adopting, setAdopting] = (0, import_react21.useState)(false);
-  const [releasingId, setReleasingId] = (0, import_react21.useState)(null);
-  const [menuState, setMenuState] = (0, import_react21.useState)(null);
-  const [confirmDelete, setConfirmDelete] = (0, import_react21.useState)(null);
-  const [deletingSessionId, setDeletingSessionId] = (0, import_react21.useState)(null);
-  const [stoppingWorkIds, setStoppingWorkIds] = (0, import_react21.useState)({});
-  const [tooltip, setTooltip] = (0, import_react21.useState)(null);
-  const menuRef = (0, import_react21.useRef)(null);
-  const hoverTimerRef = (0, import_react21.useRef)(null);
-  const loadCrew = (0, import_react21.useCallback)(async () => {
+  const [query, setQuery] = (0, import_react22.useState)("");
+  const [remoteChats, setRemoteChats] = (0, import_react22.useState)(null);
+  const [remoteWorkers, setRemoteWorkers] = (0, import_react22.useState)(null);
+  const [searching, setSearching] = (0, import_react22.useState)(false);
+  const [loadingTree, setLoadingTree] = (0, import_react22.useState)(!cachedTree);
+  const [loadError, setLoadError] = (0, import_react22.useState)(null);
+  const [expandedIds, setExpandedIds] = (0, import_react22.useState)({});
+  const [workerCaps, setWorkerCaps] = (0, import_react22.useState)({});
+  const [visibleLimit, setVisibleLimit] = (0, import_react22.useState)(INITIAL_CHATS_SHOWN);
+  const [starting, setStarting] = (0, import_react22.useState)(false);
+  const [crewList, setCrewList] = (0, import_react22.useState)([]);
+  const [crewOpen, setCrewOpen] = (0, import_react22.useState)(true);
+  const [adoptModalOpen, setAdoptModalOpen] = (0, import_react22.useState)(false);
+  const [adoptSessionId, setAdoptSessionId] = (0, import_react22.useState)("");
+  const [adoptTitle, setAdoptTitle] = (0, import_react22.useState)("");
+  const [adoptCwd, setAdoptCwd] = (0, import_react22.useState)("");
+  const [adoptRole, setAdoptRole] = (0, import_react22.useState)("crew");
+  const [adopting, setAdopting] = (0, import_react22.useState)(false);
+  const [releasingId, setReleasingId] = (0, import_react22.useState)(null);
+  const [menuState, setMenuState] = (0, import_react22.useState)(null);
+  const [confirmDelete, setConfirmDelete] = (0, import_react22.useState)(null);
+  const [deletingSessionId, setDeletingSessionId] = (0, import_react22.useState)(null);
+  const [stoppingWorkIds, setStoppingWorkIds] = (0, import_react22.useState)({});
+  const [tooltip, setTooltip] = (0, import_react22.useState)(null);
+  const menuRef = (0, import_react22.useRef)(null);
+  const hoverTimerRef = (0, import_react22.useRef)(null);
+  const loadCrew = (0, import_react22.useCallback)(async () => {
     const rows = await botsStore.listCrew(bot.id);
     setCrewList(rows);
   }, [bot.id]);
-  const loadChatTree = (0, import_react21.useCallback)(async (showSkeleton = false) => {
+  const loadChatTree = (0, import_react22.useCallback)(async (showSkeleton = false) => {
     if (showSkeleton) {
       setLoadingTree(true);
     }
@@ -16018,17 +16121,17 @@ function BotChatsTab({ bot }) {
       setLoadingTree(false);
     }
   }, [bot.id, zh]);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => {
     setVisibleLimit(INITIAL_CHATS_SHOWN);
     setConfirmDelete(null);
     setMenuState(null);
     setTooltip(null);
     void loadChatTree(!cachedTree);
   }, [bot.id]);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => {
     void loadCrew();
   }, [bot.id, changeSeq, loadCrew]);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => {
     if (!adoptModalOpen) return void 0;
     const handleEsc = (event) => {
       if (event.key === "Escape") setAdoptModalOpen(false);
@@ -16036,43 +16139,26 @@ function BotChatsTab({ bot }) {
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
   }, [adoptModalOpen]);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => {
     if (changeSeq > 0) {
       void botsStore.refreshBotChatTree(bot.id);
     }
   }, [bot.id, changeSeq]);
-  (0, import_react21.useEffect)(() => {
-    if (!menuState) {
-      return void 0;
-    }
-    const handlePointer = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuState(null);
-      }
-    };
-    const handleKey = (e) => {
-      if (e.key === "Escape") {
-        setMenuState(null);
-      }
-    };
-    const handleScroll = () => setMenuState(null);
-    document.addEventListener("mousedown", handlePointer);
-    document.addEventListener("keydown", handleKey);
-    window.addEventListener("scroll", handleScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointer);
-      document.removeEventListener("keydown", handleKey);
-      window.removeEventListener("scroll", handleScroll, true);
-    };
-  }, [menuState]);
-  (0, import_react21.useEffect)(() => {
+  useAnchoredPopoverDismiss({
+    open: Boolean(menuState),
+    popoverRef: menuRef,
+    triggerEl: menuState?.triggerEl ?? null,
+    onClose: () => setMenuState(null),
+    closeOnScroll: true
+  });
+  (0, import_react22.useEffect)(() => {
     return () => {
       if (hoverTimerRef.current !== null) {
         window.clearTimeout(hoverTimerRef.current);
       }
     };
   }, []);
-  (0, import_react21.useEffect)(() => {
+  (0, import_react22.useEffect)(() => {
     const trimmed = query.trim();
     if (!trimmed) {
       setRemoteChats(null);
@@ -16112,11 +16198,11 @@ function BotChatsTab({ bot }) {
   }, [bot.id, query]);
   const trimmedQuery = query.trim();
   const isSearching = trimmedQuery.length > 0;
-  const allLocalChats = (0, import_react21.useMemo)(
+  const allLocalChats = (0, import_react22.useMemo)(
     () => orderBotChats(cachedTree?.chats ?? []),
     [cachedTree?.chats]
   );
-  const matchedChats = (0, import_react21.useMemo)(() => {
+  const matchedChats = (0, import_react22.useMemo)(() => {
     if (!isSearching) {
       return allLocalChats;
     }
@@ -16130,7 +16216,7 @@ function BotChatsTab({ bot }) {
       return title.includes(q) || preview.includes(q);
     });
   }, [allLocalChats, isSearching, remoteChats, trimmedQuery]);
-  const matchedWorkers = (0, import_react21.useMemo)(() => {
+  const matchedWorkers = (0, import_react22.useMemo)(() => {
     if (!isSearching) {
       return [];
     }
@@ -16165,7 +16251,7 @@ function BotChatsTab({ bot }) {
     }
     return out;
   }, [allLocalChats, isSearching, remoteChats, remoteWorkers, tr, trimmedQuery]);
-  const hasRunningWorkers = (0, import_react21.useMemo)(() => {
+  const hasRunningWorkers = (0, import_react22.useMemo)(() => {
     if (matchedWorkers.some((w) => isWorkerRunning(w.state))) {
       return true;
     }
@@ -16289,9 +16375,9 @@ function BotChatsTab({ bot }) {
       });
     }
   };
-  const openChatMenuAt = (chat, isHome, isRunning, x, y) => {
+  const openChatMenuAt = (chat, isHome, isRunning, x, y, triggerEl = null) => {
     setTooltip(null);
-    setMenuState({ chat, isHome, isRunning, x, y });
+    setMenuState({ chat, isHome, isRunning, x, y, triggerEl });
   };
   const showWorkerTooltip = (worker, el) => {
     if (hoverTimerRef.current !== null) {
@@ -16430,8 +16516,12 @@ function BotChatsTab({ bot }) {
                       "aria-expanded": menuOpenForRow,
                       onClick: (e) => {
                         e.stopPropagation();
+                        if (menuState?.chat.chatId === chat.chatId) {
+                          setMenuState(null);
+                          return;
+                        }
                         const rect = e.currentTarget.getBoundingClientRect();
-                        openChatMenuAt(chat, isHome, isRunning, rect.right, rect.bottom + 4);
+                        openChatMenuAt(chat, isHome, isRunning, rect.right, rect.bottom + 4, e.currentTarget);
                       },
                       children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(IconMoreHorizontal, { size: 13 })
                     }
@@ -16725,10 +16815,12 @@ function BotChatsTab({ bot }) {
           ref: menuRef,
           className: "dsh-bots-popover",
           role: "menu",
+          "data-dsh-bots-popover": "chats-row-menu",
           style: {
             left: Math.max(8, Math.min(menuState.x - 168, window.innerWidth - 208)),
             top: Math.max(8, Math.min(menuState.y, window.innerHeight - 116))
           },
+          onClick: (e) => e.stopPropagation(),
           children: [
             /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(
               "button",
@@ -16925,8 +17017,8 @@ function BotChatsTab({ bot }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotConnectorsTab.tsx
-var import_react22 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConnectorsTab.tsx
+var import_react23 = require("react");
 var import_jsx_runtime23 = require("react/jsx-runtime");
 var CHANNEL_LABELS = {
   feishu: { zh: "\u98DE\u4E66 (Feishu)", en: "Feishu" },
@@ -16952,16 +17044,16 @@ function BotConnectorsTab({ bot, embedded = false }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
   const allBots = useBotsState((state) => state.bots);
-  const [data, setData] = (0, import_react22.useState)(null);
-  const [webhooks, setWebhooks] = (0, import_react22.useState)([]);
-  const [routesMap, setRoutesMap] = (0, import_react22.useState)({});
-  const [loading, setLoading] = (0, import_react22.useState)(false);
-  const [saving, setSaving] = (0, import_react22.useState)(false);
-  const [addingHook, setAddingHook] = (0, import_react22.useState)(false);
-  const [hookName, setHookName] = (0, import_react22.useState)("");
-  const [hookSecret, setHookSecret] = (0, import_react22.useState)("");
-  const [hmacGuideOpen, setHmacGuideOpen] = (0, import_react22.useState)(false);
-  const load = (0, import_react22.useCallback)(async () => {
+  const [data, setData] = (0, import_react23.useState)(null);
+  const [webhooks, setWebhooks] = (0, import_react23.useState)([]);
+  const [routesMap, setRoutesMap] = (0, import_react23.useState)({});
+  const [loading, setLoading] = (0, import_react23.useState)(false);
+  const [saving, setSaving] = (0, import_react23.useState)(false);
+  const [addingHook, setAddingHook] = (0, import_react23.useState)(false);
+  const [hookName, setHookName] = (0, import_react23.useState)("");
+  const [hookSecret, setHookSecret] = (0, import_react23.useState)("");
+  const [hmacGuideOpen, setHmacGuideOpen] = (0, import_react23.useState)(false);
+  const load = (0, import_react23.useCallback)(async () => {
     setLoading(true);
     try {
       const [connRes, hookRes] = await Promise.allSettled([
@@ -17007,10 +17099,10 @@ function BotConnectorsTab({ bot, embedded = false }) {
       setLoading(false);
     }
   }, [bot.id]);
-  (0, import_react22.useEffect)(() => {
+  (0, import_react23.useEffect)(() => {
     void load();
   }, [load]);
-  const channels = (0, import_react22.useMemo)(() => {
+  const channels = (0, import_react23.useMemo)(() => {
     const byKind = /* @__PURE__ */ new Map();
     for (const ch of data?.imChannels ?? []) {
       if (ch && typeof ch.kind === "string") {
@@ -17325,8 +17417,8 @@ function BotConnectorsTab({ bot, embedded = false }) {
   return embedded ? content : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "dsh-bots-panel-scroll", children: content });
 }
 
-// vendor/dsh-whale/src/client/components/BotFilesTab.tsx
-var import_react23 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotFilesTab.tsx
+var import_react24 = require("react");
 var import_jsx_runtime24 = require("react/jsx-runtime");
 var PINNED_FILES = ["SOUL.md", "MEMORY.md", "AGENTS.md", "bot.json"];
 function normalizeEntries(raw) {
@@ -17347,17 +17439,17 @@ function normalizeEntries(raw) {
 function BotFilesTab({ bot }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [subDir, setSubDir] = (0, import_react23.useState)("");
-  const [entries, setEntries] = (0, import_react23.useState)([]);
-  const [loadingList, setLoadingList] = (0, import_react23.useState)(false);
-  const [selectedPath, setSelectedPath] = (0, import_react23.useState)("SOUL.md");
-  const [diskContent, setDiskContent] = (0, import_react23.useState)("");
-  const [draft, setDraft] = (0, import_react23.useState)("");
-  const [loadingFile, setLoadingFile] = (0, import_react23.useState)(false);
-  const [saving, setSaving] = (0, import_react23.useState)(false);
-  const [statusMsg, setStatusMsg] = (0, import_react23.useState)(null);
-  const [conflictMsg, setConflictMsg] = (0, import_react23.useState)(null);
-  const loadList = (0, import_react23.useCallback)(async (dir) => {
+  const [subDir, setSubDir] = (0, import_react24.useState)("");
+  const [entries, setEntries] = (0, import_react24.useState)([]);
+  const [loadingList, setLoadingList] = (0, import_react24.useState)(false);
+  const [selectedPath, setSelectedPath] = (0, import_react24.useState)("SOUL.md");
+  const [diskContent, setDiskContent] = (0, import_react24.useState)("");
+  const [draft, setDraft] = (0, import_react24.useState)("");
+  const [loadingFile, setLoadingFile] = (0, import_react24.useState)(false);
+  const [saving, setSaving] = (0, import_react24.useState)(false);
+  const [statusMsg, setStatusMsg] = (0, import_react24.useState)(null);
+  const [conflictMsg, setConflictMsg] = (0, import_react24.useState)(null);
+  const loadList = (0, import_react24.useCallback)(async (dir) => {
     setLoadingList(true);
     try {
       const res = await callBotRpc(RPC_METHODS2.FILES_LIST, { botId: bot.id, subDir: dir, dir });
@@ -17371,7 +17463,7 @@ function BotFilesTab({ bot }) {
       setLoadingList(false);
     }
   }, [bot.id]);
-  const loadFile = (0, import_react23.useCallback)(async (relPath, checkConflict = false) => {
+  const loadFile = (0, import_react24.useCallback)(async (relPath, checkConflict = false) => {
     if (!relPath) {
       return;
     }
@@ -17396,17 +17488,17 @@ function BotFilesTab({ bot }) {
       setLoadingFile(false);
     }
   }, [bot.id, diskContent, draft, zh]);
-  (0, import_react23.useEffect)(() => {
+  (0, import_react24.useEffect)(() => {
     setSubDir("");
     void loadList("");
     setSelectedPath("SOUL.md");
   }, [bot.id, loadList]);
-  (0, import_react23.useEffect)(() => {
+  (0, import_react24.useEffect)(() => {
     if (selectedPath) {
       void loadFile(selectedPath, false);
     }
   }, [selectedPath, bot.id]);
-  const sortedEntries = (0, import_react23.useMemo)(() => {
+  const sortedEntries = (0, import_react24.useMemo)(() => {
     return [...entries].sort((a, b) => {
       if (Boolean(a.isDirectory) !== Boolean(b.isDirectory)) {
         return a.isDirectory ? -1 : 1;
@@ -17574,8 +17666,8 @@ function BotFilesTab({ bot }) {
   ] }) });
 }
 
-// vendor/dsh-whale/src/client/components/BotGroupItemsPanel.tsx
-var import_react24 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupItemsPanel.tsx
+var import_react25 = require("react");
 var import_jsx_runtime25 = require("react/jsx-runtime");
 var RPC_GROUPS_ITEMS = RPC_METHODS2.GROUPS_ITEMS;
 var STATUS_GROUPS2 = [
@@ -17704,38 +17796,38 @@ function BotGroupItemsPanel({
   const zh = locale === "zh-CN";
   const now = useNow(6e4);
   const changeSeq = useBotsState((state) => state.changeSeq);
-  const [scope, setScope] = (0, import_react24.useState)("group");
-  const [selectedBotId, setSelectedBotId] = (0, import_react24.useState)(null);
-  const [onlyNeedsYou, setOnlyNeedsYou] = (0, import_react24.useState)(false);
-  const [items, setItems] = (0, import_react24.useState)([]);
-  const [rawCounts, setRawCounts] = (0, import_react24.useState)(null);
-  const [loading, setLoading] = (0, import_react24.useState)(true);
-  const [error, setError] = (0, import_react24.useState)(null);
-  const [selectedItem, setSelectedItem] = (0, import_react24.useState)(null);
-  const [collapsedGroups, setCollapsedGroups] = (0, import_react24.useState)({
+  const [scope, setScope] = (0, import_react25.useState)("group");
+  const [selectedBotId, setSelectedBotId] = (0, import_react25.useState)(null);
+  const [onlyNeedsYou, setOnlyNeedsYou] = (0, import_react25.useState)(false);
+  const [items, setItems] = (0, import_react25.useState)([]);
+  const [rawCounts, setRawCounts] = (0, import_react25.useState)(null);
+  const [loading, setLoading] = (0, import_react25.useState)(true);
+  const [error, setError] = (0, import_react25.useState)(null);
+  const [selectedItem, setSelectedItem] = (0, import_react25.useState)(null);
+  const [collapsedGroups, setCollapsedGroups] = (0, import_react25.useState)({
     done: true,
     canceled: true
   });
-  const [snoozeTargetUid, setSnoozeTargetUid] = (0, import_react24.useState)(null);
-  const [customSnoozeVal, setCustomSnoozeVal] = (0, import_react24.useState)("");
-  const memberMap = (0, import_react24.useMemo)(() => new Map(memberBots.map((b) => [b.id, b])), [memberBots]);
-  const memberIdsKey = (0, import_react24.useMemo)(() => memberBots.map((b) => b.id).join(","), [memberBots]);
-  (0, import_react24.useEffect)(() => {
+  const [snoozeTargetUid, setSnoozeTargetUid] = (0, import_react25.useState)(null);
+  const [customSnoozeVal, setCustomSnoozeVal] = (0, import_react25.useState)("");
+  const memberMap = (0, import_react25.useMemo)(() => new Map(memberBots.map((b) => [b.id, b])), [memberBots]);
+  const memberIdsKey = (0, import_react25.useMemo)(() => memberBots.map((b) => b.id).join(","), [memberBots]);
+  (0, import_react25.useEffect)(() => {
     setSelectedItem(null);
     setSelectedBotId(null);
     setScope("group");
     setOnlyNeedsYou(false);
     setSnoozeTargetUid(null);
   }, [group.id]);
-  (0, import_react24.useEffect)(() => {
+  (0, import_react25.useEffect)(() => {
     if (selectedBotId && !memberMap.has(selectedBotId)) {
       setSelectedBotId(null);
     }
   }, [memberMap, selectedBotId]);
-  (0, import_react24.useEffect)(() => {
+  (0, import_react25.useEffect)(() => {
     onSelectedItemChange?.(selectedItem);
   }, [onSelectedItemChange, selectedItem]);
-  const loadItems = (0, import_react24.useCallback)(async (showSkeleton = false) => {
+  const loadItems = (0, import_react25.useCallback)(async (showSkeleton = false) => {
     if (showSkeleton) {
       setLoading(true);
     }
@@ -17781,16 +17873,16 @@ function BotGroupItemsPanel({
       setLoading(false);
     }
   }, [group, memberBots, memberIdsKey, onlyNeedsYou, scope, selectedBotId, threadId]);
-  (0, import_react24.useEffect)(() => {
+  (0, import_react25.useEffect)(() => {
     void loadItems(true);
   }, [group.id, scope, selectedBotId, onlyNeedsYou, threadId]);
-  (0, import_react24.useEffect)(() => {
+  (0, import_react25.useEffect)(() => {
     if (changeSeq > 0) {
       void loadItems(false);
     }
   }, [changeSeq, loadItems]);
-  const counts = (0, import_react24.useMemo)(() => deriveCounts(items, rawCounts, now), [items, rawCounts, now]);
-  const visibleItems = (0, import_react24.useMemo)(() => {
+  const counts = (0, import_react25.useMemo)(() => deriveCounts(items, rawCounts, now), [items, rawCounts, now]);
+  const visibleItems = (0, import_react25.useMemo)(() => {
     return items.filter((item) => {
       if (selectedBotId && item.botId !== selectedBotId) {
         return false;
@@ -17801,7 +17893,7 @@ function BotGroupItemsPanel({
       return true;
     });
   }, [items, onlyNeedsYou, selectedBotId]);
-  const orderedUids = (0, import_react24.useMemo)(() => visibleItems.map((i) => i.uid), [visibleItems]);
+  const orderedUids = (0, import_react25.useMemo)(() => visibleItems.map((i) => i.uid), [visibleItems]);
   const updateItemStatus = async (item, status) => {
     try {
       await callBotRpc(RPC_METHODS2.ITEMS_OWNER_STATUS, {
@@ -18174,8 +18266,8 @@ function BotGroupItemsPanel({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotPanelHeader.tsx
-var import_react25 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotPanelHeader.tsx
+var import_react26 = require("react");
 var import_jsx_runtime26 = require("react/jsx-runtime");
 function computeNextTidyUpAt2(cfg, now) {
   if (!cfg.on) return null;
@@ -18221,14 +18313,14 @@ function BotPanelHeader({
   const zh = locale === "zh-CN";
   const now = useNow(6e4);
   const changeSeq = useBotsState((state) => state.changeSeq);
-  const headerRef = (0, import_react25.useRef)(null);
-  const avatarBtnRef = (0, import_react25.useRef)(null);
-  const moreRef = (0, import_react25.useRef)(null);
-  const [pickerRect, setPickerRect] = (0, import_react25.useState)(null);
-  const [moreOpen, setMoreOpen] = (0, import_react25.useState)(false);
-  const [narrow, setNarrow] = (0, import_react25.useState)(false);
-  const [earliestAutoTs, setEarliestAutoTs] = (0, import_react25.useState)(null);
-  (0, import_react25.useEffect)(() => {
+  const headerRef = (0, import_react26.useRef)(null);
+  const avatarBtnRef = (0, import_react26.useRef)(null);
+  const moreRef = (0, import_react26.useRef)(null);
+  const [pickerRect, setPickerRect] = (0, import_react26.useState)(null);
+  const [moreOpen, setMoreOpen] = (0, import_react26.useState)(false);
+  const [narrow, setNarrow] = (0, import_react26.useState)(false);
+  const [earliestAutoTs, setEarliestAutoTs] = (0, import_react26.useState)(null);
+  (0, import_react26.useEffect)(() => {
     const el = headerRef.current;
     if (!el || typeof ResizeObserver === "undefined") {
       return void 0;
@@ -18241,7 +18333,7 @@ function BotPanelHeader({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  (0, import_react25.useEffect)(() => {
+  (0, import_react26.useEffect)(() => {
     if (nextRunAt !== void 0 || bot.paused) {
       setEarliestAutoTs(null);
       return void 0;
@@ -18261,7 +18353,7 @@ function BotPanelHeader({
       cancelled = true;
     };
   }, [bot.id, bot.paused, changeSeq, nextRunAt]);
-  (0, import_react25.useEffect)(() => {
+  (0, import_react26.useEffect)(() => {
     if (!moreOpen) {
       return void 0;
     }
@@ -18282,7 +18374,7 @@ function BotPanelHeader({
       document.removeEventListener("keydown", handleEsc);
     };
   }, [moreOpen]);
-  const resolvedNextRunTs = (0, import_react25.useMemo)(() => {
+  const resolvedNextRunTs = (0, import_react26.useMemo)(() => {
     if (bot.paused) return null;
     if (typeof nextRunAt === "number" && Number.isFinite(nextRunAt) && nextRunAt > now) {
       return nextRunAt;
@@ -18349,7 +18441,7 @@ function BotPanelHeader({
   };
   const isBusy = bot.dotState === "working" || bot.dotState === "monitoring";
   const idleText = tr("bots.panel.idle", zh ? "\u7A7A\u95F2" : "Idle");
-  const { displaySub, fullSubTitle } = (0, import_react25.useMemo)(() => {
+  const { displaySub, fullSubTitle } = (0, import_react26.useMemo)(() => {
     if (subtitle) {
       return { displaySub: subtitle, fullSubTitle: subtitle };
     }
@@ -18379,6 +18471,8 @@ function BotPanelHeader({
         ref: avatarBtnRef,
         type: "button",
         className: "dsh-bots-panel-avatar-trigger",
+        "aria-haspopup": "dialog",
+        "aria-expanded": Boolean(pickerRect),
         title: zh ? "\u70B9\u51FB\u66F4\u6362\u5934\u50CF" : "Change avatar",
         onClick: () => {
           const rect = avatarBtnRef.current?.getBoundingClientRect() ?? null;
@@ -18514,6 +18608,7 @@ function BotPanelHeader({
       {
         open: Boolean(pickerRect),
         anchorRect: pickerRect,
+        triggerRef: avatarBtnRef,
         onClose: () => setPickerRect(null),
         value: pickerValue,
         onChange: handleAvatarChange,
@@ -18523,30 +18618,30 @@ function BotPanelHeader({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotSettingsView.tsx
-var import_react29 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsView.tsx
+var import_react30 = require("react");
 
-// vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
+var import_react28 = require("react");
+
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesC.tsx
 var import_react27 = require("react");
-
-// vendor/dsh-whale/src/client/components/BotSettingsSubpagesC.tsx
-var import_react26 = require("react");
 var import_jsx_runtime27 = require("react/jsx-runtime");
 function BotToolsSubpage({ bot }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [servers, setServers] = (0, import_react26.useState)([]);
-  const [problems, setProblems] = (0, import_react26.useState)([]);
-  const [problemsOpen, setProblemsOpen] = (0, import_react26.useState)(true);
-  const [pasteInput, setPasteInput] = (0, import_react26.useState)("");
-  const [manualMode, setManualMode] = (0, import_react26.useState)("http");
-  const [name2, setName] = (0, import_react26.useState)("");
-  const [url, setUrl] = (0, import_react26.useState)("");
-  const [command, setCommand] = (0, import_react26.useState)("");
-  const [argsText, setArgsText] = (0, import_react26.useState)("");
-  const [editingName, setEditingName] = (0, import_react26.useState)(null);
-  const [error, setError] = (0, import_react26.useState)(null);
-  const load = (0, import_react26.useCallback)(async () => {
+  const [servers, setServers] = (0, import_react27.useState)([]);
+  const [problems, setProblems] = (0, import_react27.useState)([]);
+  const [problemsOpen, setProblemsOpen] = (0, import_react27.useState)(true);
+  const [pasteInput, setPasteInput] = (0, import_react27.useState)("");
+  const [manualMode, setManualMode] = (0, import_react27.useState)("http");
+  const [name2, setName] = (0, import_react27.useState)("");
+  const [url, setUrl] = (0, import_react27.useState)("");
+  const [command, setCommand] = (0, import_react27.useState)("");
+  const [argsText, setArgsText] = (0, import_react27.useState)("");
+  const [editingName, setEditingName] = (0, import_react27.useState)(null);
+  const [error, setError] = (0, import_react27.useState)(null);
+  const load = (0, import_react27.useCallback)(async () => {
     const [listRes, probRes] = await Promise.allSettled([
       callBotRpc(RPC_METHODS2.TOOLS_LIST, { botId: bot.id }),
       listBotToolProblems(bot.id)
@@ -18566,7 +18661,7 @@ function BotToolsSubpage({ bot }) {
       setProblems([]);
     }
   }, [bot.id]);
-  (0, import_react26.useEffect)(() => {
+  (0, import_react27.useEffect)(() => {
     void load();
   }, [load]);
   const handleQuickPaste = async () => {
@@ -18808,16 +18903,16 @@ function BotSkillsSubpage({ bot }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
   const linked = bot.skillProjects ?? [];
-  const [scanned, setScanned] = (0, import_react26.useState)([]);
-  const [scanning, setScanning] = (0, import_react26.useState)(false);
-  const [customDir, setCustomDir] = (0, import_react26.useState)("");
-  const [recorderOpen, setRecorderOpen] = (0, import_react26.useState)(false);
-  const [recordGoal, setRecordGoal] = (0, import_react26.useState)("");
-  const [recording, setRecording] = (0, import_react26.useState)(false);
-  const [savingSkill, setSavingSkill] = (0, import_react26.useState)(false);
-  const [recordResult, setRecordResult] = (0, import_react26.useState)(null);
-  const [draftName, setDraftName] = (0, import_react26.useState)("");
-  const [draftMarkdown, setDraftMarkdown] = (0, import_react26.useState)("");
+  const [scanned, setScanned] = (0, import_react27.useState)([]);
+  const [scanning, setScanning] = (0, import_react27.useState)(false);
+  const [customDir, setCustomDir] = (0, import_react27.useState)("");
+  const [recorderOpen, setRecorderOpen] = (0, import_react27.useState)(false);
+  const [recordGoal, setRecordGoal] = (0, import_react27.useState)("");
+  const [recording, setRecording] = (0, import_react27.useState)(false);
+  const [savingSkill, setSavingSkill] = (0, import_react27.useState)(false);
+  const [recordResult, setRecordResult] = (0, import_react27.useState)(null);
+  const [draftName, setDraftName] = (0, import_react27.useState)("");
+  const [draftMarkdown, setDraftMarkdown] = (0, import_react27.useState)("");
   const handleRecordSkill = async () => {
     setRecording(true);
     setRecordResult(null);
@@ -18856,7 +18951,7 @@ function BotSkillsSubpage({ bot }) {
       setSavingSkill(false);
     }
   };
-  const scan = (0, import_react26.useCallback)(async () => {
+  const scan = (0, import_react27.useCallback)(async () => {
     setScanning(true);
     try {
       const res = await callBotRpc(
@@ -18870,7 +18965,7 @@ function BotSkillsSubpage({ bot }) {
       setScanning(false);
     }
   }, [bot.id]);
-  (0, import_react26.useEffect)(() => {
+  (0, import_react27.useEffect)(() => {
     void scan();
   }, [scan]);
   const toggleProject = async (projectPath) => {
@@ -19059,13 +19154,13 @@ function BotSkillsSubpage({ bot }) {
 function BotSharingSubpage({ bot }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [includeSkills, setIncludeSkills] = (0, import_react26.useState)(true);
-  const [includeTopics, setIncludeTopics] = (0, import_react26.useState)(false);
-  const [exportedJson, setExportedJson] = (0, import_react26.useState)("");
-  const [redactedCount, setRedactedCount] = (0, import_react26.useState)(0);
-  const [importJson, setImportJson] = (0, import_react26.useState)("");
-  const [reviewResult, setReviewResult] = (0, import_react26.useState)(null);
-  const [busy, setBusy] = (0, import_react26.useState)(false);
+  const [includeSkills, setIncludeSkills] = (0, import_react27.useState)(true);
+  const [includeTopics, setIncludeTopics] = (0, import_react27.useState)(false);
+  const [exportedJson, setExportedJson] = (0, import_react27.useState)("");
+  const [redactedCount, setRedactedCount] = (0, import_react27.useState)(0);
+  const [importJson, setImportJson] = (0, import_react27.useState)("");
+  const [reviewResult, setReviewResult] = (0, import_react27.useState)(null);
+  const [busy, setBusy] = (0, import_react27.useState)(false);
   const exportPkg = async () => {
     setBusy(true);
     try {
@@ -19205,7 +19300,7 @@ function BotSharingSubpage({ bot }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
 var import_jsx_runtime28 = require("react/jsx-runtime");
 function factBody(fact) {
   return String(fact?.body ?? fact?.text ?? fact?.raw ?? "");
@@ -19229,18 +19324,18 @@ function BotMemorySubpage({
 }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [tab, setTab] = (0, import_react27.useState)(initialTab);
-  const [mem, setMem] = (0, import_react27.useState)(null);
-  const [history, setHistory] = (0, import_react27.useState)([]);
-  const [newFact, setNewFact] = (0, import_react27.useState)("");
-  const [editingIdx, setEditingIdx] = (0, import_react27.useState)(null);
-  const [editDraft, setEditDraft] = (0, import_react27.useState)("");
-  const [topicPreview, setTopicPreview] = (0, import_react27.useState)(null);
-  const [searchQuery, setSearchQuery] = (0, import_react27.useState)("");
-  const [searchScope, setSearchScope] = (0, import_react27.useState)("all");
-  const [searchHits, setSearchHits] = (0, import_react27.useState)(null);
-  const [searching, setSearching] = (0, import_react27.useState)(false);
-  const [busy, setBusy] = (0, import_react27.useState)(false);
+  const [tab, setTab] = (0, import_react28.useState)(initialTab);
+  const [mem, setMem] = (0, import_react28.useState)(null);
+  const [history, setHistory] = (0, import_react28.useState)([]);
+  const [newFact, setNewFact] = (0, import_react28.useState)("");
+  const [editingIdx, setEditingIdx] = (0, import_react28.useState)(null);
+  const [editDraft, setEditDraft] = (0, import_react28.useState)("");
+  const [topicPreview, setTopicPreview] = (0, import_react28.useState)(null);
+  const [searchQuery, setSearchQuery] = (0, import_react28.useState)("");
+  const [searchScope, setSearchScope] = (0, import_react28.useState)("all");
+  const [searchHits, setSearchHits] = (0, import_react28.useState)(null);
+  const [searching, setSearching] = (0, import_react28.useState)(false);
+  const [busy, setBusy] = (0, import_react28.useState)(false);
   const runMemorySearch = async () => {
     const q = searchQuery.trim();
     if (!q) {
@@ -19263,7 +19358,7 @@ function BotMemorySubpage({
       setSearching(false);
     }
   };
-  const loadFacts = (0, import_react27.useCallback)(async () => {
+  const loadFacts = (0, import_react28.useCallback)(async () => {
     try {
       const res = await callBotRpc("bots.memory.list", { botId: bot.id });
       const facts = Array.isArray(res?.facts) ? res.facts.filter((f) => f && f.isFact !== false) : [];
@@ -19272,7 +19367,7 @@ function BotMemorySubpage({
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
     }
   }, [bot.id]);
-  const loadHistory = (0, import_react27.useCallback)(async () => {
+  const loadHistory = (0, import_react28.useCallback)(async () => {
     try {
       const res = await callBotRpc(
         RPC_METHODS2.MEMORY_HISTORY,
@@ -19284,7 +19379,7 @@ function BotMemorySubpage({
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
     }
   }, [bot.id]);
-  (0, import_react27.useEffect)(() => {
+  (0, import_react28.useEffect)(() => {
     void loadFacts();
     void loadHistory();
   }, [loadFacts, loadHistory]);
@@ -19653,11 +19748,11 @@ function BotWhoCanAskSubpage({ bot }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
   const members = bot.members ?? [];
-  const [requests, setRequests] = (0, import_react27.useState)([]);
-  const [newId, setNewId] = (0, import_react27.useState)("");
-  const [newName, setNewName] = (0, import_react27.useState)("");
-  const [newSource, setNewSource] = (0, import_react27.useState)("feishu");
-  const loadRequests = (0, import_react27.useCallback)(async () => {
+  const [requests, setRequests] = (0, import_react28.useState)([]);
+  const [newId, setNewId] = (0, import_react28.useState)("");
+  const [newName, setNewName] = (0, import_react28.useState)("");
+  const [newSource, setNewSource] = (0, import_react28.useState)("feishu");
+  const loadRequests = (0, import_react28.useCallback)(async () => {
     try {
       const res = await callBotRpc(
         RPC_METHODS2.ACCESS_LIST,
@@ -19668,7 +19763,7 @@ function BotWhoCanAskSubpage({ bot }) {
       console.warn("[dsh-bots] access.list failed", err);
     }
   }, [bot.id]);
-  (0, import_react27.useEffect)(() => {
+  (0, import_react28.useEffect)(() => {
     void loadRequests();
   }, [loadRequests]);
   const addMember = async () => {
@@ -19788,8 +19883,8 @@ function BotWhoCanAskSubpage({ bot }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotSettingsSubpagesD.tsx
-var import_react28 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesD.tsx
+var import_react29 = require("react");
 var import_jsx_runtime29 = require("react/jsx-runtime");
 function formatToolEntry(entry) {
   if (typeof entry === "string") {
@@ -19820,16 +19915,16 @@ function formatCountdown(ms, zh) {
 function BotInspectorSubpage({ bot }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [data, setData] = (0, import_react28.useState)(null);
-  const [loading, setLoading] = (0, import_react28.useState)(true);
-  const [toolsOpen, setToolsOpen] = (0, import_react28.useState)(true);
-  const [promptOpen, setPromptOpen] = (0, import_react28.useState)(false);
-  const [diffOpen, setDiffOpen] = (0, import_react28.useState)(false);
-  const [fromIdx, setFromIdx] = (0, import_react28.useState)(1);
-  const [toIdx, setToIdx] = (0, import_react28.useState)(0);
-  const [diff, setDiff] = (0, import_react28.useState)(null);
-  const [diffLoading, setDiffLoading] = (0, import_react28.useState)(false);
-  const loadInspect = (0, import_react28.useCallback)(async () => {
+  const [data, setData] = (0, import_react29.useState)(null);
+  const [loading, setLoading] = (0, import_react29.useState)(true);
+  const [toolsOpen, setToolsOpen] = (0, import_react29.useState)(true);
+  const [promptOpen, setPromptOpen] = (0, import_react29.useState)(false);
+  const [diffOpen, setDiffOpen] = (0, import_react29.useState)(false);
+  const [fromIdx, setFromIdx] = (0, import_react29.useState)(1);
+  const [toIdx, setToIdx] = (0, import_react29.useState)(0);
+  const [diff, setDiff] = (0, import_react29.useState)(null);
+  const [diffLoading, setDiffLoading] = (0, import_react29.useState)(false);
+  const loadInspect = (0, import_react29.useCallback)(async () => {
     setLoading(true);
     try {
       const res = await inspectBotPrompt(bot.id);
@@ -19846,10 +19941,10 @@ function BotInspectorSubpage({ bot }) {
       setLoading(false);
     }
   }, [bot.id]);
-  (0, import_react28.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     void loadInspect();
   }, [loadInspect]);
-  const loadDiff = (0, import_react28.useCallback)(async (from, to) => {
+  const loadDiff = (0, import_react29.useCallback)(async (from, to) => {
     setDiffLoading(true);
     try {
       const res = await diffBotPrompt(bot.id, from, to);
@@ -20032,13 +20127,13 @@ function BotInspectorSubpage({ bot }) {
 function BotBudgetSubpage({ bot }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [usage, setUsage] = (0, import_react28.useState)(null);
-  const [dailyLimitUsd, setDailyLimitUsd] = (0, import_react28.useState)("");
-  const [dailyLimitTokens, setDailyLimitTokens] = (0, import_react28.useState)("");
-  const [alertThresholdPct, setAlertThresholdPct] = (0, import_react28.useState)(String(DEFAULT_BOT_BUDGET.alertThresholdPct));
-  const [pauseOnExceed, setPauseOnExceed] = (0, import_react28.useState)(DEFAULT_BOT_BUDGET.pauseOnExceed);
-  const [offPeakOnly, setOffPeakOnly] = (0, import_react28.useState)(DEFAULT_BOT_BUDGET.offPeakOnly);
-  const [saving, setSaving] = (0, import_react28.useState)(false);
+  const [usage, setUsage] = (0, import_react29.useState)(null);
+  const [dailyLimitUsd, setDailyLimitUsd] = (0, import_react29.useState)("");
+  const [dailyLimitTokens, setDailyLimitTokens] = (0, import_react29.useState)("");
+  const [alertThresholdPct, setAlertThresholdPct] = (0, import_react29.useState)(String(DEFAULT_BOT_BUDGET.alertThresholdPct));
+  const [pauseOnExceed, setPauseOnExceed] = (0, import_react29.useState)(DEFAULT_BOT_BUDGET.pauseOnExceed);
+  const [offPeakOnly, setOffPeakOnly] = (0, import_react29.useState)(DEFAULT_BOT_BUDGET.offPeakOnly);
+  const [saving, setSaving] = (0, import_react29.useState)(false);
   const applyBudgetToForm = (cfg) => {
     setDailyLimitUsd(typeof cfg?.dailyLimitUsd === "number" ? String(cfg.dailyLimitUsd) : "");
     setDailyLimitTokens(typeof cfg?.dailyLimitTokens === "number" ? String(cfg.dailyLimitTokens) : "");
@@ -20046,7 +20141,7 @@ function BotBudgetSubpage({ bot }) {
     setPauseOnExceed(cfg?.pauseOnExceed !== false);
     setOffPeakOnly(cfg?.offPeakOnly === true);
   };
-  const load = (0, import_react28.useCallback)(async () => {
+  const load = (0, import_react29.useCallback)(async () => {
     const [cfgRes, usageRes] = await Promise.allSettled([
       getBotBudget(bot.id),
       getBotBudgetUsage(bot.id)
@@ -20060,7 +20155,7 @@ function BotBudgetSubpage({ bot }) {
       applyBudgetToForm(cfgVal ?? usageVal?.budget);
     }
   }, [bot.id]);
-  (0, import_react28.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     void load();
   }, [load]);
   const handleSave = async () => {
@@ -20239,7 +20334,7 @@ function BotBudgetSubpage({ bot }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotSettingsView.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsView.tsx
 var import_jsx_runtime30 = require("react/jsx-runtime");
 var SUBPAGE_META = [
   { id: "agent", zh: "\u667A\u80FD\u4F53\u548C\u6A21\u578B", en: "Agent & model", descZh: "\u6A21\u578B\u9009\u62E9\u4E0E\u63A8\u7406\u5F3A\u5EA6", descEn: "Model and reasoning effort" },
@@ -20329,30 +20424,30 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
   const petBotId = useBotsState((state) => state.petBotId);
   const resolvedBotId = propBotId ?? route?.botId ?? bots[0]?.id ?? null;
   const bot = useBotById(resolvedBotId);
-  const [subpage, setSubpage] = (0, import_react29.useState)(route?.page ?? null);
-  const [renaming, setRenaming] = (0, import_react29.useState)(false);
-  const [nameDraft, setNameDraft] = (0, import_react29.useState)("");
-  const [pickerRect, setPickerRect] = (0, import_react29.useState)(null);
-  const [undoAvatar, setUndoAvatar] = (0, import_react29.useState)(null);
-  const avatarBtnRef = (0, import_react29.useRef)(null);
-  const scrollContainerRef = (0, import_react29.useRef)(null);
-  const undoTimerRef = (0, import_react29.useRef)(null);
-  const leaveGuardRef = (0, import_react29.useRef)(null);
-  const savedRootScrollRef = (0, import_react29.useRef)(0);
-  const returnFocusSubpageRef = (0, import_react29.useRef)(null);
-  const prevSubpageRef = (0, import_react29.useRef)(subpage);
-  const registerLeaveGuard = (0, import_react29.useCallback)((guard) => {
+  const [subpage, setSubpage] = (0, import_react30.useState)(route?.page ?? null);
+  const [renaming, setRenaming] = (0, import_react30.useState)(false);
+  const [nameDraft, setNameDraft] = (0, import_react30.useState)("");
+  const [pickerRect, setPickerRect] = (0, import_react30.useState)(null);
+  const [undoAvatar, setUndoAvatar] = (0, import_react30.useState)(null);
+  const avatarBtnRef = (0, import_react30.useRef)(null);
+  const scrollContainerRef = (0, import_react30.useRef)(null);
+  const undoTimerRef = (0, import_react30.useRef)(null);
+  const leaveGuardRef = (0, import_react30.useRef)(null);
+  const savedRootScrollRef = (0, import_react30.useRef)(0);
+  const returnFocusSubpageRef = (0, import_react30.useRef)(null);
+  const prevSubpageRef = (0, import_react30.useRef)(subpage);
+  const registerLeaveGuard = (0, import_react30.useCallback)((guard) => {
     leaveGuardRef.current = guard;
   }, []);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     setSubpage(route?.page ?? null);
   }, [route?.page, resolvedBotId]);
-  (0, import_react29.useEffect)(() => () => {
+  (0, import_react30.useEffect)(() => () => {
     if (undoTimerRef.current !== null) {
       window.clearTimeout(undoTimerRef.current);
     }
   }, []);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     const prev = prevSubpageRef.current;
     prevSubpageRef.current = subpage;
     if (prev !== null && subpage === null) {
@@ -20372,14 +20467,14 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
       scrollContainerRef.current.scrollTop = 0;
     }
   }, [subpage]);
-  const openSubpage = (0, import_react29.useCallback)((target) => {
+  const openSubpage = (0, import_react30.useCallback)((target) => {
     if (scrollContainerRef.current) {
       savedRootScrollRef.current = scrollContainerRef.current.scrollTop;
     }
     returnFocusSubpageRef.current = target;
     setSubpage(target);
   }, []);
-  const navigateWithGuard = (0, import_react29.useCallback)(async (action) => {
+  const navigateWithGuard = (0, import_react30.useCallback)(async (action) => {
     if (leaveGuardRef.current) {
       const ok = await leaveGuardRef.current();
       if (!ok) {
@@ -20388,7 +20483,7 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
     }
     action();
   }, []);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     const handleEsc = (event) => {
       if (event.key !== "Escape") {
         return;
@@ -20410,7 +20505,7 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [host, navigateWithGuard, onClosePage, subpage]);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     if (!bot) {
       return void 0;
     }
@@ -20539,6 +20634,8 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
             ref: avatarBtnRef,
             type: "button",
             className: "dsh-bots-panel-avatar-trigger",
+            "aria-haspopup": "dialog",
+            "aria-expanded": Boolean(pickerRect),
             title: zh ? "\u70B9\u51FB\u6216 Ctrl+V \u7C98\u8D34\u56FE\u7247\u66F4\u6362\u5934\u50CF" : "Click or paste image to change avatar",
             onClick: () => {
               const rect = avatarBtnRef.current?.getBoundingClientRect() ?? null;
@@ -20728,6 +20825,7 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
       {
         open: Boolean(pickerRect),
         anchorRect: pickerRect,
+        triggerRef: avatarBtnRef,
         onClose: () => setPickerRect(null),
         value: {
           avatar: bot.avatar || "mascot:W1",
@@ -20762,11 +20860,11 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotRightPanel.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotRightPanel.tsx
 var import_jsx_runtime31 = require("react/jsx-runtime");
 function usePanelOffscreen(ref) {
-  const [offscreen, setOffscreen] = (0, import_react30.useState)(false);
-  (0, import_react30.useEffect)(() => {
+  const [offscreen, setOffscreen] = (0, import_react31.useState)(false);
+  (0, import_react31.useEffect)(() => {
     const el = ref.current;
     if (!el || typeof window === "undefined") {
       return void 0;
@@ -20807,11 +20905,11 @@ function BotRightPanel({ sessionId, botId: explicitBotId }) {
   const needsYouMap = useBotsState((state) => state.needsYou);
   const explicitBot = useBotById(explicitBotId ?? activeBotId);
   const activeGroup = useGroupById(activeGroupId);
-  const [filterOpen, setFilterOpen] = (0, import_react30.useState)(false);
-  const [groupTab, setGroupTab] = (0, import_react30.useState)("items");
-  const rootRef = (0, import_react30.useRef)(null);
+  const [filterOpen, setFilterOpen] = (0, import_react31.useState)(false);
+  const [groupTab, setGroupTab] = (0, import_react31.useState)("items");
+  const rootRef = (0, import_react31.useRef)(null);
   const offscreen = usePanelOffscreen(rootRef);
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     setGroupTab("items");
   }, [activeGroup?.id]);
   if (!explicitBotId && activeGroup && !activeBotId) {
@@ -21044,8 +21142,8 @@ function BotRightPanel({ sessionId, botId: explicitBotId }) {
   );
 }
 
-// vendor/dsh-whale/src/client/components/GlobalBotsSettings.tsx
-var import_react31 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/GlobalBotsSettings.tsx
+var import_react32 = require("react");
 var import_jsx_runtime32 = require("react/jsx-runtime");
 function GlobalBotsSettings({ closeSettings }) {
   const { locale, tr } = useBotsLocale();
@@ -21056,8 +21154,8 @@ function GlobalBotsSettings({ closeSettings }) {
   const petBotId = useBotsState((state) => state.petBotId);
   const bots = useBotsState((state) => state.bots);
   const voiceState = useBotsState((state) => state.voiceState);
-  const [voiceBusy, setVoiceBusy] = (0, import_react31.useState)(false);
-  (0, import_react31.useEffect)(() => {
+  const [voiceBusy, setVoiceBusy] = (0, import_react32.useState)(false);
+  (0, import_react32.useEffect)(() => {
     void botsStore.refreshVoiceState();
   }, []);
   const voiceEnabled = Boolean(voiceState?.enabled);
@@ -21229,12 +21327,12 @@ function GlobalBotsSettings({ closeSettings }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
-var import_react36 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
+var import_react37 = require("react");
 var import_react_dom14 = require("react-dom");
 
-// vendor/dsh-whale/src/client/components/BotGroupSidebarCard.tsx
-var import_react32 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupSidebarCard.tsx
+var import_react33 = require("react");
 var import_react_dom10 = require("react-dom");
 var import_jsx_runtime33 = require("react/jsx-runtime");
 function GroupContextMenu({
@@ -21244,8 +21342,8 @@ function GroupContextMenu({
   onStartRename
 }) {
   const { tr } = useBotsLocale();
-  const menuRef = (0, import_react32.useRef)(null);
-  (0, import_react32.useEffect)(() => {
+  const menuRef = (0, import_react33.useRef)(null);
+  (0, import_react33.useEffect)(() => {
     const handleDown = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
@@ -21344,17 +21442,17 @@ function BotGroupSidebarCard({
 }) {
   const { locale } = useBotsLocale();
   const activeGroupId = useBotsState((state) => state.activeGroupId);
-  const [renaming, setRenaming] = (0, import_react32.useState)(false);
-  const [renameText, setRenameText] = (0, import_react32.useState)(group.name);
-  const [menuPos, setMenuPos] = (0, import_react32.useState)(null);
-  (0, import_react32.useEffect)(() => {
+  const [renaming, setRenaming] = (0, import_react33.useState)(false);
+  const [renameText, setRenameText] = (0, import_react33.useState)(group.name);
+  const [menuPos, setMenuPos] = (0, import_react33.useState)(null);
+  (0, import_react33.useEffect)(() => {
     setRenameText(group.name);
   }, [group.name]);
-  const memberBots = (0, import_react32.useMemo)(
+  const memberBots = (0, import_react33.useMemo)(
     () => (group.members ?? []).map((m) => botsById.get(m.botId)).filter(Boolean),
     [botsById, group.members]
   );
-  const subtitle = (0, import_react32.useMemo)(() => {
+  const subtitle = (0, import_react33.useMemo)(() => {
     if (group.lastMessageText) {
       return group.lastMessageAuthor ? `${group.lastMessageAuthor}: ${group.lastMessageText}` : group.lastMessageText;
     }
@@ -21437,12 +21535,12 @@ function BotGroupSidebarCard({
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
-var import_react35 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
+var import_react36 = require("react");
 var import_react_dom13 = require("react-dom");
 
-// vendor/dsh-whale/src/client/components/BotHoverCard.tsx
-var import_react33 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotHoverCard.tsx
+var import_react34 = require("react");
 var import_react_dom11 = require("react-dom");
 var import_jsx_runtime34 = require("react/jsx-runtime");
 var activityCache = /* @__PURE__ */ new Map();
@@ -21457,11 +21555,11 @@ function BotHoverCard({
   onClose
 }) {
   const { locale, tr } = useBotsLocale();
-  const [snapshot, setSnapshot] = (0, import_react33.useState)(() => {
+  const [snapshot, setSnapshot] = (0, import_react34.useState)(() => {
     const cached = activityCache.get(bot.id);
     return cached && Date.now() - cached.at < CACHE_TTL_MS ? cached.data : null;
   });
-  (0, import_react33.useEffect)(() => {
+  (0, import_react34.useEffect)(() => {
     const cached = activityCache.get(bot.id);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       setSnapshot(cached.data);
@@ -21642,8 +21740,8 @@ function BotHoverCard({
   );
 }
 
-// vendor/dsh-whale/src/client/components/BotSubChatList.tsx
-var import_react34 = require("react");
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSubChatList.tsx
+var import_react35 = require("react");
 var import_react_dom12 = require("react-dom");
 var import_jsx_runtime35 = require("react/jsx-runtime");
 var FLASH_CHAT_PANE_EVENT = "dsh-bots:flash-chat-pane";
@@ -21722,19 +21820,19 @@ function BotChatWorkerRows({
 }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const [extraShown, setExtraShown] = (0, import_react34.useState)(0);
-  const [stoppingKey, setStoppingKey] = (0, import_react34.useState)(null);
-  const running = (0, import_react34.useMemo)(
+  const [extraShown, setExtraShown] = (0, import_react35.useState)(0);
+  const [stoppingKey, setStoppingKey] = (0, import_react35.useState)(null);
+  const running = (0, import_react35.useMemo)(
     () => (chat.running ?? []).filter((w) => !hideSleepingWorkers || w.state !== "sleeping"),
     [chat.running, hideSleepingWorkers]
   );
-  const finished = (0, import_react34.useMemo)(
+  const finished = (0, import_react35.useMemo)(
     () => (chat.finished ?? []).filter((w) => !hideSleepingWorkers || w.state !== "sleeping"),
     [chat.finished, hideSleepingWorkers]
   );
-  const hasActiveWorker = (0, import_react34.useMemo)(() => running.some(isWorkerActive), [running]);
-  const [tickNow, setTickNow] = (0, import_react34.useState)(() => Date.now());
-  (0, import_react34.useEffect)(() => {
+  const hasActiveWorker = (0, import_react35.useMemo)(() => running.some(isWorkerActive), [running]);
+  const [tickNow, setTickNow] = (0, import_react35.useState)(() => Date.now());
+  (0, import_react35.useEffect)(() => {
     if (!hasActiveWorker) {
       return void 0;
     }
@@ -21857,31 +21955,16 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
   const activeSessionId = useBotsState((state) => state.activeSessionId);
   const activeBotId = useBotsState((state) => state.activeBotId);
   const chatFolds = useBotsState((state) => state.chatFolds);
-  const [menuState, setMenuState] = (0, import_react34.useState)(null);
-  const [deletingChatId, setDeletingChatId] = (0, import_react34.useState)(null);
-  const menuRef = (0, import_react34.useRef)(null);
-  (0, import_react34.useEffect)(() => {
-    if (!menuState) {
-      return void 0;
-    }
-    const handleDown = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setMenuState(null);
-      }
-    };
-    const handleEsc = (event) => {
-      if (event.key === "Escape") {
-        setMenuState(null);
-      }
-    };
-    document.addEventListener("mousedown", handleDown);
-    document.addEventListener("keydown", handleEsc);
-    return () => {
-      document.removeEventListener("mousedown", handleDown);
-      document.removeEventListener("keydown", handleEsc);
-    };
-  }, [menuState]);
-  const orderedChats = (0, import_react34.useMemo)(() => {
+  const [menuState, setMenuState] = (0, import_react35.useState)(null);
+  const [deletingChatId, setDeletingChatId] = (0, import_react35.useState)(null);
+  const menuRef = (0, import_react35.useRef)(null);
+  useAnchoredPopoverDismiss({
+    open: Boolean(menuState),
+    popoverRef: menuRef,
+    triggerEl: menuState?.triggerEl ?? null,
+    onClose: () => setMenuState(null)
+  });
+  const orderedChats = (0, import_react35.useMemo)(() => {
     const owned = rawTree ? botOwnChatTree(rawTree) : null;
     const base = owned?.chats ? [...owned.chats] : [];
     const hasHome = base.some((chat) => chat.origin === "home" && !chat.closed);
@@ -21946,10 +22029,10 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
       setDeletingChatId(null);
     }
   };
-  const openMenuAt = (chat, isHome, isActive, x, y) => {
+  const openMenuAt = (chat, isHome, isActive, x, y, triggerEl = null) => {
     const clampedX = Math.min(x, window.innerWidth - 188);
     const clampedY = Math.min(y, window.innerHeight - 110);
-    setMenuState({ chat, isHome, isActive, x: Math.max(8, clampedX), y: Math.max(8, clampedY) });
+    setMenuState({ chat, isHome, isActive, x: Math.max(8, clampedX), y: Math.max(8, clampedY), triggerEl });
   };
   return /* @__PURE__ */ (0, import_jsx_runtime35.jsxs)("div", { className: "dsh-bots-sublist", "data-paused": bot.paused ? "true" : "false", children: [
     orderedChats.map((chat) => {
@@ -22015,7 +22098,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
                       if (menuState?.chat.chatId === chat.chatId) {
                         setMenuState(null);
                       } else {
-                        openMenuAt(chat, isHome, isActive, rect.left, rect.bottom + 4);
+                        openMenuAt(chat, isHome, isActive, rect.left, rect.bottom + 4, e.currentTarget);
                       }
                     },
                     children: /* @__PURE__ */ (0, import_jsx_runtime35.jsx)(IconMoreHorizontal, { size: 13 })
@@ -22097,7 +22180,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
   ] });
 }
 
-// vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
 var import_jsx_runtime36 = require("react/jsx-runtime");
 function HighlightedSegments({ segments }) {
   return /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(import_jsx_runtime36.Fragment, { children: segments.map(
@@ -22111,8 +22194,8 @@ function BotContextMenu({
   onStartRename
 }) {
   const { locale, tr } = useBotsLocale();
-  const menuRef = (0, import_react35.useRef)(null);
-  (0, import_react35.useEffect)(() => {
+  const menuRef = (0, import_react36.useRef)(null);
+  (0, import_react36.useEffect)(() => {
     const handleDown = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
@@ -22268,17 +22351,17 @@ function BotSidebarCard({
   const needsYouCount = useBotsState((state) => state.needsYou[bot.id] ?? bot.needsYouCount ?? 0);
   const startingSessionIds = useBotsState((state) => state.startingSessionIds);
   const chatTree = useBotsState((state) => state.chatsByBot[bot.id]);
-  const cardRef = (0, import_react35.useRef)(null);
-  const openHoverTimer = (0, import_react35.useRef)(null);
-  const closeHoverTimer = (0, import_react35.useRef)(null);
-  const [renaming, setRenaming] = (0, import_react35.useState)(false);
-  const [renameText, setRenameText] = (0, import_react35.useState)(bot.name);
-  const [menuPos, setMenuPos] = (0, import_react35.useState)(null);
-  const [hoverRect, setHoverRect] = (0, import_react35.useState)(null);
-  (0, import_react35.useEffect)(() => {
+  const cardRef = (0, import_react36.useRef)(null);
+  const openHoverTimer = (0, import_react36.useRef)(null);
+  const closeHoverTimer = (0, import_react36.useRef)(null);
+  const [renaming, setRenaming] = (0, import_react36.useState)(false);
+  const [renameText, setRenameText] = (0, import_react36.useState)(bot.name);
+  const [menuPos, setMenuPos] = (0, import_react36.useState)(null);
+  const [hoverRect, setHoverRect] = (0, import_react36.useState)(null);
+  (0, import_react36.useEffect)(() => {
     setRenameText(bot.name);
   }, [bot.name]);
-  const clearHoverTimers = (0, import_react35.useCallback)(() => {
+  const clearHoverTimers = (0, import_react36.useCallback)(() => {
     if (openHoverTimer.current !== null) {
       window.clearTimeout(openHoverTimer.current);
       openHoverTimer.current = null;
@@ -22288,7 +22371,7 @@ function BotSidebarCard({
       closeHoverTimer.current = null;
     }
   }, []);
-  (0, import_react35.useEffect)(() => clearHoverTimers, [clearHoverTimers]);
+  (0, import_react36.useEffect)(() => clearHoverTimers, [clearHoverTimers]);
   const scheduleHoverOpen = () => {
     if (renaming || menuPos) {
       return;
@@ -22306,7 +22389,7 @@ function BotSidebarCard({
       setHoverRect(null);
     }, 120);
   };
-  const { lineText, lineTone } = (0, import_react35.useMemo)(() => {
+  const { lineText, lineTone } = (0, import_react36.useMemo)(() => {
     if (typeof bot.activityLine === "string" && bot.activityLine.trim()) {
       const tone2 = needsYouCount > 0 || bot.dotState === "permission" ? "attention" : bot.dotState === "working" ? "working" : "default";
       return { lineText: bot.activityLine, lineTone: tone2 };
@@ -22333,7 +22416,7 @@ function BotSidebarCard({
     const tone = kind === "needYouElsewhere" || kind === "usageLimit" || needsYouCount > 0 ? "attention" : kind === "workingElsewhere" || kind === "replying" || kind === "reading" ? "working" : "default";
     return { lineText: text, lineTone: tone };
   }, [bot, locale, needsYouCount, now, startingSessionIds, tr]);
-  const foldSignal = (0, import_react35.useMemo)(() => {
+  const foldSignal = (0, import_react36.useMemo)(() => {
     if (!collapsed) {
       return null;
     }
@@ -22374,7 +22457,7 @@ function BotSidebarCard({
     setMenuPos({ x: event.clientX, y: event.clientY });
   };
   const isActive = activeBotId === bot.id && !activeGroupId;
-  const hasSubChats = (0, import_react35.useMemo)(
+  const hasSubChats = (0, import_react36.useMemo)(
     () => botHasSubChats(chatTree, hideSleepingWorkers),
     [chatTree, hideSleepingWorkers]
   );
@@ -22529,27 +22612,11 @@ function BotSidebarCard({
   );
 }
 
-// vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
 var import_jsx_runtime37 = require("react/jsx-runtime");
-function useAnchoredPopoverClose(open, ref, onClose) {
-  (0, import_react36.useEffect)(() => {
-    if (!open) return void 0;
-    const handleDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose();
-    };
-    const handleKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose, open, ref]);
-}
 function OptionsPopover({
   anchorRect,
+  triggerRef,
   open,
   motionState,
   view,
@@ -22557,8 +22624,8 @@ function OptionsPopover({
   onClose
 }) {
   const { locale, tr } = useBotsLocale();
-  const ref = (0, import_react36.useRef)(null);
-  useAnchoredPopoverClose(open, ref, onClose);
+  const ref = (0, import_react37.useRef)(null);
+  useAnchoredPopoverDismiss({ open, popoverRef: ref, triggerRef, onClose });
   if (typeof document === "undefined") return null;
   const sortLabels = {
     manual: { title: tr("bots.options.sortManual", "Manual"), desc: tr("bots.options.sortManualDescription", "Drag bots to arrange them. New bots go on top.") },
@@ -22574,6 +22641,8 @@ function OptionsPopover({
       {
         ref,
         className: "dsh-bots-popover",
+        role: "menu",
+        "data-dsh-bots-popover": "options",
         "data-motion": "presence",
         "data-state": motionState,
         "aria-hidden": open ? void 0 : true,
@@ -22648,14 +22717,15 @@ function OptionsPopover({
 }
 function CreateMenuPopover({
   anchorRect,
+  triggerRef,
   open,
   motionState,
   botCount,
   onClose
 }) {
   const { tr } = useBotsLocale();
-  const ref = (0, import_react36.useRef)(null);
-  useAnchoredPopoverClose(open, ref, onClose);
+  const ref = (0, import_react37.useRef)(null);
+  useAnchoredPopoverDismiss({ open, popoverRef: ref, triggerRef, onClose });
   if (typeof document === "undefined") return null;
   const left = Math.min(anchorRect.left, window.innerWidth - 224);
   const top = Math.min(anchorRect.bottom + 6, window.innerHeight - 230);
@@ -22669,6 +22739,8 @@ function CreateMenuPopover({
       {
         ref,
         className: "dsh-bots-popover",
+        role: "menu",
+        "data-dsh-bots-popover": "create",
         "data-motion": "presence",
         "data-state": motionState,
         "aria-hidden": open ? void 0 : true,
@@ -22708,16 +22780,16 @@ function CollapsedPreviewStrip({
 }) {
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
-  const stripRef = (0, import_react36.useRef)(null);
-  const [stripWidth, setStripWidth] = (0, import_react36.useState)(120);
-  (0, import_react36.useEffect)(() => {
+  const stripRef = (0, import_react37.useRef)(null);
+  const [stripWidth, setStripWidth] = (0, import_react37.useState)(120);
+  (0, import_react37.useEffect)(() => {
     const el = stripRef.current;
     if (!el || typeof ResizeObserver === "undefined") return void 0;
     const observer = new ResizeObserver((entries) => setStripWidth(entries[0]?.contentRect.width ?? 120));
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const preview = (0, import_react36.useMemo)(() => {
+  const preview = (0, import_react37.useMemo)(() => {
     const items = bots.map((bot) => ({
       bot,
       status: bot.dotState ?? bot.status ?? "idle",
@@ -22729,7 +22801,7 @@ function CollapsedPreviewStrip({
     const selectPreview = selectCollapsedPreviewBots;
     return selectPreview(items, botPreviewCapacity(stripWidth, items.length), current);
   }, [activeBotId, bots, needsYou, stripWidth]);
-  const hiddenOverflow = (0, import_react36.useMemo)(() => {
+  const hiddenOverflow = (0, import_react37.useMemo)(() => {
     if (preview.hidden.length === 0) {
       return { signal: null, tooltip: "" };
     }
@@ -22850,44 +22922,46 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
   const now = useNow(6e4);
   const state = useBotsState((s) => s);
   const { botsEnabled, bots, groups, needsYou, botSidebarView: view, sectionCollapsed, collapsedBotIds, activeBotId, sidebarBotsHeight: storedHeight, sidebarProjectsFirst: projectsFirst } = state;
-  const listRef = (0, import_react36.useRef)(null);
-  const searchInputRef = (0, import_react36.useRef)(null);
-  const lastOptionsAnchorRef = (0, import_react36.useRef)(null);
-  const lastCreateAnchorRef = (0, import_react36.useRef)(null);
-  const [searchOpen, setSearchOpen] = (0, import_react36.useState)(false);
-  const [searchPresent, setSearchPresent] = (0, import_react36.useState)(false);
-  const [searchQuery, setSearchQuery] = (0, import_react36.useState)("");
-  const [optionsAnchor, setOptionsAnchor] = (0, import_react36.useState)(null);
-  const [createAnchor, setCreateAnchor] = (0, import_react36.useState)(null);
-  const [sectionBodyPresent, setSectionBodyPresent] = (0, import_react36.useState)(!sectionCollapsed);
-  const [dragHeight, setDragHeight] = (0, import_react36.useState)(null);
-  const [draggingBotId, setDraggingBotId] = (0, import_react36.useState)(null);
-  const [dropTarget, setDropTarget] = (0, import_react36.useState)(null);
+  const listRef = (0, import_react37.useRef)(null);
+  const searchInputRef = (0, import_react37.useRef)(null);
+  const optionsBtnRef = (0, import_react37.useRef)(null);
+  const createBtnRef = (0, import_react37.useRef)(null);
+  const lastOptionsAnchorRef = (0, import_react37.useRef)(null);
+  const lastCreateAnchorRef = (0, import_react37.useRef)(null);
+  const [searchOpen, setSearchOpen] = (0, import_react37.useState)(false);
+  const [searchPresent, setSearchPresent] = (0, import_react37.useState)(false);
+  const [searchQuery, setSearchQuery] = (0, import_react37.useState)("");
+  const [optionsAnchor, setOptionsAnchor] = (0, import_react37.useState)(null);
+  const [createAnchor, setCreateAnchor] = (0, import_react37.useState)(null);
+  const [sectionBodyPresent, setSectionBodyPresent] = (0, import_react37.useState)(!sectionCollapsed);
+  const [dragHeight, setDragHeight] = (0, import_react37.useState)(null);
+  const [draggingBotId, setDraggingBotId] = (0, import_react37.useState)(null);
+  const [dropTarget, setDropTarget] = (0, import_react37.useState)(null);
   if (optionsAnchor) lastOptionsAnchorRef.current = optionsAnchor;
   if (createAnchor) lastCreateAnchorRef.current = createAnchor;
   const previewPresence = useBotsPresence(sectionCollapsed && bots.length > 0, 180);
   const optionsPresence = useBotsPresence(Boolean(optionsAnchor), 180);
   const createPresence = useBotsPresence(Boolean(createAnchor), 180);
-  (0, import_react36.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     botsStore.start();
   }, []);
-  (0, import_react36.useEffect)(() => {
+  (0, import_react37.useEffect)(() => {
     if (searchOpen && searchPresent) searchInputRef.current?.focus();
   }, [searchOpen, searchPresent]);
-  const botsById = (0, import_react36.useMemo)(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
-  const collapsedSet = (0, import_react36.useMemo)(() => new Set(collapsedBotIds), [collapsedBotIds]);
+  const botsById = (0, import_react37.useMemo)(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
+  const collapsedSet = (0, import_react37.useMemo)(() => new Set(collapsedBotIds), [collapsedBotIds]);
   const allCollapsed = bots.length > 0 && bots.every((bot) => collapsedSet.has(bot.id));
-  const hasExpandableBots = (0, import_react36.useMemo)(
+  const hasExpandableBots = (0, import_react37.useMemo)(
     () => collapsedSet.size > 0 || bots.some((bot) => botHasSubChats(state.chatsByBot[bot.id], view.hideSleepingWorkers)),
     [bots, collapsedSet.size, state.chatsByBot, view.hideSleepingWorkers]
   );
   const activeFilterCount = countActiveBotSidebarFilters(view);
-  const totalNeedsYou = (0, import_react36.useMemo)(() => bots.reduce((sum, b) => sum + (needsYou[b.id] ?? b.needsYouCount ?? 0), 0), [bots, needsYou]);
-  const allEntries = (0, import_react36.useMemo)(() => [
+  const totalNeedsYou = (0, import_react37.useMemo)(() => bots.reduce((sum, b) => sum + (needsYou[b.id] ?? b.needsYouCount ?? 0), 0), [bots, needsYou]);
+  const allEntries = (0, import_react37.useMemo)(() => [
     ...groups.map((group) => ({ kind: "group", id: group.id, group })),
     ...bots.map((bot) => ({ kind: "bot", id: bot.id, bot }))
   ], [bots, groups]);
-  const arrangedEntries = (0, import_react36.useMemo)(() => {
+  const arrangedEntries = (0, import_react37.useMemo)(() => {
     const arrange = sortAndFilterBots;
     return arrange(allEntries, view, (entry) => {
       if (entry.kind === "group") {
@@ -22897,7 +22971,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
       return { needsYou: need, activityAt: entry.bot.lastActiveAt ?? entry.bot.updatedAt ?? entry.bot.createdAt ?? 0 };
     });
   }, [allEntries, needsYou, view]);
-  const searchResult = (0, import_react36.useMemo)(() => {
+  const searchResult = (0, import_react37.useMemo)(() => {
     const trimmed = searchQuery.trim();
     if (!searchOpen || !trimmed) return null;
     return searchBots(arrangedEntries, trimmed, {
@@ -22905,7 +22979,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
       purposeOf: (entry) => entry.kind === "bot" ? entry.bot.purpose ?? entry.bot.description ?? null : null
     });
   }, [allEntries, arrangedEntries, searchOpen, searchQuery]);
-  const handleResizePointerDown = (0, import_react36.useCallback)((event) => {
+  const handleResizePointerDown = (0, import_react37.useCallback)((event) => {
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = listRef.current?.getBoundingClientRect().height ?? storedHeight ?? 240;
@@ -23068,9 +23142,12 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
             /* @__PURE__ */ (0, import_jsx_runtime37.jsxs)(
               "button",
               {
+                ref: optionsBtnRef,
                 type: "button",
                 className: "dsh-bots-icon-btn",
                 "data-active": optionsAnchor ? "true" : "false",
+                "aria-haspopup": "menu",
+                "aria-expanded": Boolean(optionsAnchor),
                 title: activeFilterCount > 0 ? tr("bots.options.activeFilters", "Bot options ({{count}} filters active)", { count: activeFilterCount }) : tr("bots.options.title", "Bot options"),
                 onClick: (e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -23086,9 +23163,12 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
             /* @__PURE__ */ (0, import_jsx_runtime37.jsx)(
               "button",
               {
+                ref: createBtnRef,
                 type: "button",
                 className: "dsh-bots-icon-btn",
                 "data-active": createAnchor ? "true" : "false",
+                "aria-haspopup": "menu",
+                "aria-expanded": Boolean(createAnchor),
                 title: tr("bots.section.new", "New bot or group"),
                 onClick: (e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -23195,6 +23275,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
           OptionsPopover,
           {
             anchorRect: activeOptionsAnchor,
+            triggerRef: optionsBtnRef,
             open: Boolean(optionsAnchor),
             motionState: optionsPresence.state,
             view,
@@ -23206,6 +23287,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
           CreateMenuPopover,
           {
             anchorRect: activeCreateAnchor,
+            triggerRef: createBtnRef,
             open: Boolean(createAnchor),
             motionState: createPresence.state,
             botCount: bots.length,
@@ -23217,7 +23299,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
   );
 }
 
-// vendor/dsh-whale/src/client/index.tsx
+// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/index.tsx
 var import_jsx_runtime38 = require("react/jsx-runtime");
 var NS = "dsh-whale";
 var BOTS_RIGHT_TAB_ID = "dsh-whale:bots-panel";
@@ -23339,7 +23421,7 @@ function BotSettingsPageSeat({ closePanel }) {
   return /* @__PURE__ */ (0, import_jsx_runtime38.jsx)(BotSettingsView, { host: "page", onClosePage: closePanel });
 }
 function LegacyWhaleRedirect({ openDefaultBot }) {
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     void openDefaultBot();
   }, [openDefaultBot]);
   return null;

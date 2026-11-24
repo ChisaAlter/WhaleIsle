@@ -789,3 +789,23 @@ it.each(['window blur', 'hidden tab'] as const)('dismisses risk details on %s wi
   fireEvent(window, new Event('focus'))
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
+
+it('toggles risk details closed when the warning trigger is clicked again', () => {
+  render(<ApprovalWarning warning={{ label: 'Risks', title: 'Computer use risks', detail: 'Background control.' }} />)
+  const trigger = screen.getByRole('button', { name: 'Risks' })
+
+  fireEvent.pointerDown(trigger)
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog', { name: 'Computer use risks' })).toBeTruthy()
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+  fireEvent.pointerDown(trigger)
+  fireEvent.click(trigger)
+  expect(screen.queryByRole('dialog', { name: 'Computer use risks' })).toBeNull()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+  fireEvent.pointerDown(trigger)
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog', { name: 'Computer use risks' })).toBeTruthy()
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+})

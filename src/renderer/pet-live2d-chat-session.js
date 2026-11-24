@@ -7,6 +7,20 @@ let chatHistoryPending = null;
 let chatCatalogPending = null;
 let chatCatalogForceQueued = false;
 let chatSelected = null;
+let chatDomBound = false;
+
+/**
+ * @param {any} container
+ * @param {any} target
+ */
+function chatNodeContains(container, target) {
+  if (!container || !target) { return false; }
+  if (typeof container.contains === 'function') { return container.contains(target); }
+  for (let cur = target; cur; cur = cur.parentNode || cur.parent) {
+    if (cur === container) { return true; }
+  }
+  return false;
+}
 
 function chatRefreshState(forceCatalog = false) {
   const history = chatRefreshHistory();
@@ -230,8 +244,11 @@ function chatAutosize() {
 }
 
 function bindChatDom() {
-  if (!chatDom) { return; }
+  if (!chatDom || chatDomBound || petLifetime.disposed) { return; }
+  chatDomBound = true;
+  petLifetime.keep(() => { chatDomBound = false; });
   const input = chatPart('#pc-input');
+  const modelTrigger = chatPart('#pc-model-trigger');
   petLifetime.listen(chatPart('#pc-close'), 'click', () => toggleChat(false));
   petLifetime.listen(chatPart('#pc-send'), 'click', () => {
     void submitChat(input?.value);
@@ -247,7 +264,7 @@ function bindChatDom() {
       void submitChat(input.value);
     }
   });
-  petLifetime.listen(chatPart('#pc-model-trigger'), 'click', () => chatTogglePicker());
+  petLifetime.listen(modelTrigger, 'click', () => chatTogglePicker());
   petLifetime.listen(chatPickerEl, 'click', (event) => {
     const pane = event.target.closest?.('[data-pane]');
     if (pane) { chatShowPicker(pane.dataset.pane); return; }
@@ -284,8 +301,18 @@ function bindChatDom() {
   };
   petLifetime.listen(chatDom, 'keydown', onChatKeydown);
   petLifetime.listen(chatPickerEl, 'keydown', onChatKeydown);
+  petLifetime.listen(document, 'keydown', (/** @type {KeyboardEvent} */ event) => {
+    if (!chatPickerOpen || event.key !== 'Escape') { return; }
+    event.preventDefault();
+    event.stopPropagation();
+    if (chatPickerOpen === 'model' || chatPickerOpen === 'effort') { chatShowPicker('root'); }
+    else { chatClosePicker(true); }
+  });
   petLifetime.listen(document, 'pointerdown', (event) => {
-    if (chatPickerOpen && !chatDom.contains(event.target) && !chatPickerEl?.contains(event.target)) { chatClosePicker(); }
+    if (!chatPickerOpen) { return; }
+    const trigger = modelTrigger || chatPart('#pc-model-trigger');
+    if (chatNodeContains(trigger, event.target) || chatNodeContains(chatPickerEl, event.target)) { return; }
+    chatClosePicker();
   });
   petLifetime.listen(chatPart('#pc-open'), 'click', () => {
     void Promise.resolve(petShell.openWhale?.()).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });

@@ -9,8 +9,10 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 import {
   BOT_AVATAR_SOURCE_TYPES,
   MAX_BOT_AVATAR_SOURCE_BYTES,
@@ -578,6 +580,8 @@ export function AvatarPicker({
 export interface AvatarPickerPopoverProps extends AvatarPickerProps {
   open: boolean;
   anchorRect: DOMRect | null;
+  triggerRef?: RefObject<HTMLElement | null>;
+  triggerEl?: HTMLElement | null;
   onClose: () => void;
 }
 
@@ -587,32 +591,20 @@ const AVATAR_PICKER_POPOVER_WIDTH = 352;
 export function AvatarPickerPopover({
   open,
   anchorRect,
+  triggerRef,
+  triggerEl,
   onClose,
   ...pickerProps
 }: AvatarPickerPopoverProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-    const handlePointerDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    const handleEsc = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEsc);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEsc);
-    };
-  }, [open, onClose]);
+  useAnchoredPopoverDismiss({
+    open,
+    popoverRef: ref,
+    triggerRef,
+    triggerEl,
+    onClose,
+  });
 
   if (!open || !anchorRect || typeof document === 'undefined') {
     return null;
@@ -626,6 +618,7 @@ export function AvatarPickerPopover({
     <div
       ref={ref}
       className="dsh-bots-popover"
+      data-dsh-bots-popover="avatar-picker"
       style={{ left, top, padding: 0, width: popoverWidth, boxSizing: 'border-box' }}
     >
       <AvatarPicker {...pickerProps} />

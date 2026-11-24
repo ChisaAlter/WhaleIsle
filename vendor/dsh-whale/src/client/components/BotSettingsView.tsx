@@ -401,6 +401,8 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
               ref={avatarBtnRef}
               type="button"
               className="dsh-bots-panel-avatar-trigger"
+              aria-haspopup="dialog"
+              aria-expanded={Boolean(pickerRect)}
               title={zh ? '点击或 Ctrl+V 粘贴图片更换头像' : 'Click or paste image to change avatar'}
               onClick={() => {
                 const rect = avatarBtnRef.current?.getBoundingClientRect() ?? null;
@@ -588,6 +590,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
       <AvatarPickerPopover
         open={Boolean(pickerRect)}
         anchorRect={pickerRect}
+        triggerRef={avatarBtnRef}
         onClose={() => setPickerRect(null)}
         value={{
           avatar: bot.avatar || 'mascot:W1',

@@ -106,6 +106,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   const nameRef = useRef<HTMLInputElement | null>(null);
   const purposeRef = useRef<HTMLTextAreaElement | null>(null);
   const chipsBarRef = useRef<HTMLDivElement | null>(null);
+  const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!activeChipPopover) {
@@ -423,7 +424,10 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         <div className="dsh-bots-modal-body" style={{ paddingTop: 0, marginTop: -38 }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 16 }}>
             <button
+              ref={avatarBtnRef}
               type="button"
+              aria-haspopup="dialog"
+              aria-expanded={Boolean(pickerAnchor)}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 setPickerAnchor((prev) => (prev ? null : rect));
@@ -781,6 +785,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         <AvatarPickerPopover
           open={Boolean(pickerAnchor)}
           anchorRect={pickerAnchor}
+          triggerRef={avatarBtnRef}
           onClose={() => setPickerAnchor(null)}
           value={avatarVal}
           onChange={setAvatarVal}

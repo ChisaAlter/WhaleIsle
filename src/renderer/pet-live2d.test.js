@@ -2507,3 +2507,353 @@ test('closing during asynchronous engine creation does not restart the display l
   await pending;
   assert.equal(pet.run('__raf.length'), 0);
 });
+
+function loadPetWithChatDom() {
+  const DOM_SOURCE = fs.readFileSync(path.join(__dirname, '../shared/dom.js'), 'utf8');
+  const mainCanvas = makeCanvas();
+  let activeEl = null;
+
+  const makeEl = (tag, id = '', className = '') => {
+    const listeners = new Map();
+    const attrs = new Map();
+    const el = {
+      nodeType: 1,
+      tagName: tag.toUpperCase(),
+      id,
+      className,
+      style: {},
+      hidden: false,
+      disabled: false,
+      value: '',
+      textContent: '',
+      parentNode: null,
+      children: [],
+      offsetWidth: 220,
+      offsetHeight: 80,
+      scrollHeight: 20,
+      get selectedOptions() {
+        const opts = [];
+        const walk = (n) => {
+          for (const c of n.children || []) {
+            if (c.tagName === 'OPTION') opts.push(c);
+            walk(c);
+          }
+        };
+        walk(this);
+        const picked = opts.find((o) => o.value === this.value) || opts[0];
+        return picked ? [picked] : [];
+      },
+      dataset: new Proxy({}, {
+        get: (_t, key) => attrs.get(`data-${String(key).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`),
+        set: (_t, key, val) => {
+          attrs.set(`data-${String(key).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`, String(val));
+          return true;
+        },
+      }),
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      },
+      removeEventListener(type, fn) {
+        listeners.set(type, (listeners.get(type) || []).filter((item) => item !== fn));
+      },
+      listenerCount(type) {
+        if (type) return (listeners.get(type) || []).length;
+        return [...listeners.values()].reduce((sum, list) => sum + list.length, 0);
+      },
+      setAttribute(name, value) {
+        attrs.set(name, String(value));
+        if (name === 'class') this.className = String(value);
+        if (name === 'value') this.value = String(value);
+      },
+      getAttribute(name) { return attrs.get(name) ?? null; },
+      removeAttribute(name) { attrs.delete(name); },
+      appendChild(node) {
+        node.parentNode = this;
+        this.children.push(node);
+        return node;
+      },
+      replaceChildren(...nodes) {
+        for (const c of this.children) c.parentNode = null;
+        this.children = [];
+        for (const n of nodes) this.appendChild(n);
+      },
+      contains(target) {
+        for (let cur = target; cur; cur = cur.parentNode) {
+          if (cur === this) return true;
+        }
+        return false;
+      },
+      matches(selector) {
+        if (selector.startsWith('#')) return this.id === selector.slice(1);
+        if (selector.startsWith('.')) return this.className.split(/\s+/).includes(selector.slice(1));
+        const attrMatch = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(selector);
+        if (attrMatch) {
+          const val = attrs.get(attrMatch[1]);
+          return attrMatch[2] === undefined ? val !== undefined : val === attrMatch[2];
+        }
+        return this.tagName === selector.toUpperCase();
+      },
+      closest(selector) {
+        for (let cur = this; cur && cur.nodeType === 1; cur = cur.parentNode) {
+          if (cur.matches(selector)) return cur;
+        }
+        return null;
+      },
+      querySelectorAll(selector) {
+        const parts = selector.trim().split(/\s+/);
+        const out = [];
+        const walk = (node) => {
+          for (const child of node.children || []) {
+            if (child.nodeType === 1) {
+              if (parts.length === 1) {
+                if (child.matches(parts[0])) out.push(child);
+              } else if (child.matches(parts.at(-1))) {
+                let p = child.parentNode;
+                let ok = false;
+                while (p && p.nodeType === 1) {
+                  if (p.matches(parts[0])) { ok = true; break; }
+                  p = p.parentNode;
+                }
+                if (ok) out.push(child);
+              }
+              walk(child);
+            }
+          }
+        };
+        walk(this);
+        return out;
+      },
+      querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+      focus() { activeEl = this; },
+      scrollIntoView() {},
+      getBoundingClientRect() { return { top: 200, left: 100, right: 240, bottom: 228, width: 140, height: 28 }; },
+      dispatchEvent(ev) {
+        const event = {
+          target: this,
+          defaultPrevented: false,
+          _stopped: false,
+          preventDefault() { this.defaultPrevented = true; },
+          stopPropagation() { this._stopped = true; },
+          ...ev,
+        };
+        const path = [];
+        for (let cur = this; cur; cur = cur.parentNode) path.push(cur);
+        if (path.at(-1) !== doc) path.push(doc);
+        for (const node of path) {
+          event.currentTarget = node;
+          for (const fn of [...(node._listeners?.get(event.type) || [])]) {
+            fn.call(node, event);
+          }
+          if (event._stopped) break;
+        }
+        return !event.defaultPrevented;
+      },
+      _listeners: listeners,
+    };
+    return el;
+  };
+
+  const docListeners = new Map();
+  const body = makeEl('body');
+  const doc = {
+    nodeType: 9,
+    documentElement: {},
+    body,
+    _listeners: docListeners,
+    get activeElement() { return activeEl; },
+    addEventListener(type, fn) {
+      if (!docListeners.has(type)) docListeners.set(type, []);
+      docListeners.get(type).push(fn);
+    },
+    removeEventListener(type, fn) {
+      docListeners.set(type, (docListeners.get(type) || []).filter((item) => item !== fn));
+    },
+    listenerCount(type) {
+      if (type) return (docListeners.get(type) || []).length;
+      return [...docListeners.values()].reduce((sum, list) => sum + list.length, 0);
+    },
+    createElement(tag) { return tag === 'canvas' ? makeCanvas() : makeEl(tag); },
+    createTextNode(text) { return { nodeType: 3, textContent: String(text), parentNode: null }; },
+    getElementById(id) { return id === 'pet' ? mainCanvas : byId[id] || null; },
+    dispatchEvent(ev) {
+      const event = {
+        target: body,
+        defaultPrevented: false,
+        _stopped: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() { this._stopped = true; },
+        ...ev,
+      };
+      for (const fn of [...(docListeners.get(event.type) || [])]) fn.call(doc, event);
+      return !event.defaultPrevented;
+    },
+  };
+  body.parentNode = doc;
+
+  const chat = makeEl('div', 'pet-chat');
+  chat.hidden = true;
+  const head = makeEl('div', '', 'pc-head');
+  const nameEl = makeEl('span', '', 'pc-name');
+  const openBtn = makeEl('button', 'pc-open', 'pc-tool');
+  const closeBtn = makeEl('button', 'pc-close', 'pc-x');
+  head.appendChild(nameEl);
+  head.appendChild(openBtn);
+  head.appendChild(closeBtn);
+  const thread = makeEl('div', 'pc-thread', 'pc-thread');
+  const empty = makeEl('div', 'pc-empty', 'pc-empty');
+  thread.appendChild(empty);
+  const models = makeEl('div', 'pc-models', 'pc-models');
+  const trigger = makeEl('button', 'pc-model-trigger', 'pc-choice');
+  const triggerValue = makeEl('span', '', 'pc-choice-value');
+  const triggerEffort = makeEl('span', '', 'pc-choice-effort');
+  const triggerChevron = makeEl('span', '', 'pc-choice-chevron');
+  trigger.appendChild(triggerValue);
+  trigger.appendChild(triggerEffort);
+  trigger.appendChild(triggerChevron);
+  const effortBox = makeEl('span', 'pc-effort-box');
+  const modelSel = makeEl('select', 'pc-model');
+  const effortSel = makeEl('select', 'pc-effort');
+  models.appendChild(trigger);
+  models.appendChild(effortBox);
+  models.appendChild(modelSel);
+  models.appendChild(effortSel);
+  const compose = makeEl('div', '', 'pc-compose');
+  const input = makeEl('textarea', 'pc-input');
+  const send = makeEl('button', 'pc-send', 'pc-send');
+  compose.appendChild(input);
+  compose.appendChild(send);
+  chat.appendChild(head);
+  chat.appendChild(thread);
+  chat.appendChild(models);
+  chat.appendChild(compose);
+
+  const picker = makeEl('div', 'pc-picker');
+  picker.hidden = true;
+  const feedback = makeEl('div', 'pc-feedback');
+  feedback.hidden = true;
+  const feedbackText = makeEl('span', 'pc-feedback-text');
+  const feedbackClose = makeEl('button', 'pc-feedback-close');
+  feedback.appendChild(feedbackText);
+  feedback.appendChild(feedbackClose);
+  const canvasEl = makeEl('div', 'pet-outside');
+  body.appendChild(canvasEl);
+  body.appendChild(chat);
+  body.appendChild(picker);
+  body.appendChild(feedback);
+
+  const byId = {
+    'pet-chat': chat, 'pc-thread': thread, 'pc-empty': empty, 'pc-models': models,
+    'pc-model-trigger': trigger, 'pc-effort-box': effortBox, 'pc-model': modelSel,
+    'pc-effort': effortSel, 'pc-input': input, 'pc-send': send, 'pc-close': closeBtn,
+    'pc-open': openBtn, 'pc-picker': picker, 'pc-feedback': feedback,
+    'pc-feedback-text': feedbackText, 'pc-feedback-close': feedbackClose,
+  };
+
+  const win = {
+    innerWidth: 800, innerHeight: 600,
+    ...makeNode('window'),
+    matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+    shell: {},
+  };
+  const context = vm.createContext({
+    document: doc,
+    window: win,
+    performance: { now: () => 100000 },
+    Image: class {},
+    getComputedStyle: () => ({ getPropertyValue: (name) => TOKEN_STYLE[name] || '' }),
+    cancelAnimationFrame: () => {},
+    requestAnimationFrame: () => 0,
+    setTimeout, clearTimeout, setInterval, clearInterval,
+    console,
+    Math,
+    __dialogueStore: DIALOGUE_STORE,
+  });
+  vm.runInContext(DOM_SOURCE, context, { filename: 'dom.js' });
+  vm.runInContext(PHYSICS_SOURCE, context, { filename: 'pet-physics.js' });
+  vm.runInContext(DIALOGUE_SOURCE, context, { filename: 'pet-dialogue.js' });
+  vm.runInContext(WANDER_SOURCE, context, { filename: 'pet-wander.js' });
+  for (const { name, source } of PET_SOURCES) {
+    vm.runInContext(source.replace(/mount\(\)\.catch[\s\S]*$/, ''), context, { filename: name });
+  }
+  vm.runInContext('dialogueStore = __dialogueStore; LINES = dialogueStore.global; wireDialogue();', context);
+  return {
+    context, doc, chat, head, thread, models, trigger, triggerValue, input, picker, canvasEl,
+    run: (expr) => vm.runInContext(expr, context),
+  };
+}
+
+test('pet chat model picker toggles on trigger, closes on card non-menu clicks and Esc, and binds idempotently', () => {
+  const pet = loadPetWithChatDom();
+  pet.run(`
+    chatGroups = [{
+      id: 'deepseek',
+      name: 'DeepSeek',
+      models: [{ id: 'chat', name: 'DeepSeek Chat', efforts: [{ id: 'medium', name: '中' }], defaultEffort: 'medium' }],
+    }];
+    chatRenderModels({ provider: 'deepseek', model: 'chat', reasoningEffort: 'medium' });
+    bindChatDom();
+  `);
+
+  const pressAndClick = (el) => {
+    el.dispatchEvent({ type: 'pointerdown', button: 0 });
+    el.dispatchEvent({ type: 'click', button: 0 });
+  };
+
+  // 1. Click trigger to open; clicking trigger (or inner label span) again toggles shut without race.
+  pressAndClick(pet.trigger);
+  assert.equal(pet.run('chatPickerOpen'), 'root');
+  assert.equal(pet.picker.hidden, false);
+  assert.equal(pet.trigger.getAttribute('aria-expanded'), 'true');
+
+  pet.triggerValue.dispatchEvent({ type: 'pointerdown', button: 0 });
+  assert.equal(pet.run('chatPickerOpen'), 'root', 'pointerdown on trigger child must not pre-close picker');
+  pet.triggerValue.dispatchEvent({ type: 'click', button: 0 });
+  assert.equal(pet.run('chatPickerOpen'), '');
+  assert.equal(pet.picker.hidden, true);
+  assert.equal(pet.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(pet.doc.activeElement, pet.trigger, 'toggle close restores focus to trigger');
+
+  // 2. Clicking inside the chat card outside trigger & picker (input, thread, head, blank card) closes picker.
+  for (const [label, target] of [
+    ['input', pet.input],
+    ['thread', pet.thread],
+    ['head', pet.head],
+    ['card blank', pet.chat],
+    ['outside canvas', pet.canvasEl],
+  ]) {
+    pressAndClick(pet.trigger);
+    assert.equal(pet.run('chatPickerOpen'), 'root', `open before clicking ${label}`);
+    target.focus();
+    target.dispatchEvent({ type: 'pointerdown', button: 0 });
+    assert.equal(pet.run('chatPickerOpen'), '', `pointerdown on ${label} closes picker`);
+    assert.equal(pet.picker.hidden, true);
+    assert.equal(pet.doc.activeElement, target, `outside dismiss on ${label} does not steal focus back to trigger`);
+  }
+
+  // 3. Clicking inside the picker menu navigates panes without prematurely dismissing.
+  pressAndClick(pet.trigger);
+  const modelPaneBtn = pet.picker.querySelector('[data-pane="model"]');
+  assert.ok(modelPaneBtn, 'root picker renders model pane entry');
+  pressAndClick(modelPaneBtn);
+  assert.equal(pet.run('chatPickerOpen'), 'model', 'clicking inside picker switches to model pane');
+  assert.equal(pet.picker.hidden, false);
+
+  // 4. Escape steps back from sub-pane to root, then closes root and restores focus to trigger.
+  pet.picker.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(pet.run('chatPickerOpen'), 'root', 'Escape from model sub-pane returns to root');
+  pet.doc.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(pet.run('chatPickerOpen'), '', 'Escape from root closes picker even if focus left picker');
+  assert.equal(pet.picker.hidden, true);
+  assert.equal(pet.doc.activeElement, pet.trigger);
+
+  // 5. Repeated bindChatDom calls do not duplicate listeners, and dispose cleans them all up.
+  const triggerListeners = pet.trigger.listenerCount();
+  const docListeners = pet.doc.listenerCount();
+  pet.run('bindChatDom(); bindChatDom();');
+  assert.equal(pet.trigger.listenerCount(), triggerListeners, 'bindChatDom is idempotent on trigger');
+  assert.equal(pet.doc.listenerCount(), docListeners, 'bindChatDom is idempotent on document');
+  pet.run('petLifetime.dispose()');
+  assert.equal(pet.trigger.listenerCount(), 0, 'dispose releases trigger listeners');
+  assert.equal(pet.doc.listenerCount(), 0, 'dispose releases document listeners');
+});

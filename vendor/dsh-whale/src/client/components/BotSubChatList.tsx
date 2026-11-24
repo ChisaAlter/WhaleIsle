@@ -20,6 +20,7 @@ import {
 } from '../store/bots-store';
 import { RPC_METHODS, callBotRpc, type BotChatRow, type BotRecord, type BotWorkerRow } from '../store/rpc';
 import { BotChevron, BotDisclosure } from './BotDisclosure';
+import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 import {
   IconExternalLink,
   IconGlobe,
@@ -276,6 +277,7 @@ interface ChatMenuState {
   isActive: boolean;
   x: number;
   y: number;
+  triggerEl: HTMLElement | null;
 }
 
 export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatListProps) {
@@ -290,27 +292,12 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!menuState) {
-      return undefined;
-    }
-    const handleDown = (event: globalThis.MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuState(null);
-      }
-    };
-    const handleEsc = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMenuState(null);
-      }
-    };
-    document.addEventListener('mousedown', handleDown);
-    document.addEventListener('keydown', handleEsc);
-    return () => {
-      document.removeEventListener('mousedown', handleDown);
-      document.removeEventListener('keydown', handleEsc);
-    };
-  }, [menuState]);
+  useAnchoredPopoverDismiss({
+    open: Boolean(menuState),
+    popoverRef: menuRef,
+    triggerEl: menuState?.triggerEl ?? null,
+    onClose: () => setMenuState(null),
+  });
 
   const orderedChats = useMemo<BotChatRow[]>(() => {
     const owned = rawTree ? (botOwnChatTree(rawTree) as { chats: BotChatRow[] }) : null;
@@ -387,10 +374,11 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
     isActive: boolean,
     x: number,
     y: number,
+    triggerEl: HTMLElement | null = null,
   ) => {
     const clampedX = Math.min(x, window.innerWidth - 188);
     const clampedY = Math.min(y, window.innerHeight - 110);
-    setMenuState({ chat, isHome, isActive, x: Math.max(8, clampedX), y: Math.max(8, clampedY) });
+    setMenuState({ chat, isHome, isActive, x: Math.max(8, clampedX), y: Math.max(8, clampedY), triggerEl });
   };
 
   return (
@@ -468,7 +456,7 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
                     if (menuState?.chat.chatId === chat.chatId) {
                       setMenuState(null);
                     } else {
-                      openMenuAt(chat, isHome, isActive, rect.left, rect.bottom + 4);
+                      openMenuAt(chat, isHome, isActive, rect.left, rect.bottom + 4, e.currentTarget);
                     }
                   }}
                 >
