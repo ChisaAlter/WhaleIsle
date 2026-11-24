@@ -21,6 +21,7 @@
     refreshing: null,
     // A failed action stays on its component row until the next action.
     failures: new Map(),
+    dismissBound: false,
   };
 
   function badge(text, variant) {
@@ -231,6 +232,54 @@
       : h('span', { class: 'comp-icon', 'aria-hidden': 'true' }, iconGlyph(row));
   }
 
+  /** @param {any} target */
+  function closestManageMenu(target) {
+    const el = target && typeof target.closest === 'function' ? target : target?.parentElement;
+    return el && typeof el.closest === 'function' ? el.closest('details.comp-manage') : null;
+  }
+
+  /** @param {any} [except] */
+  function closeManageMenus(except = null) {
+    const list = /** @type {any} */ (state.list);
+    if (!list) return;
+    list.querySelectorAll('details.comp-manage').forEach((/** @type {any} */ details) => {
+      if (details !== except && details.open) {
+        details.open = false;
+      }
+    });
+  }
+
+  function bindManageMenuDismiss() {
+    if (state.dismissBound) return;
+    state.dismissBound = true;
+    /** @param {Event} event */
+    const onOutside = (event) => {
+      closeManageMenus(closestManageMenu(event.target));
+    };
+    document.addEventListener('pointerdown', onOutside);
+    document.addEventListener('click', onOutside);
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      const confirm = document.getElementById('app-confirm');
+      if (confirm && !confirm.hidden) return;
+      const list = /** @type {any} */ (state.list);
+      const openMenus = list
+        ? [...list.querySelectorAll('details.comp-manage')].filter((/** @type {any} */ details) => details.open)
+        : [];
+      if (!openMenus.length) return;
+      const activeMenu = closestManageMenu(document.activeElement);
+      const hostEl = /** @type {any} */ (state.el);
+      const visible = !hostEl?.hidden;
+      closeManageMenus();
+      if (visible) {
+        event.preventDefault();
+        if (activeMenu && openMenus.includes(activeMenu)) {
+          activeMenu.querySelector('summary')?.focus?.();
+        }
+      }
+    });
+  }
+
   function bindActions(host) {
     host.querySelectorAll('[data-comp-action]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -242,6 +291,13 @@
         const row = state.rows.get(button.dataset.compInfo);
         if (row?.message) {
           void window.appNotice({ title: `${row.name || row.id}状态`, body: errorText(row.message, '无法读取组件状态'), holdMs: null });
+        }
+      });
+    });
+    host.querySelectorAll('details.comp-manage').forEach((/** @type {any} */ details) => {
+      details.addEventListener('toggle', () => {
+        if (details.open) {
+          closeManageMenus(details);
         }
       });
     });
@@ -564,6 +620,7 @@
         h('button', { type: 'button', class: 'ghost', dataset: { compRefresh: '' } }, '刷新')),
       h('ul', { class: 'list', dataset: { compList: '' } }));
     state.list = el.querySelector('[data-comp-list]');
+    bindManageMenuDismiss();
     el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh(true));
     void refresh();
   }

@@ -739,7 +739,7 @@ function CatalogDropdown(props: CatalogDropdownProps) {
             ? () => {
               cancelHoverOpen()
               cancelHoverClose()
-              if (variant === 'count' && open && (pinnedRef.current || !allowsHoverOpen())) {
+              if (open && (pinnedRef.current || !allowsHoverOpen())) {
                 changeOpen(false, true)
                 return
               }

@@ -215,7 +215,7 @@ export function TaskEditorFields({ draft, onChange, projects, disabled, held, or
         <label className={css.ruleLabel} htmlFor={rowId('date')}>{t('timing.date')}</label>
         <button ref={dateAnchor} style={{ anchorName: dateAnchorName }} id={rowId('date')} type="button" disabled={disabled}
           className={clsx(css.ruleInput, css.ruleControl, css.pickerTrigger)} aria-label={t('timing.date')}
-          aria-haspopup="dialog" aria-expanded={dateOpen} onClick={() => { setDateOpen(true) }}>
+          aria-haspopup="dialog" aria-expanded={dateOpen} onClick={() => { setDateOpen(open => !open) }}>
           <span>{draft.start.slice(0, 10).replaceAll('-', '/')}</span><IconCalendarOutlineRegular className={css.pickerIcon} />
         </button>
         <DatePicker open={dateOpen && !disabled} anchorRef={dateAnchor} anchorName={dateAnchorName} value={draft.start.slice(0, 10)}
@@ -226,7 +226,7 @@ export function TaskEditorFields({ draft, onChange, projects, disabled, held, or
         <label className={css.ruleLabel} htmlFor={rowId('time')}>{t('timing.time')}</label>
         <button ref={clockAnchor} style={{ anchorName: clockAnchorName }} id={rowId('time')} type="button" disabled={disabled}
           className={clsx(css.ruleInput, css.ruleControl, css.pickerTrigger)} aria-label={t('timing.time')}
-          aria-haspopup="dialog" aria-expanded={clockOpen} onClick={() => { setClockOpen(true) }}>
+          aria-haspopup="dialog" aria-expanded={clockOpen} onClick={() => { setClockOpen(open => !open) }}>
           <span>{clock}</span><IconClockOutlineRegular className={css.pickerIcon} />
         </button>
         <ClockPicker open={clockOpen && !disabled} anchorRef={clockAnchor} anchorName={clockAnchorName} value={clock} seconds={draft.frequency !== 'daily'}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import { useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -444,5 +445,45 @@ describe('WorkspacePicker', () => {
     expect(b.probe.owner!.open).toBe(false)
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: 'Alpha' }).disabled).toBe(false)
     expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
+  })
+
+  it('toggles an add-only multi-source menu closed when its anchor button is clicked again', () => {
+    const { renderFlow } = flowProbe()
+    const occupancy = occupancySource(true)
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      const buttonRef = useRef<HTMLButtonElement>(null)
+      return (
+        <>
+          <button ref={buttonRef} type="button" onClick={() => { setOpen(current => !current) }}>
+            添加工作区
+          </button>
+          <WorkspacePickFlow
+            t={t}
+            open={open}
+            anchorRef={buttonRef}
+            useWorkspaces={hook(workspaceState([]))}
+            createWorkspace={vi.fn()}
+            useDirectoryFlow={occupancy.useDirectoryFlow}
+            renderDirectoryFlow={renderFlow}
+            directoryActions={[{ id: 'remote', label: '远程目录', adopt: vi.fn(async () => {}) }]}
+            addOnly
+            side="right"
+            onPick={vi.fn()}
+            onClose={() => { setOpen(false) }}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    const trigger = screen.getByRole('button', { name: '添加工作区' })
+    fireEvent.pointerDown(trigger)
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '远程目录' })).toBeTruthy()
+
+    fireEvent.pointerDown(trigger)
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })

@@ -1,7 +1,7 @@
 // Import existing bots from local Orca / OpenClaw / Hermes / legacy Whale folders.
 // Enhanced with scanBotText security review, expandable SOUL/Skill preview, and re-review on content change.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { randomMascotAvatar } from '../../shared/bot-avatar.js';
 import { DEFAULT_BOT_AVATAR_COLOR, normalizeHexColor } from '../../shared/bot-avatar-color.js';
@@ -72,6 +72,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
     uploadedImage: null,
   }));
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null);
+  const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
@@ -107,20 +108,26 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
 
   useEffect(() => {
     if (!open) {
-      return undefined;
+      return;
     }
     setPickerAnchor(null);
     setChangedAfterReview(false);
     void loadSources();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
     const handleEsc = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape' && !pickerAnchor) {
+      if (event.key === 'Escape' && !event.defaultPrevented && !pickerAnchor) {
         onClose();
       }
     };
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, open]);
+  }, [onClose, open, pickerAnchor]);
 
   const selected = sources.find((s) => s.id === selectedId) ?? null;
 
@@ -370,7 +377,10 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
                     <IconArrowRight size={18} style={{ color: 'var(--dsw-alias-label-tertiary)' }} />
                     <div style={{ textAlign: 'center' }}>
                       <button
+                        ref={avatarBtnRef}
                         type="button"
+                        aria-haspopup="dialog"
+                        aria-expanded={Boolean(pickerAnchor)}
                         onClick={(e) => {
                           const rect = e.currentTarget.getBoundingClientRect();
                           setPickerAnchor((prev) => (prev ? null : rect));
@@ -508,6 +518,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
         <AvatarPickerPopover
           open={Boolean(pickerAnchor)}
           anchorRect={pickerAnchor}
+          triggerRef={avatarBtnRef}
           onClose={() => setPickerAnchor(null)}
           value={avatarVal}
           onChange={setAvatarVal}

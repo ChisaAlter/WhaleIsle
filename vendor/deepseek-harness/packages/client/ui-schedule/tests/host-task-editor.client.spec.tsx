@@ -678,6 +678,23 @@ describe('Host task editor on the existing manager', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  it('toggles the date and time pickers closed when their trigger buttons are clicked again', () => {
+    mount([])
+    const modal = openManual()
+    for (const key of ['timing.date', 'timing.time'] as const) {
+      const trigger = within(modal).getByRole('button', { name: en[key] })
+      fireEvent.pointerDown(trigger)
+      fireEvent.click(trigger)
+      expect(screen.getByRole('dialog', { name: en[key] })).toBeTruthy()
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+      fireEvent.pointerDown(trigger)
+      fireEvent.click(trigger)
+      expect(screen.queryByRole('dialog', { name: en[key] })).toBeNull()
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    }
+  })
+
   it('dismisses a portaled field menu before the creation editor, even if focus stays elsewhere', () => {
     mount([])
     const modal = openManual()

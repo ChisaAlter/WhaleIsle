@@ -851,6 +851,44 @@ describe('DockSurface', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('toggles the tab menu closed on a secondary pointerdown + contextmenu sequence without breaking primary or outside dismissal', () => {
+    const controller = seededController()
+    controller.openContent({ contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
+    renderSurface(controller, spyIntents())
+    const startTab = screen.getByRole('tab', { name: /Start/u })
+    const fileTab = screen.getByRole('tab', { name: /a\.txt/u })
+
+    // First secondary click opens the menu.
+    fireEvent.pointerDown(startTab, { button: 2 })
+    fireEvent.contextMenu(startTab)
+    expect(screen.getByRole('menu')).toBeDefined()
+
+    // Second secondary click on the same tab (including its preceding pointerdown) closes it instead of reopening.
+    fireEvent.pointerDown(startTab, { button: 2 })
+    expect(screen.getByRole('menu')).toBeDefined()
+    fireEvent.contextMenu(startTab)
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    // Primary press on the opening tab still dismisses the menu before drag starts.
+    fireEvent.pointerDown(startTab, { button: 2 })
+    fireEvent.contextMenu(startTab)
+    expect(screen.getByRole('menu')).toBeDefined()
+    fireEvent.pointerDown(startTab, { button: 0 })
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    // Secondary press outside the opening tab dismisses the menu, and a secondary click on another tab switches to it.
+    fireEvent.pointerDown(startTab, { button: 2 })
+    fireEvent.contextMenu(startTab)
+    fireEvent.pointerDown(document.body, { button: 2 })
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    fireEvent.pointerDown(startTab, { button: 2 })
+    fireEvent.contextMenu(startTab)
+    fireEvent.pointerDown(fileTab, { button: 2 })
+    fireEvent.contextMenu(fileTab)
+    expect(screen.getByRole('menu')).toBeDefined()
+  })
+
   it.each(['tab', 'item'])('Escape dismisses a reopened menu from the %s without closing its tab', (focus) => {
     const intents = spyIntents()
     const { unmount } = renderSurface(seededController(), intents)

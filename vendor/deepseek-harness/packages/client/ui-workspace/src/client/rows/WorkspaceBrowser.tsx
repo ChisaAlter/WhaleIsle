@@ -1646,7 +1646,8 @@ export function WorkspaceBrowser({
                 aria-label={t('workspace.add')}
                 aria-keyshortcuts={addShortcut?.aria}
                 onClick={() => {
-                  requestAddWorkspace()
+                  if (wsPickerOpen) closeAddWorkspace()
+                  else requestAddWorkspace()
                 }}
               >
                 <IconProjectAddOutlineRegular size={wide ? 16 : 18} />
