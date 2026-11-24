@@ -284,8 +284,9 @@ export function createSessionRuntime(deps) {
     const validPerm = normalizePermissionMode(permissionMode);
     if (!existing) {
       startingSessions.add(sessionId);
+      let createdResult = null;
       try {
-        await controller.create({
+        createdResult = await controller.create({
           sessionId,
           cwd,
           agentPreset: preset,
@@ -295,8 +296,11 @@ export function createSessionRuntime(deps) {
       } finally {
         startingSessions.delete(sessionId);
       }
-      await applyLaunchModel(controller, sessionId, launch);
-      return { ok: true, sessionId, created: true };
+      const actualSessionId = sessionIdFromRow(createdResult)
+        || sessionIdFromRow(createdResult?.session)
+        || sessionId;
+      await applyLaunchModel(controller, actualSessionId, launch);
+      return { ok: true, sessionId: actualSessionId, created: true };
     }
     if (typeof controller.setPresentation === 'function') {
       await controller.setPresentation({ sessionId, presentation: { owner, title } }, freshSignal()).catch(() => null);
@@ -310,9 +314,9 @@ export function createSessionRuntime(deps) {
     if (!existingId && !createIfMissing) {
       return { ok: false, botId: bot.id, sessionId: null };
     }
-    const sessionId = existingId || `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+    const requestedSessionId = existingId || `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
     const ensured = await ensureControllerSession({
-      sessionId,
+      sessionId: requestedSessionId,
       cwd: homeDirFor(bot),
       title: bot.name,
       owner: BOT_OWNER_HOME,
@@ -320,6 +324,17 @@ export function createSessionRuntime(deps) {
       permissionMode: bot.permissionMode,
       botId: bot.id,
     });
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        error: ensured.error,
+        ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
+        ...(ensured.blocked ? { blocked: true, code: ensured.code, deferUntilMs: ensured.deferUntilMs ?? null } : {}),
+      };
+    }
+    const sessionId = ensured.sessionId || requestedSessionId;
     const now = Date.now();
     botsStore.upsertChat({
       sessionId,
@@ -341,12 +356,9 @@ export function createSessionRuntime(deps) {
     const bot = requireBot(botId);
     const previousSessionId = bot.chatSessionId || null;
     const now = Date.now();
-    if (previousSessionId) {
-      botsStore.closeChat(previousSessionId, now);
-    }
-    const nextSessionId = `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
-    await ensureControllerSession({
-      sessionId: nextSessionId,
+    const requestedSessionId = `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+    const ensured = await ensureControllerSession({
+      sessionId: requestedSessionId,
       cwd: homeDirFor(bot),
       title: bot.name,
       owner: BOT_OWNER_HOME,
@@ -354,6 +366,20 @@ export function createSessionRuntime(deps) {
       permissionMode: bot.permissionMode,
       botId: bot.id,
     });
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        previousSessionId,
+        error: ensured.error,
+        ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
+      };
+    }
+    if (previousSessionId) {
+      botsStore.closeChat(previousSessionId, now);
+    }
+    const nextSessionId = ensured.sessionId || requestedSessionId;
     botsStore.upsertChat({
       sessionId: nextSessionId,
       botId: bot.id,
@@ -384,10 +410,21 @@ export function createSessionRuntime(deps) {
       ownerChat: BOT_OWNER_CHAT,
       defaultPreset: BOT_PRESET_ID,
     });
-    await ensureControllerSession(spec.ensureInput);
-    const chat = botsStore.upsertChat(spec.chatRecord, now);
+    const ensured = await ensureControllerSession(spec.ensureInput);
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        error: ensured.error,
+        ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
+        ...(ensured.blocked ? { blocked: true, code: ensured.code, deferUntilMs: ensured.deferUntilMs ?? null } : {}),
+      };
+    }
+    const sessionId = ensured.sessionId || spec.sessionId;
+    const chat = botsStore.upsertChat({ ...spec.chatRecord, sessionId }, now);
     eventBus.emit({ botIds: [bot.id], kinds: ['chats'] });
-    return { ok: true, botId: bot.id, sessionId: spec.sessionId, chat };
+    return { ok: true, botId: bot.id, sessionId, chat };
   }
 
   async function sendKickoff(bot, { template = null, note = null } = {}) {

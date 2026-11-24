@@ -792,3 +792,134 @@ test('service-helpers: structured import/shared-setup.json contract and atomic c
     assert.ok(botTemplate('pr-review'));
   });
 });
+
+test('look-around & automations: background execution, idempotent dismiss, and session-open failure propagation', async () => {
+  const { openBotsDatabase } = await importBots('db.js');
+  const { createWorkStore } = await importBots('work-store.js');
+  const { createLookAroundService } = await importBots('look-around-service.js');
+  const { createAutomationsService } = await importBots('automations-service.js');
+
+  await withTempDir('bg-actions', async ({ root, onClose }) => {
+    const dbHandle = openBotsDatabase({ dshHome: root });
+    onClose(() => dbHandle.close());
+    const workStore = createWorkStore(dbHandle.db);
+    const eventBus = createFakeEventBus();
+    const errors = [];
+
+    const bot = dbHandle.bots.insertBot({
+      id: 'bot-bg-1',
+      name: 'FastFish',
+      hostId: 'local',
+      folder: 'fastfish',
+      agent: 'deepseek-harness',
+      paused: false,
+      lookAround: { on: true, every: 'every-4h', weekdaysOnly: false, focus: '' },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    let openHomeResult = { ok: true, botId: bot.id, sessionId: 'home-bg-1' };
+    let startSideResult = { ok: true, botId: bot.id, sessionId: 'side-bg-1' };
+    let turnHandler = async () => ({ ok: true, reply: 'ok' });
+    let turnCalls = 0;
+
+    const sessionRuntime = {
+      async openHomeChat() { return openHomeResult; },
+      async startSideChat() { return startSideResult; },
+      async runSingleTurn(sid, prompt) {
+        turnCalls += 1;
+        return turnHandler(sid, prompt);
+      },
+    };
+
+    const lookSvc = createLookAroundService({
+      dshHome: root,
+      botsStore: dbHandle.bots,
+      sessionRuntime,
+      eventBus,
+      onError: (err, ctx) => errors.push({ err, ctx }),
+      enableScheduler: false,
+    });
+    onClose(() => lookSvc.close());
+
+    // 1. executeSweepTurn fails cleanly when startSideChat returns ok: false without invoking runSingleTurn
+    startSideResult = { ok: false, botId: bot.id, sessionId: null, error: 'session-controller-unavailable' };
+    const failedSweep = await lookSvc.lookNow(bot.id);
+    assert.equal(failedSweep.ok, false);
+    assert.equal(failedSweep.summary, 'session-controller-unavailable');
+    assert.equal(turnCalls, 0);
+    startSideResult = { ok: true, botId: bot.id, sessionId: 'side-bg-1' };
+
+    // 2. dismissSuggestion repeat call is idempotent
+    const s1 = lookSvc.addSuggestion(bot.id, { title: 'Dup Dismiss', why: 'test', ask: 'ignore' }).suggestion;
+    assert.equal(lookSvc.dismissSuggestion(bot.id, s1.id).ok, true);
+    const secondDismiss = lookSvc.dismissSuggestion(bot.id, s1.id);
+    assert.equal(secondDismiss.ok, true);
+    assert.equal(secondDismiss.alreadyDismissed, true);
+
+    // 3. startSuggestion propagates openHomeChat failure without marking started
+    const s2 = lookSvc.addSuggestion(bot.id, { title: 'Fail Open', why: 'test', ask: 'do it' }).suggestion;
+    openHomeResult = { ok: false, botId: bot.id, sessionId: null, error: 'session-controller-unavailable' };
+    const startFail = await lookSvc.startSuggestion(bot.id, s2.id, { background: true });
+    assert.equal(startFail.ok, false);
+    assert.equal(startFail.error, 'session-controller-unavailable');
+    assert.equal(lookSvc.listUpNext(bot.id).some((s) => s.id === s2.id), true);
+
+    // 4. startSuggestion with background: true returns immediately and reports background turn errors cleanly
+    openHomeResult = { ok: true, botId: bot.id, sessionId: 'home-bg-1' };
+    let resolveTurn;
+    turnHandler = () => new Promise((r) => { resolveTurn = r; });
+    eventBus.emitted.length = 0;
+
+    const startBg = await lookSvc.startSuggestion(bot.id, s2.id, { background: true });
+    assert.equal(startBg.ok, true);
+    assert.equal(startBg.started, true);
+    assert.equal(startBg.background, true);
+    assert.equal(lookSvc.listUpNext(bot.id).some((s) => s.id === s2.id), false);
+    assert.ok(eventBus.emitted.some((ev) => ev.kinds?.includes('lookAround')));
+
+    resolveTurn({ ok: false, error: 'upstream_timeout' });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(errors.some((e) => e.ctx?.phase === 'startSuggestion' && /upstream_timeout/.test(e.ctx?.message || e.err?.message || '')));
+
+    // 5. lookNow with background: true returns immediately and settles when turn resolves
+    let resolveSweepTurn;
+    turnHandler = () => new Promise((r) => { resolveSweepTurn = r; });
+    const lookBg = await lookSvc.lookNow(bot.id, Date.now(), { background: true });
+    assert.equal(lookBg.ok, true);
+    assert.equal(lookBg.started, true);
+    assert.equal(lookBg.background, true);
+    assert.equal(lookSvc.getState(bot.id).running, true);
+    assert.equal((await lookSvc.lookNow(bot.id, Date.now(), { background: true })).alreadyRunning, true);
+
+    resolveSweepTurn({ ok: true, reply: 'NO_REPLY' });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(lookSvc.getState(bot.id).running, false);
+
+    // 6. automationsService.runNow with background: true returns immediately & reports background failure via onError
+    const autoSvc = createAutomationsService({
+      botsStore: dbHandle.bots,
+      workStore,
+      sessionRuntime,
+      eventBus,
+      onError: (err, ctx) => errors.push({ err, ctx }),
+      enableScheduler: false,
+      enableFolderWatcher: false,
+    });
+    onClose(() => autoSvc.close());
+
+    const auto = autoSvc.create({ botId: bot.id, name: 'Async Job', prompt: 'Ping', intervalMinutes: 30 });
+    let resolveAuto;
+    turnHandler = () => new Promise((r) => { resolveAuto = r; });
+    const autoBg = await autoSvc.runNow(auto.id, { background: true });
+    assert.equal(autoBg.ok, true);
+    assert.equal(autoBg.started, true);
+    assert.equal(autoBg.background, true);
+    assert.equal((await autoSvc.runNow(auto.id, { background: true })).alreadyRunning, true);
+
+    resolveAuto({ ok: false, error: 'bg_auto_err' });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(workStore.getAutomation(auto.id).lastStatus, 'failed');
+    assert.ok(errors.some((e) => e.ctx?.phase === 'runNow:background' && /bg_auto_err/.test(e.err?.message || '')));
+  });
+});

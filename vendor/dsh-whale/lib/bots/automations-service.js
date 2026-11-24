@@ -223,6 +223,7 @@ export function createAutomationsService(deps) {
   /** @type {Set<string>} */
   const runningIds = new Set();
   let lastManualSlot = 0;
+  let closed = false;
 
   // Startup recovery: mark any crash-interrupted claimed/running slots as `interrupted`.
   const startupRecovery = typeof workStore.markInterruptedAutomationClaims === 'function'
@@ -420,6 +421,12 @@ export function createAutomationsService(deps) {
         owner: BOT_OWNER_AUTOMATION,
       })
       : await sessionRuntime.openHomeChat(bot.id);
+    if (!target || target.ok === false || !target.sessionId) {
+      return {
+        targetSessionId: null,
+        turn: { ok: false, error: String(target?.error ?? 'session_unavailable'), reply: '' },
+      };
+    }
     const targetSessionId = target.sessionId;
     if (claimId) {
       workStore.updateAutomationClaim?.(claimId, { status: 'running', sessionId: targetSessionId }, nowFn());
@@ -444,13 +451,7 @@ export function createAutomationsService(deps) {
       return { lastStatus, nextRunAt, cleanedUp };
     }
     const latestAuto = workStore.getAutomation(auto.id) ?? auto;
-    persistAutomationState(latestAuto, {
-      enabled: nextEnabled,
-      lastRunAt: now,
-      lastStatus,
-      lastError,
-      nextRunAt,
-    }, now);
+    persistAutomationState(latestAuto, { enabled: nextEnabled, lastRunAt: now, lastStatus, lastError, nextRunAt }, now);
     return { lastStatus, nextRunAt, cleanedUp: false };
   }
 
@@ -462,13 +463,7 @@ export function createAutomationsService(deps) {
     const nextEnabled = isOnce ? false : auto.enabled;
     const nextRunAt = nextEnabled ? computeSafeNextRunAt({ ...auto, lastRunAt: now }, now) : null;
     const latestAuto = workStore.getAutomation(auto.id) ?? auto;
-    persistAutomationState(latestAuto, {
-      enabled: nextEnabled,
-      lastRunAt: now,
-      lastStatus: 'failed',
-      lastError: msg,
-      nextRunAt,
-    }, now);
+    persistAutomationState(latestAuto, { enabled: nextEnabled, lastRunAt: now, lastStatus: 'failed', lastError: msg, nextRunAt }, now);
     eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
     return { ok: false, runId, claimId: claim.claimId, automationId: auto.id, status: 'failed', error: msg };
   }
@@ -499,6 +494,9 @@ export function createAutomationsService(deps) {
     const groupDest = resolveGroupDestination(auto);
     const prompt = buildAutomationPrompt(auto, { triggerKind, coalescedCount, triggerContext });
     const { targetSessionId, turn } = await executeAutomationTurn(auto, bot, groupDest, prompt, claim.claimId, triggerKind);
+    if (closed) {
+      return { ok: false, closed: true, runId, claimId: claim.claimId, automationId: auto.id };
+    }
     const merged = isSharedTurnMerged(turn);
     const ok = isSharedTurnCompleted(turn);
     const rawReply = String(turn?.reply ?? '').trim();
@@ -533,19 +531,12 @@ export function createAutomationsService(deps) {
       : fallbackNext;
     workStore.updateAutomationClaim?.(claim.claimId, { status: 'skipped_budget', error: budgetCheck.reason }, now);
     persistAutomationState(auto, {
-      lastStatus: 'skipped_budget',
-      lastError: budgetCheck.reason,
-      nextRunAt: auto.enabled ? deferredNext : auto.nextRunAt,
+      lastStatus: 'skipped_budget', lastError: budgetCheck.reason, nextRunAt: auto.enabled ? deferredNext : auto.nextRunAt,
     }, now);
     eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
     return {
-      ok: false,
-      skipped: true,
-      reason: 'skipped_budget',
-      budgetReason: budgetCheck.reason,
-      deferUntilMs: budgetCheck.deferUntilMs ?? null,
-      claimId: claim.claimId,
-      automationId: auto.id,
+      ok: false, skipped: true, reason: 'skipped_budget', budgetReason: budgetCheck.reason,
+      deferUntilMs: budgetCheck.deferUntilMs ?? null, claimId: claim.claimId, automationId: auto.id,
     };
   }
 
@@ -557,9 +548,7 @@ export function createAutomationsService(deps) {
     const auto = workStore.getAutomation(id);
     if (!auto) throw Object.assign(new Error(`Automation not found: ${id}`), { code: 'not_found' });
     const bot = requireBot(auto.botId);
-    if (runningIds.has(auto.id)) {
-      return { ok: true, alreadyRunning: true, automationId: auto.id };
-    }
+    if (runningIds.has(auto.id)) return { ok: true, alreadyRunning: true, automationId: auto.id };
 
     const runId = `run-${crypto.randomUUID().slice(0, 12)}`;
     const slotAt = Number.isFinite(options.slotAt) ? Math.trunc(options.slotAt) : nextUniqueSlotAt(now);
@@ -569,35 +558,42 @@ export function createAutomationsService(deps) {
 
     if (!claimRes.claimed) {
       return {
-        ok: true,
-        deduplicated: true,
-        alreadyClaimed: true,
-        claimId: claimRes.claim.claimId,
-        claim: claimRes.claim,
-        automationId: auto.id,
+        ok: true, deduplicated: true, alreadyClaimed: true,
+        claimId: claimRes.claim.claimId, claim: claimRes.claim, automationId: auto.id,
       };
     }
 
     const budgetCheck = await evaluateBudgetGuard(deps.budgetGuard, { botId: bot.id, automation: auto, triggerKind, now });
-    if (!budgetCheck.allowed) {
-      return recordBudgetSkip(auto, bot, claimRes.claim, budgetCheck, options, now);
-    }
+    if (!budgetCheck.allowed) return recordBudgetSkip(auto, bot, claimRes.claim, budgetCheck, options, now);
 
     runningIds.add(auto.id);
-    try {
-      return await executeClaimedAutomation(auto, bot, claimRes.claim, {
-        now,
-        runId,
-        triggerKind,
-        coalescedCount,
-        nextRunAtOverride: options.nextRunAtOverride,
-        triggerContext: options.triggerContext,
+    const runExecution = async () => {
+      try {
+        return await executeClaimedAutomation(auto, bot, claimRes.claim, {
+          now, runId, triggerKind, coalescedCount,
+          nextRunAtOverride: options.nextRunAtOverride, triggerContext: options.triggerContext,
+        });
+      } catch (error) {
+        if (closed) return { ok: false, closed: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
+        return handleAutomationRunFailure(auto, bot, runId, claimRes.claim, error, now);
+      } finally {
+        runningIds.delete(auto.id);
+      }
+    };
+
+    if (options.background === true) {
+      eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
+      void runExecution().then((res) => {
+        if (res && res.ok === false && !('closed' in res && res.closed)) {
+          const errMsg = 'error' in res && res.error ? String(res.error) : 'automation_failed';
+          reportError(new Error(errMsg), { phase: 'runNow:background', automationId: auto.id, botId: bot.id, runId });
+        }
+      }).catch((error) => {
+        reportError(error, { phase: 'runNow:background', automationId: auto.id, botId: bot.id, runId });
       });
-    } catch (error) {
-      return handleAutomationRunFailure(auto, bot, runId, claimRes.claim, error, now);
-    } finally {
-      runningIds.delete(auto.id);
+      return { ok: true, started: true, background: true, runId, claimId: claimRes.claim.claimId, automationId: auto.id };
     }
+    return runExecution();
   }
 
   /** @param {any} auto @param {number} lateMs @param {number} now */
@@ -770,26 +766,16 @@ export function createAutomationsService(deps) {
   }
 
   function close() {
+    closed = true;
     if (timer) clearInterval(timer);
     timer = null;
     folderWatcher?.close();
   }
 
   return {
-    list,
-    create,
-    update,
-    delete: remove,
-    runNow,
-    tick,
-    handleFolderEvent,
-    triggerWebhook,
-    cancelWait,
-    sendRunAgain,
-    listClaims,
-    reconcileInterrupted,
+    list, create, update, delete: remove, runNow, tick,
+    handleFolderEvent, triggerWebhook, cancelWait, sendRunAgain,
+    listClaims, reconcileInterrupted, syncFolderWatches, close,
     getStartupRecovery: () => ({ ...startupRecovery }),
-    syncFolderWatches,
-    close,
   };
 }

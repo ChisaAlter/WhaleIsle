@@ -625,7 +625,10 @@ export function buildRpcDispatchTable(runtime) {
     ...buildItemRpcHandlers(runtime, ownerActor),
 
     // Look Around & Up Next
-    'bots.lookAround.lookNow': (p) => lookAroundService.lookNow(p?.botId ?? p?.id),
+    'bots.lookAround.lookNow': (p) => lookAroundService.lookNow(p?.botId ?? p?.id, undefined, {
+      isBackground: p?.isBackground === true,
+      background: p?.background === true,
+    }),
     'bots.lookAround.set': (p) => lookAroundService.setConfig(p?.botId ?? p?.id, p?.patch ?? p),
     'bots.upNext.list': (p) => lookAroundService.getState(p?.botId ?? p?.id),
     'bots.upNext.seen': (p) => lookAroundService.markSeen(p?.botId ?? p?.id, buildUpNextSeenOptions(p)),
@@ -666,7 +669,9 @@ export function buildRpcDispatchTable(runtime) {
     'bots.automations.create': (p) => automationsService.create(p),
     'bots.automations.update': (p) => automationsService.update(p?.id, p?.patch ?? p),
     'bots.automations.delete': (p) => automationsService.delete(p?.id),
-    'bots.automations.runNow': (p) => automationsService.runNow(p?.id),
+    'bots.automations.runNow': (p) => automationsService.runNow(p?.id, {
+      background: p?.background === true,
+    }),
     'bots.automations.cancelWait': (p) => automationsService.cancelWait(p?.botId, p?.waitId ?? p?.id),
     'bots.automations.claims': (p) => ({ claims: automationsService.listClaims(p) }),
     'bots.sendRunAgain': (p) => automationsService.sendRunAgain(p),
