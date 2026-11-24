@@ -269,6 +269,32 @@ export function BotComputerSubpage({ bot }: SubpageProps) {
   );
 }
 
+interface LookNowRpcResult {
+  ok?: boolean;
+  started?: boolean;
+  background?: boolean;
+  alreadyRunning?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  summary?: string;
+  error?: string;
+}
+
+function formatLookNowFailure(res: LookNowRpcResult, zh: boolean): string {
+  if (res.reason === 'budget_exceeded') {
+    return zh ? '巡视跳过：超出预算限制' : 'Look around skipped: budget_exceeded';
+  }
+  const detail = res.summary || res.error || res.reason;
+  if (res.skipped) {
+    return detail
+      ? (zh ? `巡视跳过：${detail}` : `Look around skipped: ${detail}`)
+      : (zh ? '巡视已跳过' : 'Look around skipped');
+  }
+  return detail
+    ? (zh ? `巡视失败：${detail}` : `Look around failed: ${detail}`)
+    : (zh ? '巡视失败' : 'Look around failed');
+}
+
 export function BotLookAroundSubpage({ bot }: SubpageProps) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === 'zh-CN';
@@ -370,8 +396,25 @@ export function BotLookAroundSubpage({ bot }: SubpageProps) {
             onClick={async () => {
               setRunning(true);
               try {
-                await callBotRpc(RPC_METHODS.LOOK_AROUND_NOW, { botId: bot.id });
-                botsStore.pushToast({ message: zh ? '已开始巡视' : 'Look around started', tone: 'success' });
+                const res = await callBotRpc<LookNowRpcResult | null>(RPC_METHODS.LOOK_AROUND_NOW, {
+                  botId: bot.id,
+                  background: true,
+                });
+                if (res && res.ok === false) {
+                  botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: 'error' });
+                  return;
+                }
+                if (res && res.alreadyRunning) {
+                  botsStore.pushToast({
+                    message: zh ? '巡视正在进行中' : 'Look around is already running',
+                    tone: 'info',
+                  });
+                  return;
+                }
+                botsStore.pushToast({
+                  message: zh ? '已启动立即巡视' : 'Look around sweep started',
+                  tone: 'success',
+                });
               } catch (err) {
                 botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
               } finally {

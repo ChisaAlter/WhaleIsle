@@ -6810,6 +6810,16 @@ function BotComputerSubpage({ bot }) {
     ] })
   ] });
 }
+function formatLookNowFailure(res, zh) {
+  if (res.reason === "budget_exceeded") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u8D85\u51FA\u9884\u7B97\u9650\u5236" : "Look around skipped: budget_exceeded";
+  }
+  const detail = res.summary || res.error || res.reason;
+  if (res.skipped) {
+    return detail ? zh ? `\u5DE1\u89C6\u8DF3\u8FC7\uFF1A${detail}` : `Look around skipped: ${detail}` : zh ? "\u5DE1\u89C6\u5DF2\u8DF3\u8FC7" : "Look around skipped";
+  }
+  return detail ? zh ? `\u5DE1\u89C6\u5931\u8D25\uFF1A${detail}` : `Look around failed: ${detail}` : zh ? "\u5DE1\u89C6\u5931\u8D25" : "Look around failed";
+}
 function BotLookAroundSubpage({ bot }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
@@ -6911,8 +6921,25 @@ function BotLookAroundSubpage({ bot }) {
             onClick: async () => {
               setRunning(true);
               try {
-                await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, { botId: bot.id });
-                botsStore.pushToast({ message: zh ? "\u5DF2\u5F00\u59CB\u5DE1\u89C6" : "Look around started", tone: "success" });
+                const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
+                  botId: bot.id,
+                  background: true
+                });
+                if (res && res.ok === false) {
+                  botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: "error" });
+                  return;
+                }
+                if (res && res.alreadyRunning) {
+                  botsStore.pushToast({
+                    message: zh ? "\u5DE1\u89C6\u6B63\u5728\u8FDB\u884C\u4E2D" : "Look around is already running",
+                    tone: "info"
+                  });
+                  return;
+                }
+                botsStore.pushToast({
+                  message: zh ? "\u5DF2\u542F\u52A8\u7ACB\u5373\u5DE1\u89C6" : "Look around sweep started",
+                  tone: "success"
+                });
               } catch (err) {
                 botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
               } finally {
@@ -13115,6 +13142,34 @@ function isBotItemStale(item, staleDays = BOT_ITEM_DEFAULT_STALE_DAYS, now = Dat
 // vendor/dsh-whale/src/client/components/BotActivityUpcoming.tsx
 var import_react17 = require("react");
 var import_jsx_runtime17 = require("react/jsx-runtime");
+function formatSuggestionStartFailure(res, zh) {
+  if (res.error) return res.error;
+  if (res.alreadyResolved) {
+    const suffix = res.status ? zh ? `\uFF08${res.status}\uFF09` : ` (${res.status})` : "";
+    return zh ? `\u8BE5\u5EFA\u8BAE\u5DF2\u5904\u7406${suffix}` : `Suggestion already resolved${suffix}`;
+  }
+  if (res.status) {
+    return zh ? `\u65E0\u6CD5\u6267\u884C\u8BE5\u5EFA\u8BAE\uFF08${res.status}\uFF09` : `Cannot start suggestion (${res.status})`;
+  }
+  return zh ? "\u542F\u52A8\u5EFA\u8BAE\u5931\u8D25" : "Failed to start suggestion";
+}
+function formatLookNowFailure2(res, zh) {
+  if (res.reason === "budget_exceeded") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u8D85\u51FA\u9884\u7B97\u9650\u5236" : "Look around skipped: budget_exceeded";
+  }
+  const detail = res.summary || res.error || res.reason;
+  if (res.skipped) {
+    return detail ? zh ? `\u5DE1\u89C6\u8DF3\u8FC7\uFF1A${detail}` : `Look around skipped: ${detail}` : zh ? "\u5DE1\u89C6\u5DF2\u8DF3\u8FC7" : "Look around skipped";
+  }
+  return detail ? zh ? `\u5DE1\u89C6\u5931\u8D25\uFF1A${detail}` : `Look around failed: ${detail}` : zh ? "\u5DE1\u89C6\u5931\u8D25" : "Look around failed";
+}
+function formatAutomationRunFailure(res, name2, zh) {
+  if (res.reason === "budget_exceeded") {
+    return zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08\u8D85\u51FA\u9884\u7B97\u9650\u5236\uFF09\uFF1A${name2}` : `Automation skipped (budget_exceeded): ${name2}`;
+  }
+  const detail = res.error || res.reason || res.summary;
+  return detail ? zh ? `\u8FD0\u884C\u5931\u8D25\uFF08${name2}\uFF09\uFF1A${detail}` : `Failed to run ${name2}: ${detail}` : zh ? `\u8FD0\u884C\u5931\u8D25\uFF1A${name2}` : `Failed to run ${name2}`;
+}
 var MAX_VISIBLE_AUTOMATIONS = 5;
 var AUTOMATION_DRAFT_PREFILL_EVENT = "dsh-bots:prefill-chat-draft";
 function isAutomationFailed(auto) {
@@ -13198,6 +13253,8 @@ function BotActivityUpcoming({
   const [autosSectionOpen, setAutosSectionOpen] = (0, import_react17.useState)(true);
   const [showAllAutos, setShowAllAutos] = (0, import_react17.useState)(false);
   const [localUnreadIds, setLocalUnreadIds] = (0, import_react17.useState)({});
+  const [busySuggestionIds, setBusySuggestionIds] = (0, import_react17.useState)({});
+  const [busyAutoActions, setBusyAutoActions] = (0, import_react17.useState)({});
   const markedSeenForBotRef = (0, import_react17.useRef)(null);
   const scheduledAutos = (0, import_react17.useMemo)(
     () => sortAutomations(automations.filter((a) => !a.once)),
@@ -13280,7 +13337,21 @@ function BotActivityUpcoming({
   const handleLookNow = async () => {
     setLookingNow(true);
     try {
-      await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, { botId: bot.id });
+      const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
+        botId: bot.id,
+        background: true
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatLookNowFailure2(res, zh), tone: "error" });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? "\u5DE1\u89C6\u6B63\u5728\u8FDB\u884C\u4E2D" : "Look around is already running",
+          tone: "info"
+        });
+        return;
+      }
       botsStore.pushToast({
         message: zh ? "\u5DF2\u542F\u52A8\u7ACB\u5373\u5DE1\u89C6" : "Look around sweep started",
         tone: "success"
@@ -13292,6 +13363,139 @@ function BotActivityUpcoming({
       setLookingNow(false);
     }
   };
+  const handleStartSuggestion = async (sug) => {
+    if (busySuggestionIds[sug.id]) {
+      return;
+    }
+    setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: "start" }));
+    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
+    });
+    try {
+      const res = await callBotRpc(RPC_METHODS2.SUGGESTIONS_START, {
+        botId: bot.id,
+        suggestionId: sug.id,
+        background: true
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatSuggestionStartFailure(res, zh), tone: "error" });
+        if (res.alreadyResolved) {
+          onReload();
+        }
+        return;
+      }
+      if (res && res.turnError) {
+        botsStore.pushToast({ message: res.turnError, tone: "error" });
+        onReload();
+        void botsStore.openBotHome(bot.id);
+        return;
+      }
+      onReload();
+      void botsStore.openBotHome(bot.id);
+      botsStore.pushToast({
+        message: zh ? `\u5DF2\u5F00\u59CB\u6267\u884C\uFF1A${sug.title}` : `Started: ${sug.title}`,
+        tone: "success"
+      });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+    } finally {
+      setBusySuggestionIds((prev) => {
+        const next = { ...prev };
+        delete next[sug.id];
+        return next;
+      });
+    }
+  };
+  const handleDismissSuggestion = async (sug) => {
+    if (busySuggestionIds[sug.id]) {
+      return;
+    }
+    setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: "dismiss" }));
+    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
+    });
+    try {
+      const res = await callBotRpc(RPC_METHODS2.SUGGESTIONS_DISMISS, {
+        botId: bot.id,
+        suggestionId: sug.id
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({
+          message: res.error || (zh ? "\u5FFD\u7565\u5EFA\u8BAE\u5931\u8D25" : "Failed to dismiss suggestion"),
+          tone: "error"
+        });
+        return;
+      }
+      onReload();
+      botsStore.pushToast({
+        message: zh ? "\u5DF2\u5FFD\u7565\u5EFA\u8BAE" : "Suggestion dismissed",
+        tone: "info"
+      });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+    } finally {
+      setBusySuggestionIds((prev) => {
+        const next = { ...prev };
+        delete next[sug.id];
+        return next;
+      });
+    }
+  };
+  const withBusyAuto = async (autoId, action, fn) => {
+    if (busyAutoActions[autoId]) {
+      return;
+    }
+    setBusyAutoActions((prev) => ({ ...prev, [autoId]: action }));
+    try {
+      await fn();
+    } finally {
+      setBusyAutoActions((prev) => {
+        const next = { ...prev };
+        delete next[autoId];
+        return next;
+      });
+    }
+  };
+  const handleRunAutomation = (auto) => withBusyAuto(auto.id, "run", async () => {
+    try {
+      const res = await callBotRpc(RPC_METHODS2.AUTOMATIONS_RUN_NOW, {
+        id: auto.id,
+        background: true
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatAutomationRunFailure(res, auto.name, zh), tone: "error" });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? "\u4EFB\u52A1\u6B63\u5728\u8FD0\u884C\u4E2D" : "Automation is already running",
+          tone: "info"
+        });
+        return;
+      }
+      botsStore.pushToast({
+        message: zh ? `\u5DF2\u542F\u52A8\uFF1A${auto.name}` : `Started ${auto.name}`,
+        tone: "success"
+      });
+      onReload();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+    }
+  });
+  const handleToggleAutomation = (auto) => withBusyAuto(auto.id, "update", async () => {
+    try {
+      await callBotRpc(RPC_METHODS2.AUTOMATIONS_UPDATE, { id: auto.id, enabled: !auto.enabled });
+      onReload();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+    }
+  });
+  const handleDeleteAutomation = (auto) => withBusyAuto(auto.id, "delete", async () => {
+    try {
+      await callBotRpc(RPC_METHODS2.AUTOMATIONS_DELETE, { id: auto.id });
+      onReload();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+    }
+  });
   const handleCreateAuto = async () => {
     if (!autoPrompt.trim()) {
       return;
@@ -13315,6 +13519,8 @@ function BotActivityUpcoming({
   const renderAutomationCard = (auto) => {
     const failed = isAutomationFailed(auto);
     const running = isAutomationRunning(auto);
+    const busyAction = busyAutoActions[auto.id];
+    const rowBusy = Boolean(busyAction);
     return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
       "div",
       {
@@ -13333,17 +13539,11 @@ function BotActivityUpcoming({
                 {
                   type: "button",
                   className: "dsh-bots-pbtn dsh-bots-pbtn-xs",
-                  onClick: () => {
-                    void callBotRpc("bots.automations.runNow", { id: auto.id }).then(() => {
-                      botsStore.pushToast({ message: zh ? `\u5DF2\u8FD0\u884C\uFF1A${auto.name}` : `Ran ${auto.name}`, tone: "success" });
-                      onReload();
-                    }).catch((err) => {
-                      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
-                    });
-                  },
+                  disabled: rowBusy,
+                  onClick: () => void handleRunAutomation(auto),
                   children: [
                     /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconPlay, { size: 10 }),
-                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: zh ? "\u8FD0\u884C" : "Run" })
+                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: busyAction === "run" ? zh ? "\u542F\u52A8\u4E2D\u2026" : "Starting\u2026" : zh ? "\u8FD0\u884C" : "Run" })
                   ]
                 }
               ),
@@ -13353,9 +13553,8 @@ function BotActivityUpcoming({
                   type: "button",
                   className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon",
                   title: auto.enabled ? zh ? "\u6682\u505C" : "Pause" : zh ? "\u6062\u590D" : "Resume",
-                  onClick: () => {
-                    void callBotRpc("bots.automations.update", { id: auto.id, enabled: !auto.enabled }).then(() => onReload()).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                  },
+                  disabled: rowBusy,
+                  onClick: () => void handleToggleAutomation(auto),
                   children: auto.enabled ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconPause, { size: 11 }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconPlay, { size: 11 })
                 }
               ),
@@ -13365,9 +13564,8 @@ function BotActivityUpcoming({
                   type: "button",
                   className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon dsh-bots-pbtn-danger",
                   title: zh ? "\u5220\u9664" : "Delete",
-                  onClick: () => {
-                    void callBotRpc("bots.automations.delete", { id: auto.id }).then(() => onReload()).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                  },
+                  disabled: rowBusy,
+                  onClick: () => void handleDeleteAutomation(auto),
                   children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconTrash, { size: 11 })
                 }
               )
@@ -13561,6 +13759,8 @@ function BotActivityUpcoming({
       suggestions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "dsh-bots-empty", children: zh ? "\u6682\u65E0\u5DE1\u89C6\u5EFA\u8BAE\u3002\u70B9\u51FB\u300C\u7ACB\u5373\u5DE1\u89C6\u300D\u8BA9\u5927\u80A5\u9C7C\u961F\u53CB\u626B\u63CF\u8FD1\u671F\u4E0A\u4E0B\u6587\u3002" : "No suggestions right now." }) : suggestions.map((sug) => {
         const unread = localUnreadIds[sug.id] !== void 0 ? localUnreadIds[sug.id] : isSuggestionUnread(sug, upNextSeenAt);
         const href = sug.link || sug.url || null;
+        const busyAction = busySuggestionIds[sug.id];
+        const cardBusy = Boolean(busyAction);
         return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
           "div",
           {
@@ -13590,6 +13790,7 @@ function BotActivityUpcoming({
                       type: "button",
                       className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon",
                       title: unread ? zh ? "\u6807\u4E3A\u5DF2\u8BFB" : "Mark as read" : zh ? "\u6807\u4E3A\u672A\u8BFB" : "Mark as unread",
+                      disabled: cardBusy,
                       onClick: () => void toggleSuggestionUnread(sug, !unread),
                       children: unread ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconEye, { size: 11 }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconEyeOff, { size: 11 })
                     }
@@ -13603,15 +13804,9 @@ function BotActivityUpcoming({
                   {
                     type: "button",
                     className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary",
-                    onClick: () => {
-                      void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
-                      });
-                      void callBotRpc(RPC_METHODS2.SUGGESTIONS_START, { botId: bot.id, suggestionId: sug.id }).then(() => {
-                        onReload();
-                        void botsStore.openBotHome(bot.id);
-                      }).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                    },
-                    children: tr("bots.upNext.start", "Start")
+                    disabled: cardBusy,
+                    onClick: () => void handleStartSuggestion(sug),
+                    children: busyAction === "start" ? zh ? "\u6267\u884C\u4E2D\u2026" : "Starting\u2026" : tr("bots.upNext.start", "Start")
                   }
                 ),
                 /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
@@ -13619,12 +13814,9 @@ function BotActivityUpcoming({
                   {
                     type: "button",
                     className: "dsh-bots-pbtn dsh-bots-pbtn-xs",
-                    onClick: () => {
-                      void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
-                      });
-                      void callBotRpc(RPC_METHODS2.SUGGESTIONS_DISMISS, { botId: bot.id, suggestionId: sug.id }).then(() => onReload()).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                    },
-                    children: tr("bots.upNext.dismiss", "Dismiss")
+                    disabled: cardBusy,
+                    onClick: () => void handleDismissSuggestion(sug),
+                    children: busyAction === "dismiss" ? zh ? "\u5FFD\u7565\u4E2D\u2026" : "Dismissing\u2026" : tr("bots.upNext.dismiss", "Dismiss")
                   }
                 )
               ] })

@@ -65,6 +65,84 @@ export interface BotActivityUpcomingProps {
   onReload: () => void;
 }
 
+interface SuggestionStartResult {
+  ok?: boolean;
+  started?: boolean;
+  background?: boolean;
+  alreadyResolved?: boolean;
+  status?: string;
+  error?: string;
+  turnError?: string;
+  sessionId?: string;
+}
+
+interface SuggestionDismissResult {
+  ok?: boolean;
+  alreadyDismissed?: boolean;
+  error?: string;
+}
+
+interface LookAroundNowResult {
+  ok?: boolean;
+  started?: boolean;
+  background?: boolean;
+  alreadyRunning?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  summary?: string;
+  error?: string;
+  runId?: string;
+  botId?: string;
+}
+
+interface AutomationRunNowResult {
+  ok?: boolean;
+  started?: boolean;
+  background?: boolean;
+  alreadyRunning?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  summary?: string;
+  error?: string;
+}
+
+function formatSuggestionStartFailure(res: SuggestionStartResult, zh: boolean): string {
+  if (res.error) return res.error;
+  if (res.alreadyResolved) {
+    const suffix = res.status ? (zh ? `（${res.status}）` : ` (${res.status})`) : '';
+    return zh ? `该建议已处理${suffix}` : `Suggestion already resolved${suffix}`;
+  }
+  if (res.status) {
+    return zh ? `无法执行该建议（${res.status}）` : `Cannot start suggestion (${res.status})`;
+  }
+  return zh ? '启动建议失败' : 'Failed to start suggestion';
+}
+
+function formatLookNowFailure(res: LookAroundNowResult, zh: boolean): string {
+  if (res.reason === 'budget_exceeded') {
+    return zh ? '巡视跳过：超出预算限制' : 'Look around skipped: budget_exceeded';
+  }
+  const detail = res.summary || res.error || res.reason;
+  if (res.skipped) {
+    return detail
+      ? (zh ? `巡视跳过：${detail}` : `Look around skipped: ${detail}`)
+      : (zh ? '巡视已跳过' : 'Look around skipped');
+  }
+  return detail
+    ? (zh ? `巡视失败：${detail}` : `Look around failed: ${detail}`)
+    : (zh ? '巡视失败' : 'Look around failed');
+}
+
+function formatAutomationRunFailure(res: AutomationRunNowResult, name: string, zh: boolean): string {
+  if (res.reason === 'budget_exceeded') {
+    return zh ? `任务跳过（超出预算限制）：${name}` : `Automation skipped (budget_exceeded): ${name}`;
+  }
+  const detail = res.error || res.reason || res.summary;
+  return detail
+    ? (zh ? `运行失败（${name}）：${detail}` : `Failed to run ${name}: ${detail}`)
+    : (zh ? `运行失败：${name}` : `Failed to run ${name}`);
+}
+
 const MAX_VISIBLE_AUTOMATIONS = 5;
 const AUTOMATION_DRAFT_PREFILL_EVENT = 'dsh-bots:prefill-chat-draft';
 
@@ -161,6 +239,8 @@ export function BotActivityUpcoming({
   const [autosSectionOpen, setAutosSectionOpen] = useState(true);
   const [showAllAutos, setShowAllAutos] = useState(false);
   const [localUnreadIds, setLocalUnreadIds] = useState<Record<string, boolean>>({});
+  const [busySuggestionIds, setBusySuggestionIds] = useState<Record<string, 'start' | 'dismiss'>>({});
+  const [busyAutoActions, setBusyAutoActions] = useState<Record<string, 'run' | 'update' | 'delete'>>({});
   const markedSeenForBotRef = useRef<string | null>(null);
 
   const scheduledAutos = useMemo(
@@ -257,7 +337,21 @@ export function BotActivityUpcoming({
   const handleLookNow = async () => {
     setLookingNow(true);
     try {
-      await callBotRpc(RPC_METHODS.LOOK_AROUND_NOW, { botId: bot.id });
+      const res = await callBotRpc<LookAroundNowResult | null>(RPC_METHODS.LOOK_AROUND_NOW, {
+        botId: bot.id,
+        background: true,
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: 'error' });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? '巡视正在进行中' : 'Look around is already running',
+          tone: 'info',
+        });
+        return;
+      }
       botsStore.pushToast({
         message: zh ? '已启动立即巡视' : 'Look around sweep started',
         tone: 'success',
@@ -269,6 +363,143 @@ export function BotActivityUpcoming({
       setLookingNow(false);
     }
   };
+
+  const handleStartSuggestion = async (sug: SuggestionRow) => {
+    if (busySuggestionIds[sug.id]) {
+      return;
+    }
+    setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: 'start' }));
+    void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {});
+    try {
+      const res = await callBotRpc<SuggestionStartResult | null>(RPC_METHODS.SUGGESTIONS_START, {
+        botId: bot.id,
+        suggestionId: sug.id,
+        background: true,
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatSuggestionStartFailure(res, zh), tone: 'error' });
+        if (res.alreadyResolved) {
+          onReload();
+        }
+        return;
+      }
+      if (res && res.turnError) {
+        botsStore.pushToast({ message: res.turnError, tone: 'error' });
+        onReload();
+        void botsStore.openBotHome(bot.id);
+        return;
+      }
+      onReload();
+      void botsStore.openBotHome(bot.id);
+      botsStore.pushToast({
+        message: zh ? `已开始执行：${sug.title}` : `Started: ${sug.title}`,
+        tone: 'success',
+      });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setBusySuggestionIds((prev) => {
+        const next = { ...prev };
+        delete next[sug.id];
+        return next;
+      });
+    }
+  };
+
+  const handleDismissSuggestion = async (sug: SuggestionRow) => {
+    if (busySuggestionIds[sug.id]) {
+      return;
+    }
+    setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: 'dismiss' }));
+    void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {});
+    try {
+      const res = await callBotRpc<SuggestionDismissResult | null>(RPC_METHODS.SUGGESTIONS_DISMISS, {
+        botId: bot.id,
+        suggestionId: sug.id,
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({
+          message: res.error || (zh ? '忽略建议失败' : 'Failed to dismiss suggestion'),
+          tone: 'error',
+        });
+        return;
+      }
+      onReload();
+      botsStore.pushToast({
+        message: zh ? '已忽略建议' : 'Suggestion dismissed',
+        tone: 'info',
+      });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setBusySuggestionIds((prev) => {
+        const next = { ...prev };
+        delete next[sug.id];
+        return next;
+      });
+    }
+  };
+
+  const withBusyAuto = async (autoId: string, action: 'run' | 'update' | 'delete', fn: () => Promise<void>) => {
+    if (busyAutoActions[autoId]) {
+      return;
+    }
+    setBusyAutoActions((prev) => ({ ...prev, [autoId]: action }));
+    try {
+      await fn();
+    } finally {
+      setBusyAutoActions((prev) => {
+        const next = { ...prev };
+        delete next[autoId];
+        return next;
+      });
+    }
+  };
+
+  const handleRunAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'run', async () => {
+    try {
+      const res = await callBotRpc<AutomationRunNowResult | null>(RPC_METHODS.AUTOMATIONS_RUN_NOW, {
+        id: auto.id,
+        background: true,
+      });
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatAutomationRunFailure(res, auto.name, zh), tone: 'error' });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? '任务正在运行中' : 'Automation is already running',
+          tone: 'info',
+        });
+        return;
+      }
+      botsStore.pushToast({
+        message: zh ? `已启动：${auto.name}` : `Started ${auto.name}`,
+        tone: 'success',
+      });
+      onReload();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    }
+  });
+
+  const handleToggleAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'update', async () => {
+    try {
+      await callBotRpc(RPC_METHODS.AUTOMATIONS_UPDATE, { id: auto.id, enabled: !auto.enabled });
+      onReload();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    }
+  });
+
+  const handleDeleteAutomation = (auto: AutomationRow) => withBusyAuto(auto.id, 'delete', async () => {
+    try {
+      await callBotRpc(RPC_METHODS.AUTOMATIONS_DELETE, { id: auto.id });
+      onReload();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    }
+  });
 
   const handleCreateAuto = async () => {
     if (!autoPrompt.trim()) {
@@ -294,6 +525,8 @@ export function BotActivityUpcoming({
   const renderAutomationCard = (auto: AutomationRow) => {
     const failed = isAutomationFailed(auto);
     const running = isAutomationRunning(auto);
+    const busyAction = busyAutoActions[auto.id];
+    const rowBusy = Boolean(busyAction);
     return (
       <div
         key={auto.id}
@@ -310,27 +543,18 @@ export function BotActivityUpcoming({
             <button
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs"
-              onClick={() => {
-                void callBotRpc('bots.automations.runNow', { id: auto.id }).then(() => {
-                  botsStore.pushToast({ message: zh ? `已运行：${auto.name}` : `Ran ${auto.name}`, tone: 'success' });
-                  onReload();
-                }).catch((err) => {
-                  botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
-                });
-              }}
+              disabled={rowBusy}
+              onClick={() => void handleRunAutomation(auto)}
             >
               <IconPlay size={10} />
-              <span>{zh ? '运行' : 'Run'}</span>
+              <span>{busyAction === 'run' ? (zh ? '启动中…' : 'Starting…') : (zh ? '运行' : 'Run')}</span>
             </button>
             <button
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon"
               title={auto.enabled ? (zh ? '暂停' : 'Pause') : (zh ? '恢复' : 'Resume')}
-              onClick={() => {
-                void callBotRpc('bots.automations.update', { id: auto.id, enabled: !auto.enabled })
-                  .then(() => onReload())
-                  .catch((err) => botsStore.pushToast({ message: String(err), tone: 'error' }));
-              }}
+              disabled={rowBusy}
+              onClick={() => void handleToggleAutomation(auto)}
             >
               {auto.enabled ? <IconPause size={11} /> : <IconPlay size={11} />}
             </button>
@@ -338,11 +562,8 @@ export function BotActivityUpcoming({
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon dsh-bots-pbtn-danger"
               title={zh ? '删除' : 'Delete'}
-              onClick={() => {
-                void callBotRpc('bots.automations.delete', { id: auto.id })
-                  .then(() => onReload())
-                  .catch((err) => botsStore.pushToast({ message: String(err), tone: 'error' }));
-              }}
+              disabled={rowBusy}
+              onClick={() => void handleDeleteAutomation(auto)}
             >
               <IconTrash size={11} />
             </button>
@@ -551,6 +772,8 @@ export function BotActivityUpcoming({
               ? localUnreadIds[sug.id]
               : isSuggestionUnread(sug, upNextSeenAt);
             const href = sug.link || sug.url || null;
+            const busyAction = busySuggestionIds[sug.id];
+            const cardBusy = Boolean(busyAction);
             return (
               <div
                 key={sug.id}
@@ -578,6 +801,7 @@ export function BotActivityUpcoming({
                       type="button"
                       className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon"
                       title={unread ? (zh ? '标为已读' : 'Mark as read') : (zh ? '标为未读' : 'Mark as unread')}
+                      disabled={cardBusy}
                       onClick={() => void toggleSuggestionUnread(sug, !unread)}
                     >
                       {unread ? <IconEye size={11} /> : <IconEyeOff size={11} />}
@@ -591,29 +815,22 @@ export function BotActivityUpcoming({
                   <button
                     type="button"
                     className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
-                    onClick={() => {
-                      void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {});
-                      void callBotRpc(RPC_METHODS.SUGGESTIONS_START, { botId: bot.id, suggestionId: sug.id })
-                        .then(() => {
-                          onReload();
-                          void botsStore.openBotHome(bot.id);
-                        })
-                        .catch((err) => botsStore.pushToast({ message: String(err), tone: 'error' }));
-                    }}
+                    disabled={cardBusy}
+                    onClick={() => void handleStartSuggestion(sug)}
                   >
-                    {tr('bots.upNext.start', 'Start')}
+                    {busyAction === 'start'
+                      ? (zh ? '执行中…' : 'Starting…')
+                      : tr('bots.upNext.start', 'Start')}
                   </button>
                   <button
                     type="button"
                     className="dsh-bots-pbtn dsh-bots-pbtn-xs"
-                    onClick={() => {
-                      void callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {});
-                      void callBotRpc(RPC_METHODS.SUGGESTIONS_DISMISS, { botId: bot.id, suggestionId: sug.id })
-                        .then(() => onReload())
-                        .catch((err) => botsStore.pushToast({ message: String(err), tone: 'error' }));
-                    }}
+                    disabled={cardBusy}
+                    onClick={() => void handleDismissSuggestion(sug)}
                   >
-                    {tr('bots.upNext.dismiss', 'Dismiss')}
+                    {busyAction === 'dismiss'
+                      ? (zh ? '忽略中…' : 'Dismissing…')
+                      : tr('bots.upNext.dismiss', 'Dismiss')}
                   </button>
                 </div>
               </div>
