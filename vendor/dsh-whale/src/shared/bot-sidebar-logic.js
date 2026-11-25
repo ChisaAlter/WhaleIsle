@@ -482,6 +482,7 @@ export function normalizeBotChatFolds(value) {
   return Object.fromEntries(entries.slice(-BOT_CHAT_FOLDS_MAX));
 }
 
+/** @param {any} chat */
 const chatKeyOf = (chat) => chat?.chatId ?? chat?.sessionId ?? chat?.id;
 
 export function botOwnChatTree(tree) {
