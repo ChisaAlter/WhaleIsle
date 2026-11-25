@@ -30,5 +30,14 @@ describe('docked composer seat styles', () => {
       .filter(([, , body]) => body !== undefined && /z-index/.test(body))
     expect(ranked).toHaveLength(2)
     expect(rule(conversationCss, ".root[data-phase='active'] .composerSeat:has([data-trigger-menu])")).toMatch(/z-index:\s*9;/)
+    expect(conversationCss).toContain(".embeddedBody[data-content-phase='active'] .composerSeat:has([data-trigger-menu])")
+  })
+
+  it('keeps embedded composer seats transparent over wallpaper, gradient, and transparent themes', () => {
+    expect(conversationCss).toMatch(/\.embeddedBody\s*\{[^}]*height:\s*100%;/)
+    expect(conversationCss).toContain(".embeddedBody[data-content-phase='active'] .composerSeat")
+    expect(conversationCss).toContain("html[data-dsh-wallpaper]) .embeddedBody[data-content-phase='active'] .composerSeat")
+    expect(conversationCss).toContain("html[data-dsh-gradient]) .embeddedBody[data-content-phase='active'] .composerSeat")
+    expect(conversationCss).toContain("html[data-dsh-transparent]) .embeddedBody[data-content-phase='active'] .composerSeat")
   })
 })

@@ -139,10 +139,13 @@ test('ProjectService enforces DAG dependencies, manual approval, admission lock,
   const unapprovedMsg = await f.service.dispatchTask(project.id, taskA.id, { agent: f.coordinator });
   assert.match(unapprovedMsg, /needs human approval/i);
   assert.equal(f.activations.length, 0);
-  await f.service.approveTask(project.id, taskA.id);
 
-  // Admission lock blocks dispatch cleanly without consuming a permit.
+  // While admission is locked, approveTask records approval without dispatching,
+  // and explicit dispatch rejects cleanly without consuming a permit.
   f.setAdmissionOpen(false);
+  const approvedLocked = await f.service.approveTask(project.id, taskA.id);
+  assert.equal(approvedLocked.task.approved, true);
+  assert.equal(approvedLocked.dispatched, false);
   await assert.rejects(
     f.service.dispatchTask(project.id, taskA.id, { agent: f.coordinator }),
     /admission.*locked/i,
@@ -194,9 +197,11 @@ test('ProjectService enforces DAG dependencies, manual approval, admission lock,
   const waitingMsg = await f.service.dispatchTask(project.id, taskB.id, { agent: f.coordinator });
   assert.match(waitingMsg, /unresolved dependency/i);
 
-  await f.service.resolveTask(project.id, taskA.id, { status: 'resolved' });
-  const dispatchedB = await f.service.dispatchTask(project.id, taskB.id, { agent: f.coordinator });
-  assert.match(dispatchedB, /^Dispatched task\b/);
+  // Resolving Task A automatically unlocks and dispatches dependent approved Task B.
+  const resolvedA = await f.service.resolveTask(project.id, taskA.id, { status: 'resolved' });
+  assert.deepEqual(resolvedA.dispatchedTaskIds, [taskB.id]);
+  const alreadyRunningB = await f.service.dispatchTask(project.id, taskB.id, { agent: f.coordinator });
+  assert.match(alreadyRunningB, /already running/i);
   assert.doesNotThrow(() => f.service.schedule());
 });
 

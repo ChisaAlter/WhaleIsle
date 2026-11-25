@@ -330,7 +330,9 @@ test('real ProjectService.acceptAuthorizedHandoff enforces confirmedByDesktop, v
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-bridge-real-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+  const homeDir = path.join(dir, 'dsh-home');
   const repoDir = path.join(dir, 'repo');
+  fs.mkdirSync(homeDir, { recursive: true });
   fs.mkdirSync(repoDir, { recursive: true });
 
   const leadEvents = [];
@@ -355,7 +357,7 @@ test('real ProjectService.acceptAuthorizedHandoff enforces confirmedByDesktop, v
     subagents: { registerContinuationPolicy: () => () => {} },
     get: () => undefined,
   };
-  const service = new ProjectService(ctx, { home: dir, desktop: async () => ({ ok: true }) });
+  const service = new ProjectService(ctx, { home: homeDir, desktop: async () => ({ ok: true }) });
   t.after(() => service.dispose());
 
   const project = await service.createProject({

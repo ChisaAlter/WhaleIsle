@@ -27,6 +27,7 @@ function workspaces(itemCount: number): PanelTogglesProps['useWorkspaces'] {
 }
 
 function mount(opts: {
+  activePanelId?: string | null
   rightbarShown?: boolean
   surfaces?: number
   terminalDrawer?: number
@@ -36,11 +37,14 @@ function mount(opts: {
 } = {}) {
   const toggleSurfaces = vi.fn()
   const toggleTerminalDrawer = vi.fn()
+  const usePanelInfo = opts.activePanelId === undefined
+    ? panelInfoStub
+    : ((selector: (s: unknown) => unknown) => selector({ activePanelId: opts.activePanelId })) as never
   render(
     <PanelToggles
       {...allowAllAccess}
       useContextMenu={contextMenuHook()}
-      usePanelInfo={panelInfoStub}
+      usePanelInfo={usePanelInfo}
       useResource={resourceStub}
       surfaces={opts.surfaces ?? 0}
       rightbarShown={opts.rightbarShown ?? false}
@@ -163,5 +167,25 @@ describe('PanelToggles', () => {
     mount({ surfacesToggle: false })
     expect(screen.getByRole('button', { name: 'Toggle terminal drawer' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Toggle right panel' })).toBeNull()
+  })
+
+  it('hides closed session toggles on the projects panel and keeps Ctrl+\\ inert until a preview opens', () => {
+    const b = mount({ activePanelId: 'projects', rightbarShown: false, terminalDrawer: 0 })
+    expect(screen.queryByRole('button', { name: 'Toggle terminal drawer' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Toggle right panel' })).toBeNull()
+    expect(document.querySelector('[data-panel-layout-controls]')).toBeNull()
+    fireEvent.keyDown(window, { key: '\\', ctrlKey: true })
+    expect(b.toggleSurfaces).not.toHaveBeenCalled()
+  })
+
+  it('shows the right-panel toggle on projects while an on-demand file preview rightbar is open', () => {
+    const b = mount({ activePanelId: 'projects', rightbarShown: true, terminalDrawer: 0 })
+    expect(screen.queryByRole('button', { name: 'Toggle terminal drawer' })).toBeNull()
+    const rightBtn = screen.getByRole('button', { name: 'Toggle right panel' })
+    expect(rightBtn.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(rightBtn)
+    expect(b.toggleSurfaces).toHaveBeenCalledOnce()
+    fireEvent.keyDown(window, { key: '\\', ctrlKey: true })
+    expect(b.toggleSurfaces).toHaveBeenCalledTimes(2)
   })
 })

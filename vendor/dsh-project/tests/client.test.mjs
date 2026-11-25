@@ -319,13 +319,41 @@ function makeBench(options = {}) {
 
     const projMatch = /^\/projects\/([^/]+)$/.exec(pathname)
     if (projMatch) {
-      const proj = projectsState.find((p) => p.id === projMatch[1])
-      if (!proj) return err(404, 'project_not_found')
+      const projIdx = projectsState.findIndex((p) => p.id === projMatch[1])
+      if (projIdx < 0) return err(404, 'project_not_found')
+      const proj = projectsState[projIdx]
       if (method === 'GET') return ok({ project: structuredClone(proj), memory: memoryPayloadFor(proj.id) })
       if (method === 'PATCH') {
         Object.assign(proj, body, { updatedAt: Date.now() })
         return ok({ project: structuredClone(proj) })
       }
+      if (method === 'DELETE') {
+        const archive = parsedUrl.searchParams.get('archiveSessions') === '1' || body?.archiveSessions === true
+        projectsState.splice(projIdx, 1)
+        const archived = archive && proj.coordinatorSessionId ? [proj.coordinatorSessionId] : []
+        return ok({ deleted: true, projectId: proj.id, stoppedTasks: [], archivedSessions: archived, worktrees: { removed: [], failed: [] } })
+      }
+    }
+
+    const ensureCoordMatch = /^\/projects\/([^/]+)\/coordinator\/ensure$/.exec(pathname)
+    if (ensureCoordMatch && method === 'POST') {
+      const proj = projectsState.find((p) => p.id === ensureCoordMatch[1])
+      if (!proj) return err(404, 'project_not_found')
+      if (proj.archived && !proj.coordinatorSessionId) return err(409, 'project_archived')
+      let created = false
+      if (!proj.coordinatorSessionId) {
+        const sid = `sess-coord-${createdSessions.length + 1}`
+        createdSessions.push({ sid, opts: { cwd: proj.workspace || undefined, presentation: { owner: 'dsh-project', title: proj.name } } })
+        proj.coordinatorSessionId = sid
+        created = true
+      }
+      const archived = Array.isArray(options.archivedSessionIds) && options.archivedSessionIds.includes(proj.coordinatorSessionId)
+      return ok({
+        project: structuredClone(proj),
+        coordinatorSessionId: proj.coordinatorSessionId,
+        created,
+        archived: body?.restore ? false : archived,
+      })
     }
 
     const memPostMatch = /^\/projects\/([^/]+)\/memory$/.exec(pathname)
@@ -507,14 +535,30 @@ function makeBench(options = {}) {
         }, item.label),
       ),
     )
+  const SegmentedControl = ({ id, options: opts, value, onChange, label, disabled }) =>
+    h(
+      'div',
+      { role: 'tablist', 'aria-label': label },
+      (opts || []).map((opt) =>
+        h('button', {
+          key: opt.value,
+          id: `${id}-${opt.value}`,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': value === opt.value ? 'true' : 'false',
+          disabled: disabled || opt.disabled,
+          onClick: () => onChange(opt.value),
+        }, opt.label),
+      ),
+    )
   const Switch = ({ checked, onChange, label, disabled }) =>
     h('button', { type: 'button', role: 'switch', 'aria-checked': checked ? 'true' : 'false', 'aria-label': label, disabled, onClick: () => onChange(!checked) })
   const StateDot = ({ state }) => h('span', { 'data-state-dot': state })
   const Tag = ({ tone, children }) => h('span', { 'data-tag-tone': tone }, children)
   const Tooltip = ({ label, children }) => children
-  const Toast = ({ text }) => h('div', { role: 'alert', 'data-toast': 'true' }, text)
+  const Toast = ({ text, holdMs }) => h('div', { role: 'alert', 'data-toast': 'true', 'data-hold-ms': String(holdMs) }, text)
 
-  const mockPrimitives = { Button, Input, Modal, Pill, SegmentedTabs, Switch, StateDot, Tag, Tooltip, Toast }
+  const mockPrimitives = { Button, Input, Modal, Pill, SegmentedTabs, SegmentedControl, Switch, StateDot, Tag, Tooltip, Toast }
 
   const plugin = loadedModule.factory((id) => {
     if (id === 'react') return React
@@ -550,6 +594,7 @@ function makeBench(options = {}) {
     get: (service) => {
       if (service === 'uiWorkspace') {
         return {
+          selectDirectory: async () => options.pickedDir ?? '/picked/dir',
           pickDirectory: async () => options.pickedDir ?? '/picked/dir',
           unarchiveSession: async (sid) => { unarchivedSessions.push(sid) },
         }
@@ -706,8 +751,10 @@ test('contract: module id, strictly 4 slots, zero legacy hooks, zero hardcoded c
     assert.ok(cssBlocks.length > 500)
     assert.doesNotMatch(cssBlocks, /#[0-9a-fA-F]{3,8}\b/)
     assert.doesNotMatch(cssBlocks, /\brgba?\s*\(|\bhsla?\s*\(/i)
-    // Portaled modal box-sizing and non-wrapping workspace action buttons
-    assert.match(cssBlocks, /\.pj-modal-solid,\.pj-modal-solid \*.*box-sizing:border-box/)
+    assert.doesNotMatch(clientSource, /pj-modal-solid/)
+    assert.doesNotMatch(clientSource, /holdMs:\s*null/)
+    assert.doesNotMatch(clientSource, /The board of the DSH project/)
+    assert.doesNotMatch(clientSource, /启动协调者/)
     assert.match(cssBlocks, /\.pj-textarea,\.pj-select\{[^}]*box-sizing:border-box;width:100%;max-width:100%;min-width:0/)
     assert.match(cssBlocks, /\.pj-field-row > button\{flex:none;white-space:nowrap\}/)
   } finally {
@@ -715,50 +762,35 @@ test('contract: module id, strictly 4 slots, zero legacy hooks, zero hardcoded c
   }
 })
 
-test('narrow container (764px) opening task detail folds left column to preserve MAIN_MIN_WIDTH (400px) without persisting execCollapsed', async () => {
-  const b = makeBench({ containerWidth: 764 })
+test('narrow container (600px) uses glass overlay tasks drawer and wide in-stage task detail without squeezing main stage', async () => {
+  const b = makeBench({ containerWidth: 600 })
   try {
     await b.mountPage()
-    // Clean narrow state: exec auto-folded, list expanded
-    assert.ok(b.container.querySelector('.pj-exec.pj-collapsed'))
-    assert.equal(b.container.querySelector('.pj-list.pj-collapsed'), null)
+    // Below EXEC_DOCK_MIN (680px), tasks drawer stays closed in auto mode so main stage keeps full width
+    assert.equal(b.container.querySelector('[data-projects-tasks-panel]'), null)
+    assert.equal(b.container.querySelector('.pj-list'), null)
 
-    // Open a task detail via in-chat dispatch card while container is 764px
-    const toolEntry = b.registeredSlots.get('tool.call.toolview:projects_dispatch')
-    const injected = toolEntry.meta.inject()
-    const toolHost = b.dom.window.document.createElement('div')
-    b.dom.window.document.body.appendChild(toolHost)
-    const toolRoot = createRoot(toolHost)
-    await act(async () => {
-      toolRoot.render(
-        h(toolEntry.component, {
-          ...injected,
-          phase: 'result',
-          block: {
-            args: { text: (k) => (k === 'project_id' ? 'p-11111111' : k === 'task_id' ? 't-run11111' : '') },
-            content: [{ type: 'text', text: 'Dispatched task t-run11111' }],
-          },
-        }),
-      )
-    })
-    await act(async () => { toolHost.querySelector('.pj-dispatch-card').click() })
+    // Toggle tasks drawer open -> renders as glass overlay (.pj-exec-overlay)
+    const toggleBtn = b.container.querySelector('button.pj-tasks-toggle')
+    assert.ok(toggleBtn)
+    await act(async () => { toggleBtn.click() })
+    const overlay = b.container.querySelector('.pj-exec.pj-exec-overlay')
+    assert.ok(overlay)
+
+    // Clicking a task card inside the overlay auto-closes the overlay and drills in inside wide .pj-stage
+    const runCard = [...overlay.querySelectorAll('.pj-task-card')].find((el) => el.textContent.includes('Implement SSE backend'))
+    assert.ok(runCard)
+    await act(async () => { runCard.click() })
     await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
 
-    // Exec opens for detail, left column auto-folds to 44px rail so main >= 400px
-    assert.equal(b.container.querySelector('.pj-exec.pj-collapsed'), null)
-    assert.ok(b.container.querySelector('.pj-list.pj-collapsed'), 'left list must fold to rail so main >= 400px')
-    const execEl = b.container.querySelector('.pj-exec')
-    const execPx = parseInt(execEl.style.width, 10)
-    assert.ok(764 - 44 - 5 - execPx >= 400, `main width must stay >= 400px (exec=${execPx})`)
-    // Must NOT pollute localStorage with persisted execCollapsed='0'
-    assert.notEqual(b.storage.get('projects.execCollapsed'), '0')
+    assert.ok(b.container.querySelector('.pj-stage [data-projects-task-detail]'), 'task detail must render in wide .pj-stage')
+    assert.equal(b.container.querySelector('.pj-exec.pj-exec-overlay'), null, 'overlay must close when selecting a task')
 
-    // Closing detail returns cleanly to auto-folded exec and expanded list
-    const backBtn = [...b.container.querySelectorAll('.pj-detail-head button')].find((el) => el.textContent.includes('线程'))
+    // Closing detail returns cleanly to coordinator conversation
+    const backBtn = [...b.container.querySelectorAll('.pj-detail-bar button')].find((el) => el.textContent.includes('返回协调者'))
+    assert.ok(backBtn)
     await act(async () => { backBtn.click() })
-    assert.ok(b.container.querySelector('.pj-exec.pj-collapsed'))
-    assert.equal(b.container.querySelector('.pj-list.pj-collapsed'), null)
-    await act(async () => { toolRoot.unmount() })
+    assert.ok(b.container.querySelector('.pj-stage [data-embedded-conv="embedded"]'))
   } finally {
     await b.cleanup()
   }
@@ -769,25 +801,8 @@ test('container-aware ResizeObserver folding (never window.innerWidth) and width
   try {
     await b.mountPage()
     assert.equal(b.resizeObservers.length, 1)
-    assert.equal(b.container.querySelectorAll('.pj-collapsed').length, 0)
-    assert.equal(b.container.querySelectorAll('[role="separator"]').length, 2)
-
-    // Shrink container below EXEC_FOLD_BELOW (878): right column auto-folds first
-    await act(async () => { b.resizeObservers[0].trigger(760) })
-    assert.ok(b.container.querySelector('.pj-exec.pj-collapsed'))
-    assert.equal(b.container.querySelector('.pj-list.pj-collapsed'), null)
-
-    // Shrink container below LIST_FOLD_BELOW (637): left column also auto-folds
-    await act(async () => { b.resizeObservers[0].trigger(580) })
-    assert.ok(b.container.querySelector('.pj-list.pj-collapsed'))
-    assert.ok(b.container.querySelector('.pj-exec.pj-collapsed'))
-
-    // Explicit expand overrides container fold and persists choice
-    const expandThreadsBtn = b.container.querySelector('button[aria-label="展开线程栏"]')
-    assert.ok(expandThreadsBtn)
-    await act(async () => { expandThreadsBtn.click() })
-    assert.equal(b.container.querySelector('.pj-exec.pj-collapsed'), null)
-    assert.equal(b.storage.get('projects.execCollapsed'), '0')
+    assert.ok(b.container.querySelector('[data-projects-tasks-panel="true"]'))
+    assert.equal(b.container.querySelectorAll('[role="separator"]').length, 1)
 
     // Keyboard resizer nudge persists width
     const sep = b.container.querySelector('[role="separator"]')
@@ -796,6 +811,16 @@ test('container-aware ResizeObserver folding (never window.innerWidth) and width
       sep.dispatchEvent(new b.dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
     })
     assert.ok(Number(b.storage.get('projects.execWidth')) > 0)
+
+    // Shrink container below EXEC_DOCK_MIN (680px): tasks panel closes in auto mode
+    await act(async () => { b.resizeObservers[0].trigger(580) })
+    assert.equal(b.container.querySelector('[data-projects-tasks-panel]'), null)
+
+    // Explicit toggle opens overlay drawer without crushing main stage
+    const toggleBtn = b.container.querySelector('button.pj-tasks-toggle')
+    assert.ok(toggleBtn)
+    await act(async () => { toggleBtn.click() })
+    assert.ok(b.container.querySelector('.pj-exec.pj-exec-overlay'))
   } finally {
     await b.cleanup()
   }
@@ -831,10 +856,20 @@ test('SSE real-time EventSource updates and reconnect recovery (zero 4s blind po
   }
 })
 
-test('coordinator lifecycle: start, bind before prompt, embed real session, rollback on rejected prompt, workspace/autonomy/pause header pills', async () => {
+test('coordinator lifecycle: auto-ensure isolated session (zero English prompt), embed real session, workspace/autonomy/pause header pills', async () => {
   const b = makeBench()
   try {
     await b.mountPage()
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
+
+    // Entering project auto-calls POST /coordinator/ensure and embeds native conversation with zero English prompt!
+    assert.ok(b.apiCalls.some((c) => c.method === 'POST' && c.pathname === '/projects/p-11111111/coordinator/ensure'))
+    assert.equal(b.createdSessions.length, 1)
+    assert.equal(b.createdSessions[0].opts.cwd, '/repo/alpha')
+    assert.equal(b.createdSessions[0].opts.presentation?.owner, 'dsh-project')
+    assert.equal(b.promptCalls.length, 0, 'must never auto-send English starter prompt')
+    assert.ok(b.container.querySelector('[data-embedded-conv="embedded"]'))
+    assert.ok(b.container.querySelector('[data-conv-view="conversation.session:chat"]'))
 
     // Click workspace path pill -> POST /projects-api/open-path
     const wsPill = b.container.querySelector('button.pj-ws-pill')
@@ -853,50 +888,28 @@ test('coordinator lifecycle: start, bind before prompt, embed real session, roll
     const pauseBtn = b.container.querySelector('button[aria-label="暂停派发"]')
     await act(async () => { pauseBtn.click() })
     assert.ok(b.apiCalls.some((c) => c.method === 'PATCH' && c.body?.paused === true))
-
-    // Start coordinator -> create session -> PATCH bind -> prompt -> embeds native conversation
-    const startBtn = [...b.container.querySelectorAll('button')].find((el) => el.textContent.includes('启动协调者'))
-    assert.ok(startBtn)
-    await act(async () => { startBtn.click() })
-    await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
-
-    assert.equal(b.createdSessions.length, 1)
-    assert.equal(b.createdSessions[0].opts.cwd, '/repo/alpha')
-    assert.equal(b.promptCalls.length, 1)
-    assert.ok(b.container.querySelector('[data-embedded-conv="embedded"]'))
-    assert.ok(b.container.querySelector('[data-conv-view="conversation.session:chat"]'))
   } finally {
     await b.cleanup()
   }
-
-  // Verify rollback when initial prompt is rejected
-  const b2 = makeBench({ rejectPrompt: true })
-  try {
-    await b2.mountPage()
-    const startBtn = [...b2.container.querySelectorAll('button')].find((el) => el.textContent.includes('启动协调者'))
-    await act(async () => { startBtn.click() })
-    await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
-    const unbind = b2.apiCalls.find((c) => c.method === 'PATCH' && c.body?.coordinatorSessionId === '')
-    assert.ok(unbind, 'must unbind coordinatorSessionId on rejected prompt')
-    assert.equal(b2.releasedSessions.length, 1)
-  } finally {
-    await b2.cleanup()
-  }
 })
 
-test('new project modal, settings general/memory modals, and in-app discard confirm modal', async () => {
+test('new project modal via topbar switcher, settings general/memory modals, and in-app discard confirm modal', async () => {
   const b = makeBench({ pickedDir: '/picked/new-workspace' })
   try {
     await b.mountPage()
 
-    // Open New Project modal
-    const newBtn = b.container.querySelector('button[aria-label="新建项目"]')
-    await act(async () => { newBtn.click() })
+    // Open New Project modal via topbar project switcher menu
+    const switcherBtn = b.container.querySelector('button[aria-label="切换项目"]')
+    assert.ok(switcherBtn)
+    await act(async () => { switcherBtn.click() })
+    const newItem = [...b.container.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent.includes('新建项目'))
+    assert.ok(newItem)
+    await act(async () => { newItem.click() })
     const dialog = b.container.querySelector('[role="dialog"][aria-label="新建项目"]')
     assert.ok(dialog)
 
     const nameInput = dialog.querySelector('input[aria-label="项目名称"]')
-    const autoTab = [...dialog.querySelectorAll('[role="tab"]')].find((el) => el.textContent.includes('自动派发'))
+    const autoTab = [...dialog.querySelectorAll('[role="tab"]')].find((el) => el.textContent.includes('自动并行'))
     const wtSwitch = dialog.querySelector('button[role="switch"]')
     const pickBtn = [...dialog.querySelectorAll('button')].find((el) => el.textContent.includes('选择文件夹'))
     const createBtn = [...dialog.querySelectorAll('button')].find((el) => el.textContent.includes('创建项目'))
@@ -922,22 +935,23 @@ test('new project modal, settings general/memory modals, and in-app discard conf
     assert.equal(postCall.body.autonomy, 'auto')
     assert.equal(postCall.body.worktreeIsolation, true)
 
-    // Switch back to Alpha Project, open Settings, verify Shared Memory tab & MEMORY.md read-only preview
-    const alphaBtn = [...b.container.querySelectorAll('.pj-list-item')].find((el) => el.textContent.includes('Alpha Project'))
-    await act(async () => { alphaBtn.click() })
+    // Switch back to Alpha Project via topbar switcher, open Settings, verify Shared Memory tab & MEMORY.md read-only preview
+    await act(async () => { b.container.querySelector('button[aria-label="切换项目"]').click() })
+    const alphaItem = [...b.container.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent.includes('Alpha Project'))
+    assert.ok(alphaItem)
+    await act(async () => { alphaItem.click() })
     await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
 
     const settingsBtn = b.container.querySelector('button[aria-label="项目设置"]')
     await act(async () => { settingsBtn.click() })
 
-    // Mark instructions dirty, close settings, switch project -> in-app confirm dialog appears (no window.confirm)
+    // Mark instructions dirty, switch to Shared Memory nav inside Settings
     const goalArea = b.container.querySelector('textarea[aria-label="项目指令"]')
     await act(async () => {
       Object.getOwnPropertyDescriptor(b.dom.window.HTMLTextAreaElement.prototype, 'value').set.call(goalArea, 'Modified unsaved goal')
       goalArea.dispatchEvent(new b.dom.window.Event('input', { bubbles: true }))
     })
 
-    // Switch to Shared Memory nav inside Settings
     const memNav = [...b.container.querySelectorAll('.pj-settings-nav-btn')].find((el) => el.textContent.includes('共享记忆'))
     await act(async () => { memNav.click() })
     assert.ok(b.container.querySelector('[role="progressbar"]'))
@@ -957,8 +971,10 @@ test('new project modal, settings general/memory modals, and in-app discard conf
     const closeSettings = b.container.querySelector('.pj-settings-head button[aria-label="关闭"]')
     await act(async () => { closeSettings.click() })
 
-    const gammaBtn = [...b.container.querySelectorAll('.pj-list-item')].find((el) => el.textContent.includes('Gamma Project'))
-    await act(async () => { gammaBtn.click() })
+    await act(async () => { b.container.querySelector('button[aria-label="切换项目"]').click() })
+    const gammaItem = [...b.container.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent.includes('Gamma Project'))
+    assert.ok(gammaItem)
+    await act(async () => { gammaItem.click() })
     const discardDlg = b.container.querySelector('[role="dialog"][aria-label="放弃未保存修改？"]')
     assert.ok(discardDlg, 'must show in-app discard confirmation modal instead of window.confirm')
   } finally {
@@ -1043,41 +1059,45 @@ test('threads 5 groups, approve/stop/retry/resolve, right-click 2-step delete, d
     assert.ok(b.apiCalls.some((c) => c.method === 'POST' && c.pathname === '/projects/p-11111111/tasks/t-run11111/worktree/merge'))
 
     // Stop running task from detail header
-    const stopBtn = [...b.container.querySelectorAll('.pj-detail-head button')].find((el) => el.textContent.includes('停止'))
+    const stopBtn = [...b.container.querySelectorAll('.pj-detail-bar button')].find((el) => el.textContent.includes('停止'))
     assert.ok(stopBtn)
     await act(async () => { stopBtn.click() })
     assert.ok(b.apiCalls.some((c) => c.method === 'POST' && c.pathname === '/projects/p-11111111/tasks/t-run11111/stop'))
 
     // Close detail -> releases worker session ref
-    const backBtn = [...b.container.querySelectorAll('.pj-detail-head button')].find((el) => el.textContent.includes('线程'))
+    const backBtn = [...b.container.querySelectorAll('.pj-detail-bar button')].find((el) => el.textContent.includes('返回协调者'))
+    assert.ok(backBtn)
     await act(async () => { backBtn.click() })
     assert.ok(b.releasedSessions.some((r) => typeof r === 'object' && r.childSessionId === 'sess-worker-1'))
 
-    // In-chat projects_dispatch card click jumps straight into task detail
+    // In-chat projects_dispatch card click jumps straight into wide task detail
     const toolEntry = b.registeredSlots.get('tool.call.toolview:projects_dispatch')
     const injected = toolEntry.meta.inject()
     const toolHost = b.dom.window.document.createElement('div')
     b.dom.window.document.body.appendChild(toolHost)
     const toolRoot = createRoot(toolHost)
-    await act(async () => {
-      toolRoot.render(
-        h(toolEntry.component, {
-          ...injected,
-          phase: 'result',
-          block: {
-            args: { text: (k) => (k === 'project_id' ? 'p-11111111' : k === 'task_id' ? 't-run11111' : '') },
-            content: [{ type: 'text', text: 'Dispatched task t-run11111' }],
-          },
-        }),
-      )
-    })
-    const dispatchBtn = toolHost.querySelector('.pj-dispatch-card')
-    assert.ok(dispatchBtn)
-    assert.match(dispatchBtn.textContent, /Implement SSE backend/)
-    await act(async () => { dispatchBtn.click() })
-    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
-    assert.ok(b.container.querySelector('.pj-detail-shell'), 'clicking projects_dispatch card must open task detail')
-    await act(async () => { toolRoot.unmount() })
+    try {
+      await act(async () => {
+        toolRoot.render(
+          h(toolEntry.component, {
+            ...injected,
+            phase: 'result',
+            block: {
+              args: { text: (k) => (k === 'project_id' ? 'p-11111111' : k === 'task_id' ? 't-run11111' : '') },
+              content: [{ type: 'text', text: 'Dispatched task t-run11111' }],
+            },
+          }),
+        )
+      })
+      const dispatchBtn = toolHost.querySelector('.pj-dispatch-card')
+      assert.ok(dispatchBtn)
+      assert.match(dispatchBtn.textContent, /Implement SSE backend/)
+      await act(async () => { dispatchBtn.click() })
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+      assert.ok(b.container.querySelector('.pj-stage [data-projects-task-detail]'), 'clicking projects_dispatch card must open wide task detail')
+    } finally {
+      await act(async () => { toolRoot.unmount() })
+    }
   } finally {
     await b.cleanup()
   }
@@ -1100,14 +1120,14 @@ test('threads search, filter popover, 409 running archive refusal, memory CRUD, 
     assert.ok(b.unarchivedSessions.includes('sess-coord-arch'))
 
     // Search unfolds, filters by title/summary, and clears on close
-    const searchToggle = b.container.querySelector('button[aria-label="搜索线程"]')
+    const searchToggle = b.container.querySelector('button[aria-label="搜索任务"]')
     await act(async () => { searchToggle.click() })
-    const searchInput = b.container.querySelector('input[aria-label="搜索线程"]')
+    const searchInput = b.container.querySelector('input[aria-label="搜索任务"]')
     assert.ok(searchInput)
     await act(async () => { setControlValue(b.dom, searchInput, 'flaky') })
     assert.equal(b.container.querySelectorAll('.pj-task-card').length, 1)
     await act(async () => { searchToggle.click() })
-    assert.equal(b.container.querySelector('input[aria-label="搜索线程"]'), null)
+    assert.equal(b.container.querySelector('input[aria-label="搜索任务"]'), null)
     assert.ok(b.container.querySelectorAll('.pj-task-card').length >= 4)
 
     // Filter popover hides Running group and restores via Show all groups

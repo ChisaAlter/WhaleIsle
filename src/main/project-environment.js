@@ -234,15 +234,94 @@ function createProjectEnvironment(options = {}) {
     writeRecord(file, { ...binding, state: 'removed' });
     return { ok: true, removed: true, branchRetained: current.branch };
   }
+  /** @param {string} projectId @param {string} requested @param {string} [taskIdHint] */
+  function resolveV2TaskWorktreeRoot(projectId, requested, taskIdHint) {
+    let doc;
+    try {
+      doc = readRecord(ownedPath('projects', projectId, 'project.json'));
+    } catch {
+      return null;
+    }
+    if (!doc || !Array.isArray(doc.tasks)) return null;
+    const wantedTaskId = typeof taskIdHint === 'string' && taskIdHint.trim()
+      ? identifier(taskIdHint.trim(), 'taskId')
+      : '';
+    const tasks = wantedTaskId ? doc.tasks.filter(/** @param {any} t */ t => t && t.id === wantedTaskId) : doc.tasks;
+    for (const task of tasks) {
+      if (!task || typeof task.id !== 'string' || !ID.test(task.id)) continue;
+      if (typeof task.worktreePath !== 'string' || !task.worktreePath.trim()) continue;
+      let wtRoot;
+      try {
+        wtRoot = ownedPath('project-worktrees', projectId, task.id);
+        if (!fs.existsSync(wtRoot) || !fs.statSync(wtRoot).isDirectory()) continue;
+        const declared = fs.realpathSync.native(path.resolve(task.worktreePath));
+        if (identity(declared) !== identity(wtRoot)) continue;
+      } catch {
+        continue;
+      }
+      if (isPathInside(wtRoot, requested)) return wtRoot;
+    }
+    return null;
+  }
+  /** @param {string} projectId @param {string} requested */
+  function resolveV2LibraryRoot(projectId, requested) {
+    let doc;
+    try {
+      doc = readRecord(ownedPath('projects', projectId, 'library.json'));
+    } catch {
+      return null;
+    }
+    if (!doc || typeof doc !== 'object') return null;
+    const entries = [
+      ...(Array.isArray(doc.references) ? doc.references : []),
+      ...(Array.isArray(doc.artifacts) ? doc.artifacts : []),
+    ];
+    const requestedId = identity(requested);
+    const dshHomeReal = home();
+    for (const entry of entries) {
+      if (!entry || typeof entry.path !== 'string' || !path.isAbsolute(entry.path)) continue;
+      let declared;
+      try {
+        declared = fs.realpathSync.native(path.resolve(entry.path));
+        if (!fs.statSync(declared).isFile()) continue;
+      } catch {
+        continue;
+      }
+      if (identity(declared) !== requestedId) continue;
+      if (isPathInside(dshHomeReal, declared)) {
+        const docs = ownedPath('projects', projectId, 'docs');
+        const memory = ownedPath('projects', projectId, 'memory');
+        const wtPool = ownedPath('project-worktrees', projectId);
+        if (!isPathInside(docs, declared) && !isPathInside(memory, declared) && !isPathInside(wtPool, declared)) {
+          continue;
+        }
+      }
+      const parentDir = path.dirname(declared);
+      if (workspaceRootRefusal(parentDir) === 'system-data') continue;
+      return parentDir;
+    }
+    return null;
+  }
   async function openPath(payload) {
     const projectId = identifier(payload.projectId, 'projectId');
     if (typeof payload.path !== 'string' || !path.isAbsolute(payload.path)) throw new Error('打开 Project 文件需要绝对路径');
-    const requested = fs.realpathSync.native(payload.path), docs = ownedPath('projects', projectId, 'docs');
+    const requested = fs.realpathSync.native(payload.path);
+    const docs = ownedPath('projects', projectId, 'docs');
+    const memory = ownedPath('projects', projectId, 'memory');
     let root;
     if (isPathInside(docs, requested)) root = docs;
+    else if (isPathInside(memory, requested)) root = memory;
     else if (payload.workstreamId) root = (await checkWorkspace(projectId, payload.workstreamId, payload.workspace)).canonicalPath;
-    else if (payload.workingDirectory) root = canonicalize(payload.workingDirectory).canonicalPath;
-    else throw new Error('路径不属于此 Project 的 docs 或绑定目录');
+    else {
+      const v2Worktree = resolveV2TaskWorktreeRoot(projectId, requested, payload.taskId);
+      if (v2Worktree) root = v2Worktree;
+      else {
+        const v2LibraryRoot = resolveV2LibraryRoot(projectId, requested);
+        if (v2LibraryRoot) root = v2LibraryRoot;
+        else if (payload.workingDirectory) root = canonicalize(payload.workingDirectory).canonicalPath;
+        else throw new Error('路径不属于此 Project 的 docs、memory、资料库、任务 worktree 或绑定目录');
+      }
+    }
     const scoped = createWorkspaceAuthority({ workspace: root });
     const checked = scoped.resolveInside(root, path.relative(root, requested));
     if (!checked || !fs.existsSync(checked)) throw new Error('路径不属于允许打开的 Project 目录');

@@ -10,185 +10,63 @@ import {
   beginDesktopAdmission,
   drainAgentAndJobs,
 } from '../../dsh-shared/lib/managed-task-runtime.mjs';
-import { memoryIndex } from './memory.js';
+import { safeReadStoreFileSync } from './files.js';
+import {
+  COORDINATOR_CONTEXT_NAME,
+  COORDINATOR_CONTEXT_ORDER,
+  COORDINATOR_SECTION_NAME,
+  COORDINATOR_SECTION_ORDER,
+  buildActivationParams,
+  continuationPrompt,
+  coordinatorDynamicContextText,
+  coordinatorRules,
+  coordinatorSectionText,
+  formatDispatchSummary,
+  replyLanguage,
+  workerPrompt,
+} from './runner-prompts.js';
+import { createReportDispatcher } from './runner-reports.js';
 import {
   MAX_OUTPUT,
   blocksToText,
   dependencyGate,
-  effortValue,
-  httpError,
+  effectiveTaskRoute,
   messageOf,
-  modelRoute,
-  presetValue,
   routeChanged,
-  taskRoute,
   workerIsLive,
 } from './schema.js';
 import { isDirectory } from './store.js';
 
-export const COORDINATOR_SECTION_NAME = 'projects:coordinator';
-export const COORDINATOR_SECTION_ORDER = 700;
-
-const KANA = /[\u3040-\u30ff\u31f0-\u31ff]/u;
-const HAN = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
-const LATIN = /[A-Za-z]/u;
-
-export function replyLanguage(project, task) {
-  const sample = (task?.brief || '').trim() || (project?.goal || '').trim();
-  if (!sample) return '';
-  if (KANA.test(sample)) return '';
-  if (HAN.test(sample)) return 'zh';
-  if (LATIN.test(sample)) return 'en';
-  return '';
-}
-
-function languageRule(language) {
-  const lines = ['## Language (hard rule)'];
-  if (language === 'zh') {
-    lines.push('Write your entire reply in Chinese (中文) — the language the human wrote the task brief in.');
-  } else if (language === 'en') {
-    lines.push('Write your entire reply in English — the language the human wrote the task brief in.');
-  } else {
-    lines.push('Write your entire reply in the language the human wrote the task brief in.');
-  }
-  lines.push(
-    'If the brief is empty, follow the language of the project instructions instead.',
-    'This prompt being in English is not a reason to answer in English, and neither are tool names, code, file paths, or shared memory.',
-  );
-  return lines;
-}
-
-export function coordinatorRules(project) {
-  return [
-    '## Language (hard rule)',
-    'Reply in the language the user writes in, not in the language of this prompt. Keep matching the user language across turns. Tool names, code, file paths, project names, or shared memory are never a reason to switch to English.',
-    '',
-    '## Your job',
-    'You do four things only: split the goal, dispatch, review, report.',
-    '',
-    '1. Anything that needs reading files, editing code, running commands, or multi-step investigation must be derived into a task with projects_add_task (except continuing an existing worker, see rule 8). Do not execute implementation work directly in this conversation.',
-    '2. Use projects_add_task to split the goal into parallel, independently finishable tasks; set depends_on when one task must wait for another to be resolved.',
-    '3. Use projects_dispatch to start tasks; return immediately so this conversation stays responsive.',
-    '4. When a worker reports back, use projects_get to read its output, report the conclusion concisely, and invite the user to review and Resolve it on the Projects board.',
-    '5. Maintain durable project knowledge in projects_memory (one topic file per subject) so every worker starts informed.',
-    '6. The human owns acceptance: set status "resolved" with projects_update_task only when the user explicitly accepts the work.',
-    project.autonomy === 'manual'
-      ? '7. Autonomy is manual: obtain explicit user approval (on the board or in chat via projects_update_task approved=true) before dispatching.'
-      : '7. Autonomy is auto: you may dispatch queued tasks without waiting for manual approval.',
-    ...(project.paused ? ['   NOTE: This project is currently PAUSED. Do not dispatch until the user resumes it.'] : []),
-    '8. Prefer continuing an existing worker (projects_dispatch with `note`, or projects_update_task with `append_brief`) whenever follow-up work builds on files, context, or conclusions that worker already established. Create a new task only for genuinely independent work.',
-    '',
-    '## How to write a task brief',
-    '1. State three things clearly: the problem, constraints, and concrete acceptance criteria (how to verify).',
-    '2. Do not micromanage step-by-step implementation or paste stale line numbers.',
-    '3. Keep briefs concise (typically <= 15 lines) and avoid duplicating standing project instructions.',
-    '',
-    '## Reply style',
-    '1. Lead with the conclusion or action; skip process narration.',
-    '2. When dispatching, state briefly what was dispatched, why, and what you are waiting for without repeating the full brief or output.',
-    '3. Ask one focused question at a time when user input is genuinely required.',
-  ].join('\n');
-}
-
-export function coordinatorSectionText(project) {
-  return `You are the coordinator of the WhaleIsle project "${project.name}" (project_id: ${project.id}).\n\n${coordinatorRules(project)}`;
-}
-
-export function workerPrompt(project, task, memoryFiles, workdir, branch, notes = []) {
-  const lines = [
-    `You are the worker for one task in the project "${project.name}" (project_id: ${project.id}).`,
-    'Complete only this task and report back concisely. The coordinator remains free while you work.',
-    '',
-    ...languageRule(replyLanguage(project, task)),
-    '',
-    '## Project instructions',
-    (project.goal || '').trim() || '(none)',
-    '',
-    '## Shared project memory',
-    memoryIndex(memoryFiles),
-    '',
-    `The list above is an index of the shared memory, not its contents. Read a file before relying on it: projects_memory {project_id:"${project.id}", action:"read", name:"<name>"}.`,
-    '',
-    '## Your task',
-    `Title: ${task.title}`,
-  ];
-  if ((task.brief || '').trim()) lines.push('', task.brief.trim());
-  if (notes.length > 0) lines.push('', '## Follow-up note', notes.join('\n\n'));
-  lines.push(
-    '',
-    '## How to work',
-    workdir ? `- Work inside ${workdir}.` : '- Work in the current directory.',
-    ...(branch
-      ? [`- This is an isolated git worktree on branch ${branch}; commit your verified changes on this branch. Merging is handled separately after human review.`]
-      : []),
-    '- Keep changes scoped to this task; do not rewrite unrelated code.',
-    `- Before finishing, record durable findings/decisions/gotchas in shared memory via projects_memory: project_id "${project.id}", action "append", name "<topic-slug>", description "<one line>".`,
-    '- Do not change the task status directly; your final assistant message is recorded as the task output.',
-    '- If blocked, explain precisely what blocked you and what human decision or input is needed.',
-    '- End with a concise report: what changed, where, and how you verified it.',
-  );
-  return lines.join('\n');
-}
-
-export function continuationPrompt(project, task, workdir, notes) {
-  const language = replyLanguage(project, task);
-  const lines = [
-    `## Follow-up stage of task ${task.id}`,
-    `This is the next stage of task ${task.id} "${task.title}" in project "${project.name}" (project_id: ${project.id}). Keep the context you already built and avoid redoing finished work.`,
-  ];
-  if (notes.length > 0) lines.push('', '## Follow-up note', notes.join('\n\n'));
-  else lines.push('', 'No additional note was provided: resume the task from where you stopped.');
-  lines.push(
-    '',
-    '## How to work',
-    workdir ? `- Work inside ${workdir}.` : '- Work in your assigned directory.',
-    '- Keep changes scoped to this follow-up stage.',
-    `- Record durable findings via projects_memory: project_id "${project.id}", action "append", name "<topic-slug>", description "<one line>".`,
-    '- Do not change the task status directly; your final message becomes the recorded output.',
-    language === 'zh'
-      ? '- 用中文回复。'
-      : language === 'en'
-        ? '- Reply in English.'
-        : '- Reply in the language the human wrote the task brief in.',
-  );
-  return lines.join('\n');
-}
+export {
+  COORDINATOR_CONTEXT_NAME,
+  COORDINATOR_CONTEXT_ORDER,
+  COORDINATOR_SECTION_NAME,
+  COORDINATOR_SECTION_ORDER,
+  continuationPrompt,
+  coordinatorDynamicContextText,
+  coordinatorRules,
+  coordinatorSectionText,
+  replyLanguage,
+  workerPrompt,
+};
 
 function continuationNotes(task, note) {
   const pending = Array.isArray(task.pendingNotes) ? task.pendingNotes.filter(Boolean) : [];
   return note ? [...pending, note] : pending;
 }
 
-export function createRunner({ ctx, store, memory, worktree }) {
+export function createRunner({ ctx, store, memory, worktree, library = null, notifyBatchMs }) {
   /** @type {Map<string, { controller: AbortController, childSessionId: string, permit: any, projectId: string, taskId: string, parent: any }>} */
   const activeRuns = new Map();
   /** @type {Set<string>} taskKeys currently reserving a slot during async startActivation */
   const inFlightDispatches = new Set();
+  /** @type {Set<string>} taskKeys currently inside stopTask so settleWorker does not emit a duplicate/conflicting update */
+  const stoppingTasks = new Set();
+  /** @type {Map<string, { info: any, at: number }>} buffered subagent/end events that arrived before spawnFreshWorker wrote project.json */
+  const earlySettlements = new Map();
 
   const taskKey = (projectId, taskId) => `${projectId}:${taskId}`;
-
-  function coordinatorSectionFor(context) {
-    const session = context && context.agent && context.agent.session;
-    const sessionId = session && typeof session.id === 'string' ? session.id : '';
-    if (!sessionId) return '';
-    const project = store.getCoordinatorInfo(sessionId);
-    return project ? coordinatorSectionText(project) : '';
-  }
-
-  function releaseRun(key) {
-    const entry = activeRuns.get(key);
-    if (!entry) return;
-    activeRuns.delete(key);
-    try {
-      entry.permit?.release?.();
-    } catch {
-      // Best-effort permit release.
-    }
-  }
-
-  function getService(name) {
-    return ctx?.get?.(name) ?? ctx?.[name];
-  }
+  const getService = (name) => ctx?.get?.(name) ?? ctx?.[name];
 
   async function resolveCoordinatorAgent(project) {
     const sid = typeof project?.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
@@ -202,6 +80,71 @@ export function createRunner({ ctx, store, memory, worktree }) {
       return resolved?.agent ?? resolved ?? null;
     } catch {
       return null;
+    }
+  }
+
+  const reports = createReportDispatcher({
+    store,
+    worktree,
+    library,
+    getService,
+    resolveCoordinatorAgent,
+    notifyBatchMs,
+  });
+
+  function pruneEarlySettlements() {
+    const cutoff = Date.now() - 60_000;
+    for (const [id, entry] of earlySettlements) {
+      if (entry.at < cutoff) earlySettlements.delete(id);
+    }
+  }
+
+  function applySettlementToRow(row, info) {
+    if (row.status === 'running') {
+      row.status = info.stopReason === 'completed' ? 'review' : 'failed';
+    }
+    if (typeof info.stopReason === 'string' && info.stopReason) {
+      row.stopReason = info.stopReason;
+    }
+    const rawOutput = blocksToText(info.lastAssistantMessage);
+    row.output = rawOutput.length > MAX_OUTPUT ? rawOutput.slice(-MAX_OUTPUT) : rawOutput;
+    row.finishedAt = Date.now();
+    row.updatedAt = Date.now();
+  }
+
+  function coordinatorSectionFor(context) {
+    const session = context && context.agent && context.agent.session;
+    const sessionId = session && typeof session.id === 'string' ? session.id : '';
+    if (!sessionId) return '';
+    const project = store.getCoordinatorInfo(sessionId);
+    if (!project) return '';
+    return coordinatorSectionText(project);
+  }
+
+  function coordinatorDynamicContextFor(context) {
+    const session = context && context.agent && context.agent.session;
+    const sessionId = session && typeof session.id === 'string' ? session.id : '';
+    if (!sessionId) return '';
+    const project = store.getCoordinatorInfo(sessionId);
+    if (!project) return '';
+    let memoryIndexText = '';
+    try {
+      memoryIndexText = safeReadStoreFileSync(memory.memoryDir(project.id), 'MEMORY.md', 8192) || '';
+    } catch {
+      memoryIndexText = '';
+    }
+    const libraryIndexText = library ? library.libraryIndexSync(project.id) : '';
+    return coordinatorDynamicContextText(project, { memoryIndexText, libraryIndexText });
+  }
+
+  function releaseRun(key) {
+    const entry = activeRuns.get(key);
+    if (!entry) return;
+    activeRuns.delete(key);
+    try {
+      entry.permit?.release?.();
+    } catch {
+      // Best-effort permit release.
     }
   }
 
@@ -249,7 +192,7 @@ export function createRunner({ ctx, store, memory, worktree }) {
 
   async function tryContinueWorker({ subagents, exec, project, task, note, key, permit }) {
     if (!task.childSessionId) return { continued: false, reason: '' };
-    if (routeChanged(task)) return { continued: false, reason: 'the task model, preset or effort changed since its last run' };
+    if (routeChanged(task, project)) return { continued: false, reason: 'the task model, preset or effort changed since its last run' };
     if (typeof subagents.sendMessage !== 'function') return { continued: false, reason: 'this host exposes no subagent sendMessage API' };
 
     const notes = continuationNotes(task, note);
@@ -352,7 +295,7 @@ export function createRunner({ ctx, store, memory, worktree }) {
     };
   }
 
-  function applyFreshDispatchRow(row, started, childSessionId, envInfo) {
+  function applyFreshDispatchRow(project, row, started, childSessionId, envInfo) {
     row.status = 'running';
     row.childSessionId = childSessionId;
     if (started.name) row.childName = started.name;
@@ -361,7 +304,7 @@ export function createRunner({ ctx, store, memory, worktree }) {
     delete row.stopReason;
     row.output = '';
     delete row.pendingNotes;
-    row.childRoute = taskRoute(row);
+    row.childRoute = effectiveTaskRoute(project, row);
     if (envInfo.preparedWorktree) {
       row.branch = envInfo.preparedWorktree.branch;
       row.worktreePath = envInfo.preparedWorktree.path;
@@ -376,41 +319,6 @@ export function createRunner({ ctx, store, memory, worktree }) {
       delete row.worktreeNote;
     }
     row.updatedAt = Date.now();
-  }
-
-  function buildActivationParams({ project, task, memoryFiles, envInfo, notes, exec, controller }) {
-    const route = modelRoute(task.model || project.model);
-    const agentPreset = presetValue(task.agentPreset || project.agentPreset);
-    const effort = effortValue(task.reasoningEffort || project.reasoningEffort);
-    const agentOptions = route === undefined && !effort
-      ? undefined
-      : { ...(route === undefined ? {} : route), ...(effort ? { reasoningEffort: effort } : {}) };
-    return {
-      route,
-      agentPreset,
-      effort,
-      params: {
-        provider: 'spawn',
-        label: `${project.name} · ${task.title}`.slice(0, 120),
-        prompt: [{ type: 'text', text: workerPrompt(project, task, memoryFiles, envInfo.cwd, envInfo.preparedWorktree?.branch, notes) }],
-        parent: exec.agent,
-        ...(envInfo.cwd === undefined ? {} : { cwd: envInfo.cwd }),
-        ...(agentPreset ? { agentPreset } : {}),
-        ...(agentOptions === undefined ? {} : { agentOptions }),
-        signal: controller.signal,
-        delivery: 'parent',
-      },
-    };
-  }
-
-  function formatDispatchSummary({ task, started, childSessionId, route, effort, agentPreset, envInfo, continueFailure }) {
-    const routeNote = route === undefined ? '' : ` model=${route.provider ? `${route.provider}/` : ''}${route.model}`;
-    const presetNote = agentPreset ? ` preset=${agentPreset}` : '';
-    const effortNote = effort ? ` effort=${effort}` : '';
-    const fallbackNote = continueFailure
-      ? ` The earlier worker session could not be continued (${continueFailure}), so this is a fresh session without its context.`
-      : '';
-    return `Dispatched task ${task.id} to worker ${started.name || childSessionId} (session ${childSessionId})${routeNote}${effortNote}${presetNote}.${envInfo.isolationNote} It runs in the background; its final message lands on the task when it settles.${fallbackNote}`;
   }
 
   async function cleanupNewWorktreeOnFailure(project, task, preparedWorktree, originalError) {
@@ -455,16 +363,40 @@ export function createRunner({ ctx, store, memory, worktree }) {
       parent: exec.agent,
     });
 
+    let settledImmediately = false;
+    let settledSnapshot = null;
     await store.withProjectLock(project.id, async () => {
       const latest = await store.readProject(project.id);
       const row = latest.tasks.find((c) => c.id === task.id);
       if (!row) return;
-      applyFreshDispatchRow(row, started, childSessionId, envInfo);
+      applyFreshDispatchRow(latest, row, started, childSessionId, envInfo);
+      const early = earlySettlements.get(childSessionId);
+      if (early) {
+        earlySettlements.delete(childSessionId);
+        applySettlementToRow(row, early.info);
+        settledImmediately = true;
+      }
       latest.updatedAt = Date.now();
       await store.writeProject(latest);
+      if (settledImmediately) {
+        settledSnapshot = { project: structuredClone(latest), task: structuredClone(row) };
+      }
     });
 
-    store.emitChange({ type: 'task.dispatched', projectId: project.id, taskId: task.id });
+    if (settledImmediately) {
+      releaseRun(key);
+      store.emitChange({ type: 'task.settled', projectId: project.id, taskId: task.id });
+      if (settledSnapshot) {
+        void reports.enqueueCoordinatorReport(settledSnapshot.project, settledSnapshot.task).catch(() => {
+          // Best-effort coordinator report-back after immediate settlement.
+        });
+        void scheduleReadyTasks(project.id).catch(() => {
+          // Best-effort relay of queued tasks after immediate settlement.
+        });
+      }
+    } else {
+      store.emitChange({ type: 'task.dispatched', projectId: project.id, taskId: task.id });
+    }
     return formatDispatchSummary({ task, started, childSessionId, route, effort, agentPreset, envInfo, continueFailure });
   }
 
@@ -533,46 +465,110 @@ export function createRunner({ ctx, store, memory, worktree }) {
       throw httpError(409, 'task_not_running');
     }
 
-    if (runEntry) {
-      try {
-        runEntry.controller.abort(new Error('stopped_by_user'));
-      } catch {
-        // Already aborted.
+    stoppingTasks.add(key);
+    try {
+      if (runEntry) {
+        try {
+          runEntry.controller.abort(new Error('stopped_by_user'));
+        } catch {
+          // Already aborted.
+        }
       }
+
+      const childSessionId = runEntry?.childSessionId || target.childSessionId || '';
+      if (childSessionId) {
+        const parentAgent = runEntry?.parent ?? (await resolveCoordinatorAgent(snapshot));
+        const subagents = getService('subagents');
+        if (!runEntry && typeof subagents?.interrupt === 'function') {
+          try {
+            subagents.interrupt(childSessionId, { kind: 'user' });
+          } catch {
+            // Best-effort user-authority interrupt when activeRun is absent (e.g. after restart).
+          }
+        }
+        try {
+          await drainAgentAndJobs(ctx, childSessionId, {
+            killReason: 'stopped_by_user',
+            waitMs: 5_000,
+            parent: parentAgent ?? null,
+            cancelReason: { kind: 'user' },
+            swallowWaitErrors: true,
+          });
+        } catch {
+          // Best-effort worker drain.
+        }
+      }
+
+      releaseRun(key);
+
+      const updatedTask = await store.withProjectLock(projectId, async () => {
+        const latest = await store.readProject(projectId);
+        const row = latest.tasks.find((candidate) => candidate.id === taskId);
+        if (!row) throw httpError(404, 'task_not_found');
+        row.status = 'blocked';
+        row.stopReason = 'stopped_by_user';
+        row.finishedAt = Date.now();
+        row.updatedAt = Date.now();
+        latest.updatedAt = Date.now();
+        await store.writeProject(latest);
+        return row;
+      });
+
+      store.emitChange({ type: 'task.stopped', projectId, taskId });
+      return { stopped: true, task: updatedTask };
+    } finally {
+      stoppingTasks.delete(key);
+    }
+  }
+
+  async function scheduleReadyTasks(projectId, { preferredTaskId = '' } = {}) {
+    const subagents = getService('subagents');
+    if (!subagents) return [];
+
+    let project;
+    try {
+      project = await store.readProject(projectId);
+    } catch {
+      return [];
+    }
+    if (project.archived || project.paused) return [];
+
+    const admission = getService('desktopTaskAdmission');
+    if (admission && typeof admission.check === 'function' && !admission.check()) {
+      return [];
     }
 
-    const childSessionId = runEntry?.childSessionId || target.childSessionId || '';
-    if (childSessionId) {
-      try {
-        await drainAgentAndJobs(ctx, childSessionId, {
-          killReason: 'stopped_by_user',
-          waitMs: 5_000,
-          parent: runEntry?.parent ?? null,
-          cancelReason: { kind: 'user' },
-          swallowWaitErrors: true,
-        });
-      } catch {
-        // Best-effort worker drain.
-      }
+    const candidates = (project.tasks || []).filter(
+      (task) =>
+        task.status === 'queued'
+        && !workerIsLive(task)
+        && (project.autonomy === 'auto' || task.approved === true),
+    );
+    if (candidates.length === 0) return [];
+
+    if (preferredTaskId) {
+      candidates.sort((left, right) => {
+        if (left.id === preferredTaskId) return -1;
+        if (right.id === preferredTaskId) return 1;
+        return 0;
+      });
     }
 
-    releaseRun(key);
+    const coordinatorAgent = await resolveCoordinatorAgent(project);
+    if (!coordinatorAgent) return [];
 
-    const updatedTask = await store.withProjectLock(projectId, async () => {
-      const latest = await store.readProject(projectId);
-      const row = latest.tasks.find((candidate) => candidate.id === taskId);
-      if (!row) throw httpError(404, 'task_not_found');
-      row.status = 'blocked';
-      row.stopReason = 'stopped_by_user';
-      row.finishedAt = Date.now();
-      row.updatedAt = Date.now();
-      latest.updatedAt = Date.now();
-      await store.writeProject(latest);
-      return row;
-    });
-
-    store.emitChange({ type: 'task.stopped', projectId, taskId });
-    return { stopped: true, task: updatedTask };
+    const dispatchedIds = [];
+    for (const candidate of candidates) {
+      try {
+        const message = await dispatchTask(projectId, candidate.id, { agent: coordinatorAgent });
+        if (/^(Dispatched|Continued) task\b/.test(String(message))) {
+          dispatchedIds.push(candidate.id);
+        }
+      } catch {
+        // Leave ineligible or failing tasks queued cleanly without blocking siblings.
+      }
+    }
+    return dispatchedIds;
   }
 
   async function retryTask(projectId, taskId) {
@@ -602,31 +598,12 @@ export function createRunner({ ctx, store, memory, worktree }) {
       store.emitChange({ type: 'task.retried', projectId, taskId });
     }
 
-    // Attempt immediate re-dispatch when coordinator agent is live and gates allow it.
-    let dispatched = false;
+    const dispatchedIds = await scheduleReadyTasks(projectId, { preferredTaskId: taskId });
+    const dispatched = dispatchedIds.includes(taskId);
     let finalTask = result.task;
-    const { project } = result;
-    const subagents = ctx?.get?.('subagents') ?? ctx?.subagents;
-    const canDispatch =
-      Boolean(subagents)
-      && !project.archived
-      && !project.paused
-      && (project.autonomy === 'auto' || result.task.approved);
-
-    if (canDispatch) {
-      const coordinatorAgent = await resolveCoordinatorAgent(project);
-      if (coordinatorAgent) {
-        try {
-          const message = await dispatchTask(projectId, taskId, { agent: coordinatorAgent });
-          if (/^(Dispatched|Continued) task\b/.test(String(message))) {
-            dispatched = true;
-            const latest = await store.readProject(projectId);
-            finalTask = latest.tasks.find((candidate) => candidate.id === taskId) || finalTask;
-          }
-        } catch {
-          // Leave task queued cleanly; coordinator or user can dispatch later.
-        }
-      }
+    if (dispatched) {
+      const latest = await store.readProject(projectId);
+      finalTask = latest.tasks.find((candidate) => candidate.id === taskId) || finalTask;
     }
 
     return { retried: true, dispatched, task: finalTask };
@@ -636,14 +613,23 @@ export function createRunner({ ctx, store, memory, worktree }) {
     if (!info || typeof info.id !== 'string') return;
     const childId = info.id;
 
-    // Locate owning project (prefer activeRuns or cache, fallback to disk scan).
+    // Locate owning project (prefer activeRuns or index cache, fallback to disk scan).
     let matchProjectId = '';
     let matchTaskId = '';
+    let matchedFromActiveRun = false;
     for (const entry of activeRuns.values()) {
       if (entry.childSessionId === childId) {
         matchProjectId = entry.projectId;
         matchTaskId = entry.taskId;
+        matchedFromActiveRun = true;
         break;
+      }
+    }
+    if (!matchProjectId) {
+      const indexed = store.getWorkerInfo?.(childId);
+      if (indexed) {
+        matchProjectId = indexed.projectId;
+        matchTaskId = indexed.taskId;
       }
     }
     if (!matchProjectId) {
@@ -657,35 +643,77 @@ export function createRunner({ ctx, store, memory, worktree }) {
         }
       }
     }
-    if (!matchProjectId) return;
+    if (!matchProjectId) {
+      if (inFlightDispatches.size > 0) {
+        pruneEarlySettlements();
+        earlySettlements.set(childId, { info, at: Date.now() });
+      }
+      return;
+    }
 
-    let settled = false;
+    const key = taskKey(matchProjectId, matchTaskId);
+    if (stoppingTasks.has(key)) {
+      // stopTask owns final blocked state and emits a single task.stopped event.
+      releaseRun(key);
+      return;
+    }
+
+    let eventType = '';
+    let settledSnapshot = null;
     await store.withProjectLock(matchProjectId, async () => {
+      if (stoppingTasks.has(key)) return;
       const project = await store.readProject(matchProjectId);
       const task = project.tasks.find((candidate) =>
         candidate.id === matchTaskId || candidate.childSessionId === childId,
       );
       if (!task) return;
-      if (task.finishedAt) return;
-      if (task.status === 'running') {
-        task.status = info.stopReason === 'completed' ? 'review' : 'failed';
+      matchTaskId = task.id;
+      if (task.finishedAt) {
+        // Already settled by dispatch, so a fresh subagent/end without an activeRun
+        // comes from a human follow-up directly inside the embedded Worker conversation.
+        if (matchedFromActiveRun) return;
+        const rawOutput = blocksToText(info.lastAssistantMessage);
+        // Ignore delayed abort callbacks arriving right after stopTask already finished.
+        if (!rawOutput && task.stopReason === 'stopped_by_user' && info.stopReason === 'aborted') {
+          return;
+        }
+        if (rawOutput) {
+          task.output = rawOutput.length > MAX_OUTPUT ? rawOutput.slice(-MAX_OUTPUT) : rawOutput;
+        }
+        if (typeof info.stopReason === 'string' && info.stopReason) {
+          task.stopReason = info.stopReason;
+        }
+        if ((task.status === 'failed' || task.status === 'blocked') && info.stopReason === 'completed') {
+          task.status = 'review';
+        }
+        task.finishedAt = Date.now();
+        task.updatedAt = Date.now();
+        project.updatedAt = Date.now();
+        await store.writeProject(project);
+        eventType = 'task.updated';
+        settledSnapshot = { project: structuredClone(project), task: structuredClone(task), slotFreed: false };
+        return;
       }
-      if (typeof info.stopReason === 'string' && info.stopReason) {
-        task.stopReason = info.stopReason;
-      }
-      const rawOutput = blocksToText(info.lastAssistantMessage);
-      task.output = rawOutput.length > MAX_OUTPUT ? rawOutput.slice(-MAX_OUTPUT) : rawOutput;
-      task.finishedAt = Date.now();
-      task.updatedAt = Date.now();
+      applySettlementToRow(task, info);
       project.updatedAt = Date.now();
       await store.writeProject(project);
-      matchTaskId = task.id;
-      settled = true;
+      eventType = 'task.settled';
+      settledSnapshot = { project: structuredClone(project), task: structuredClone(task), slotFreed: true };
     });
 
     releaseRun(taskKey(matchProjectId, matchTaskId));
-    if (settled) {
-      store.emitChange({ type: 'task.settled', projectId: matchProjectId, taskId: matchTaskId });
+    if (eventType) {
+      store.emitChange({ type: eventType, projectId: matchProjectId, taskId: matchTaskId });
+    }
+    if (settledSnapshot) {
+      await reports.enqueueCoordinatorReport(settledSnapshot.project, settledSnapshot.task).catch(() => {
+        // Best-effort coordinator report-back; task settlement is already persisted.
+      });
+      if (settledSnapshot.slotFreed && !settledSnapshot.project.archived && !settledSnapshot.project.paused) {
+        void scheduleReadyTasks(matchProjectId).catch(() => {
+          // Best-effort relay of queued tasks after worker settlement.
+        });
+      }
     }
   }
 
@@ -711,6 +739,7 @@ export function createRunner({ ctx, store, memory, worktree }) {
   }
 
   function dispose() {
+    reports.dispose();
     for (const [key, entry] of [...activeRuns.entries()]) {
       try {
         entry.controller.abort(new Error('plugin_unloaded'));
@@ -720,11 +749,15 @@ export function createRunner({ ctx, store, memory, worktree }) {
       releaseRun(key);
     }
     inFlightDispatches.clear();
+    stoppingTasks.clear();
+    earlySettlements.clear();
   }
 
   return {
     coordinatorSectionFor,
+    coordinatorDynamicContextFor,
     dispatchTask,
+    scheduleReadyTasks,
     stopTask,
     retryTask,
     settleWorker,

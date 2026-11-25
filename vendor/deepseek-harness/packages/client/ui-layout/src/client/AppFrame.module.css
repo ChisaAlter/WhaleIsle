@@ -197,6 +197,22 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+/* Full-height non-conversation workspace (e.g. Projects): spans Row 1 + Row 2
+   inside .centerCol so its own 48px top bar occupies the caption band without
+   stacking a second header below an empty 52px row. */
+.mainPanelFull {
+  grid-row: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.frame[data-phone][data-sidebar-collapsed] .mainPanelFull {
+  --dsh-frame-leading-clearance: 56px;
+}
+
 .terminalDrawerCol {
   grid-column: 2;
   grid-row: 3;
