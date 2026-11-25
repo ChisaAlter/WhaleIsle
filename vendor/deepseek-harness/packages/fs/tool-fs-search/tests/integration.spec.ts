@@ -370,6 +370,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
     it('stops streaming rg cleanly when raw output hits rawOutputMaxBytes and returns prefix matches', async () => {
       const bigCtx = new Context()
       provideWorkingDirectoryFixture(bigCtx)
+      await bigCtx.plugin(SessionProjectionRegistry)
       await bigCtx.plugin(SystemPrompt)
       await bigCtx.plugin(ToolRuntime)
       await bigCtx.plugin(NativeToolExecutor)

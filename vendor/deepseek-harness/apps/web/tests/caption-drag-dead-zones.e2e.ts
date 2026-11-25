@@ -198,10 +198,10 @@ describe('desktop fork: caption band drags everywhere except over controls', () 
     await expectConsistent('session header with a running job')
 
     await jobs.click()
-    const jobsList = page.getByRole('list', { name: 'Background jobs' })
-    await jobsList.waitFor()
+    const jobsRegion = page.getByRole('region', { name: 'Background jobs' })
+    await jobsRegion.waitFor()
     await jobs.click()
-    await jobsList.waitFor({ state: 'hidden' })
+    await jobsRegion.waitFor({ state: 'hidden' })
     await expectConsistent('after the jobs menu closed')
 
     await page.getByRole('button', { name: 'More actions', exact: true }).click()
