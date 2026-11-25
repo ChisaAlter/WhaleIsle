@@ -23,11 +23,13 @@ export type AuthorizationRemote = ClientContext['remote']['authorization']
  */
 export function authorizationRemoteOf(ctx: ClientContext): AuthorizationRemote | undefined {
   const get = (ctx as { get?: (name: string) => unknown }).get
-  const fromGet = typeof get === 'function'
-    ? get.call(ctx, 'remote.authorization') as AuthorizationRemote | undefined
-    : undefined
-  const fromRemote = (ctx as { remote?: Partial<ClientContext['remote']> }).remote?.authorization
-  return fromGet ?? fromRemote
+  if (typeof get === 'function') {
+    const fromGet = get.call(ctx, 'remote.authorization') as AuthorizationRemote | undefined
+    if (fromGet !== undefined) return fromGet
+    const reflect = (ctx as { reflect?: { props?: Record<string, unknown> } }).reflect
+    if (reflect?.props?.['remote.authorization'] !== undefined) return undefined
+  }
+  return (ctx as { remote?: Partial<ClientContext['remote']> }).remote?.authorization
 }
 
 /** Allow only http(s) URLs when delegating to an external browser. */
