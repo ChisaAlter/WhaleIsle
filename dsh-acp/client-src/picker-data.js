@@ -92,7 +92,7 @@ export function buildPickerCatalog({ groups, acpCatalog, accountProviderName, t 
       label: cat.name,
       vendor: cat.vendor,
       isExternal: true,
-      enabled: cat.enabled,
+      enabled: true,
     })),
   ];
 
@@ -157,8 +157,8 @@ export function computeMenuPos(triggerEl, menuEl, current) {
   const lh = menuEl?.offsetHeight ?? 0;
   let x = rect.left;
   let y = rect.top - 8 - lh;
-  if (lw > 0) x = Math.min(Math.max(x, MARGIN), window.innerWidth - lw - MARGIN);
-  if (lh > 0) y = Math.min(Math.max(y, MARGIN), window.innerHeight - lh - MARGIN);
+  if (lw > 0) x = Math.max(MARGIN, Math.min(x, window.innerWidth - lw - MARGIN));
+  if (lh > 0) y = Math.max(MARGIN, Math.min(y, window.innerHeight - lh - MARGIN));
   return current?.left === x && current?.top === y ? current : { left: x, top: y };
 }
 
@@ -191,6 +191,20 @@ export function buildTriggerLabels({ state, currentChoice, currentCategory, effo
   return { modelLabel, isExternalAgent, agentDisplayName, triggerTitle, triggerAria };
 }
 
+function focusActiveRailButton(menuEl) {
+  const btns = Array.from(menuEl?.querySelectorAll('.dsh-acp-ms-rail-btn') || []);
+  if (btns.length === 0) return false;
+  const active = menuEl?.querySelector('.dsh-acp-ms-rail-btn[data-active="true"]') || btns[0];
+  active?.focus();
+  return true;
+}
+
+function isSearchCursorAtStart(searchEl) {
+  if (!searchEl) return true;
+  if (!searchEl.value) return true;
+  return searchEl.selectionStart === 0 && searchEl.selectionEnd === 0;
+}
+
 function handleRailHorizontalKey(event, railBtn, menuEl, searchEl) {
   if (railBtn && event.key === 'ArrowRight') {
     event.preventDefault();
@@ -198,6 +212,8 @@ function handleRailHorizontalKey(event, railBtn, menuEl, searchEl) {
     return;
   }
   if (event.key !== 'ArrowLeft') return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.target === searchEl && !isSearchCursorAtStart(searchEl)) return;
   const btns = Array.from(menuEl?.querySelectorAll('.dsh-acp-ms-rail-btn') || []);
   if (railBtn) {
     event.preventDefault();
@@ -205,8 +221,7 @@ function handleRailHorizontalKey(event, railBtn, menuEl, searchEl) {
     btns[(idx - 1 + btns.length) % btns.length]?.focus();
   } else if (btns.length > 0) {
     event.preventDefault();
-    const active = menuEl?.querySelector('.dsh-acp-ms-rail-btn[data-active="true"]') || btns[0];
-    active?.focus();
+    focusActiveRailButton(menuEl);
   }
 }
 
@@ -241,9 +256,13 @@ function selectionPayloadFor(choice) {
   };
 }
 
+function isElement(node) {
+  return typeof Element !== 'undefined' ? node instanceof Element : typeof node?.closest === 'function';
+}
+
 function routePrintableToSearch(event, searchEl) {
   const isEditable =
-    event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]');
+    isElement(event.target) && event.target.closest('input, textarea, [contenteditable="true"]');
   if (
     event.key.length === 1
     && !event.ctrlKey
@@ -277,7 +296,7 @@ function handleShortcutOrRouteKey(event, deps) {
     const highlighted = visibleModels[activeModelIndex];
     if (!busy && highlighted) {
       event.preventDefault();
-      void chooseModel(selectionPayloadFor(highlighted), highlighted.category, true);
+      void chooseModel(selectionPayloadFor(highlighted), highlighted.category);
     }
     return;
   }
@@ -286,13 +305,13 @@ function handleShortcutOrRouteKey(event, deps) {
 
 function isOptionControlTarget(event, searchEl) {
   return (
-    event.target instanceof Element
+    isElement(event.target)
     && event.target !== searchEl
     && Boolean(event.target.closest('input, select, textarea, .dsh-acp-ms-session-options'))
   );
 }
 
-function handleListMoveKey(event, { busy, visibleModels, activeModelIndex, setHighlightedIndex }) {
+function handleListMoveKey(event, { busy, visibleModels, activeModelIndex, setHighlightedIndex, searchEl }) {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault();
     if (!busy && visibleModels.length > 0) {
@@ -302,6 +321,7 @@ function handleListMoveKey(event, { busy, visibleModels, activeModelIndex, setHi
     return true;
   }
   if (event.key === 'Home' || event.key === 'End') {
+    if (event.target === searchEl && searchEl?.value?.length > 0) return false;
     event.preventDefault();
     if (!busy && visibleModels.length > 0) {
       setHighlightedIndex(event.key === 'Home' ? 0 : visibleModels.length - 1);
@@ -320,7 +340,19 @@ export function handlePickerKeyDown(event, deps) {
     return;
   }
   if (!open || isOptionControlTarget(event, searchEl)) return;
-  const railBtn = event.target instanceof Element ? event.target.closest('.dsh-acp-ms-rail-btn') : null;
+  if (
+    event.target === searchEl
+    && event.key === 'Tab'
+    && event.shiftKey
+    && !event.altKey
+    && !event.ctrlKey
+    && !event.metaKey
+    && focusActiveRailButton(menuEl)
+  ) {
+    event.preventDefault();
+    return;
+  }
+  const railBtn = isElement(event.target) ? event.target.closest('.dsh-acp-ms-rail-btn') : null;
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     handleRailHorizontalKey(event, railBtn, menuEl, searchEl);
     return;

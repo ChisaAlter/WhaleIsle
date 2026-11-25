@@ -64,11 +64,18 @@ function rt(): ManagedRuntime.ManagedRuntime<unknown, unknown> {
   return runtime;
 }
 
-const run = <A>(effect: AnyEffect<A>): Promise<A> =>
-  rt().runPromise(effect as Effect.Effect<A, never, never>);
+export interface RunEffectOptions {
+  readonly signal?: AbortSignal | undefined;
+}
 
-const runScoped = <A>(effect: AnyEffect<A>): Promise<A> =>
-  run(Effect.scoped(effect) as AnyEffect<A>);
+const run = <A>(effect: AnyEffect<A>, options?: RunEffectOptions): Promise<A> =>
+  rt().runPromise(
+    effect as Effect.Effect<A, never, never>,
+    options?.signal ? { signal: options.signal } : undefined,
+  );
+
+const runScoped = <A>(effect: AnyEffect<A>, options?: RunEffectOptions): Promise<A> =>
+  run(Effect.scoped(effect) as AnyEffect<A>, options);
 
 function squashError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -76,9 +83,9 @@ function squashError(error: unknown): Error {
   return squashed instanceof Error ? squashed : new Error(String(squashed));
 }
 
-async function runCatch<A>(effect: AnyEffect<A>): Promise<A> {
+async function runCatch<A>(effect: AnyEffect<A>, options?: RunEffectOptions): Promise<A> {
   try {
-    return await run(effect);
+    return await run(effect, options);
   } catch (error) {
     throw squashError(error);
   }
@@ -166,14 +173,16 @@ export async function initAgentRuntime(init: AgentRuntimeInit): Promise<void> {
 
 export async function disposeAgentRuntime(): Promise<void> {
   const current = runtime;
-  await agyInstallationPromise?.catch(() => {});
-  if (current && agyInstallationService) {
-    await current.runPromise(Scope.close(agyInstallationService.scope, Exit.void));
-    agyInstallationService = undefined;
+  const currentAgyPromise = agyInstallationPromise;
+  const currentAgyService = agyInstallationService;
+  await currentAgyPromise?.catch(() => {});
+  if (current && currentAgyService && agyInstallationService === currentAgyService) {
+    await current.runPromise(Scope.close(currentAgyService.scope, Exit.void)).catch(() => {});
+    if (agyInstallationService === currentAgyService) agyInstallationService = undefined;
   }
   if (current) await current.dispose();
-  agyInstallationPromise = undefined;
-  runtime = undefined;
+  if (agyInstallationPromise === currentAgyPromise) agyInstallationPromise = undefined;
+  if (runtime === current) runtime = undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,11 +205,13 @@ export const catalog = {
     settings: Parameters<AcpRegistrySupport.AcpRegistryCatalog["Service"]["resolve"]>[0],
     cwd: string,
     environment?: NodeJS.ProcessEnv,
+    options?: RunEffectOptions,
   ) =>
     runCatch(
       Effect.flatMap(AcpRegistrySupport.AcpRegistryCatalog, (svc) =>
         svc.resolve(settings, cwd, environment),
       ),
+      options,
     ),
   prepare: (input: Parameters<AcpRegistrySupport.AcpRegistryCatalog["Service"]["prepare"]>[0]) =>
     runCatch(Effect.flatMap(AcpRegistrySupport.AcpRegistryCatalog, (svc) => svc.prepare(input))),
@@ -236,15 +247,17 @@ export interface SessionHandle {
 export interface CreateSessionInput {
   readonly options: AcpSessionRuntime.AcpSessionRuntimeOptions;
   readonly onEvent?: (event: AcpSessionRuntime.AcpSessionRuntimeEvent) => void;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export async function createSession(input: CreateSessionInput): Promise<SessionHandle> {
-  const scope = await run(Scope.make());
+  const scope = await run(Scope.make(), { signal: input.signal });
   const context = await runCatch(
     Layer.build(AcpSessionRuntime.layer(input.options)).pipe(
       Effect.provideService(Scope.Scope, scope),
     ),
-  ).catch(async (error) => { await run(Scope.close(scope, Exit.void)); throw error; });
+    { signal: input.signal },
+  ).catch(async (error) => { await run(Scope.close(scope, Exit.void)).catch(() => {}); throw error; });
   const service = Context.get(context, AcpSessionRuntime.AcpSessionRuntime);
   const eventsFiber = rt().runFork(
     Stream.runForEach(service.getEvents(), (event) =>
@@ -618,14 +631,20 @@ export interface AntigravityManagedExecutable {
 export async function antigravityManagedExecutable(input: {
   readonly baseDir: string;
   readonly installIfMissing?: boolean;
+  readonly signal?: AbortSignal | undefined;
 }): Promise<AntigravityManagedExecutable | null> {
+  const runOpts = input.signal ? { signal: input.signal } : undefined;
   const service = await agyInstallation(input.baseDir);
   const resolved = await runCatch(
     service.resolve(undefined, undefined) as AnyEffect<AntigravityManagedExecutable>,
-  ).catch(() => null);
+    runOpts,
+  ).catch((error) => {
+    if (input.signal?.aborted) throw error;
+    return null;
+  });
   if (resolved) return resolved;
   if (!input.installIfMissing) return null;
-  await runCatch(service.start as AnyEffect<unknown>);
+  await runCatch(service.start as AnyEffect<unknown>, runOpts);
   // The install forks into the service scope; poll state to a terminal phase.
   const terminal = await runCatch(
     Effect.gen(function* () {
@@ -641,27 +660,34 @@ export async function antigravityManagedExecutable(input: {
       phase: string;
       message?: string | null;
     }>,
+    runOpts,
   );
   if (terminal.phase !== "succeeded") {
     throw new Error(terminal.message || "Antigravity installation did not complete.");
   }
   return runCatch(
     service.resolve(undefined, undefined) as AnyEffect<AntigravityManagedExecutable>,
+    runOpts,
   );
 }
 
 /** Acquire = resolve + managed-binary lease (held until release()). */
-export async function antigravityAcquire(input: { readonly baseDir: string }): Promise<{
+export async function antigravityAcquire(input: {
+  readonly baseDir: string;
+  readonly signal?: AbortSignal | undefined;
+}): Promise<{
   readonly executable: AntigravityManagedExecutable;
   readonly release: () => Promise<void>;
 }> {
+  const runOpts = input.signal ? { signal: input.signal } : undefined;
   const service = await agyInstallation(input.baseDir);
-  const scope = await run(Scope.make());
+  const scope = await run(Scope.make(), runOpts);
   const executable = await runCatch(
     service.acquire(undefined, undefined).pipe(
       Effect.provideService(Scope.Scope, scope),
     ) as AnyEffect<AntigravityManagedExecutable>,
-  ).catch(async (error) => { await run(Scope.close(scope, Exit.void)); throw error; });
+    runOpts,
+  ).catch(async (error) => { await run(Scope.close(scope, Exit.void)).catch(() => {}); throw error; });
   return {
     executable,
     release: async () => {
@@ -736,6 +762,7 @@ export interface AntigravitySessionPlanInput {
   readonly stateDir: string;
   readonly userHome?: string;
   readonly executablePath?: string;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface AntigravitySessionPlan {
@@ -750,15 +777,17 @@ export interface AntigravitySessionPlan {
 export async function antigravitySessionPlan(
   input: AntigravitySessionPlanInput,
 ): Promise<AntigravitySessionPlan> {
+  const runOpts = input.signal ? { signal: input.signal } : undefined;
   // installation.acquire — managed managed runtime (installs on demand).
   const executable = input.executablePath ? antigravityExecutableFor(input.executablePath) : await antigravityManagedExecutable({
     baseDir: input.stateDir,
     installIfMissing: true,
+    signal: input.signal,
   });
   if (!executable) {
     throw new Error("Antigravity installation did not produce a runtime executable.");
   }
-  const lease = input.executablePath ? { release: async () => {} } : await antigravityAcquire({ baseDir: input.stateDir });
+  const lease = input.executablePath ? { release: async () => {} } : await antigravityAcquire({ baseDir: input.stateDir, signal: input.signal });
   let runtimeTempDirectory: string | undefined;
   try {
   const dirs = await antigravityInstanceDirs(input.stateDir, input.instanceId, input.profileDirectory);
@@ -772,11 +801,13 @@ export async function antigravitySessionPlan(
       platform: process.platform,
       tempDirectory: dirs.runtimeTemp,
     } as never),
+    runOpts,
   );
   runtimeTempDirectory = await runCatch(
     Effect.flatMap(FileSystem.FileSystem, (fileSystem) =>
       fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "run-" }),
     ),
+    runOpts,
   );
   const ownedDirectory = runtimeTempDirectory;
   let cleanupPromise: Promise<void> | undefined;
@@ -834,6 +865,7 @@ export interface AntigravityAuthHandle {
     cancel: (owner: string, flowId: string) => AnyEffect<unknown>;
     logout: (stop: AnyEffect<void>) => AnyEffect<unknown>;
     subscribe: (owner: string) => Stream.Stream<unknown>;
+    isChangingCredentials?: AnyEffect<boolean>;
   };
   readonly owner: string;
   readonly scope: Scope.Closeable;
@@ -966,7 +998,10 @@ export function antigravityAuthApi(handle: AntigravityAuthHandle) {
         methods: [{ id: "oauth-personal", name: "Log in with Google", type: "browser" }],
       }),
     invalidate: () => Promise.resolve(),
-    isChangingCredentials: () => Promise.resolve(false),
+    isChangingCredentials: () =>
+      handle.controller.isChangingCredentials
+        ? runCatch(handle.controller.isChangingCredentials)
+        : Promise.resolve(false),
     adoptCredentials: () => Promise.resolve(),
     dispose: async () => {
       await rt().runPromise(Fiber.interrupt(handle.subscriptionFiber));

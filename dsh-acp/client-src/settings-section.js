@@ -1,5 +1,18 @@
-import { h, useState, useEffect, useMemo, useCallback, useRef, Button, StateDot, Switch, IconPlusOutline16, IconRefreshOutline16 } from './primitives.js';
-import { BUILTIN_REGISTRY_IDS, maskEmail } from './utils.js';
+import {
+  h,
+  useState,
+  useEffect,
+  useId,
+  useMemo,
+  useCallback,
+  useRef,
+  Button,
+  StateDot,
+  Switch,
+  IconPlusOutline16,
+  IconRefreshOutline16,
+} from './primitives.js';
+import { BUILTIN_REGISTRY_IDS, copyTextToClipboard, maskEmail, safeHttpsIconUrl } from './utils.js';
 import {
   buildDraftForAgent,
   patchCatalogAgent,
@@ -30,25 +43,42 @@ function describeRailAgent(agent, t) {
   return { dotState, subText: subParts.join(' · ') };
 }
 
-function renderAgentRailItem({ agent, isSelected, busyAction, onSelect, onToggle, t }) {
+function handleRailItemKeyDown(e, { idx, agents, railItemRefs, onSelect }) {
+  if (e.target !== e.currentTarget) return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    onSelect(agents[idx].id);
+    return;
+  }
+  let nextIdx = -1;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIdx = (idx + 1) % agents.length;
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIdx = (idx - 1 + agents.length) % agents.length;
+  else if (e.key === 'Home') nextIdx = 0;
+  else if (e.key === 'End') nextIdx = agents.length - 1;
+  if (nextIdx >= 0 && agents[nextIdx]) {
+    e.preventDefault();
+    onSelect(agents[nextIdx].id);
+    railItemRefs.current[nextIdx]?.focus();
+  }
+}
+
+function renderAgentRailItem({ agent, idx, agents, railItemRefs, isSelected, busyAction, onSelect, onToggle, t }) {
   const { dotState, subText } = describeRailAgent(agent, t);
   return h(
     'div',
     {
+      ref: (node) => {
+        railItemRefs.current[idx] = node;
+      },
       key: agent.id,
       role: 'tab',
-      tabIndex: 0,
+      tabIndex: isSelected ? 0 : -1,
       'aria-selected': isSelected,
       'data-selected': isSelected ? 'true' : 'false',
       'data-agent-id': agent.id,
       className: 'dsh-acp-rail-item',
       onClick: () => onSelect(agent.id),
-      onKeyDown: (e) => {
-        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault();
-          onSelect(agent.id);
-        }
-      },
+      onKeyDown: (e) => handleRailItemKeyDown(e, { idx, agents, railItemRefs, onSelect }),
     },
     h(
       'div',
@@ -80,28 +110,45 @@ function renderAgentRailItem({ agent, isSelected, busyAction, onSelect, onToggle
   );
 }
 
-function renderProbeAuthBanner({ probeAuthAction, rpc, setProbeAuthAction, setBanner, t }) {
-  if (!probeAuthAction) return null;
+function renderBannerStack({ probeAuthAction, banner, rpc, setProbeAuthAction, setBanner, mountedRef, t }) {
+  if (!probeAuthAction && !banner) return null;
   return h(
     'div',
-    { className: 'dsh-acp-banner', role: 'status' },
-    h('span', null, probeAuthAction.message || t('login.waitingBrowser')),
-    h(
-      Button,
-      {
-        variant: 'outline',
-        size: 'sm',
-        onClick: async () => {
-          try {
-            await rpc('agent/auth-action/accept', { id: probeAuthAction.agentId, elicitationId: probeAuthAction.elicitationId });
-            setProbeAuthAction(null);
-          } catch (error) {
-            setBanner({ error: true, text: error.message });
-          }
-        },
-      },
-      t('login.openBrowser'),
-    ),
+    { className: 'dsh-acp-banner-stack' },
+    probeAuthAction
+      ? h(
+          'div',
+          { className: 'dsh-acp-banner', role: 'status' },
+          h('span', null, probeAuthAction.message || t('login.waitingBrowser')),
+          h(
+            Button,
+            {
+              variant: 'outline',
+              size: 'sm',
+              onClick: async () => {
+                try {
+                  await rpc('agent/auth-action/accept', { id: probeAuthAction.agentId, elicitationId: probeAuthAction.elicitationId });
+                  if (mountedRef.current) setProbeAuthAction(null);
+                } catch (error) {
+                  if (mountedRef.current) setBanner({ error: true, text: error?.message || String(error) });
+                }
+              },
+            },
+            t('login.openBrowser'),
+          ),
+        )
+      : null,
+    banner
+      ? h(
+          'div',
+          {
+            className: 'dsh-acp-banner',
+            role: banner.error ? 'alert' : 'status',
+            'data-error': banner.error ? 'true' : undefined,
+          },
+          h('span', null, banner.text),
+        )
+      : null,
   );
 }
 
@@ -122,7 +169,7 @@ function buildRegistryCards(registryAgents, query) {
   return (registryAgents || [])
     .filter((a) => a && a.id && !BUILTIN_REGISTRY_IDS.has(a.id))
     .filter((a) => !needle || `${a.id} ${a.name || ''}`.toLowerCase().includes(needle))
-    .map((a) => ({ id: `registry:${a.id}`, label: a.name || a.id, icon: a.icon || null }));
+    .map((a) => ({ id: `registry:${a.id}`, label: a.name || a.id, icon: safeHttpsIconUrl(a.icon) }));
 }
 
 function parseCustomModelEntry(rawInput) {
@@ -162,8 +209,13 @@ function useSettingsEffects({
   setConfirmDelete,
   setModelQuery,
   setNewModelInput,
+  setRevealEmail,
+  setCopiedUrl,
+  setSavedFlash,
   flowActive,
-  setCatalog,
+  applyCatalog,
+  catalogSeqRef,
+  mountedRef,
   banner,
   setBanner,
 }) {
@@ -171,10 +223,10 @@ function useSettingsEffects({
     if (!addModal?.showMore || registryAgents !== null) return undefined;
     let cancelled = false;
     rpc('agent/registry-search', { limit: 100 })
-      .then((res) => { if (!cancelled) setRegistryAgents(Array.isArray(res?.agents) ? res.agents : []); })
-      .catch(() => { if (!cancelled) setRegistryAgents([]); });
+      .then((res) => { if (!cancelled && mountedRef.current) setRegistryAgents(Array.isArray(res?.agents) ? res.agents : []); })
+      .catch(() => { if (!cancelled && mountedRef.current) setRegistryAgents([]); });
     return () => { cancelled = true; };
-  }, [addModal?.showMore, registryAgents]);
+  }, [addModal?.showMore, registryAgents, rpc]);
 
   useEffect(() => { void loadCatalog(true); }, [loadCatalog]);
 
@@ -189,17 +241,38 @@ function useSettingsEffects({
     setConfirmDelete(false);
     setModelQuery('');
     setNewModelInput('');
+    setRevealEmail(false);
+    setCopiedUrl(false);
+    setSavedFlash(null);
   }, [selectedAgent?.id]);
 
   useEffect(() => {
     if (!flowActive) return undefined;
-    const timer = setInterval(() => {
-      void rpc('catalog', { refreshAccounts: false })
-        .then((data) => { if (data) setCatalog(data); })
-        .catch((error) => { console.warn('[dsh-acp/client/client.js] background operation failed', error); });
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [flowActive, selectedAgent?.id, rpc]);
+    let cancelled = false;
+    let timerId = null;
+    const scheduleNext = () => {
+      if (cancelled || !mountedRef.current) return;
+      timerId = setTimeout(async () => {
+        if (cancelled || !mountedRef.current) return;
+        const reqSeq = catalogSeqRef.current;
+        try {
+          const data = await rpc('catalog', { refreshAccounts: false });
+          if (!cancelled && mountedRef.current && data && catalogSeqRef.current === reqSeq) {
+            applyCatalog(data, reqSeq);
+          }
+        } catch (error) {
+          console.warn('[dsh-acp-agents] background operation failed', error);
+        } finally {
+          scheduleNext();
+        }
+      }, 1500);
+    };
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) clearTimeout(timerId);
+    };
+  }, [flowActive, selectedAgent?.id, rpc, applyCatalog]);
 
   useEffect(() => {
     if (!banner || banner.error) return undefined;
@@ -210,6 +283,7 @@ function useSettingsEffects({
 
 /** ACP Provider & Account Settings Panel (`Settings -> Agent`). */
 export function AgentsSettingsSection({ rpc, t }) {
+  // Keep indices 0, 1, 2 stable for host compatibility test state injection.
   const [catalog, setCatalog] = useState(null);
   const [selectedId, setSelectedId] = useState('claude-code');
   const [loading, setLoading] = useState(true);
@@ -222,8 +296,8 @@ export function AgentsSettingsSection({ rpc, t }) {
 
   const [activeAuthMethod, setActiveAuthMethod] = useState('');
   const [credDraft, setCredDraft] = useState({});
-  const [flowCredDraft, setFlowCredDraft] = useState({});
-  const [callbackDraft, setCallbackDraft] = useState('');
+  const [flowCredState, setFlowCredState] = useState({ key: '', values: {} });
+  const [callbackState, setCallbackState] = useState({ key: '', value: '' });
   const [modelQuery, setModelQuery] = useState('');
   const [newModelInput, setNewModelInput] = useState('');
   const [runtimeDraft, setRuntimeDraft] = useState({
@@ -235,14 +309,65 @@ export function AgentsSettingsSection({ rpc, t }) {
   const [addModal, setAddModal] = useState(null);
   const [registryAgents, setRegistryAgents] = useState(null);
 
+  const idPrefix = useId();
+  const railItemRefs = useRef([]);
+  const mountedRef = useRef(true);
+  const catalogSeqRef = useRef(0);
+  const timersRef = useRef(new Set());
+  const cleanupsRef = useRef(new Set());
+  const copiedTimerRef = useRef(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const id of timersRef.current) clearTimeout(id);
+      timersRef.current.clear();
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+      for (const cleanup of cleanupsRef.current) cleanup();
+      cleanupsRef.current.clear();
+    };
+  }, []);
+
+  const scheduleTimeout = useCallback((fn, delayMs) => {
+    const id = setTimeout(() => {
+      timersRef.current.delete(id);
+      if (mountedRef.current) fn();
+    }, delayMs);
+    timersRef.current.add(id);
+    return id;
+  }, []);
+
+  const registerCleanup = useCallback((cleanup) => {
+    cleanupsRef.current.add(cleanup);
+    return () => cleanupsRef.current.delete(cleanup);
+  }, []);
+
+  const applyCatalog = useCallback((next, expectedSeq) => {
+    if (!mountedRef.current || !next) return catalogSeqRef.current;
+    if (expectedSeq !== undefined && catalogSeqRef.current !== expectedSeq) return catalogSeqRef.current;
+    catalogSeqRef.current += 1;
+    setCatalog(next);
+    return catalogSeqRef.current;
+  }, []);
+
   const loadCatalog = useCallback(async (refreshAccounts = false) => {
+    const reqSeq = ++catalogSeqRef.current;
     try {
-      setLoading(true);
-      setCatalog(await rpc('catalog', { refreshAccounts }));
+      if (mountedRef.current) setLoading(true);
+      const next = await rpc('catalog', { refreshAccounts });
+      if (mountedRef.current && reqSeq === catalogSeqRef.current) {
+        setCatalog(next);
+      }
     } catch (err) {
-      setBanner({ error: true, text: t('loadFailed', { message: err?.message || String(err) }) });
+      if (mountedRef.current && reqSeq === catalogSeqRef.current) {
+        setBanner({ error: true, text: t('loadFailed', { message: err?.message || String(err) }) });
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current && reqSeq === catalogSeqRef.current) setLoading(false);
     }
   }, [rpc, t]);
 
@@ -250,18 +375,41 @@ export function AgentsSettingsSection({ rpc, t }) {
   const selectedAgent = useMemo(() => agents.find((a) => a.id === selectedId) || agents[0] || null, [agents, selectedId]);
   const activeFlow = selectedAgent?.authFlow;
   const flowMeta = deriveFlowMeta(activeFlow);
+  const flowDraftKey = `${selectedAgent?.id || ''}:${activeFlow?.flowId || activeFlow?.phase || ''}:${flowMeta.flowInteraction?.id || flowMeta.flowInteraction?.type || ''}`;
+  const flowCredDraft = flowCredState.key === flowDraftKey ? flowCredState.values : {};
+  const setFlowCredDraft = useCallback(
+    (updater) => {
+      setFlowCredState((cur) => {
+        const prev = cur.key === flowDraftKey ? cur.values : {};
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        return { key: flowDraftKey, values: next };
+      });
+    },
+    [flowDraftKey],
+  );
+  const callbackDraft = callbackState.key === flowDraftKey ? callbackState.value : '';
+  const setCallbackDraft = useCallback(
+    (val) => setCallbackState({ key: flowDraftKey, value: val }),
+    [flowDraftKey],
+  );
 
   useSettingsEffects({
     addModal, registryAgents, setRegistryAgents, rpc, loadCatalog, selectedAgent, setActiveAuthMethod, setCredDraft,
     envBaselineRef, setRuntimeDraft, setTerminalDraft, setConfirmDelete, setModelQuery, setNewModelInput,
-    flowActive: flowMeta.flowActive, setCatalog, banner, setBanner,
+    setRevealEmail, setCopiedUrl, setSavedFlash, flowActive: flowMeta.flowActive, applyCatalog, catalogSeqRef,
+    mountedRef, banner, setBanner,
   });
 
-  const actionCtx = { selectedAgent, activeAuthMethod, credDraft, rpc, setBusyAction, setBanner, setCatalog, setSavedFlash, t };
+  const actionCtx = {
+    selectedAgent, activeAuthMethod, credDraft, rpc, setBusyAction, setBanner, applyCatalog,
+    catalogSeqRef, scheduleTimeout, registerCleanup, mountedRef, setSavedFlash, t,
+  };
   const savePatch = (patch, flashKey) => saveAgentPatch({ ...actionCtx, patch, flashKey });
   const toggleWithRollback = async (key, prevVal, nextVal) => {
     patchCatalogAgent(setCatalog, selectedAgent.id, { [key]: nextVal });
-    if (!(await savePatch({ [key]: nextVal }))) patchCatalogAgent(setCatalog, selectedAgent.id, { [key]: prevVal });
+    if (!(await savePatch({ [key]: nextVal })) && mountedRef.current) {
+      patchCatalogAgent(setCatalog, selectedAgent.id, { [key]: prevVal });
+    }
   };
   const toggleModelFavorite = async (modelId) => {
     if (!selectedAgent) return;
@@ -293,29 +441,67 @@ export function AgentsSettingsSection({ rpc, t }) {
       if (flowMeta.flowNeedsConsent && !(await respondLoginFlow({ ...actionCtx, response: { type: 'browser', action: 'accept' } }))) return;
       await rpc('agent/open-url', { url: flowMeta.flowUrl });
     } catch (err) {
-      setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) });
+      if (mountedRef.current) setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) });
     }
   };
   const copyLoginUrl = async () => {
     if (!flowMeta.flowUrl) return;
-    try { await navigator.clipboard?.writeText?.(flowMeta.flowUrl); }
-    catch (err) { setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) }); return; }
+    try {
+      await copyTextToClipboard(flowMeta.flowUrl);
+    } catch {
+      if (mountedRef.current) setBanner({ error: true, text: t('error.clipboard') });
+      return;
+    }
+    if (!mountedRef.current) return;
     setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 1800);
+    if (copiedTimerRef.current !== null) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => {
+      copiedTimerRef.current = null;
+      if (mountedRef.current) setCopiedUrl(false);
+    }, 1800);
     if (flowMeta.flowNeedsConsent) await respondLoginFlow({ ...actionCtx, response: { type: 'browser', action: 'accept' } });
+  };
+  const cancelLoginFlow = async () => {
+    if (!selectedAgent || busyAction === 'cancel-flow') return;
+    setBusyAction('cancel-flow');
+    try {
+      const next = await rpc('agent/login/cancel', { id: selectedAgent.id });
+      if (mountedRef.current) applyCatalog(next);
+    } catch (err) {
+      if (mountedRef.current) setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) });
+    } finally {
+      if (mountedRef.current) setBusyAction('');
+    }
+  };
+  const completeLoginFlow = async (callbackUrl) => {
+    if (!selectedAgent || !callbackUrl || busyAction === 'complete-flow') return;
+    setBusyAction('complete-flow');
+    try {
+      const res = await rpc('agent/login/complete', { id: selectedAgent.id, callbackUrl });
+      if (!mountedRef.current) return;
+      if (res?.catalog) applyCatalog(res.catalog);
+      setCallbackDraft('');
+    } catch (err) {
+      if (mountedRef.current) setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) });
+    } finally {
+      if (mountedRef.current) setBusyAction('');
+    }
   };
   const deleteOrResetAgent = async () => {
     if (!selectedAgent) return;
     setBusyAction('delete');
     try {
       const next = await rpc('agent/delete', { id: selectedAgent.id });
-      setCatalog(next);
+      if (!mountedRef.current) return;
+      applyCatalog(next);
       if (!selectedAgent.builtin && next?.agents?.[0]) setSelectedId(next.agents[0].id);
     } catch (err) {
-      setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) });
+      if (mountedRef.current) setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) });
     } finally {
-      setBusyAction('');
-      setConfirmDelete(false);
+      if (mountedRef.current) {
+        setBusyAction('');
+        setConfirmDelete(false);
+      }
     }
   };
 
@@ -331,7 +517,7 @@ export function AgentsSettingsSection({ rpc, t }) {
   return h(
     'div',
     { className: 'dsh-acp-settings' },
-    renderProbeAuthBanner({ probeAuthAction, rpc, setProbeAuthAction, setBanner, t }),
+    renderBannerStack({ probeAuthAction, banner, rpc, setProbeAuthAction, setBanner, mountedRef, t }),
     h(
       'div',
       { className: 'dsh-acp-header' },
@@ -340,10 +526,9 @@ export function AgentsSettingsSection({ rpc, t }) {
         'div',
         { className: 'dsh-acp-header-actions' },
         h(Button, { variant: 'outline', size: 'sm', icon: h(IconRefreshOutline16, { size: 14 }), disabled: loading, onClick: () => void loadCatalog(true) }, t('page.refresh')),
-        h(Button, { variant: 'primary', size: 'sm', icon: h(IconPlusOutline16, { size: 14 }), onClick: () => setAddModal({ baseAgentId: selectedAgent?.baseAgentId || 'claude-code', name: '', command: '', showMore: false, registryQuery: '' }) }, t('page.addInstance')),
+        h(Button, { variant: 'primary', size: 'sm', icon: h(IconPlusOutline16, { size: 14 }), onClick: () => setAddModal({ baseAgentId: selectedAgent?.baseAgentId || 'claude-code', name: '', command: '', showMore: false, registryQuery: '', error: null }) }, t('page.addInstance')),
       ),
     ),
-    banner ? h('div', { className: 'dsh-acp-banner', 'data-error': banner.error ? 'true' : undefined }, banner.text) : null,
     ...(catalog?.storeIssues || []).map((issue) =>
       h('div', { key: `store-issue:${issue.preservedAs}`, className: 'dsh-acp-store-issue', role: 'alert' }, t('storeIssue', { file: issue.file, reason: issue.reason, preservedAs: issue.preservedAs })),
     ),
@@ -353,45 +538,51 @@ export function AgentsSettingsSection({ rpc, t }) {
       h(
         'div',
         { className: 'dsh-acp-rail', role: 'tablist', 'aria-label': t('menu.agent') },
-        agents.map((agent) =>
+        agents.map((agent, idx) =>
           renderAgentRailItem({
-            agent, isSelected: agent.id === selectedAgent?.id, busyAction, onSelect: setSelectedId, t,
-            onToggle: (target, val) => toggleAgentEnabled({ agent: target, nextVal: val, rpc, setBusyAction, setBanner, setCatalog, t }),
+            agent, idx, agents, railItemRefs, isSelected: agent.id === selectedAgent?.id, busyAction, onSelect: setSelectedId, t,
+            onToggle: (target, val) => toggleAgentEnabled({
+              agent: target, nextVal: val, rpc, setBusyAction, setBanner, applyCatalog, catalogSeqRef, scheduleTimeout, mountedRef, t,
+            }),
           }),
         ),
       ),
       selectedAgent
         ? h(
             'div',
-            { className: 'dsh-acp-detail' },
+            { className: 'dsh-acp-detail', role: 'tabpanel' },
             renderOverviewHeaderCard({
               selectedAgent, account, busyAction, t,
-              onTestAndSync: (agent) => testAndSyncAgent({ agent, rpc, setBusyAction, setBanner, setProbeAuthAction, setCatalog, t }),
-              onAddAccount: () => setAddModal({ baseAgentId: selectedAgent.baseAgentId, name: `${selectedAgent.name} #2`, command: selectedAgent.command, showMore: false, registryQuery: '' }),
+              onTestAndSync: (agent) => testAndSyncAgent({
+                agent, rpc, setBusyAction, setBanner, setProbeAuthAction, applyCatalog, registerCleanup, mountedRef, t,
+              }),
+              onAddAccount: () => setAddModal({ baseAgentId: selectedAgent.baseAgentId, name: `${selectedAgent.name} #2`, command: selectedAgent.command, showMore: false, registryQuery: '', error: null }),
               onOpenConfirmDelete: () => setConfirmDelete(true),
             }),
             renderAccountAuthCard({
               selectedAgent, account, availableMethods, activeAuthMethod, setActiveAuthMethod, currentMethodDef,
               revealEmail, setRevealEmail, busyAction, activeFlow, ...flowMeta, copiedUrl, terminalDraft, setTerminalDraft,
-              flowCredDraft, setFlowCredDraft, callbackDraft, setCallbackDraft, credDraft, setCredDraft, savedFlash, t,
+              flowCredDraft, setFlowCredDraft, callbackDraft, setCallbackDraft, credDraft, setCredDraft, savedFlash, idPrefix, t,
               onStartLogin: (forceNewToken) => startLoginFlow({ ...actionCtx, forceNewToken }),
               onReauth: () => reauthLoginFlow(actionCtx),
               onLogout: () => logoutAgent(actionCtx),
-              onCancelFlow: () => rpc('agent/login/cancel', { id: selectedAgent.id }).then(setCatalog).catch((err) => setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) })),
+              onCancelFlow: cancelLoginFlow,
               onOpenLoginUrl: openLoginUrl,
               onCopyLoginUrl: copyLoginUrl,
               onRespondFlow: (response) => respondLoginFlow({ ...actionCtx, response }),
-              onCompleteFlow: (callbackUrl) => callbackUrl && rpc('agent/login/complete', { id: selectedAgent.id, callbackUrl }).then((res) => res?.catalog && setCatalog(res.catalog)).catch((err) => setBanner({ error: true, text: t('saveFailed', { message: err?.message || String(err) }) })),
+              onCompleteFlow: completeLoginFlow,
               onSaveCredentials: () => saveApiKeyCredentials(actionCtx),
             }),
             renderModelsManagerCard({
               selectedAgent, allModels, filteredModels, enabledCount, modelQuery, setModelQuery, newModelInput, setNewModelInput,
               busyAction, onSetAllHidden: (hiddenIds) => toggleWithRollback('hiddenModels', selectedAgent.hiddenModels || [], hiddenIds),
-              onTestAndSync: (agent) => testAndSyncAgent({ agent, rpc, setBusyAction, setBanner, setProbeAuthAction, setCatalog, t }),
+              onTestAndSync: (agent) => testAndSyncAgent({
+                agent, rpc, setBusyAction, setBanner, setProbeAuthAction, applyCatalog, registerCleanup, mountedRef, t,
+              }),
               onAddCustomModel: addCustomModel, onToggleFavorite: toggleModelFavorite, onToggleVisible: toggleModelVisible, t,
             }),
             renderRuntimeEnvCard({
-              selectedAgent, runtimeDraft, setRuntimeDraft, permissionOptions, savedFlash, busyAction, t,
+              selectedAgent, runtimeDraft, setRuntimeDraft, permissionOptions, savedFlash, busyAction, idPrefix, t,
               onSaveRuntimeAndEnv: () => saveRuntimeAndEnv({ ...actionCtx, runtimeDraft, envBaselineRef, setRuntimeDraft }),
             }),
           )
@@ -399,8 +590,10 @@ export function AgentsSettingsSection({ rpc, t }) {
     ),
     renderDeleteResetModal({ confirmDelete, selectedAgent, busyAction, onClose: () => setConfirmDelete(false), onConfirm: deleteOrResetAgent, t }),
     renderAddAgentModal({
-      addModal, setAddModal, registryAgents, registryCards, busyAction, t,
-      onCreate: () => createAccountInstance({ addModal, agents, registryAgents, rpc, setBusyAction, setBanner, setCatalog, setSelectedId, setAddModal, t }),
+      addModal, setAddModal, registryAgents, registryCards, busyAction, idPrefix, t,
+      onCreate: () => createAccountInstance({
+        addModal, agents, registryAgents, rpc, setBusyAction, setBanner, applyCatalog, setSelectedId, setAddModal, mountedRef, t,
+      }),
     }),
   );
 }

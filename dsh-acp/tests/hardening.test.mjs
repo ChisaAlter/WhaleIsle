@@ -10,6 +10,7 @@ import { readJsonStore, writeJsonStore, listStoreIssues } from '../lib/store-fil
 import { createTaskCheckout } from '../lib/isolation.js';
 import { acpRuntimePolicy } from '../lib/host-contract.js';
 import { runtimeBundle, initAgentRuntime } from '../lib/agent-runtime.js';
+import { defineToolStub } from './define-tool-stub.mjs';
 
 const tempDir = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 const quietly = (t) => t.mock.method(console, 'warn', () => {});
@@ -131,7 +132,7 @@ test('host acp_result accepts the documented task_id, agent_id and wait_ms forms
     tasks: { get: (parentId, id) => { const task = tasks.get(id) || [...tasks.values()].find((item) => item.childId === id); if (!task || task.parentId !== parentId) throw new Error('unknown'); return task; } },
     waitTask: async (agent, taskId, waitMs) => { waits.push([taskId, waitMs]); return { taskId }; },
   };
-  registerDelegation(ctx, manager);
+  registerDelegation(ctx, manager, { defineTool: defineToolStub });
   const tool = tools.get('acp_result');
   assert.equal(tool.parameters.type, 'object');
   assert.equal(tool.parameters.required, undefined);
@@ -145,7 +146,6 @@ test('host acp_result accepts the documented task_id, agent_id and wait_ms forms
 });
 
 test('existing loose stores and default profiles are restricted without removing temporary files', { skip: process.platform === 'win32' }, async () => {
-  const { appendPrivateLog, readJsonStore } = await import('../lib/store-file.js');
   const { createAcpAgentsManager } = await import('../lib/index.js');
   const dir = tempDir('acp-loose-');
   try {
@@ -165,15 +165,24 @@ test('existing loose stores and default profiles are restricted without removing
       assert.ok(fs.existsSync(stale) && fs.existsSync(legacy));
       assert.ok(fs.existsSync(fresh), 'a concurrent writer\'s temporary file is left alone');
     } finally { await manager.dispose(); }
+  } finally { fs.rmSync(dir, { recursive: true }); }
+});
+
+test('missing stores return fallback and private diagnostic logs redact secrets and rotate', async () => {
+  const { appendPrivateLog, readJsonStore } = await import('../lib/store-file.js');
+  const dir = tempDir('acp-private-log-');
+  try {
     assert.equal(readJsonStore(path.join(dir, 'missing.json'), { fallback: 'none' }), 'none');
     const log = path.join(dir, 'acp-error.log');
     appendPrivateLog(log, 'proxy https://user:pass@example.test Bearer abc.def access_token=xyz\n', { maxBytes: 64 });
-    assert.equal(fs.statSync(log).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(log).mode & 0o777, 0o600);
+    }
     assert.doesNotMatch(fs.readFileSync(log, 'utf8'), /pass@|abc\.def|xyz/);
     appendPrivateLog(log, 'second\n', { maxBytes: 64 });
     assert.equal(fs.readFileSync(log, 'utf8'), 'second\n');
     assert.ok(fs.existsSync(`${log}.1`));
-  } finally { fs.rmSync(dir, { recursive: true }); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('the settings catalog reports preserved files after clean reads and a new process', async (t) => {
@@ -226,7 +235,7 @@ test('host tools and the MCP bridge publish identical task-control schemas', asy
   const { registerDelegation, AGENT_TOOLS, CONTROL_TOOLS } = await import('../lib/delegation.js');
   const { createWhaleIsleMcp } = await import('../lib/mcp-server.js');
   const host = new Map();
-  registerDelegation({ effect: (fn) => fn(), subagents: { registerProvider() {} }, tools: { register: (tool) => host.set(tool.name, tool) } }, {});
+  registerDelegation({ effect: (fn) => fn(), subagents: { registerProvider() {} }, tools: { register: (tool) => host.set(tool.name, tool) } }, {}, { defineTool: defineToolStub });
   const mcp = createWhaleIsleMcp({ ctx: {} });
   const listed = (await mcp.dispatch({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, {})).body.result.tools;
   for (const tool of [...AGENT_TOOLS, ...CONTROL_TOOLS]) {
@@ -439,7 +448,7 @@ test('requestAcpApproval honors allowed-always, session/options guards non-objec
     // 3) prepareDelegationConnection failure cleans up orphaned worktree
     const repo = path.join(root, 'repo');
     fs.mkdirSync(repo);
-    const git = (...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd: repo, encoding: 'utf8', windowsHide: true });
+    const git = (...args) => execFileSync('git', ['-c', 'core.autocrlf=false', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd: repo, encoding: 'utf8', windowsHide: true });
     git('init', '-q');
     fs.writeFileSync(path.join(repo, 'file.txt'), 'v1\n');
     git('add', 'file.txt');

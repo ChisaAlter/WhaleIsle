@@ -3,12 +3,13 @@ import {
   Button,
   Input,
   Switch,
+  SettingsSelect,
   IconCheckOutlineRegular,
   IconPlusOutline16,
   IconRefreshOutline16,
   IconTrashOutline16,
 } from './primitives.js';
-import { SettingsSelect } from './primitives.js';
+import { createEnvRow } from './settings-actions.js';
 import { joinArgsText, unwrapSwitchChecked } from './utils.js';
 
 export function renderOverviewHeaderCard({ selectedAgent, account, busyAction, onTestAndSync, onAddAccount, onOpenConfirmDelete, t }) {
@@ -120,6 +121,8 @@ function renderModelRow({ model, onToggleFavorite, onToggleVisible, t }) {
           className: 'dsh-acp-star-btn',
           'data-fav': model.favorite ? 'true' : 'false',
           title: t('models.favorite'),
+          'aria-label': `${t('models.favorite')}: ${model.name || model.id}`,
+          'aria-pressed': Boolean(model.favorite),
           onClick: () => void onToggleFavorite(model.id),
         },
         model.favorite ? '★' : '☆',
@@ -209,7 +212,13 @@ export function renderModelsManagerCard({
       h(
         'div',
         { className: 'dsh-acp-models-toolbar-input' },
-        h(Input, { variant: 'form', value: modelQuery, placeholder: t('models.searchPh'), onChange: (e) => setModelQuery(e.target.value) }),
+        h(Input, {
+          variant: 'form',
+          value: modelQuery,
+          placeholder: t('models.searchPh'),
+          'aria-label': t('models.searchPh'),
+          onChange: (e) => setModelQuery(e.target.value),
+        }),
       ),
       h(
         'div',
@@ -218,6 +227,7 @@ export function renderModelsManagerCard({
           variant: 'form',
           value: newModelInput,
           placeholder: t('models.addPh'),
+          'aria-label': t('models.addPh'),
           onChange: (e) => setNewModelInput(e.target.value),
           onKeyDown: (e) => {
             if (e.key === 'Enter') {
@@ -261,14 +271,14 @@ function renderEnvRowsEditor({ runtimeDraft, setRuntimeDraft, t }) {
     h(
       'div',
       { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-      h('label', { className: 'dsh-acp-field-label' }, t('section.env')),
+      h('span', { className: 'dsh-acp-field-label' }, t('section.env')),
       h(
         Button,
         {
           variant: 'outline',
           size: 'sm',
           icon: h(IconPlusOutline16, { size: 14 }),
-          onClick: () => setRuntimeDraft({ ...runtimeDraft, envRows: [...runtimeDraft.envRows, { key: '', value: '' }] }),
+          onClick: () => setRuntimeDraft({ ...runtimeDraft, envRows: [...runtimeDraft.envRows, createEnvRow()] }),
         },
         t('env.addRow'),
       ),
@@ -282,13 +292,20 @@ function renderEnvRowsEditor({ runtimeDraft, setRuntimeDraft, t }) {
           runtimeDraft.envRows.map((row, idx) =>
             h(
               'div',
-              { key: idx, className: 'dsh-acp-env-row' },
-              h(Input, { variant: 'form', value: row.key, placeholder: t('env.keyPh'), onChange: (e) => updateRow(idx, { key: e.target.value }) }),
+              { key: row._rowId ?? idx, className: 'dsh-acp-env-row' },
+              h(Input, {
+                variant: 'form',
+                value: row.key,
+                placeholder: t('env.keyPh'),
+                'aria-label': t('env.keyPh'),
+                onChange: (e) => updateRow(idx, { key: e.target.value }),
+              }),
               h(Input, {
                 variant: 'form',
                 type: /KEY|TOKEN|SECRET|PASSWORD/i.test(row.key) ? 'password' : 'text',
                 value: row.value,
                 placeholder: t('env.valPh'),
+                'aria-label': t('env.valPh'),
                 onChange: (e) => updateRow(idx, { value: e.target.value }),
               }),
               h(
@@ -296,6 +313,8 @@ function renderEnvRowsEditor({ runtimeDraft, setRuntimeDraft, t }) {
                 {
                   variant: 'outline',
                   size: 'sm',
+                  title: t('env.removeRow'),
+                  'aria-label': t('env.removeRow'),
                   icon: h(IconTrashOutline16, { size: 14 }),
                   onClick: () => setRuntimeDraft({ ...runtimeDraft, envRows: runtimeDraft.envRows.filter((_, i) => i !== idx) }),
                 },
@@ -314,9 +333,17 @@ export function renderRuntimeEnvCard({
   permissionOptions,
   savedFlash,
   busyAction,
+  idPrefix,
   onSaveRuntimeAndEnv,
   t,
 }) {
+  const nameId = `${idPrefix}-runtime-name`;
+  const commandId = `${idPrefix}-runtime-command`;
+  const badgeId = `${idPrefix}-runtime-badge`;
+  const argsId = `${idPrefix}-runtime-args`;
+  const profileDirId = `${idPrefix}-runtime-profile-dir`;
+  const permissionId = `${idPrefix}-runtime-permission`;
+
   return h(
     'div',
     { className: 'dsh-acp-card' },
@@ -336,14 +363,15 @@ export function renderRuntimeEnvCard({
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('field.name')),
-        h(Input, { variant: 'form', value: runtimeDraft.name, onChange: (e) => setRuntimeDraft({ ...runtimeDraft, name: e.target.value }) }),
+        h('label', { className: 'dsh-acp-field-label', htmlFor: nameId }, t('field.name')),
+        h(Input, { id: nameId, variant: 'form', value: runtimeDraft.name, onChange: (e) => setRuntimeDraft({ ...runtimeDraft, name: e.target.value }) }),
       ),
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('field.command')),
+        h('label', { className: 'dsh-acp-field-label', htmlFor: commandId }, t('field.command')),
         h(Input, {
+          id: commandId,
           variant: 'form',
           value: runtimeDraft.command ?? selectedAgent?.command ?? '',
           onChange: (e) => setRuntimeDraft({ ...runtimeDraft, command: e.target.value }),
@@ -352,20 +380,21 @@ export function renderRuntimeEnvCard({
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('field.badge')),
-        h(Input, { variant: 'form', value: runtimeDraft.badge, onChange: (e) => setRuntimeDraft({ ...runtimeDraft, badge: e.target.value }) }),
+        h('label', { className: 'dsh-acp-field-label', htmlFor: badgeId }, t('field.badge')),
+        h(Input, { id: badgeId, variant: 'form', value: runtimeDraft.badge, onChange: (e) => setRuntimeDraft({ ...runtimeDraft, badge: e.target.value }) }),
       ),
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('field.args')),
-        h(Input, { variant: 'form', value: runtimeDraft.argsText, onChange: (e) => setRuntimeDraft({ ...runtimeDraft, argsText: e.target.value }) }),
+        h('label', { className: 'dsh-acp-field-label', htmlFor: argsId }, t('field.args')),
+        h(Input, { id: argsId, variant: 'form', value: runtimeDraft.argsText, onChange: (e) => setRuntimeDraft({ ...runtimeDraft, argsText: e.target.value }) }),
       ),
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('field.profileDir')),
+        h('label', { className: 'dsh-acp-field-label', htmlFor: profileDirId }, t('field.profileDir')),
         h(Input, {
+          id: profileDirId,
           variant: 'form',
           value: runtimeDraft.profileDir,
           placeholder: t('field.profileDirPh'),
@@ -376,8 +405,9 @@ export function renderRuntimeEnvCard({
     h(
       'div',
       { className: 'dsh-acp-field' },
-      h('label', { className: 'dsh-acp-field-label' }, t('field.permission')),
+      h('label', { className: 'dsh-acp-field-label', htmlFor: permissionId }, t('field.permission')),
       h(SettingsSelect, {
+        id: permissionId,
         variant: 'block',
         'aria-label': t('field.permission'),
         value: runtimeDraft.permissionPolicy,

@@ -2,6 +2,15 @@
 # Local desktop helpers, diagnostics, screenshots and account data stay local.
 /*
 !/.gitignore
+!/.gitattributes
+!/AGENTS.md
+!/CLAUDE.md
+!/GEMINI.md
+!/.github/
+/.github/*
+!/.github/workflows/
+!/.github/dependabot.yml
+!/.github/copilot-instructions.md
 !/LICENSE
 !/README.md
 !/README.en.md

@@ -49,12 +49,23 @@ function usePickerEffects({
   triggerRef,
   groupsRef,
   itemRefs,
+  prevSessionIdRef,
   toastSeq,
   setToast,
+  setFailedAction,
   setOpen,
   setOptionState,
   setMenuPos,
 }) {
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      prevSessionIdRef.current = sessionId;
+      setOpen(false);
+      setFailedAction(null);
+      setToast(null);
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     if (available) {
       loadRef.current();
@@ -67,12 +78,12 @@ function usePickerEffects({
     if (open && sessionId && previewCategory?.acpAgentId && editableOptionsCount > 0) {
       rpc('session/options', { sessionId, agentId: previewCategory.acpAgentId, model: previewModel.id })
         .then((result) => {
-          if (active) setOptionState({ key: previewKey, selections: result.selections || [] });
+          if (active) setOptionState({ key: previewKey, selections: result?.selections || [] });
         })
         .catch((error) => {
           if (active) {
             toastSeq.current += 1;
-            setToast({ seq: toastSeq.current, text: error.message });
+            setToast({ seq: toastSeq.current, text: error?.message || String(error) });
           }
         });
     }
@@ -92,6 +103,12 @@ function usePickerEffects({
     document.addEventListener('mousedown', closeOutside);
     return () => document.removeEventListener('mousedown', closeOutside);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (menuRef.current && 'inert' in menuRef.current) {
+      menuRef.current.inert = !open;
+    }
+  }, [mounted, open]);
 
   useLayoutEffect(() => {
     if (!open || activeModelIndex < 0) return;
@@ -288,6 +305,7 @@ function createPickerActions({
   currentProviderId,
   filterTabs,
   lastActionRef,
+  mountedRef,
   toastSeq,
   triggerRef,
   searchRef,
@@ -298,8 +316,6 @@ function createPickerActions({
   setHighlightedIndex,
   setSelectionFocus,
   setActiveTab,
-  setAcpCatalog,
-  setEnablingAgentId,
   setToast,
   setFailedAction,
   setOptionState,
@@ -317,10 +333,6 @@ function createPickerActions({
     setOpen(false);
     if (restoreFocus) queueMicrotask(() => triggerRef.current?.focus());
   };
-  const closeAfterSelection = () => {
-    setSelectionFocus(true);
-    close(true);
-  };
   const show = () => {
     setSelectionFocus(false);
     triggerRef.current?.focus();
@@ -332,6 +344,7 @@ function createPickerActions({
     queueMicrotask(() => searchRef.current?.focus());
   };
   const announceFailure = (error) => {
+    if (!mountedRef.current) return;
     toastSeq.current += 1;
     const text =
       error?.code === 'session/writer-held'
@@ -339,62 +352,41 @@ function createPickerActions({
         : t('error.action', { message: `${error?.code || 'error'}: ${error?.message || String(error)}` });
     setToast({ seq: toastSeq.current, text });
   };
-  const enableAcpAgent = async (category) => {
-    if (!category?.acpAgentId || typeof rpc !== 'function') return false;
-    setEnablingAgentId(category.acpAgentId);
-    try {
-      const res = await rpc('agent/toggle', { id: category.acpAgentId, enabled: true });
-      if (Array.isArray(res?.agents)) setAcpCatalog(res.agents);
-      else refreshAcpCatalog();
-      await load();
-      return true;
-    } catch (err) {
-      announceFailure(err);
-      return false;
-    } finally {
-      setEnablingAgentId(null);
-    }
-  };
-  const submitSelection = (selection, keepOpen = false, category = null) => {
+  const submitSelection = (selection, category = null) => {
     if (busy) return;
     lastActionRef.current = 'select';
     setFailedAction(null);
-    if (!keepOpen) {
-      setSelectionFocus(true);
-      triggerRef.current?.focus();
-      closeAfterSelection();
-    }
     void select(selection).then(
       (result) => {
-        if (!result || result.ok) return;
+        if (!mountedRef.current || !result || result.ok) return;
         setFailedAction({ selection, category });
         announceFailure(result.error);
       },
       (err) => {
+        if (!mountedRef.current) return;
         setFailedAction({ selection, category });
         announceFailure(err);
       },
     );
   };
-  const chooseModel = async (selection, category, keepOpen = true) => {
+  const chooseModel = async (selection, category) => {
     const nextSel = category?.isExternal ? { provider: selection.provider, model: selection.model } : selection;
-    if (category?.isExternal && !category.enabled && !(await enableAcpAgent(category))) {
-      setFailedAction({ selection: nextSel, category });
-      return;
-    }
-    if (state?.current?.provider === nextSel.provider && state?.current?.model === nextSel.model) {
-      if (!keepOpen) closeAfterSelection();
-      return;
-    }
-    submitSelection(nextSel, keepOpen, category);
+    const sameModel = state?.current?.provider === nextSel.provider && state?.current?.model === nextSel.model;
+    const sameEffort =
+      nextSel.reasoningEffort === undefined || state?.current?.reasoningEffort === nextSel.reasoningEffort;
+    if (sameModel && sameEffort) return;
+    submitSelection(nextSel, category);
   };
   const chooseEffort = (effort) => {
     if (!previewChoice || (previewIsCurrent && previewEffort === effort)) return;
     submitSelection(
       { provider: previewCategory.id, model: previewModel.id, ...(effort === undefined ? {} : { reasoningEffort: effort }) },
-      true,
       previewCategory,
     );
+  };
+  const retrySelection = (selection, category) => {
+    if (!selection) return;
+    submitSelection(selection, category);
   };
   const chooseOption = async (option, value) => {
     if (busy || !sessionId || savingOption || !previewIsCurrent || !optionsReady) return;
@@ -406,20 +398,24 @@ function createPickerActions({
         model: previewModel.id,
         option: { id: option.id, value },
       });
-      setOptionState((current) => (current?.key === previewKey ? { key: previewKey, selections: result.selections || [] } : current));
+      if (mountedRef.current) {
+        setOptionState((current) =>
+          current?.key === previewKey ? { key: previewKey, selections: result?.selections || [] } : current,
+        );
+      }
     } catch (error) {
       announceFailure(error);
     } finally {
-      setSavingOption(null);
+      if (mountedRef.current) setSavingOption(null);
     }
   };
   const onRootBlur = (event) => {
-    if (!event.relatedTarget && menuRef.current?.contains(event.target)) return;
+    if (!event.relatedTarget && (savingOption !== null || busy) && menuRef.current?.contains(event.target)) return;
     if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-dsh-toast]') !== null) return;
     const inside = rootRef.current?.contains(event.relatedTarget) === true || menuRef.current?.contains(event.relatedTarget) === true;
     if (!event.relatedTarget || !inside) close();
   };
-  return { reload, close, show, enableAcpAgent, chooseModel, chooseEffort, chooseOption, onRootBlur };
+  return { reload, close, show, chooseModel, chooseEffort, retrySelection, chooseOption, onRootBlur };
 }
 
 function deriveReasoningState({ state, currentChoice, preview, t }) {
@@ -442,7 +438,7 @@ function buildToastElement({ toast, failedAction, setFailedAction, setToast, act
     const f = failedAction;
     setFailedAction(null);
     setToast(null);
-    void actions.chooseModel(f.selection, f.category);
+    actions.retrySelection(f?.selection, f?.category);
   };
   return h(Toast, {
     key: toast.seq,
@@ -475,8 +471,10 @@ export function AgentModelSelect(props) {
   const [query, setQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(null);
   const [selectionFocus, setSelectionFocus] = useState(false);
-  const [enablingAgentId, setEnablingAgentId] = useState(null);
   const lastActionRef = useRef('load');
+  const mountedRef = useRef(true);
+  const catalogSeqRef = useRef(0);
+  const prevSessionIdRef = useRef(sessionId);
   const [toast, setToast] = useState(null);
   const toastSeq = useRef(0);
   const [failedAction, setFailedAction] = useState(null);
@@ -494,11 +492,25 @@ export function AgentModelSelect(props) {
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const refreshAcpCatalog = useCallback(() => {
     if (typeof rpc !== 'function') return;
+    const seq = ++catalogSeqRef.current;
     rpc('catalog')
-      .then((res) => { if (Array.isArray(res?.agents)) setAcpCatalog(res.agents); })
-      .catch((error) => { console.warn('[dsh-acp/client/client.js] background operation failed', error); });
+      .then((res) => {
+        if (mountedRef.current && seq === catalogSeqRef.current && Array.isArray(res?.agents)) {
+          setAcpCatalog(res.agents);
+        }
+      })
+      .catch((error) => {
+        console.warn('[dsh-acp-agents] background operation failed', error);
+      });
   }, [rpc]);
 
   useEffect(() => {
@@ -539,17 +551,16 @@ export function AgentModelSelect(props) {
     available, open, mounted, directory, sessionId, previewCategory: preview.previewCategory,
     previewModel: preview.previewModel, previewKey: preview.previewKey, editableOptionsCount: preview.editableOptions.length,
     activeModelIndex: preview.activeModelIndex, effectiveActiveTab, query, rpc, loadRef, refreshAcpCatalog,
-    rootRef, menuRef, triggerRef, groupsRef, itemRefs, toastSeq, setToast, setOpen, setOptionState, setMenuPos,
+    rootRef, menuRef, triggerRef, groupsRef, itemRefs, prevSessionIdRef, toastSeq, setToast, setFailedAction, setOpen, setOptionState, setMenuPos,
   });
 
   if (!available) return null;
 
-  const busy = Boolean(locked || state?.pending) || enablingAgentId !== null;
+  const busy = Boolean(locked || state?.pending);
   const actions = createPickerActions({
     state, busy, rpc, load, select, sessionId, savingOption, ...preview, previewEffort, currentProviderId, filterTabs,
-    lastActionRef, toastSeq, triggerRef, searchRef, rootRef, menuRef, setOpen, setQuery, setHighlightedIndex,
-    setSelectionFocus, setActiveTab, setAcpCatalog, setEnablingAgentId, setToast, setFailedAction, setOptionState,
-    setSavingOption, refreshAcpCatalog, t,
+    lastActionRef, mountedRef, toastSeq, triggerRef, searchRef, rootRef, menuRef, setOpen, setQuery, setHighlightedIndex,
+    setSelectionFocus, setActiveTab, setToast, setFailedAction, setOptionState, setSavingOption, refreshAcpCatalog, t,
   });
   const waiting = state?.current === null && state?.status === 'loading';
   const labels = buildTriggerLabels({ state, currentChoice, currentCategory, effortLabel, waiting, t });
@@ -578,11 +589,10 @@ export function AgentModelSelect(props) {
       ? createPortal(
           renderPickerPopoverMenu({
             menuRef, id, menuPos, state, busy, motionState, open, filterTabs, effectiveActiveTab, setActiveTab,
-            setHighlightedIndex, searchRef, query, setQuery, groupsRef, filteredCategories, allChoices, enablingAgentId,
+            setHighlightedIndex, searchRef, query, setQuery, groupsRef, filteredCategories, allChoices,
             itemRefs, locked, close: actions.close, triggerRef, renderHostOptions, effortChoices, previewEffort,
-            ...preview, enableAcpAgent: actions.enableAcpAgent, chooseModel: actions.chooseModel,
-            chooseEffort: actions.chooseEffort, chooseOption: actions.chooseOption, savingOption, t,
-            reportHostOptionFailure: pushToast,
+            ...preview, chooseModel: actions.chooseModel, chooseEffort: actions.chooseEffort, chooseOption: actions.chooseOption,
+            savingOption, t, reportHostOptionFailure: pushToast,
             onManageAgents: () => { actions.close(false); if (openAgentSettings?.() === false) pushToast(t('error.settingsNav')); },
           }),
           document.body,

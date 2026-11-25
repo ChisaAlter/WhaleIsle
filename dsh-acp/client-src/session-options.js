@@ -48,38 +48,57 @@ export function AgentSessionOptions({ sessionId, directory, rpc, openAgentSettin
   const key = `${provider}/${modelId}`;
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const mountedRef = useRef(true);
   const failureRef = useRef(reportFailure);
   failureRef.current = reportFailure;
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let active = true;
     setConfig(null);
-    if (agentId && modelId) {
+    if (sessionId && agentId && modelId) {
       Promise.all([rpc('catalog'), rpc('session/options', { sessionId, agentId, model: modelId })])
         .then(([catalog, result]) => {
           if (!active) return;
-          const agent = catalog.agents.find((item) => item.id === agentId);
+          const agents = Array.isArray(catalog?.agents) ? catalog.agents : [];
+          const agent = agents.find((item) => item.id === agentId);
           const model = (agent?.allModels || agent?.models || []).find((item) => item.id === modelId);
-          setConfig({ key, options: editableModelOptions(model), selections: result.selections || [] });
+          setConfig({ key, sessionId, options: editableModelOptions(model), selections: result?.selections || [] });
         })
         .catch((error) => {
-          if (active) failureRef.current(error.message);
+          if (active) failureRef.current?.(error?.message || String(error));
         });
     }
     return () => {
       active = false;
     };
-  }, [sessionId, agentId, modelId, state.groups, rpc]);
+  }, [sessionId, agentId, modelId, state.groups, rpc, key]);
 
   const changeOption = async (option, value) => {
+    if (savingRef.current || !sessionId || !agentId || !modelId) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const result = await rpc('session/options', { sessionId, agentId, model: modelId, option: { id: option.id, value } });
-      setConfig((current) => (current?.key === key ? { ...current, selections: result.selections || [] } : current));
+      if (mountedRef.current) {
+        setConfig((current) =>
+          current?.key === key && (!current.sessionId || current.sessionId === sessionId)
+            ? { ...current, selections: result?.selections || [] }
+            : current,
+        );
+      }
     } catch (error) {
-      reportFailure(error.message);
+      if (mountedRef.current) failureRef.current?.(error?.message || String(error));
     } finally {
-      setSaving(false);
+      savingRef.current = false;
+      if (mountedRef.current) setSaving(false);
     }
   };
 
@@ -96,7 +115,10 @@ export function AgentSessionOptions({ sessionId, directory, rpc, openAgentSettin
         if (saving && event.relatedTarget === null) event.stopPropagation();
       },
     },
-    config?.key === key
+    !sessionId && agentId && modelId
+      ? h('div', { className: 'dsh-acp-ms-aside-meta' }, t('options.needsSession'))
+      : null,
+    config?.key === key && (!config.sessionId || config.sessionId === sessionId)
       ? config.options.map((option) =>
           renderSessionOptionField({
             option,

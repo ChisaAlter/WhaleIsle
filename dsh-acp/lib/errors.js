@@ -6,11 +6,14 @@ export function acpErrorMessage(error) {
   return redactSecrets(text);
 }
 
-/** Remove URL credentials, bearer tokens and common secret assignments from diagnostic text. */
+/** Remove URL credentials, bearer/basic tokens, header secrets and common secret assignments from diagnostic text. */
 export function redactSecrets(text) {
-  return String(text).replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
-    .replace(/\b(Bearer\s+)[\w.+/=-]+/gi, '$1[redacted]')
-    .replace(/((?:access_token|refresh_token|id_token|api_key|apikey|password|client_secret|secret|token)["']?\s*[:=]\s*["']?)[^\s"'&,)]+/gi, '$1[redacted]');
+  return String(text)
+    .replace(/((?:https?|socks[45]h?|rediss?|postgres(?:ql)?|mysql|mongodb(?:\+srv)?|amqps?):\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
+    .replace(/\b((?:Bearer|Basic)\s+)[\w.+/=-]+/gi, '$1[redacted]')
+    .replace(/(\b(?:x-api-key|set-cookie|cookie)["']?\s*[:=]\s*["']?)[^\r\n"';,)]+/gi, '$1[redacted]')
+    .replace(/((?:access_token|refresh_token|id_token|auth_token|api_?key|api-key|password|passwd|client_secret|private_key|credential|secret|token)["']?\s*[:=]\s*["']?)[^\s"'&,)]+/gi, '$1[redacted]')
+    .replace(/\b(?:sk-ant-[A-Za-z0-9_-]{10,}|sk-proj-[A-Za-z0-9_-]{10,}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/g, '[redacted]');
 }
 
 export function preparationError(error, stage, agent, availableModels) {

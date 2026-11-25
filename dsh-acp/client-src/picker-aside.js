@@ -8,7 +8,7 @@ import {
   IconCheckOutlineRegular,
   IconSettingsOutline16,
 } from './primitives.js';
-import { MEASURE_STYLE, railTabLabel } from './utils.js';
+import { MEASURE_STYLE, isMacPlatform, railTabLabel } from './utils.js';
 
 function buildModelSelection(catId, model, selected, current) {
   const defaultEffort = model.reasoning?.defaultEffort;
@@ -29,7 +29,7 @@ function renderPickerModelRow({
   itemRefs,
   setHighlightedIndex,
   chooseModel,
-  t,
+  shortcutPrefix,
 }) {
   const selected = current?.provider === cat.id && current?.model === model.id;
   const selectingThis = pending?.provider === cat.id && pending?.model === model.id;
@@ -53,7 +53,7 @@ function renderPickerModelRow({
       'data-active': idx === activeModelIndex ? 'true' : undefined,
       disabled: busy,
       className: 'dsh-acp-ms-option',
-      title: cat.enabled ? model.name : `${model.name} (${t('agent.disabledHint')})`,
+      title: model.name,
       onFocus: () => setHighlightedIndex(idx),
       onMouseMove: busy || idx === activeModelIndex ? undefined : () => setHighlightedIndex(idx),
       onClick: () => void chooseModel(selection, cat),
@@ -65,7 +65,7 @@ function renderPickerModelRow({
       model.id !== model.name ? h('span', { className: 'dsh-acp-ms-option-sub' }, model.id) : null,
     ),
     h('span', { className: 'dsh-acp-ms-check', 'aria-hidden': true }, checkNode),
-    idx < 9 ? h('kbd', { className: 'dsh-acp-ms-kbd', 'aria-hidden': true }, `Ctrl+${idx + 1}`) : null,
+    idx < 9 ? h('kbd', { className: 'dsh-acp-ms-kbd', 'aria-hidden': true }, `${shortcutPrefix}${idx + 1}`) : null,
   );
 }
 
@@ -76,12 +76,10 @@ function renderPickerCategoryGroup({
   state,
   activeModelIndex,
   busy,
-  enablingAgentId,
-  enableAcpAgent,
   itemRefs,
   setHighlightedIndex,
   chooseModel,
-  t,
+  shortcutPrefix,
 }) {
   return h(
     'div',
@@ -89,7 +87,6 @@ function renderPickerCategoryGroup({
       key: cat.id,
       className: 'dsh-acp-ms-cat',
       'data-external': cat.isExternal ? 'true' : undefined,
-      'data-disabled': !cat.enabled ? 'true' : undefined,
     },
     h(
       'div',
@@ -108,29 +105,6 @@ function renderPickerCategoryGroup({
       h(
         'div',
         { className: 'dsh-acp-ms-cat-right' },
-        cat.isExternal
-          ? h(
-              'span',
-              {
-                className: 'dsh-acp-ms-cat-enable-slot',
-                style: { visibility: cat.enabled ? 'hidden' : 'visible' },
-              },
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dsh-acp-ms-cat-enable',
-                  disabled: busy,
-                  title: t('agent.disabledHint'),
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    void enableAcpAgent(cat);
-                  },
-                },
-                enablingAgentId === cat.acpAgentId ? '…' : t('agent.enableBtn'),
-              ),
-            )
-          : null,
         h('span', { className: 'dsh-acp-ms-cat-count' }, String((cat.models || []).length)),
       ),
     ),
@@ -147,7 +121,7 @@ function renderPickerCategoryGroup({
         itemRefs,
         setHighlightedIndex,
         chooseModel,
-        t,
+        shortcutPrefix,
       }),
     ),
   );
@@ -267,9 +241,7 @@ function renderPickerAside(props) {
       { className: 'dsh-acp-ms-aside-meta' },
       previewCategory ? h('span', null, `${previewCategory.isExternal ? 'ACP' : 'API'} · ${previewCategory.name}`) : null,
       previewCategory?.vendor ? h('span', null, previewCategory.vendor) : null,
-      previewCategory?.isExternal
-        ? h('span', null, previewCategory.enabled ? t('agent.enabledBadge') : t('agent.disabledBadge'))
-        : null,
+      previewCategory?.isExternal ? h('span', null, t('agent.enabledBadge')) : null,
     ),
     h(
       'div',
@@ -321,6 +293,7 @@ export function renderPickerPopoverMenu(props) {
     t,
   } = props;
 
+  const shortcutPrefix = isMacPlatform() ? '⌘' : 'Ctrl+';
   let nextIdx = 0;
   const groupsWithOffsets = filteredCategories.map((cat) => {
     const startIdx = nextIdx;
@@ -341,7 +314,6 @@ export function renderPickerPopoverMenu(props) {
       'data-dsh-motion': 'popover',
       'data-state': motionState,
       'aria-hidden': open ? undefined : true,
-      ...(open ? {} : { inert: '' }),
     },
     h(
       'div',
@@ -357,16 +329,13 @@ export function renderPickerPopoverMenu(props) {
             'aria-label': tab.label,
             title: tab.label,
             'data-active': effectiveActiveTab === tab.id ? 'true' : undefined,
-            'data-enabled': tab.enabled === false ? 'false' : undefined,
             className: 'dsh-acp-ms-rail-btn',
             onClick: () => {
               setActiveTab(tab.id);
               setHighlightedIndex(0);
             },
           },
-          tab.isExternal
-            ? h('span', { className: 'dsh-acp-ms-rail-dot', 'data-enabled': tab.enabled ? 'true' : undefined })
-            : null,
+          tab.isExternal ? h('span', { className: 'dsh-acp-ms-rail-dot', 'data-enabled': 'true' }) : null,
           h('span', { className: 'dsh-acp-ms-rail-label' }, railTabLabel(tab)),
         ),
       ),
@@ -422,7 +391,7 @@ export function renderPickerPopoverMenu(props) {
           hidden: filteredCategories.length === 0,
         },
         groupsWithOffsets.map(({ cat, startIdx }) =>
-          renderPickerCategoryGroup({ ...props, cat, startIdx }),
+          renderPickerCategoryGroup({ ...props, cat, startIdx, shortcutPrefix }),
         ),
       ),
       filteredCategories.length === 0

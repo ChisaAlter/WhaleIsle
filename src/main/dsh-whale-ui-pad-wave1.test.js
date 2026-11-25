@@ -342,7 +342,7 @@ nodeTest('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelC
   assert.match(padSrc, /dsh-whale:pad-display/);
   assert.match(padSrc, /data-ds-dark-theme/);
   assert.match(padSrc, /data-dsh-skin/);
-  assert.match(padSrc, /addEventListener\("keydown",\s*onKey,\s*true\)/);
+  assert.match(padSrc, /addEventListener\("keydown",\s*onKey,\s*(?:true|\{\s*capture:\s*true\s*\})\)/);
   assert.match(padSrc, /(?:event|e)\.preventDefault\(\);\s*(?:event|e)\.stopPropagation\(\)/);
   assert.match(padSrc, /variant:\s*"primary"/);
   assert.match(padSrc, /onDraftInserted/);
@@ -373,6 +373,7 @@ nodeTest('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelC
     },
     head: { appendChild() {} },
     createElement: () => ({ dataset: {}, textContent: '', remove() {} }),
+    getElementById: () => null,
     querySelector: () => null,
     addEventListener() {},
     removeEventListener() {},
@@ -394,6 +395,7 @@ nodeTest('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelC
     requestAnimationFrame: () => 1,
     cancelAnimationFrame() {},
     matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+    ResizeObserver: class { observe() {} disconnect() {} },
     MutationObserver: class { observe() {} disconnect() {} },
   }));
   const effectCleanups = [];
@@ -404,6 +406,7 @@ nodeTest('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelC
     useMemo: (fn) => fn(),
     useCallback: (fn) => fn,
     useEffect: (fn) => { const c = fn(); if (typeof c === 'function') effectCleanups.push(c); },
+    useLayoutEffect: (fn) => { const c = fn(); if (typeof c === 'function') effectCleanups.push(c); },
     useSyncExternalStore: (_sub, snap) => snap(),
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     Component: class { constructor(props) { this.props = props; } },
@@ -423,9 +426,16 @@ nodeTest('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelC
   const slots = [];
   pad.apply({
     locale: { register: () => () => {} },
-    effect() {},
+    effect(fn, label) {
+      if (label !== 'dsh-pad: stream') {
+        const cleanup = fn();
+        if (typeof cleanup === 'function') effectCleanups.push(cleanup);
+      }
+    },
     slots: {
       inject: (_n, fn) => fn(),
+      entries: () => [],
+      onEntryError: () => () => {},
       register: (meta, comp) => { slots.push({ meta, comp }); return () => {}; },
     },
   });

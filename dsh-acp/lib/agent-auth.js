@@ -11,6 +11,7 @@ import {
   agentRuntimeIdentity,
 } from './agent-runtime.js';
 import { agentWiring, antigravityAuthConfigFor } from './acp-session.js';
+import { acpErrorMessage } from './errors.js';
 import { ensureDir } from './store-file.js';
 import {
   buildAgentRuntimeEnv,
@@ -68,22 +69,36 @@ const AGY_STATIC_METHODS = [
 
 export function openExternalUrl(url) {
   const target = String(url || '').trim();
-  // \S guard: a URL containing whitespace would split into extra argv tokens
-  // for the shell-free openers below (silent truncation, wrong page).
-  if (!/^https?:\/\/\S+$/i.test(target)) return false;
+  if (!target || /[\s\u0000-\u001F\u007F]/.test(target)) return false;
+  let parsed;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return false;
+  }
+  if (
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    || parsed.username !== ''
+    || parsed.password !== ''
+    || !parsed.hostname
+  ) {
+    return false;
+  }
+  const href = parsed.href;
   try {
     if (process.platform === 'win32') {
       // rundll32 takes the URL as plain argv — no cmd parsing, so '&' in an
-      // OAuth query can't truncate the URL or chain commands. (`cmd /c start
-      // "" <url>` reached cmd's parser unquoted: command-injection vector.)
-      spawn('rundll32', ['url.dll,FileProtocolHandler', target], {
+      // OAuth query can't truncate the URL or chain commands. Use System32's
+      // absolute path to avoid CWD/PATH binary hijacking.
+      const rundll32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'rundll32.exe');
+      spawn(rundll32, ['url.dll,FileProtocolHandler', href], {
         detached: true,
         stdio: 'ignore',
       }).unref();
     } else if (process.platform === 'darwin') {
-      spawn('open', [target], { detached: true, stdio: 'ignore' }).unref();
+      spawn('open', [href], { detached: true, stdio: 'ignore' }).unref();
     } else {
-      spawn('xdg-open', [target], { detached: true, stdio: 'ignore' }).unref();
+      spawn('xdg-open', [href], { detached: true, stdio: 'ignore' }).unref();
     }
     return true;
   } catch {
@@ -330,7 +345,13 @@ export class AgentAuthManager {
   credentialBindingFor(agent) {
     const binding = this.entries.get(agent.id)?.api?.credentialBinding;
     if (binding) return `${binding.owner}:${binding.key}`;
-    if (agent.registryAgentId === 'antigravity-acp') return `antigravity:${agent.profileDir || agent.env?.GEMINI_HOME || agent.id}`;
+    if (agent.registryAgentId === 'antigravity-acp') {
+      const rawProfile = String(agent.profileDir || agent.env?.GEMINI_HOME || '').trim();
+      const key = rawProfile
+        ? (process.platform === 'win32' ? path.resolve(rawProfile).toLowerCase() : path.resolve(rawProfile))
+        : agent.id;
+      return `antigravity:${key}`;
+    }
     return `provider:acp:${agent.registrySource === 'registry' ? agent.registryAgentId : `local:dsh-${agent.id}`}`;
   }
 
@@ -370,7 +391,13 @@ export class AgentAuthManager {
       }
       if (entry) {
         this.entries.set(agent.id, entry);
-        entry.api.refreshMethods().catch((error) => { console.warn('[dsh-acp/lib/agent-auth.js] background operation failed', error); });
+        entry.api.refreshMethods().catch((error) => {
+          if (this.disposed || !current()) return;
+          const errName = String(error?.name || '');
+          const errMsg = String(error?.message || error || '');
+          if (/interrupt|abort/i.test(errName) || /\binterrupt(?:ed|ion)?\b/i.test(errMsg)) return;
+          console.warn('[dsh-acp-agents] background method refresh failed:', acpErrorMessage(error));
+        });
       }
       return entry;
     });

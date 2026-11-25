@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { register: registerLoaderHooks } = require('node:module');
+const { register: registerLoaderHooks, registerHooks } = require('node:module');
 
 const { TOOLS, BOT_TOOLS, LEGACY_TOOLS, ENDPOINTS, LEVELS, effectOf } = require('../shared/model-tool-effects');
 const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
@@ -77,6 +77,47 @@ function collectFiles(dir, out = []) {
   return out;
 }
 
+function extractScanText(source) {
+  const assign = /\b(?:var|const|let)\s+(?:__dshPadHostBody|body)\s*=\s*(?=['"])/.exec(source);
+  if (!assign) return source;
+  const start = assign.index + assign[0].length;
+  const quote = source[start];
+  let out = '';
+  for (let i = start + 1; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === quote) return `${source}\n${out}`;
+    if (ch !== '\\') {
+      out += ch;
+      continue;
+    }
+    i += 1;
+    const esc = source[i];
+    if (esc === 'n') out += '\n';
+    else if (esc === 'r') out += '\r';
+    else if (esc === 't') out += '\t';
+    else if (esc === 'b') out += '\b';
+    else if (esc === 'f') out += '\f';
+    else if (esc === 'v') out += '\v';
+    else if (esc === '0') out += '\0';
+    else if (esc === 'x') {
+      out += String.fromCharCode(Number.parseInt(source.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else if (esc === 'u') {
+      if (source[i + 1] === '{') {
+        const end = source.indexOf('}', i + 2);
+        out += String.fromCodePoint(Number.parseInt(source.slice(i + 2, end), 16));
+        i = end;
+      } else {
+        out += String.fromCharCode(Number.parseInt(source.slice(i + 1, i + 5), 16));
+        i += 4;
+      }
+    } else {
+      out += esc;
+    }
+  }
+  return source;
+}
+
 function scanToolNames() {
   /** @type {Map<string, Set<string>>} tool name -> files defining it */
   const found = new Map();
@@ -84,7 +125,7 @@ function scanToolNames() {
   for (const rel of SCAN_DIRS) collectFiles(path.join(ROOT, rel), files);
   for (const rel of SCAN_FILES) files.push(path.join(ROOT, rel));
   for (const file of files) {
-    const source = fs.readFileSync(file, 'utf8');
+    const source = extractScanText(fs.readFileSync(file, 'utf8'));
     if (!REGISTRATION_HINT.test(source)) continue;
     const names = new Set();
     for (const match of source.matchAll(NAME_LITERAL)) names.add(match[1]);
@@ -206,7 +247,7 @@ function confirmCalls() {
   /** @type {Array<{file:string, tool:?, action:?, effect:?}>} */
   const calls = [];
   for (const file of files) {
-    const source = fs.readFileSync(file, 'utf8');
+    const source = extractScanText(fs.readFileSync(file, 'utf8'));
     for (const match of source.matchAll(CONFIRM_CALL)) {
       const open = match.index + match[0].length - 1;
       const block = objectLiteralAt(source, open);
@@ -276,7 +317,7 @@ describe('model tool effect registry', () => {
     for (const [name, entry] of Object.entries(TOOLS)) {
       const files = discovered.get(name) ?? new Set();
       for (const file of files) {
-        const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
+        const source = extractScanText(fs.readFileSync(path.join(ROOT, file), 'utf8'));
         if ((entry.confirm === true || entry.confirm === 'keys') && !/confirmModelAction\s*\(/.test(source)) {
           failures.push(`${name} (${file})`);
         }
@@ -454,6 +495,19 @@ function ensureLoaderHooks() {
     return next(specifier, context);
   }`;
   registerLoaderHooks(`data:text/javascript,${encodeURIComponent(hooks)}`);
+  const cjsMap = {
+    '@deepseek-ai/schemastery': peerUrl('@deepseek-ai/schemastery'),
+    '@deepseek-ai/dsh-tools': peerUrl('@deepseek-ai/dsh-tools'),
+    '@deepseek-ai/dsh-llm': peerUrl('@deepseek-ai/dsh-llm'),
+  };
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if ((context.parentURL || '').includes('/vendor/dsh-pad/') && Object.hasOwn(cjsMap, specifier)) {
+        return { url: cjsMap[specifier], shortCircuit: true };
+      }
+      return nextResolve(specifier, context);
+    },
+  });
 }
 
 let savedEnv;
@@ -725,7 +779,7 @@ describe('refusal path', () => {
     registerTools({
       ctx,
       store: { get: () => undefined, list: () => [], approved: () => false },
-      hub: { pushData: () => {}, runAll: async () => ({}), views: () => [] },
+      hub: { pushData: () => {}, runAll: async () => [], views: () => [] },
       refresher: undefined,
       limits: { minIntervalSec: 5, minAgentMinutes: 15 },
       autoApprove: true,
@@ -750,7 +804,7 @@ describe('refusal path', () => {
     registerTools({
       ctx,
       store: { get: () => undefined, list: () => [], approved: () => false, create: async (...args) => { created.push(args); return { id: 'p1' }; } },
-      hub: { pushData: () => {}, runAll: async () => ({}), views: () => [] },
+      hub: { pushData: () => {}, runAll: async () => [], views: () => [] },
       refresher: undefined,
       limits: { minIntervalSec: 5, minAgentMinutes: 15 },
       autoApprove: true,
@@ -776,7 +830,7 @@ describe('refusal path', () => {
     registerTools({
       ctx,
       store: { get: () => panel, list: () => [panel], approved: () => true, remove: async (...args) => { removed.push(args); } },
-      hub: { pushData: () => {}, runAll: async () => ({}), views: () => [] },
+      hub: { pushData: () => {}, runAll: async () => [], views: () => [] },
       refresher: undefined,
       limits: { minIntervalSec: 5, minAgentMinutes: 15 },
       autoApprove: false,
@@ -815,7 +869,7 @@ describe('run-scoped always grants', () => {
           return panel;
         },
       },
-      hub: { pushData: () => {}, runAll: async () => ({}), views: () => [] },
+      hub: { pushData: () => {}, runAll: async () => [], views: () => [] },
       refresher: undefined,
       limits: { minIntervalSec: 5, minAgentMinutes: 15 },
       autoApprove: true,

@@ -70,7 +70,7 @@ export function prepare(hostPackage, output) {
     }, null, 2), { flag: 'wx' });
   } catch (error) {
     for (const file of created.reverse()) fs.rmSync(file, { force: true });
-    fs.rmdirSync(output);
+    fs.rmSync(output, { recursive: true, force: true });
     throw error;
   }
   return plans.map(({ name, target }) => ({ name, target }));
