@@ -1,6 +1,6 @@
 {
   "name": "dsh-pad",
-  "version": "0.3.1",
+  "version": "0.4.6",
   "description": "DeepSeek Harness 插件：悬浮面板坞，面板由 AI 在对话里生成并自由分区；支持本机/HTTP 数据源、AI 刷新、面板内 dsh.run 模型调用",
   "license": "MIT",
   "author": "ChisaAlter",
@@ -24,7 +24,9 @@
     "lib/index.js.map",
     "lib/client.js",
     "lib/client.js.map",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "scripts/prepare.mjs",
+    "scripts/doctor.mjs"
   ],
   "keywords": [
     "dsh-plugin",
@@ -55,7 +57,8 @@
     "doctor": "node scripts/doctor.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "prepare": "node scripts/prepare.mjs"
+    "prepare": "node scripts/prepare.mjs",
+    "panel:check": "node scripts/panel-check.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
@@ -72,6 +75,7 @@
     "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-layout": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
     "@deepseek-ai/dsh-credentials": "0.2.1-rc.2",

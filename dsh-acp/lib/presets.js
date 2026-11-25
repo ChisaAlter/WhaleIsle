@@ -427,34 +427,65 @@ export function mergeAgentsWithPresets(storedAgents = []) {
   return merged;
 }
 
+const HOST_SECRET_ENV_RE = /^(?:DSH_DESKTOP_INSTALL_URL|DSH_DESKTOP_INSTALL_TOKEN|DSH_ACP_STAGE_LOG|DSH_ACP_MCP_.*)$/i;
+const CREDENTIAL_URL_RE = /:\/\/[^\s/@]+:[^\s/@]+@/;
+
+/** Strip DSH-internal control and bridge secrets before exposing host env to agents/terminals. */
+export function sanitizeHostEnvForAgent(baseEnv = process.env) {
+  const out = {};
+  for (const [key, value] of Object.entries(baseEnv || {})) {
+    if (value === undefined || value === null) continue;
+    if (HOST_SECRET_ENV_RE.test(key)) continue;
+    out[key] = String(value);
+  }
+  return out;
+}
+
+/** Build a client-terminal env from sanitized host env + non-secret agent env entries. */
+export function buildTerminalEnv(baseEnv = process.env, agentEnv = {}) {
+  const out = sanitizeHostEnvForAgent(baseEnv);
+  for (const [key, value] of Object.entries(agentEnv || {})) {
+    if (value === undefined || value === null) continue;
+    if (isSecretEnvKey(key, value)) {
+      delete out[key];
+      continue;
+    }
+    out[key] = String(value);
+  }
+  return out;
+}
+
 /**
  * Resolve the effective environment variables for spawning an agent or
  * running its auth/probe CLI, including its isolated `profileDir`
  * (`GEMINI_HOME`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`) if configured.
  *
  * Call signature (for the session-spawn wiring in lib/acp-session.js):
- *   const env = buildAgentRuntimeEnv(agent, resolvedBinaryPathOrNull)
+ *   const env = buildAgentRuntimeEnv(agent, resolvedBinaryPathOrNull, { ensureFiles })
  * `agentConfig` is the normalized agent record; `resolvedBinary` is the
  * resolved executable path when known (only used for the antigravity
  * harness lookup). The result is a COMPLETE spawn environment —
- * `process.env` merged under `agentConfig.env` — so pass it to the child
- * verbatim; re-merging `process.env` on top would re-shadow agent env.
- * Side effects: creates `profileDir` (and, for antigravity, its
- * `antigravity-acp/` + `tmp/` dirs and a first-run `settings.json`).
+ * sanitized `process.env` merged under `agentConfig.env` — so pass it to the
+ * child verbatim; re-merging `process.env` on top would re-shadow agent env.
+ * Side effects (when `ensureFiles` is true): creates `profileDir` (and, for
+ * antigravity, its `antigravity-acp/` + `tmp/` dirs and a first-run
+ * `settings.json`).
  */
-export function buildAgentRuntimeEnv(agentConfig, resolvedBinary = null) {
+export function buildAgentRuntimeEnv(agentConfig, resolvedBinary = null, { ensureFiles = true } = {}) {
   const mergedEnv = {
-    ...process.env,
+    ...sanitizeHostEnvForAgent(process.env),
     ...(agentConfig?.env || {}),
   };
   const baseId = agentConfig?.baseAgentId || inferBaseAgentId(agentConfig || {});
   const profileDir = String(agentConfig?.profileDir || '').trim();
 
   if (profileDir) {
-    try {
-      ensureDir(profileDir);
-    } catch {
-      // ignore
+    if (ensureFiles) {
+      try {
+        ensureDir(profileDir);
+      } catch {
+        // ignore
+      }
     }
     if (baseId === 'antigravity') {
       mergedEnv.GEMINI_HOME = profileDir;
@@ -494,26 +525,28 @@ export function buildAgentRuntimeEnv(agentConfig, resolvedBinary = null) {
       try {
         const agyAcpDir = path.join(mergedEnv.GEMINI_HOME, 'antigravity-acp');
         const tmpDir = path.join(mergedEnv.GEMINI_HOME, 'tmp');
-        ensureDir(agyAcpDir);
-        ensureDir(tmpDir);
         mergedEnv.TEMP = tmpDir;
         mergedEnv.TMP = tmpDir;
-        const settingsFile = path.join(agyAcpDir, 'settings.json');
-        if (!fs.existsSync(settingsFile)) {
-          // Honor the auth method the user picked before falling back to
-          // the API-key heuristic — writing 'oauth-personal' for a
-          // gemini-api-key account silently flips its sign-in mode.
-          const configuredAuthType = String(
-            agentConfig?.acpAuthMethodId || agentConfig?.authMethod || '',
-          ).trim();
-          const authType = ['oauth-personal', 'oauth-business', 'gemini-api-key', 'agent-platform'].includes(
-            configuredAuthType,
-          )
-            ? configuredAuthType
-            : mergedEnv.GEMINI_API_KEY
-              ? 'gemini-api-key'
-              : 'oauth-personal';
-          fs.writeFileSync(settingsFile, JSON.stringify({ auth: { type: authType } }), { encoding: 'utf8', mode: 0o600 });
+        if (ensureFiles) {
+          ensureDir(agyAcpDir);
+          ensureDir(tmpDir);
+          const settingsFile = path.join(agyAcpDir, 'settings.json');
+          if (!fs.existsSync(settingsFile)) {
+            // Honor the auth method the user picked before falling back to
+            // the API-key heuristic — writing 'oauth-personal' for a
+            // gemini-api-key account silently flips its sign-in mode.
+            const configuredAuthType = String(
+              agentConfig?.acpAuthMethodId || agentConfig?.authMethod || '',
+            ).trim();
+            const authType = ['oauth-personal', 'oauth-business', 'gemini-api-key', 'agent-platform'].includes(
+              configuredAuthType,
+            )
+              ? configuredAuthType
+              : mergedEnv.GEMINI_API_KEY
+                ? 'gemini-api-key'
+                : 'oauth-personal';
+            writeJsonStore(settingsFile, JSON.stringify({ auth: { type: authType } }));
+          }
         }
       } catch {
         // ignore
@@ -563,7 +596,9 @@ export function resolveCommandBinary(command, customEnv = {}) {
       const full = candidate + ext;
       try {
         const stat = fs.statSync(full);
-        if (stat.isFile()) return full;
+        if (!stat.isFile()) continue;
+        if (!isWin) fs.accessSync(full, fs.constants.X_OK);
+        return full;
       } catch {
         // ignore
       }
@@ -593,7 +628,7 @@ export function resolveCommandBinary(command, customEnv = {}) {
     const t3ToolsDir = path.join(home, '.t3', 'tools', raw);
     try {
       if (fs.existsSync(t3ToolsDir)) {
-        for (const ver of fs.readdirSync(t3ToolsDir).sort().reverse()) {
+        for (const ver of fs.readdirSync(t3ToolsDir).sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }))) {
           const verDir = path.join(t3ToolsDir, ver);
           if (!fs.statSync(verDir).isDirectory()) continue;
           for (const arch of fs.readdirSync(verDir)) {
@@ -627,7 +662,7 @@ export function resolveCommandBinary(command, customEnv = {}) {
       }
       const versionsDir = path.join(agyBase, 'versions');
       if (fs.existsSync(versionsDir)) {
-        for (const ver of fs.readdirSync(versionsDir).sort().reverse()) {
+        for (const ver of fs.readdirSync(versionsDir).sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }))) {
           const verBin = checkCandidate(path.join(versionsDir, ver, 'agy_acp_server'));
           if (verBin) return verBin;
         }
@@ -690,26 +725,30 @@ export function saveSessionStore(sessions, storeFile) {
 /**
  * Env-var names that look credential-bearing. Whole-token match so
  * `MONKEY`/`HOTKEY`/`HTTPS_PROXY` stay visible while `OPENAI_API_KEY`,
- * `ANTHROPIC_AUTH_TOKEN`, `MY_KEY`, `GPG_KEY` are masked.
+ * `ANTHROPIC_AUTH_TOKEN`, `MY_KEY`, `GPG_KEY` (and URLs containing embedded
+ * user:pass credentials) are treated as secrets.
  */
-const SECRET_ENV_KEY =
-  /(?:^|_)(?:API_?KEY|TOKEN|SECRET|PASSW(?:OR)?D|CREDENTIALS?|AUTH_?TOKEN|PRIVATE_?KEY|KEY)(?:_|$)/i;
+export const SECRET_ENV_KEY =
+  /(?:^|_)(?:API_?KEY|TOKEN|SECRET|PASSW(?:OR)?D|CREDENTIALS?|AUTH(?:_?TOKEN)?|PRIVATE_?KEY|KEY)(?:_|$)/i;
+
+export function isSecretEnvKey(key, value) {
+  if (SECRET_ENV_KEY.test(String(key || ''))) return true;
+  if (value !== undefined && value !== null && CREDENTIAL_URL_RE.test(String(value))) return true;
+  return false;
+}
 
 /**
  * Display-safe copies of secret-bearing env values for non-persist
  * payloads (catalog RPC, logs). The persisted record keeps real values —
  * saveAgentsConfig needs them verbatim for spawn injection — so a redacted
  * record must never be fed back into agent/save or normalize paths, or the
- * mask itself is persisted. AC-033: wire into the catalog builder in
- * lib/index.js (owner decides per-field; the env editor needs real values,
- * so blanket redaction of `env` breaks editing unless the client treats
- * the mask as "unchanged").
+ * mask itself is persisted.
  */
 export function redactEnvSecrets(env, mask = '••••••••') {
   const out = {};
   for (const [key, value] of Object.entries(env || {})) {
     out[key] =
-      SECRET_ENV_KEY.test(key) && value !== undefined && value !== null && String(value) !== ''
+      isSecretEnvKey(key, value) && value !== undefined && value !== null && String(value) !== ''
         ? mask
         : value;
   }

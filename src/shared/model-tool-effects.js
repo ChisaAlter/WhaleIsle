@@ -139,6 +139,7 @@ const TOOLS = Object.freeze({
     },
   },
   pad_models: { level: 'read', confirm: false, reason: '列可用模型。' },
+  pad_guide: { level: 'read', confirm: false, reason: '读取悬浮面板编写手册与配方。' },
   pad_create: {
     level: 'local', confirm: true, reason: '建面板本身可逆；附带数据源会运行时先经桌面确认。',
     actions: {

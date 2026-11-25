@@ -3,16 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "check": "node build.mjs --check"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.5",
     "@effect/platform-node-shared": "4.0.5",
     "@noble/hashes": "1.8.0",
-    "diff": "8.0.3",
     "effect": "4.0.5",
     "esbuild": "0.25.11",
     "yaml": "2.8.3",
-    "yauzl": "^3.4.0"
+    "yauzl": "3.4.0"
   }
 }

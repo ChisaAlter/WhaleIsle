@@ -17126,7 +17126,7 @@ __export(Stream_exports, {
   cross: () => cross,
   crossWith: () => crossWith,
   debounce: () => debounce,
-  decodeText: () => decodeText,
+  decodeText: () => decodeText2,
   die: () => die7,
   drain: () => drain3,
   drainFork: () => drainFork,
@@ -20091,6 +20091,13 @@ var splitLines = () => fromTransform((upstream, _scope) => sync4(() => {
   }
   return pullOrFlush;
 }));
+var decodeText = (encoding, options4) => fromTransform((upstream, _scope) => sync4(() => {
+  const decoder4 = new TextDecoder(encoding, options4);
+  const streamOptions = {
+    stream: true
+  };
+  return map8(upstream, map4((line) => decoder4.decode(line, streamOptions)));
+}));
 var pipeTo = /* @__PURE__ */ dual(2, (self, that) => fromTransform((upstream, scope3) => flatMap5(toTransform(self)(upstream, scope3), (upstream2) => toTransform(that)(upstream2, scope3))));
 var pipeToOrFail = /* @__PURE__ */ dual(2, (self, that) => fromTransform((upstream, scope3) => flatMap5(toTransform(self)(upstream, scope3), (upstream2) => {
   const upstreamPull = catchCause3(upstream2, (cause) => isDoneCause(cause) ? failCause4(cause) : die5(Done2(cause)));
@@ -21967,7 +21974,7 @@ var changesWithEffect = /* @__PURE__ */ dual(2, (self, f) => transformPull2(self
     return isArrayNonEmpty2(out) ? out : yield* flatMap5(pull, fnUntraced2(loop));
   }));
 })));
-var decodeText = /* @__PURE__ */ dual((args2) => isStream(args2[0]), (self, options4) => suspend5(() => {
+var decodeText2 = /* @__PURE__ */ dual((args2) => isStream(args2[0]), (self, options4) => suspend5(() => {
   const decoder4 = new TextDecoder(options4?.encoding);
   return map10(self, (chunk) => decoder4.decode(chunk, {
     stream: true
@@ -25784,7 +25791,7 @@ var makeHandle = (params) => Object.setPrototypeOf({
   ...params
 }, HandleProto);
 var make28 = (spawn2) => {
-  const streamString = (command, options4) => spawn2(command).pipe(map8((handle) => decodeText(options4?.includeStderr === true ? handle.all : handle.stdout)), unwrap4);
+  const streamString = (command, options4) => spawn2(command).pipe(map8((handle) => decodeText2(options4?.includeStderr === true ? handle.all : handle.stdout)), unwrap4);
   const streamLines = (command, options4) => splitLines2(streamString(command, options4));
   return ChildProcessSpawner.of({
     spawn: spawn2,
@@ -41777,7 +41784,7 @@ var constPong = {
 // node_modules/effect/dist/rpc/RpcSerialization.js
 var codecForJson = toCodecJson2;
 var sharedTextDecoder;
-var decodeText2 = (bytes2) => (sharedTextDecoder ??= new TextDecoder()).decode(bytes2);
+var decodeText3 = (bytes2) => (sharedTextDecoder ??= new TextDecoder()).decode(bytes2);
 var RpcSerialization = class extends (/* @__PURE__ */ Service()("effect/rpc/RpcSerialization")) {
 };
 var MaxBufferSizeExceeded = class extends (/* @__PURE__ */ TaggedError2("MaxBufferSizeExceeded")) {
@@ -41793,7 +41800,7 @@ var json2 = /* @__PURE__ */ RpcSerialization.of({
   codecFor: codecForJson,
   makeUnsafe: () => ({
     decode: (bytes2) => {
-      const decoded = JSON.parse(typeof bytes2 === "string" ? bytes2 : decodeText2(bytes2));
+      const decoded = JSON.parse(typeof bytes2 === "string" ? bytes2 : decodeText3(bytes2));
       return Array.isArray(decoded) ? decoded : [decoded];
     },
     encode: (response) => JSON.stringify(response)
@@ -41863,7 +41870,7 @@ var jsonRpc = (options4) => RpcSerialization.of({
     const batches = /* @__PURE__ */ new Map();
     return {
       decode: (bytes2) => {
-        const decoded = JSON.parse(typeof bytes2 === "string" ? bytes2 : decodeText2(bytes2));
+        const decoded = JSON.parse(typeof bytes2 === "string" ? bytes2 : decodeText3(bytes2));
         return decodeJsonRpcRaw(decoded, batches);
       },
       encode: (response) => {
@@ -63079,7 +63086,7 @@ var terminateWindowsProcessTreeWithTaskkill = (pid) => scoped2(
     const taskkill2 = yield* spawner.spawn(
       make29("taskkill", ["/PID", String(pid), "/T", "/F"])
     );
-    const outputFiber = yield* decodeText(taskkill2.all).pipe(
+    const outputFiber = yield* decodeText2(taskkill2.all).pipe(
       mkString,
       forkScoped2
     );
@@ -63431,7 +63438,7 @@ var make63 = fn2("AcpSessionRuntime.make")(function* (options4) {
     );
   }
   yield* child.stderr.pipe(
-    decodeText(),
+    decodeText2(),
     runForEach2(
       (chunk) => update2(stderrTailRef, (current) => appendAcpStderrTail(current, chunk)).pipe(
         andThen3(
@@ -64740,6 +64747,9 @@ function acpMcpToolApprovalElicitationDisposition(runtimePolicy, request4, nativ
   if (request4.mode !== "form" || unknownRecord(request4._meta)?.codex_approval_kind !== "mcp_tool_call" && nativeRequestId?.startsWith("mcp_tool_call_approval_") !== true) {
     return void 0;
   }
+  if (unknownRecord(runtimePolicy.sandboxPolicy)?.type === "readOnly") {
+    return "deny";
+  }
   return acpPolicyRequiresApproval(runtimePolicy) ? "ask" : "allow";
 }
 function acpClientExecuteDisposition(runtimePolicy) {
@@ -64747,17 +64757,30 @@ function acpClientExecuteDisposition(runtimePolicy) {
 }
 function makeAcpClientPolicyGrants() {
   let sessionExecute = false;
-  let turnExecute = null;
+  const turnCredits = /* @__PURE__ */ new Map();
   return {
     recordApproval: (input) => {
-      if (input.kind !== "command") return;
+      const approvedExecute = input.toolKind !== void 0 ? input.toolKind === "execute" : input.kind === "command";
+      if (!approvedExecute) return;
       if (input.scope === "session") {
         sessionExecute = true;
-      } else {
-        turnExecute = input.turnKey;
+      } else if (typeof input.turnKey === "string" && input.turnKey.length > 0) {
+        turnCredits.set(input.turnKey, (turnCredits.get(input.turnKey) ?? 0) + 1);
       }
     },
-    allowsExecute: (turnKey) => sessionExecute || turnKey !== null && turnExecute === turnKey
+    allowsExecute: (turnKey) => sessionExecute || turnKey !== null && (turnCredits.get(turnKey) ?? 0) > 0,
+    consumeExecute: (turnKey) => {
+      if (sessionExecute) return true;
+      if (turnKey === null) return false;
+      const remaining = turnCredits.get(turnKey) ?? 0;
+      if (remaining <= 0) return false;
+      if (remaining === 1) {
+        turnCredits.delete(turnKey);
+      } else {
+        turnCredits.set(turnKey, remaining - 1);
+      }
+      return true;
+    }
   };
 }
 
@@ -64925,6 +64948,7 @@ var MAX_RETAINED_TERMINALS = 32;
 var MAX_RETAINED_OUTPUT_BYTES = 16 * 1024 * 1024;
 var DEFAULT_OUTPUT_BYTE_LIMIT = 4 * 1024 * 1024;
 var MAX_OUTPUT_BYTE_LIMIT = 8 * 1024 * 1024;
+var OUTPUT_DRAIN_GRACE = "1 second";
 var terminalRequestError = (message, cause) => AcpRequestError.internalError(
   message,
   void 0,
@@ -65083,6 +65107,9 @@ var makeAcpClientTerminals = fn2("makeAcpClientTerminals")(function* (options4) 
         };
         terminals.set(terminalId, record4);
         const pump = (stream3) => stream3.pipe(
+          // Keep each pipe's UTF-8 decoder independent and preserve literal BOMs.
+          pipeThroughChannel(decodeText("utf-8", { ignoreBOM: true })),
+          encodeText,
           runForEach2(
             (chunk) => sync4(() => {
               appendOutput(record4.buffer, chunk);
@@ -65103,6 +65130,8 @@ var makeAcpClientTerminals = fn2("makeAcpClientTerminals")(function* (options4) 
               (status2) => all4([join(stdoutPump), join(stderrPump)], {
                 discard: true
               }).pipe(
+                // A background child can inherit the pipes and hold them open indefinitely.
+                timeoutOption2(OUTPUT_DRAIN_GRACE),
                 andThen3(
                   sync4(() => {
                     record4.exitStatus = status2;
@@ -88269,7 +88298,7 @@ var makeAcpRegistryCatalog = fn2("AcpRegistryCatalog.make")(function* (input) {
     const rootRealPath = yield* fileSystem.realPath(root);
     const executableRealPath = yield* fileSystem.realPath(executablePath);
     const relative2 = path.relative(rootRealPath, executableRealPath);
-    if (relative2.startsWith("..") || path.isAbsolute(relative2)) {
+    if (relative2 === ".." || relative2.startsWith(`..${path.sep}`) || path.isAbsolute(relative2)) {
       return yield* new AcpRegistryError({
         reason: "archive_invalid",
         detail: "ACP Registry archive command resolves outside its installation directory."
@@ -91518,7 +91547,7 @@ function makeAntigravityStderrHandler(input = {}) {
 var CLIENT_FILE_MAX_BYTES = 8 * 1024 * 1024;
 function isInsideRoot(path, root, candidate) {
   const relative2 = path.relative(root, candidate);
-  return relative2 === "" || !relative2.startsWith("..") && !path.isAbsolute(relative2);
+  return relative2 === "" || relative2 !== ".." && !relative2.startsWith(`..${path.sep}`) && !path.isAbsolute(relative2);
 }
 var resolveClientFilePath = fn2("AntigravityClientFiles.resolveClientFilePath")(
   function* (input) {
@@ -91527,20 +91556,25 @@ var resolveClientFilePath = fn2("AntigravityClientFiles.resolveClientFilePath")(
     const outside = AcpRequestError.invalidParams(
       `Path '${input.requestPath}' is outside the session workspace.`
     );
-    const real = yield* input.fileSystem.realPath(resolved).pipe(
-      catch_3(
-        () => gen3(function* () {
-          const entryExists = yield* input.fileSystem.readLink(resolved).pipe(
-            as3(true),
-            catch_3(() => input.fileSystem.exists(resolved)),
-            orElseSucceed2(() => true)
-          );
-          if (entryExists) return yield* outside;
-          const parent = yield* input.fileSystem.realPath(path.dirname(resolved)).pipe(orElseSucceed2(() => path.dirname(resolved)));
-          return path.join(parent, path.basename(resolved));
-        })
-      )
-    );
+    let candidate = resolved;
+    const missingSuffix = [];
+    let real;
+    while (true) {
+      const canonical = yield* input.fileSystem.realPath(candidate).pipe(option2);
+      if (isSome2(canonical)) {
+        real = path.join(canonical.value, ...missingSuffix);
+        break;
+      }
+      const entryExists = yield* input.fileSystem.readLink(candidate).pipe(
+        as3(true),
+        catch_3(() => input.fileSystem.exists(candidate)),
+        orElseSucceed2(() => true)
+      );
+      const parent = path.dirname(candidate);
+      if (entryExists || parent === candidate) return yield* outside;
+      missingSuffix.unshift(path.basename(candidate));
+      candidate = parent;
+    }
     const roots = yield* forEach2(
       input.allowedRoots,
       (root) => input.fileSystem.realPath(root).pipe(orElseSucceed2(() => root))
@@ -91566,11 +91600,22 @@ var readAntigravityClientTextFile = fn2("AntigravityClientFiles.readTextFile")(
         `File '${input.request.path}' is not a readable text file under ${CLIENT_FILE_MAX_BYTES} bytes.`
       );
     }
-    const text3 = yield* input.fileSystem.readFileString(filePath).pipe(
+    const bytes2 = yield* input.fileSystem.readFile(filePath).pipe(
       mapError4(
         () => AcpRequestError.internalError(`Could not read '${input.request.path}'.`)
       )
     );
+    const text3 = yield* try_3({
+      try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes2),
+      catch: () => AcpRequestError.invalidParams(
+        `File '${input.request.path}' is not a UTF-8 text file.`
+      )
+    });
+    if (text3.includes("\0")) {
+      return yield* AcpRequestError.invalidParams(
+        `File '${input.request.path}' contains binary data.`
+      );
+    }
     const line = input.request.line ?? void 0;
     const limit = input.request.limit ?? void 0;
     if (line === void 0 && limit === void 0) {
@@ -92107,7 +92152,8 @@ var makeAntigravityAuth = fn2("makeAntigravityAuth")(function* (options4) {
       }),
       interruptWhen2(_await(closed))
     ),
-    isLogoutPrompt: (text3, hasAttachments) => !hasAttachments && text3.trim() === "/logout"
+    isLogoutPrompt: (text3, hasAttachments) => !hasAttachments && text3.trim() === "/logout",
+    isChangingCredentials: sync4(() => operation !== "idle" && operation !== "closed")
   };
   yield* addFinalizer3(
     () => gen3(function* () {
@@ -92136,7 +92182,7 @@ var NodePath6 = __toESM(require("node:path"), 1);
 
 // upstream/packages/shared/src/themePalettes.ts
 var BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"];
-var MOBILE_DEFAULT_THEME_ID = "dsh-acp-agents";
+var MOBILE_DEFAULT_THEME_ID = "t3-code";
 var MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS];
 var RESERVED_THEME_IDS = /* @__PURE__ */ new Set([
   "system",
@@ -94481,16 +94527,19 @@ function rt() {
   if (!runtime) throw new Error("initAgentRuntime() has not been called.");
   return runtime;
 }
-var run3 = (effect3) => rt().runPromise(effect3);
-var runScoped = (effect3) => run3(scoped2(effect3));
+var run3 = (effect3, options4) => rt().runPromise(
+  effect3,
+  options4?.signal ? { signal: options4.signal } : void 0
+);
+var runScoped = (effect3, options4) => run3(scoped2(effect3), options4);
 function squashError(error) {
   if (error instanceof Error) return error;
   const squashed = squash(error);
   return squashed instanceof Error ? squashed : new Error(String(squashed));
 }
-async function runCatch(effect3) {
+async function runCatch(effect3, options4) {
   try {
-    return await run3(effect3);
+    return await run3(effect3, options4);
   } catch (error) {
     throw squashError(error);
   }
@@ -94546,15 +94595,18 @@ async function initAgentRuntime(init) {
 }
 async function disposeAgentRuntime() {
   const current = runtime;
-  await agyInstallationPromise?.catch(() => {
+  const currentAgyPromise = agyInstallationPromise;
+  const currentAgyService = agyInstallationService;
+  await currentAgyPromise?.catch(() => {
   });
-  if (current && agyInstallationService) {
-    await current.runPromise(close(agyInstallationService.scope, void_3));
-    agyInstallationService = void 0;
+  if (current && currentAgyService && agyInstallationService === currentAgyService) {
+    await current.runPromise(close(currentAgyService.scope, void_3)).catch(() => {
+    });
+    if (agyInstallationService === currentAgyService) agyInstallationService = void 0;
   }
   if (current) await current.dispose();
-  agyInstallationPromise = void 0;
-  runtime = void 0;
+  if (agyInstallationPromise === currentAgyPromise) agyInstallationPromise = void 0;
+  if (runtime === current) runtime = void 0;
 }
 var catalog = {
   search: (input) => runCatch(flatMap5(AcpRegistryCatalog, (svc) => svc.search(input))),
@@ -94564,11 +94616,12 @@ var catalog = {
       (svc) => svc.inspect(settings2, environment)
     )
   ),
-  resolve: (settings2, cwd, environment) => runCatch(
+  resolve: (settings2, cwd, environment, options4) => runCatch(
     flatMap5(
       AcpRegistryCatalog,
       (svc) => svc.resolve(settings2, cwd, environment)
-    )
+    ),
+    options4
   ),
   prepare: (input) => runCatch(flatMap5(AcpRegistryCatalog, (svc) => svc.prepare(input))),
   uninstallManagedBinary: (input) => runCatch(
@@ -94583,13 +94636,15 @@ var registryAuthAction = {
   accept: (instanceId, elicitationId) => runCatch(flatMap5(AcpRegistryRuntimeCoordinator, (coordinator) => coordinator.acceptUrlAuthentication({ instanceId, elicitationId })))
 };
 async function createSession(input) {
-  const scope3 = await run3(make9());
+  const scope3 = await run3(make9(), { signal: input.signal });
   const context3 = await runCatch(
     build(layer14(input.options)).pipe(
       provideService2(Scope, scope3)
-    )
+    ),
+    { signal: input.signal }
   ).catch(async (error) => {
-    await run3(close(scope3, void_3));
+    await run3(close(scope3, void_3)).catch(() => {
+    });
     throw error;
   });
   const service4 = get(context3, AcpSessionRuntime);
@@ -94815,13 +94870,18 @@ async function agyInstallation(baseDir) {
   }
 }
 async function antigravityManagedExecutable(input) {
+  const runOpts = input.signal ? { signal: input.signal } : void 0;
   const service4 = await agyInstallation(input.baseDir);
   const resolved = await runCatch(
-    service4.resolve(void 0, void 0)
-  ).catch(() => null);
+    service4.resolve(void 0, void 0),
+    runOpts
+  ).catch((error) => {
+    if (input.signal?.aborted) throw error;
+    return null;
+  });
   if (resolved) return resolved;
   if (!input.installIfMissing) return null;
-  await runCatch(service4.start);
+  await runCatch(service4.start, runOpts);
   const terminal = await runCatch(
     gen3(function* () {
       for (; ; ) {
@@ -94829,24 +94889,29 @@ async function antigravityManagedExecutable(input) {
         if (["succeeded", "failed", "cancelled"].includes(state.phase)) return state;
         yield* sleep2("500 millis");
       }
-    }).pipe(timeout2("10 minutes"))
+    }).pipe(timeout2("10 minutes")),
+    runOpts
   );
   if (terminal.phase !== "succeeded") {
     throw new Error(terminal.message || "Antigravity installation did not complete.");
   }
   return runCatch(
-    service4.resolve(void 0, void 0)
+    service4.resolve(void 0, void 0),
+    runOpts
   );
 }
 async function antigravityAcquire(input) {
+  const runOpts = input.signal ? { signal: input.signal } : void 0;
   const service4 = await agyInstallation(input.baseDir);
-  const scope3 = await run3(make9());
+  const scope3 = await run3(make9(), runOpts);
   const executable = await runCatch(
     service4.acquire(void 0, void 0).pipe(
       provideService2(Scope, scope3)
-    )
+    ),
+    runOpts
   ).catch(async (error) => {
-    await run3(close(scope3, void_3));
+    await run3(close(scope3, void_3)).catch(() => {
+    });
     throw error;
   });
   return {
@@ -94894,15 +94959,17 @@ function antigravitySessionOptions(input) {
   };
 }
 async function antigravitySessionPlan(input) {
+  const runOpts = input.signal ? { signal: input.signal } : void 0;
   const executable = input.executablePath ? antigravityExecutableFor(input.executablePath) : await antigravityManagedExecutable({
     baseDir: input.stateDir,
-    installIfMissing: true
+    installIfMissing: true,
+    signal: input.signal
   });
   if (!executable) {
     throw new Error("Antigravity installation did not produce a runtime executable.");
   }
   const lease = input.executablePath ? { release: async () => {
-  } } : await antigravityAcquire({ baseDir: input.stateDir });
+  } } : await antigravityAcquire({ baseDir: input.stateDir, signal: input.signal });
   let runtimeTempDirectory;
   try {
     const dirs = await antigravityInstanceDirs(input.stateDir, input.instanceId, input.profileDirectory);
@@ -94915,13 +94982,15 @@ async function antigravitySessionPlan(input) {
         userHome: input.userHome,
         platform: process.platform,
         tempDirectory: dirs.runtimeTemp
-      })
+      }),
+      runOpts
     );
     runtimeTempDirectory = await runCatch(
       flatMap5(
         FileSystem,
         (fileSystem) => fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "run-" })
-      )
+      ),
+      runOpts
     );
     const ownedDirectory = runtimeTempDirectory;
     let cleanupPromise;
@@ -95063,7 +95132,7 @@ function antigravityAuthApi(handle) {
       methods: [{ id: "oauth-personal", name: "Log in with Google", type: "browser" }]
     }),
     invalidate: () => Promise.resolve(),
-    isChangingCredentials: () => Promise.resolve(false),
+    isChangingCredentials: () => handle.controller.isChangingCredentials ? runCatch(handle.controller.isChangingCredentials) : Promise.resolve(false),
     adoptCredentials: () => Promise.resolve(),
     dispose: async () => {
       await rt().runPromise(interrupt6(handle.subscriptionFiber));

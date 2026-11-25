@@ -17,13 +17,13 @@ export const name = NS;
 export const inject = ['slots', 'locale', 'connection'];
 
 export function apply(ctx) {
-  injectCss();
+  ctx.effect(() => injectCss(), 'dsh-acp-agents: styles');
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-acp-agents: dictionaries');
   const t = ctx.locale.bind(NS);
   const connection = ctx.connection ?? ctx.get?.('connection');
 
   const rpc = async (endpoint, input = {}) =>
-    rpcValue(await connection.rpc.call('/dsh-acp-agents', endpoint, input));
+    rpcValue(await connection.rpc.call('/dsh-acp-agents', endpoint, input), t('error.rpc'));
 
   let settingsActions;
   const bindSettingsActions = (actions) => {
@@ -185,7 +185,7 @@ export function apply(ctx) {
               load: () => {
                 if (available) {
                   directory.load().catch((error) => {
-                    console.warn('[dsh-acp/client/client.js] background operation failed', error);
+                    console.warn('[dsh-acp-agents] background operation failed', error);
                   });
                 }
               },

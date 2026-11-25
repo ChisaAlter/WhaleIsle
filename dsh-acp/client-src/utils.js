@@ -8,7 +8,7 @@ export const BUILTIN_REGISTRY_IDS = new Set(['claude-acp', 'codex-acp', 'antigra
 
 // ACP runtime "Add provider" card grid: first-class presets get the official ACP
 // registry brand icons (same CDN the registry list uses).
-export const ACP_REGISTRY_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest';
+const ACP_REGISTRY_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest';
 export const ADD_PROVIDER_CARDS = [
   { id: 'claude-code', label: 'Claude Code', icon: `${ACP_REGISTRY_ICON_BASE}/claude-acp.svg` },
   { id: 'codex', label: 'OpenAI Codex', icon: `${ACP_REGISTRY_ICON_BASE}/codex-acp.svg` },
@@ -25,13 +25,92 @@ export const FLOW_MESSAGE_KEYS = {
 
 export const MEASURE_STYLE = { visibility: 'hidden', left: 0, top: 0 };
 
-export function rpcValue(response) {
+export function rpcValue(response, fallbackMessage = 'RPC error') {
   if (response && typeof response === 'object' && 'ok' in response) {
     if (response.ok) return response.value;
-    const msg = response.error?.message || response.error?.code || 'RPC error';
+    const msg = response.error?.message || response.error?.code || fallbackMessage;
     throw new Error(msg);
   }
   return response;
+}
+
+export function sanitizeAgentId(raw) {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+export function deriveUniqueAgentId(raw, existingIds, fallbackPrefix = 'custom') {
+  const existing = existingIds instanceof Set ? existingIds : new Set(existingIds || []);
+  const cleanPrefix = sanitizeAgentId(fallbackPrefix) || 'custom';
+  const base = sanitizeAgentId(raw) || `${cleanPrefix}-${Date.now()}`.slice(0, 48);
+  if (!existing.has(base)) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const suffixText = `-${suffix}`;
+    const candidate = `${base.slice(0, Math.max(1, 48 - suffixText.length)).replace(/-+$/, '') || cleanPrefix}${suffixText}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+}
+
+export function safeHttpsIconUrl(raw) {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) return null;
+  if (typeof URL === 'function') {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'https:' ? parsed.href : null;
+    } catch {
+      return null;
+    }
+  }
+  return /^https:\/\/[^\s"'<>\\]+$/i.test(value) ? value : null;
+}
+
+export async function copyTextToClipboard(text) {
+  const value = String(text ?? '');
+  if (!value) throw new Error('Nothing to copy');
+  if (typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // Fall through to execCommand fallback for non-secure or restricted contexts.
+    }
+  }
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+    throw new Error('Clipboard API is unavailable');
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '0';
+  textarea.style.opacity = '0';
+  const previouslyFocused = document.activeElement;
+  document.body.appendChild(textarea);
+  try {
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange?.(0, value.length);
+    const copied = document.execCommand('copy');
+    if (!copied) throw new Error('Clipboard copy failed');
+    return true;
+  } finally {
+    textarea.remove ? textarea.remove() : textarea.parentNode?.removeChild?.(textarea);
+    if (typeof previouslyFocused?.focus === 'function') {
+      previouslyFocused.focus();
+    }
+  }
+}
+
+export function isMacPlatform() {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
 }
 
 export function maskEmail(email) {

@@ -14,13 +14,28 @@ export function executionProvider(agent) {
     || agent?.model?.current?.()?.provider || agent?.options?.provider;
 }
 
+/** Safely retrieve a service from a Cordis context or plain mock object. */
+export function safeGetService(ctx, serviceName) {
+  if (!ctx) return undefined;
+  try {
+    if (typeof ctx.get === 'function') {
+      const val = ctx.get(serviceName);
+      if (val !== undefined) return val;
+    }
+    return ctx[serviceName];
+  } catch {
+    return undefined;
+  }
+}
+
 /** Read the effective approval policy through each shipped host's public API. */
 export function approvalPolicyOf(approval, session) {
-  if (typeof approval?.policyOf === 'function') return approval.policyOf(session);
-  if (typeof approval?.overrideOf === 'function') {
+  if (!approval) return 'never';
+  if (typeof approval.policyOf === 'function') return approval.policyOf(session);
+  if (typeof approval.overrideOf === 'function') {
     return approval.overrideOf(session) ?? approval.config?.policy ?? 'ask';
   }
-  return 'never';
+  return 'ask';
 }
 
 /**

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: tools/runtime-build/package-lock.json
+
+      - name: Install runtime-build dependencies
+        run: npm ci --prefix tools/runtime-build
+
+      - name: Run offline unit test suite
+        run: npm test
+
+      - name: Verify client bundle parity
+        run: npm run check:client
+
+      - name: Verify vendor runtime bundles and third-party notices
+        run: npm run check:runtime
+
+      - name: Verify npm pack tarball contents
+        shell: bash
+        run: |
+          node -e '
+            const { execSync } = require("node:child_process");
+            const out = execSync("npm pack --dry-run --json", { encoding: "utf8" });
+            const [pack] = JSON.parse(out);
+            const paths = pack.files.map((f) => f.path);
+            if (paths.length > 50) throw new Error(`Too many files in tarball: ${paths.length}`);
+            for (const forbidden of ["tests/", "tools/runtime-build/", "client-src/"]) {
+              const hit = paths.find((p) => p.startsWith(forbidden));
+              if (hit) throw new Error(`Forbidden dev file in tarball: ${hit}`);
+            }
+            console.log(`npm pack verified: ${paths.length} files, ${(pack.unpackedSize / 1024 / 1024).toFixed(2)} MB unpacked.`);
+          '

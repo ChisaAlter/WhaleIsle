@@ -1,7 +1,8 @@
 import { h, Button, Input, Modal, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from './primitives.js';
-import { ADD_PROVIDER_CARDS } from './utils.js';
+import { ADD_PROVIDER_CARDS, safeHttpsIconUrl } from './utils.js';
 
 function renderProviderTypeCard({ card, selected, onSelect }) {
+  const iconUrl = safeHttpsIconUrl(card.icon);
   return h(
     'button',
     {
@@ -9,16 +10,19 @@ function renderProviderTypeCard({ card, selected, onSelect }) {
       type: 'button',
       className: 'dsh-acp-provider-card',
       'data-selected': selected ? 'true' : undefined,
+      'aria-pressed': selected,
       onClick: () => onSelect(card.id),
     },
     h(
       'span',
-      { className: 'dsh-acp-provider-icon' },
+      { className: 'dsh-acp-provider-icon', 'aria-hidden': true },
       h('span', { className: 'dsh-acp-provider-icon-letter' }, card.mono || String(card.label || '?').slice(0, 1).toUpperCase()),
-      card.icon
+      iconUrl
         ? h('img', {
-            src: card.icon,
+            src: iconUrl,
             alt: '',
+            decoding: 'async',
+            referrerPolicy: 'no-referrer',
             onError: (e) => {
               e.currentTarget.style.display = 'none';
             },
@@ -58,9 +62,11 @@ export function renderDeleteResetModal({ confirmDelete, selectedAgent, busyActio
   );
 }
 
-export function renderAddAgentModal({ addModal, setAddModal, registryAgents, registryCards, busyAction, onCreate, t }) {
+export function renderAddAgentModal({ addModal, setAddModal, registryAgents, registryCards, busyAction, idPrefix, onCreate, t }) {
   if (!addModal) return null;
-  const selectType = (id) => setAddModal((cur) => ({ ...cur, baseAgentId: id }));
+  const selectType = (id) => setAddModal((cur) => ({ ...cur, baseAgentId: id, error: null }));
+  const nameId = `${idPrefix}-add-name`;
+  const commandId = `${idPrefix}-add-command`;
 
   return h(
     Modal,
@@ -79,10 +85,11 @@ export function renderAddAgentModal({ addModal, setAddModal, registryAgents, reg
     h(
       'div',
       { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+      addModal.error ? h('p', { className: 'dsh-acp-modal-error', role: 'alert' }, addModal.error) : null,
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('modal.addType')),
+        h('span', { className: 'dsh-acp-field-label' }, t('modal.addType')),
         h(
           'div',
           { className: 'dsh-acp-provider-grid' },
@@ -96,6 +103,7 @@ export function renderAddAgentModal({ addModal, setAddModal, registryAgents, reg
             type: 'button',
             className: 'dsh-acp-showmore',
             'data-open': addModal.showMore ? 'true' : undefined,
+            'aria-expanded': Boolean(addModal.showMore),
             onClick: () => setAddModal((cur) => ({ ...cur, showMore: !cur.showMore })),
           },
           addModal.showMore ? t('modal.showLess') : t('modal.showMore'),
@@ -109,6 +117,7 @@ export function renderAddAgentModal({ addModal, setAddModal, registryAgents, reg
                 variant: 'form',
                 value: addModal.registryQuery || '',
                 placeholder: t('modal.registrySearchPh'),
+                'aria-label': t('modal.registrySearchPh'),
                 onChange: (e) => setAddModal((cur) => ({ ...cur, registryQuery: e.target.value })),
               }),
               registryAgents === null
@@ -132,24 +141,26 @@ export function renderAddAgentModal({ addModal, setAddModal, registryAgents, reg
       h(
         'div',
         { className: 'dsh-acp-field' },
-        h('label', { className: 'dsh-acp-field-label' }, t('modal.addName')),
+        h('label', { className: 'dsh-acp-field-label', htmlFor: nameId }, t('modal.addName')),
         h(Input, {
+          id: nameId,
           variant: 'form',
           value: addModal.name,
           placeholder: t('modal.addNamePh'),
-          onChange: (e) => setAddModal({ ...addModal, name: e.target.value }),
+          onChange: (e) => setAddModal({ ...addModal, name: e.target.value, error: null }),
         }),
       ),
       addModal.baseAgentId === 'custom'
         ? h(
             'div',
             { className: 'dsh-acp-field' },
-            h('label', { className: 'dsh-acp-field-label' }, t('field.command')),
+            h('label', { className: 'dsh-acp-field-label', htmlFor: commandId }, t('field.command')),
             h(Input, {
+              id: commandId,
               variant: 'form',
               value: addModal.command,
-              placeholder: 'e.g. my-agent-binary',
-              onChange: (e) => setAddModal({ ...addModal, command: e.target.value }),
+              placeholder: t('modal.commandPh'),
+              onChange: (e) => setAddModal({ ...addModal, command: e.target.value, error: null }),
             }),
           )
         : null,

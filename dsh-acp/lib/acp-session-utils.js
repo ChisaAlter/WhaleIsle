@@ -7,12 +7,14 @@ export function abortSignalError() {
 }
 
 // ACP runtime adapter.ts providerRequestKind — approved "command" requests feed the
-// terminal/create execute grant.
+// terminal/create execute grant. Only explicit `execute` requests qualify as commands;
+// unknown / `other` / `switch_mode` requests must never grant terminal execution.
 export function providerRequestKind(kind) {
   const k = String(kind || '').toLowerCase();
+  if (k === 'execute') return 'command';
   if (k === 'read' || k === 'search' || k === 'fetch') return 'file-read';
   if (k === 'edit' || k === 'delete' || k === 'move') return 'file-change';
-  return 'command';
+  return 'other';
 }
 
 // Host decisions arrive as booleans/'cancelled' today; a richer host may pass
