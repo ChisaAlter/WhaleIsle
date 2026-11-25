@@ -264,6 +264,7 @@ describe('pushed invalidations', () => {
     // The fake wire face has no methods: a fetch attempt would throw.
     b.remote.emit('settings/document-updated', ['llm-pi-ai', 1])
     b.remote.emit('credentials/reference-updated', ['OPENAI_API_KEY'])
+    b.remote.emit('authorization/settled', ['llm-pi-ai/openai', 'authorized'])
     b.remote.emit('llm/adapters-updated', [])
     b.ctx.emit('connection/reset')
   })
@@ -297,7 +298,8 @@ describe('pushed invalidations', () => {
     injected.controller.store.update((state) => { state.status = 'ready' })
     const load = vi.spyOn(injected.controller, 'load').mockResolvedValue()
     b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
-    expect(load).toHaveBeenCalledTimes(1)
+    b.remote.emit('authorization/settled', ['llm-pi-ai/openai', 'authorized'])
+    expect(load).toHaveBeenCalledTimes(2)
   })
 
   it('welcome state follows the shared mirror across document commits', async () => {

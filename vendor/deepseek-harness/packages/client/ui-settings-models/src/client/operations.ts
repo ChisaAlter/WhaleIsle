@@ -7,9 +7,38 @@
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
+  AuthorizationStreamEvent,
   LlmDiscoveredModel, LlmModelDiscoveryRequest,
   SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
+
+/** Optional authorization remote namespace, tolerating mocked contexts that omit it. */
+export type AuthorizationRemote = ClientContext['remote']['authorization']
+
+/**
+ * Safely resolve `remote.authorization` from either Cordis service lookup or a
+ * plain test-double `ctx.remote` object without failing when absent.
+ * @param ctx - plugin context or test-double context.
+ * @returns the authorization remote namespace if mounted.
+ */
+export function authorizationRemoteOf(ctx: ClientContext): AuthorizationRemote | undefined {
+  const get = (ctx as { get?: (name: string) => unknown }).get
+  const fromGet = typeof get === 'function'
+    ? get.call(ctx, 'remote.authorization') as AuthorizationRemote | undefined
+    : undefined
+  const fromRemote = (ctx as { remote?: Partial<ClientContext['remote']> }).remote?.authorization
+  return fromGet ?? fromRemote
+}
+
+/** Allow only http(s) URLs when delegating to an external browser. */
+function isSafeExternalUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
 
 /** What one namespace write answered. */
 export type SettingsWriteOutcome =
@@ -83,6 +112,43 @@ export interface ModelsOperations {
    * @returns the candidates, or the refusal.
    */
   discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<ModelDiscoveryOutcome>
+  /**
+   * Start an interactive authorization flow and stream progress events until settlement or abort.
+   * @param key - credential record key (`<scope>/<id>`).
+   * @param method - authorization method id (e.g. `'oauth'`).
+   * @param onEvent - callback receiving streamed notices, prompts, and terminal events.
+   * @param signal - cancellation signal owned by the caller.
+   */
+  startAuthorization(
+    key: string,
+    method: string | undefined,
+    onEvent: (event: AuthorizationStreamEvent) => void,
+    signal: AbortSignal,
+  ): Promise<void>
+  /**
+   * Submit or decline one interactive authorization prompt.
+   * @param promptId - identifier from the `prompt` stream event.
+   * @param answer - user input / chosen option id, or `null` to decline.
+   * @returns the refusal message, or undefined once accepted.
+   */
+  respondAuthorizationPrompt(promptId: string, answer: string | null): Promise<string | undefined>
+  /**
+   * Cancel an in-flight authorization attempt for a credential key.
+   * @param key - credential record key (`<scope>/<id>`).
+   * @returns the refusal message, or undefined once cancelled.
+   */
+  cancelAuthorization(key: string): Promise<string | undefined>
+  /**
+   * Remove one stored credential record (such as an OAuth grant).
+   * @param key - credential record key (`<scope>/<id>`).
+   * @returns the refusal message, or undefined once removed.
+   */
+  removeCredentialRecord(key: string): Promise<string | undefined>
+  /**
+   * Open an external http(s) URL in the desktop shell browser or a browser tab.
+   * @param url - external destination URL.
+   */
+  openExternalUrl(url: string): void
 }
 
 /**
@@ -112,6 +178,69 @@ export function createModelsOperations(ctx: ClientContext): ModelsOperations {
       return response.ok
         ? { kind: 'found', models: discoveredModelsOf(response.value) }
         : { kind: 'refused', message: response.error.message }
+    },
+    startAuthorization: async (key, method, onEvent, signal) => {
+      const authorization = authorizationRemoteOf(ctx)
+      if (typeof authorization?.start !== 'function') {
+        throw new Error('Authorization service is unavailable.')
+      }
+      if (signal.aborted) return
+      const stream = authorization.start(key, method, signal)
+      const dispose = (): void => {
+        if (typeof (stream as { dispose?: unknown }).dispose === 'function') {
+          (stream as { dispose: () => void }).dispose()
+        }
+      }
+      const onAbort = (): void => { dispose() }
+      const aborted = (): boolean => signal.aborted
+      signal.addEventListener('abort', onAbort, { once: true })
+      try {
+        for await (const event of stream) {
+          if (aborted()) break
+          onEvent(event)
+        }
+      } catch (error) {
+        if (aborted()) return
+        throw error
+      } finally {
+        signal.removeEventListener('abort', onAbort)
+        dispose()
+      }
+    },
+    respondAuthorizationPrompt: async (promptId, answer) => {
+      const authorization = authorizationRemoteOf(ctx)
+      if (typeof authorization?.respondPrompt !== 'function') {
+        return 'Authorization service is unavailable.'
+      }
+      const response = await authorization.respondPrompt(promptId, answer)
+      return response.ok ? undefined : response.error.message
+    },
+    cancelAuthorization: async (key) => {
+      const authorization = authorizationRemoteOf(ctx)
+      if (typeof authorization?.cancel !== 'function') return undefined
+      const response = await authorization.cancel(key)
+      return response.ok ? undefined : response.error.message
+    },
+    removeCredentialRecord: async (key) => {
+      const credentials = ctx.remote.credentials
+      if (typeof credentials.deleteRecord !== 'function') {
+        return 'Credential record deletion is unavailable.'
+      }
+      const response = await credentials.deleteRecord(key)
+      return response.ok ? undefined : response.error.message
+    },
+    openExternalUrl: (url) => {
+      if (!isSafeExternalUrl(url)) return
+      const runtime = globalThis as {
+        shell?: { openExternal?: (target: string) => unknown }
+        window?: { open?: (target?: string, windowName?: string, features?: string) => unknown }
+      }
+      const openExternal = runtime.shell?.openExternal
+      if (typeof openExternal === 'function') {
+        void Promise.resolve(openExternal(url)).catch(() => undefined)
+        return
+      }
+      runtime.window?.open?.(url, '_blank', 'noopener,noreferrer')
     },
   }
 }

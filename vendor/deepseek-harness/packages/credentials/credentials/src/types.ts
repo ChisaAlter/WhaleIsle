@@ -74,6 +74,21 @@ export interface CredentialInfo {
   masked?: string
 }
 
+/** Presence and writability facts for one record, safe for configuration UIs — never the value. */
+export interface CredentialRecordInfo {
+  /**
+   * Whether a record is stored. Unlike a reference, presence alone answers
+   * this: an {@link ApiKeyRecord} carrying neither a key nor environment
+   * values states that its owner confirmed ambient authentication, which is
+   * configured, not blank.
+   */
+  configured: boolean
+  /** Discriminant of the stored record; absent while none is stored. */
+  kind?: CredentialRecord['kind']
+  /** Whether `modifyRecord` would currently succeed. */
+  writable: boolean
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
