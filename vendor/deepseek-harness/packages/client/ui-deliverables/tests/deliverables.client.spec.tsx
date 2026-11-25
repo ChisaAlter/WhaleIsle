@@ -799,7 +799,7 @@ describe('ChangedFiles card', () => {
   it('opens and reveals an automatically changed HTML file without a present declaration', () => {
     const single = servedStore({ turn: 1, cwd: '/workspace', files: [changedFile('pelican_bicycle.html', 111, 0)], total: 1, added: 111, deleted: 0 })
     const { props, view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] }, single)
-    const actions = within(view.getByRole('group', { name: 'pelican_bicycle.html' }))
+    const actions = within(view.getByRole('group', { name: '/workspace/pelican_bicycle.html' }))
     fireEvent.click(actions.getByRole('button', { name: 'Native file action' }))
     fireEvent.click(actions.getByRole('button', { name: 'Native file reveal' }))
     expect(props.openChanged.mock.calls).toEqual([
@@ -816,10 +816,10 @@ describe('ChangedFiles card', () => {
     const controller = new PresentedOpenController()
     controller.state.set({ [changedFileUrl(brandString<SessionId>('child-session'), 5, 1)]: 'revealing' })
     const { props, view } = renderCard(controller)
-    const pending = within(view.getByRole('group', { name: 'config/feature-flags.json' }))
+    const pending = within(view.getByRole('group', { name: '/workspace/config/feature-flags.json' }))
     expect((pending.getByRole('button', { name: 'Native file action' }) as HTMLButtonElement).disabled).toBe(true)
     expect((pending.getByRole('button', { name: 'Native file reveal' }) as HTMLButtonElement).disabled).toBe(true)
-    const first = within(view.getByRole('group', { name: 'config/design-token' }))
+    const first = within(view.getByRole('group', { name: '/workspace/config/design-token' }))
     fireEvent.click(first.getByRole('button', { name: 'Native file action' }))
     expect(props.openChanged).toHaveBeenLastCalledWith('child-session', 5, 0, 'open', undefined)
     fireEvent.click(view.getByRole('button', { name: 'Show all 5 changed files' }))

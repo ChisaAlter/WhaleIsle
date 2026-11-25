@@ -168,7 +168,7 @@ describe('single right panel routing', () => {
       const b = await bench({ mainView: 'project-main', cwd: '/projects/p', presentation: project, sidebarRight })
       await b.workspaces.openPath('/bound/src/notes.md', { sessionId: 'project-main' })
       const address = (sidebarRight.openResourceIn.mock.calls[0] as unknown as [string, string])[1]
-      expect(address).toBe(sessionFileAddress('project-main', 'src/notes.md'))
+      expect(address).toBe(sessionFileAddress('project-main', '/bound/src/notes.md'))
       expect(canOpenDesktopFile(address, () => '/bound')).toBe(true)
       expect(b.originalOpen).not.toHaveBeenCalled()
       await b.fiber.dispose()
@@ -224,7 +224,7 @@ describe('single right panel routing', () => {
     try {
       await b.workspaces.openPath(path, { sessionId: 'sess-1', line: 7 })
       const address = (sidebarRight.openResourceIn.mock.calls[0] as unknown as [string, string])[1]
-      expect(hostFileOf(address)).toEqual({ sessionId: 'sess-1', path: 'a.txt' })
+      expect(hostFileOf(address)).toEqual({ sessionId: 'sess-1', path: 'C:/AI/Repo/a.txt' })
       expect(canOpenDesktopFile(address, () => cwd)).toBe(true)
       expect(sidebarRight.openResourceIn).toHaveBeenCalledWith('sess-1', address, { params: { line: 7 } })
       expect(b.originalOpen).not.toHaveBeenCalled()

@@ -50,15 +50,39 @@ export function isOfficePreviewPath(filePath: string): boolean {
 }
 
 /**
+ * Resolve a desktop file address path to a path relative to `cwd`.
+ * Relative paths stay relative; absolute paths inside `cwd` are relativized
+ * (case-insensitively on Windows drive/UNC paths); external or root paths
+ * return `undefined` so they stay with the read-only Host preview.
+ * @param filePath - raw path from a session file address.
+ * @param cwd - owning session's workspace root.
+ * @returns relative path within the workspace, or `undefined`.
+ */
+export function toDesktopRelativePath(filePath: string, cwd: string | undefined): string | undefined {
+  if (!isAbsoluteWorkspacePath(filePath)) return filePath
+  if (cwd === undefined || cwd === '') return undefined
+  const root = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
+  const full = filePath.replace(/\\/g, '/')
+  if (root === '') return full.startsWith('/') ? full.slice(1) : undefined
+  const caseInsensitive = /^[A-Za-z]:\//.test(root) || root.startsWith('//')
+  const matches = caseInsensitive
+    ? full.toLowerCase().startsWith(`${root.toLowerCase()}/`)
+    : full.startsWith(`${root}/`)
+  if (!matches) return undefined
+  const relative = full.slice(root.length + 1)
+  return relative === '' ? undefined : relative
+}
+
+/**
  * Whether this Desktop viewer can serve an address.
  *
- * Only a session-scoped address with a real cwd is accepted. An absolute
- * address, malformed address, a session without a workspace, or an Office
- * document stays with the native document preview, which has its own
- * host-side authority path.
+ * Only a session-scoped address inside a real workspace cwd is accepted. An
+ * absolute address outside that session's workspace, malformed address, a
+ * session without a workspace, or an Office document stays with the native
+ * document preview, which has its own host-side authority path.
  * @param address - candidate resource address.
  * @param cwdOf - resolves the owning session's workspace root.
- * @returns true when the address has a session and that session has a cwd.
+ * @returns true when the address has a session and that session owns the file.
  */
 export function canOpenDesktopFile(
   address: string,
@@ -66,12 +90,11 @@ export function canOpenDesktopFile(
 ): boolean {
   const parsed = parseDesktopFileAddress(address)
   if (parsed === undefined) return false
-  // External deliverables retain an absolute path. Use the Host read-only
-  // preview instead of rebasing them onto this session's editable workspace.
-  if (isAbsoluteWorkspacePath(parsed.path)) return false
-  if (isOfficePreviewPath(parsed.path)) return false
   const cwd = cwdOf(parsed.sessionId)
-  return cwd !== undefined && cwd !== ''
+  if (cwd === undefined || cwd === '') return false
+  const relativePath = toDesktopRelativePath(parsed.path, cwd)
+  if (relativePath === undefined) return false
+  return !isOfficePreviewPath(relativePath)
 }
 
 /**

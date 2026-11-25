@@ -30,7 +30,7 @@ import { FileSaveCoordinator, type FileSaveResult } from './fileSaveCoordinator.
 import { NS } from './locales.ts'
 import type { FilesShellInjected } from './shell.ts'
 import { isWorkspaceImagePreviewPath } from './workspacePreview.ts'
-import { desktopFileTitle, parseDesktopFileAddress, type DesktopFileBuffer } from './desktop-files.ts'
+import { desktopFileTitle, parseDesktopFileAddress, toDesktopRelativePath, type DesktopFileBuffer } from './desktop-files.ts'
 import { SidebarFilesPanel, type SidebarFilesPanelProps } from './FilesPanel.tsx'
 import type { DesktopFileSave, DesktopFileStateInjected } from './desktop-file-state.ts'
 import css from './FilePreview.module.css'
@@ -99,7 +99,6 @@ export function SidebarFilePreview(props: SidebarFilePreviewProps): ReactNode {
   const { tab } = useTabInfo()
   const parsed = parseDesktopFileAddress(tab.contentId)
   const sessionId = parsed?.sessionId
-  const relativePath = parsed?.path
   const revealLine = typeof tab.navigation.params === 'object'
     && 'line' in tab.navigation.params
     && typeof tab.navigation.params.line === 'number'
@@ -108,6 +107,7 @@ export function SidebarFilePreview(props: SidebarFilePreviewProps): ReactNode {
   const workspaceCwd = useSessions(state => sessionId === undefined
     ? undefined
     : sessionWorkingDirectory(state.byId[sessionId as SessionId]))
+  const relativePath = parsed === undefined ? undefined : toDesktopRelativePath(parsed.path, workspaceCwd)
   const address = tab.contentId
   // Earlier guide entries persisted a page address for this resource viewer.
   // Reuse the directory body without changing its layout or reading that URI.
