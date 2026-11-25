@@ -1633,3 +1633,407 @@ domTest('Wave 2 wiring: HandToBotDialog, workspace context menu, prefill/flash e
   assert.equal(host.contextMenuDisposed, 1);
   assert.equal(dom.window.__dshWhaleHandToBot, undefined);
 });
+
+domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation runNow busy states and semantic error toasts', async (t) => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="mount"></div></body></html>', {
+    url: 'http://localhost:3123/',
+    pretendToBeVisual: true,
+  });
+
+  const eventSources = [];
+  const rpcCalls = [];
+  const FakeEventSource = createFakeEventSourceClass(eventSources);
+  const fixtures = defaultBotFixtures();
+  fixtures.bots.push({
+    id: 'bot-beta',
+    name: '海豚二号',
+    purpose: '测试队友',
+    avatar: 'mascot:W2',
+    avatarColor: '#10b981',
+    paused: false,
+    dotState: 'idle',
+    homeSessionId: 'sess-beta-home',
+    chatSessionId: 'sess-beta-home',
+    homePath: 'C:/Users/demo/.whaleisle/bots/bot-beta',
+    needsYouCount: 0,
+  });
+
+  const createDeferred = () => {
+    let resolve;
+    const promise = new Promise((r) => { resolve = r; });
+    return { promise, resolve };
+  };
+
+  let openSuggestions = [
+    { id: 'sug-start-ok', title: '检查构建缓存', why: '构建变慢', status: 'open', createdAt: Date.now() - 5_000 },
+    { id: 'sug-dismiss-ok', title: '整理旧分支', why: '存在合并分支', status: 'open', createdAt: Date.now() - 4_000 },
+    { id: 'sug-turn-err', title: '检查线上告警', why: '有错误率波动', status: 'open', createdAt: Date.now() - 3_000 },
+    { id: 'sug-fail-res', title: '重跑失败用例', why: '夜间单测红了', status: 'open', createdAt: Date.now() - 2_000 },
+    { id: 'sug-switch-bot', title: '切队友前点执行', why: '验证在途切 Bot 不错跳', status: 'open', createdAt: Date.now() - 1_000 },
+  ];
+  const automationsList = [
+    {
+      id: 'auto-1',
+      botId: 'bot-whale',
+      name: '每日晨报',
+      prompt: '汇总昨日进度',
+      intervalMinutes: 60,
+      enabled: true,
+      nextRunAt: Date.now() + 60_000,
+    },
+  ];
+
+  let nextStartDeferred = null;
+  let nextDismissDeferred = null;
+  let nextLookNowDeferred = null;
+  let nextAutoRunDeferred = null;
+  let lookNowOutcome = { ok: true, started: true, background: true, runId: 'look-1', botId: 'bot-whale' };
+  let autoRunOutcome = { ok: true, started: true, background: true };
+
+  const fetchImpl = makeRpcFetch(async (method, params) => {
+    if (method === 'bots.list') return fixtures;
+    if (method === 'bots.chat.open') return { sessionId: params.botId === 'bot-beta' ? 'sess-beta-home' : 'sess-whale-home' };
+    if (method === 'bots.chatTree') return fixtures.chatsByBot[params.botId] ?? { chats: [] };
+    if (method === 'bots.automations.list') return { automations: params.botId === 'bot-whale' ? automationsList : [] };
+    if (method === 'bots.upNext.list') {
+      const list = params.botId === 'bot-whale' ? [...openSuggestions] : [];
+      return { seenAt: Date.now(), openSuggestions: list, suggestions: list };
+    }
+    if (method === 'bots.upNext.seen' || method === 'bots.upNext.unseen') return { ok: true };
+    if (method === 'bots.suggestions.start') {
+      if (nextStartDeferred) {
+        const d = nextStartDeferred;
+        nextStartDeferred = null;
+        await d.promise;
+      }
+      if (params.suggestionId === 'sug-turn-err') {
+        openSuggestions = openSuggestions.filter((s) => s.id !== params.suggestionId);
+        return { ok: true, started: true, background: true, sessionId: 'sess-whale-home', turnError: '模型会话启动超时' };
+      }
+      if (params.suggestionId === 'sug-fail-res') {
+        openSuggestions = openSuggestions.filter((s) => s.id !== params.suggestionId);
+        return { ok: false, error: '建议已被处理', alreadyResolved: true, status: 'started' };
+      }
+      openSuggestions = openSuggestions.filter((s) => s.id !== params.suggestionId);
+      return { ok: true, started: true, background: true, sessionId: 'sess-whale-home' };
+    }
+    if (method === 'bots.suggestions.dismiss') {
+      if (nextDismissDeferred) {
+        const d = nextDismissDeferred;
+        nextDismissDeferred = null;
+        await d.promise;
+      }
+      openSuggestions = openSuggestions.filter((s) => s.id !== params.suggestionId);
+      return { ok: true, suggestion: { id: params.suggestionId, status: 'dismissed' } };
+    }
+    if (method === 'bots.lookAround.lookNow') {
+      if (nextLookNowDeferred) {
+        const d = nextLookNowDeferred;
+        nextLookNowDeferred = null;
+        await d.promise;
+      }
+      return lookNowOutcome;
+    }
+    if (method === 'bots.automations.runNow') {
+      if (nextAutoRunDeferred) {
+        const d = nextAutoRunDeferred;
+        nextAutoRunDeferred = null;
+        await d.promise;
+      }
+      return autoRunOutcome;
+    }
+    return { ok: true, items: [], chats: [], files: [], requests: [], automations: [], suggestions: [] };
+  }, rpcCalls);
+
+  const globalValues = {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    localStorage: dom.window.localStorage,
+    sessionStorage: dom.window.sessionStorage,
+    Event: dom.window.Event,
+    CustomEvent: dom.window.CustomEvent,
+    EventSource: FakeEventSource,
+    fetch: fetchImpl,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  const savedGlobals = Object.fromEntries(
+    Object.keys(globalValues).map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]),
+  );
+  for (const [k, v] of Object.entries(globalValues)) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value: v });
+  }
+
+  let spec = null;
+  dom.window.__ModuleLoader__ = { load: (entry) => { spec = entry; } };
+  dom.window.EventSource = FakeEventSource;
+  dom.window.fetch = fetchImpl;
+
+  vm.runInNewContext(
+    fs.readFileSync(CLIENT_FILE, 'utf8'),
+    {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      sessionStorage: dom.window.sessionStorage,
+      Event: dom.window.Event,
+      CustomEvent: dom.window.CustomEvent,
+      EventSource: FakeEventSource,
+      fetch: fetchImpl,
+      setTimeout: dom.window.setTimeout.bind(dom.window),
+      clearTimeout: dom.window.clearTimeout.bind(dom.window),
+      setInterval: dom.window.setInterval.bind(dom.window),
+      clearInterval: dom.window.clearInterval.bind(dom.window),
+      queueMicrotask,
+      AbortController,
+      URL,
+      URLSearchParams,
+      console,
+    },
+    { filename: CLIENT_FILE },
+  );
+
+  const pluginExports = spec.factory((id) => {
+    if (id === 'react') return React;
+    if (id === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (id === 'react-dom') return ReactDOM;
+    if (id === 'react-dom/client') return { createRoot };
+    return {};
+  });
+
+  const disposers = [];
+  const host = makeHarnessCtx({ disposers });
+  pluginExports.apply(host.ctx);
+
+  const root = createRoot(dom.window.document.querySelector('#mount'));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    for (const dispose of disposers.splice(0).reverse()) {
+      dispose?.();
+    }
+    for (const es of eventSources) {
+      if (!es.closed) es.close();
+    }
+    dom.window.close();
+    for (const [k, desc] of Object.entries(savedGlobals)) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await new Promise((resolve) => setImmediate(resolve)); });
+    }
+  };
+  const getToasts = () => [...dom.window.document.querySelectorAll('.dsh-bots-toast')].map((el) => ({
+    tone: el.getAttribute('data-tone'),
+    text: el.textContent || '',
+  }));
+  const findCardByTitle = (title) => [...dom.window.document.querySelectorAll('#right-panel-host .dsh-bots-pcard')]
+    .find((card) => card.textContent?.includes(title));
+  const findButtonByText = (container, re) => [...container.querySelectorAll('button')]
+    .find((btn) => re.test(btn.textContent || ''));
+
+  await flush();
+
+  const slotComp = (predicate) => host.registrations.find((r) => predicate(r.decl))?.component;
+  const RightPanelComp = slotComp((d) => d.name === 'sidebar.right.pane.tab');
+  const OverlayComp = slotComp((d) => d.name === 'shell.overlay' && d.id === 'dsh-bots.modals');
+
+  await act(async () => {
+    root.render(h('div', null,
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, {})),
+      h(OverlayComp, {}),
+    ));
+  });
+  await flush();
+
+  const rightPanelHost = dom.window.document.querySelector('#right-panel-host');
+
+  // 1. Suggestion "开始执行": busy state disables card buttons, sends background:true, reloads, opens home, shows toast.
+  const startDeferred = createDeferred();
+  nextStartDeferred = startDeferred;
+  const startCard = findCardByTitle('检查构建缓存');
+  assert.ok(startCard, 'start suggestion card must render');
+  const startBtn = findButtonByText(startCard, /开始执行|Start/);
+  const startCardDismissBtn = findButtonByText(startCard, /忽略|Dismiss/);
+  assert.ok(startBtn && startCardDismissBtn);
+  await act(async () => { startBtn.click(); });
+  assert.equal(startBtn.disabled, true, 'Start button must be disabled while in flight');
+  assert.equal(startCardDismissBtn.disabled, true, 'Dismiss button on same card must be disabled while Start is in flight');
+  assert.match(startBtn.textContent || '', /执行中…|Starting…/);
+  startDeferred.resolve();
+  await flush();
+
+  const startCall = rpcCalls.find((c) => c.method === 'bots.suggestions.start' && c.params?.suggestionId === 'sug-start-ok');
+  assert.ok(startCall, 'must call bots.suggestions.start');
+  assert.equal(startCall.params.botId, 'bot-whale');
+  assert.equal(startCall.params.background, true);
+  assert.equal(findCardByTitle('检查构建缓存'), undefined, 'started suggestion card must disappear after reload');
+  assert.ok(host.calls.openSession.includes('sess-whale-home'), 'must open bot home chat');
+  assert.ok(getToasts().some((toast) => toast.tone === 'success' && /已开始执行：检查构建缓存/.test(toast.text)));
+
+  // 2. Suggestion "开始执行" with turnError surfaces error toast (still reloads & opens home).
+  const turnErrCard = findCardByTitle('检查线上告警');
+  assert.ok(turnErrCard);
+  await act(async () => { findButtonByText(turnErrCard, /开始执行|Start/).click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /模型会话启动超时/.test(toast.text)));
+  assert.equal(findCardByTitle('检查线上告警'), undefined);
+
+  // 3. Suggestion "开始执行" with ok:false surfaces error toast and reloads when alreadyResolved.
+  const failResCard = findCardByTitle('重跑失败用例');
+  assert.ok(failResCard);
+  await act(async () => { findButtonByText(failResCard, /开始执行|Start/).click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /建议已被处理/.test(toast.text)));
+  assert.equal(findCardByTitle('重跑失败用例'), undefined);
+
+  // 4. Suggestion "忽略": busy state disables buttons, sends dismiss RPC, removes card, shows toast.
+  const dismissDeferred = createDeferred();
+  nextDismissDeferred = dismissDeferred;
+  const dismissCard = findCardByTitle('整理旧分支');
+  assert.ok(dismissCard);
+  const dismissBtn = findButtonByText(dismissCard, /忽略|Dismiss/);
+  const dismissCardStartBtn = findButtonByText(dismissCard, /开始执行|Start/);
+  await act(async () => { dismissBtn.click(); });
+  assert.equal(dismissBtn.disabled, true, 'Dismiss button must be disabled while in flight');
+  assert.equal(dismissCardStartBtn.disabled, true, 'Start button on same card must be disabled while Dismiss is in flight');
+  assert.match(dismissBtn.textContent || '', /忽略中…|Dismissing…/);
+  dismissDeferred.resolve();
+  await flush();
+
+  const dismissCall = rpcCalls.find((c) => c.method === 'bots.suggestions.dismiss' && c.params?.suggestionId === 'sug-dismiss-ok');
+  assert.ok(dismissCall && dismissCall.params.botId === 'bot-whale');
+  assert.equal(findCardByTitle('整理旧分支'), undefined, 'dismissed card must be removed after reload');
+  assert.ok(getToasts().some((toast) => toast.tone === 'info' && /已忽略建议/.test(toast.text)));
+
+  // 5. "立即巡视": sends background:true and distinguishes success, alreadyRunning, and ok:false / skipped.
+  const lookNowBtn = findButtonByText(rightPanelHost, /立即巡视|Look now/);
+  assert.ok(lookNowBtn);
+  await act(async () => { lookNowBtn.click(); });
+  await flush();
+  const lookCall = rpcCalls.find((c) => c.method === 'bots.lookAround.lookNow');
+  assert.ok(lookCall && lookCall.params.botId === 'bot-whale' && lookCall.params.background === true);
+  assert.ok(getToasts().some((toast) => toast.tone === 'success' && /已启动立即巡视/.test(toast.text)));
+
+  lookNowOutcome = { ok: true, alreadyRunning: true, botId: 'bot-whale' };
+  await act(async () => { lookNowBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'info' && /巡视正在进行中/.test(toast.text)));
+
+  lookNowOutcome = { ok: false, skipped: true, reason: 'budget_exceeded', botId: 'bot-whale' };
+  await act(async () => { lookNowBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /巡视跳过：超出预算限制/.test(toast.text)));
+
+  // 6. Automation "运行": row buttons disable while in flight, sends background:true, handles ok:false & alreadyRunning.
+  const autoRunDeferred = createDeferred();
+  nextAutoRunDeferred = autoRunDeferred;
+  const autoCard = findCardByTitle('每日晨报');
+  assert.ok(autoCard, 'automation card must render');
+  const autoRunBtn = findButtonByText(autoCard, /运行|Run/);
+  const autoPauseBtn = autoCard.querySelector('button[title="暂停"], button[title="Pause"]');
+  const autoDeleteBtn = autoCard.querySelector('button[title="删除"], button[title="Delete"]');
+  assert.ok(autoRunBtn && autoPauseBtn && autoDeleteBtn);
+  await act(async () => { autoRunBtn.click(); });
+  assert.equal(autoRunBtn.disabled, true, 'Run button must disable while in flight');
+  assert.equal(autoPauseBtn.disabled, true, 'Pause button must disable while row action is in flight');
+  assert.equal(autoDeleteBtn.disabled, true, 'Delete button must disable while row action is in flight');
+  assert.match(autoRunBtn.textContent || '', /启动中…|Starting…/);
+  autoRunDeferred.resolve();
+  await flush();
+
+  const autoRunCall = rpcCalls.find((c) => c.method === 'bots.automations.runNow' && c.params?.id === 'auto-1');
+  assert.ok(autoRunCall && autoRunCall.params.background === true);
+  assert.ok(getToasts().some((toast) => toast.tone === 'success' && /已启动：每日晨报/.test(toast.text)));
+
+  autoRunOutcome = { ok: true, alreadyRunning: true };
+  await act(async () => { autoRunBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'info' && /任务正在运行中/.test(toast.text)));
+
+  autoRunOutcome = { ok: false, skipped: true, reason: 'skipped_budget', budgetReason: 'budget_exceeded', automationId: 'auto-1' };
+  await act(async () => { autoRunBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /任务跳过（超出预算限制）：每日晨报/.test(toast.text)));
+
+  autoRunOutcome = { ok: false, skipped: true, reason: 'skipped_budget', budgetReason: 'off_peak_only', automationId: 'auto-1' };
+  await act(async () => { autoRunBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /任务跳过（仅谷段运行）：每日晨报/.test(toast.text)));
+
+  autoRunOutcome = { ok: false, error: '执行队列已满' };
+  await act(async () => { autoRunBtn.click(); });
+  await flush();
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /执行队列已满/.test(toast.text)));
+
+  // 7. In-flight bot switch safety: switching bots while Start & LookNow are pending resets busy state and blocks stale openBotHome/reload.
+  const switchStartDeferred = createDeferred();
+  const switchLookDeferred = createDeferred();
+  nextStartDeferred = switchStartDeferred;
+  nextLookNowDeferred = switchLookDeferred;
+  lookNowOutcome = { ok: true, started: true, background: true, runId: 'look-switch', botId: 'bot-whale' };
+  const switchCard = findCardByTitle('切队友前点执行');
+  assert.ok(switchCard, 'switch-test suggestion card must render');
+  await act(async () => {
+    findButtonByText(switchCard, /开始执行|Start/).click();
+    lookNowBtn.click();
+  });
+  assert.equal(lookNowBtn.disabled, true, 'Bot A lookNow button must be disabled while in flight');
+
+  // Switch RightPanelComp to bot-beta before bot-whale's RPCs settle.
+  await act(async () => {
+    root.render(h('div', null,
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, { botId: 'bot-beta' })),
+      h(OverlayComp, {}),
+    ));
+  });
+  await flush();
+
+  const betaLookBtn = findButtonByText(rightPanelHost, /立即巡视|Look now/);
+  assert.ok(betaLookBtn && !betaLookBtn.disabled, 'Bot B lookNow button must be enabled immediately after switching bots');
+  const openSessionsBefore = host.calls.openSession.length;
+  const upNextReloadsBefore = rpcCalls.filter((c) => c.method === 'bots.upNext.list' && c.params?.botId === 'bot-beta').length;
+
+  switchStartDeferred.resolve();
+  switchLookDeferred.resolve();
+  await flush();
+
+  assert.equal(host.calls.openSession.length, openSessionsBefore, 'Stale bot-whale start completion must NOT yank user back via openBotHome');
+  assert.equal(
+    rpcCalls.filter((c) => c.method === 'bots.upNext.list' && c.params?.botId === 'bot-beta').length,
+    upNextReloadsBefore,
+    'Stale bot-whale completion must NOT trigger reload on bot-beta',
+  );
+
+  // Switch back to bot-whale to test Settings Look Around subpage.
+  await act(async () => {
+    root.render(h('div', null,
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, { botId: 'bot-whale' })),
+      h(OverlayComp, {}),
+    ));
+  });
+  await flush();
+
+  // 8. Settings panel Look Around subpage ("立即巡视"): sends background:true and surfaces skipped/alreadyRunning.
+  const settingsBtn = rightPanelHost.querySelector('button[aria-label="设置"], button[aria-label="Settings"]');
+  assert.ok(settingsBtn, 'right panel header must expose Settings button');
+  await act(async () => { settingsBtn.click(); });
+  await flush();
+  const lookNavBtn = findButtonByText(rightPanelHost, /巡视|Look around/);
+  assert.ok(lookNavBtn, 'settings home must expose Look around subpage row');
+  await act(async () => { lookNavBtn.click(); });
+  await flush();
+  const settingsLookBtn = findButtonByText(rightPanelHost, /立即巡视|Look now/);
+  assert.ok(settingsLookBtn, 'Look around subpage must render Look now button');
+  const prevLookCount = rpcCalls.filter((c) => c.method === 'bots.lookAround.lookNow').length;
+  lookNowOutcome = { ok: false, skipped: true, reason: 'budget_exceeded', botId: 'bot-whale' };
+  await act(async () => { settingsLookBtn.click(); });
+  await flush();
+  const lookCallsAfter = rpcCalls.filter((c) => c.method === 'bots.lookAround.lookNow');
+  assert.equal(lookCallsAfter.length, prevLookCount + 1);
+  assert.equal(lookCallsAfter.at(-1).params.background, true);
+  assert.ok(getToasts().some((toast) => toast.tone === 'error' && /巡视跳过：超出预算限制/.test(toast.text)));
+});
