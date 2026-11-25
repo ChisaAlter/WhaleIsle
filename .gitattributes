@@ -3,3 +3,4 @@
 scripts/git-hooks/* text eol=lf
 docs/decisions/archived/** text eol=lf
 vendor/dsh-whale/assets/mascots/*.svg text eol=lf
+vendor/dsh-pad/** text eol=lf

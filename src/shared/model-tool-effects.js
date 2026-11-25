@@ -198,7 +198,12 @@ const TOOLS = Object.freeze({
   acp_result: { level: 'read', confirm: false, reason: '读已完成子任务结果。' },
 
   // ---------- whaleisle MCP endpoint (delegated external agent facing) ----------
-  send_message: { level: 'local', confirm: false, reason: '已确认委派的子代理向自己的父/子会话发送任务消息，属委派树内既有通道。' },
+  send_message: {
+    level: 'local', confirm: true, reason: '进行中的委派子代理通道属既有协作；向已结束的已配置代理追问会重新启动可执行命令的代理轮次，先经桌面确认。',
+    actions: {
+      followup: { level: 'code', reason: '在已结束的已配置代理上继续启动新一轮可执行命令的子任务。' },
+    },
+  },
   list_agents: { level: 'read', confirm: false, reason: '读自己的直接子代理列表。' },
   interrupt_agent: { level: 'local', confirm: false, reason: '暂停自己的子代理，可逆。' },
   whaleisle_skill_list: { level: 'read', confirm: false, reason: '列宿主技能目录。' },
