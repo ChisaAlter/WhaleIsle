@@ -23,7 +23,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/index.tsx
+// vendor/dsh-whale/src/client/index.tsx
 var index_exports = {};
 __export(index_exports, {
   apply: () => apply,
@@ -32,7 +32,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots.css
+// vendor/dsh-whale/src/client/styles/bots.css
 if (typeof document !== "undefined") {
   __id = "src/client/styles/bots.css";
   __head = document.head;
@@ -49,7 +49,7 @@ var __head;
 var __existing;
 var __style;
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots-panels.css
+// vendor/dsh-whale/src/client/styles/bots-panels.css
 if (typeof document !== "undefined") {
   __id2 = "src/client/styles/bots-panels.css";
   __head2 = document.head;
@@ -66,7 +66,7 @@ var __head2;
 var __existing2;
 var __style2;
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots-enhancements.css
+// vendor/dsh-whale/src/client/styles/bots-enhancements.css
 if (typeof document !== "undefined") {
   __id3 = "src/client/styles/bots-enhancements.css";
   __head3 = document.head;
@@ -83,7 +83,7 @@ var __head3;
 var __existing3;
 var __style3;
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/styles/bots-group-enhancements.css
+// vendor/dsh-whale/src/client/styles/bots-group-enhancements.css
 if (typeof document !== "undefined") {
   __id4 = "src/client/styles/bots-group-enhancements.css";
   __head4 = document.head;
@@ -100,10 +100,10 @@ var __head4;
 var __existing4;
 var __style4;
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/index.tsx
+// vendor/dsh-whale/src/client/index.tsx
 var import_react38 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/locales.js
+// vendor/dsh-whale/src/shared/locales.js
 var SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"]);
 var EN_US = Object.freeze({
   // Sidebar section header & empty state
@@ -593,14 +593,14 @@ function createTranslator(locale = "zh-CN") {
   };
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
+// vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
 var import_react13 = require("react");
 var import_react_dom8 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/store/bots-store.ts
+// vendor/dsh-whale/src/client/store/bots-store.ts
 var import_react = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-groups.js
+// vendor/dsh-whale/src/shared/bot-groups.js
 var BOT_GROUP_LIMITS = Object.freeze({
   minCreateMembers: 2,
   minEditMembers: 1,
@@ -775,7 +775,7 @@ function suggestGroupName(names, t = null) {
   return text.slice(0, BOT_GROUP_LIMITS.nameMaxLength);
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-sidebar-search.js
+// vendor/dsh-whale/src/shared/bot-sidebar-search.js
 var PRINTABLE_ASCII = /^[ -~]*$/;
 var COMBINING_MARK = new RegExp("\\p{M}", "u");
 var COMBINING_MARKS = new RegExp("\\p{M}", "gu");
@@ -980,7 +980,7 @@ function searchBots(entries, query, options = {}) {
   return createBotSidebarSearchIndex({ shown, all, purposeOf })(query);
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-sidebar-logic.js
+// vendor/dsh-whale/src/shared/bot-sidebar-logic.js
 function botStatusNeedsAttention(status) {
   return status === "permission" || status === "failed" || status === "unconfirmed";
 }
@@ -1373,7 +1373,7 @@ function normalizeSidebarBotsHeight(value) {
   return Math.min(SIDEBAR_BOTS_MAX_STORED_HEIGHT, Math.max(SIDEBAR_BOTS_MIN_HEIGHT, Math.round(value)));
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-avatar-color.js
+// vendor/dsh-whale/src/shared/bot-avatar-color.js
 var DEFAULT_BOT_AVATAR_COLOR = "#b3dbf4";
 var BOT_AVATAR_COLORS = Object.freeze([
   DEFAULT_BOT_AVATAR_COLOR,
@@ -1484,7 +1484,7 @@ function tintMascotSvg(svgText, color = DEFAULT_BOT_AVATAR_COLOR, options = {}) 
   return result;
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-rpc-methods.js
+// vendor/dsh-whale/src/shared/bot-rpc-methods.js
 var BOT_CHANGE_KINDS = Object.freeze([
   "bot",
   "chats",
@@ -1674,7 +1674,7 @@ var RPC_METHODS = Object.freeze({
   VOICE_TOGGLE: "bots.voice.toggle"
 });
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/store/rpc.ts
+// vendor/dsh-whale/src/client/store/rpc.ts
 var sharedMethods = RPC_METHODS;
 var RPC_METHODS2 = Object.freeze({
   ...RPC_METHODS,
@@ -2053,7 +2053,7 @@ async function togglePetVoice(enabled) {
   }
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/store/bots-store.ts
+// vendor/dsh-whale/src/client/store/bots-store.ts
 var STORAGE_KEYS = {
   sectionCollapsed: "dsh-bots.sectionCollapsed",
   collapsedBots: "dsh-bots.collapsedBots",
@@ -2672,14 +2672,14 @@ function formatRelativeTime(ts, now, locale = "zh-CN") {
   return `${Math.floor(days / 30)}mo`;
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
+// vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
 var import_react3 = require("react");
 var import_react_dom = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotAvatar.tsx
+// vendor/dsh-whale/src/client/components/BotAvatar.tsx
 var import_react2 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-avatar.js
+// vendor/dsh-whale/src/shared/bot-avatar.js
 var WHALE_BOT_MASCOT_IDS = Object.freeze([
   "W1",
   "W2",
@@ -2807,7 +2807,7 @@ function botFallback(bot) {
   return parsed?.kind === "emoji" ? parsed.emoji : botInitial(bot?.name ?? "");
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/Icons.tsx
+// vendor/dsh-whale/src/client/components/Icons.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
 function Svg({
   size = 15,
@@ -3109,7 +3109,7 @@ function IconSpinner(props) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Svg, { ...props, className: `dsh-bots-spin ${props.className ?? ""}`.trim(), children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M21 12a9 9 0 1 1-6.219-8.56" }) });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotAvatar.tsx
+// vendor/dsh-whale/src/client/components/BotAvatar.tsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
 function defaultRadiusForSize(size) {
   if (size <= 22) {
@@ -3351,7 +3351,7 @@ function BotGroupAvatar({
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
+// vendor/dsh-whale/src/client/components/BotGroupDialog.tsx
 var import_jsx_runtime3 = require("react/jsx-runtime");
 function BotGroupDialog({ open, groupId, onClose }) {
   const { locale, tr } = useBotsLocale();
@@ -3582,15 +3582,15 @@ function BotGroupDialog({ open, groupId, onClose }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotImportDialog.tsx
+// vendor/dsh-whale/src/client/components/BotImportDialog.tsx
 var import_react8 = require("react");
 var import_react_dom4 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/AvatarPicker.tsx
+// vendor/dsh-whale/src/client/components/AvatarPicker.tsx
 var import_react5 = require("react");
 var import_react_dom2 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/useAnchoredPopoverDismiss.ts
+// vendor/dsh-whale/src/client/components/useAnchoredPopoverDismiss.ts
 var import_react4 = require("react");
 function isDomNode(value) {
   return value !== null && typeof value === "object" && "nodeType" in value;
@@ -3687,7 +3687,7 @@ function useAnchoredPopoverDismiss({
   }, [open, popoverRef, triggerRef, triggerEl, closeOnScroll]);
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/AvatarPicker.tsx
+// vendor/dsh-whale/src/client/components/AvatarPicker.tsx
 var import_jsx_runtime4 = require("react/jsx-runtime");
 function rgbToHex(r, g, b) {
   const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
@@ -4221,7 +4221,7 @@ function AvatarPickerPopover({
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotDisclosure.tsx
+// vendor/dsh-whale/src/client/components/BotDisclosure.tsx
 var import_react6 = require("react");
 var import_jsx_runtime5 = require("react/jsx-runtime");
 function prefersInstantMotion() {
@@ -4317,11 +4317,11 @@ function BotChevron({ open, size = 14, className }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotShareDialog.tsx
+// vendor/dsh-whale/src/client/components/BotShareDialog.tsx
 var import_react7 = require("react");
 var import_react_dom3 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-memory-line-kinds.js
+// vendor/dsh-whale/src/shared/bot-memory-line-kinds.js
 var BOT_MEMORY_LINE_KINDS = Object.freeze([
   "rule",
   "prefers",
@@ -4331,7 +4331,7 @@ var BOT_MEMORY_LINE_KINDS = Object.freeze([
 ]);
 var PROTECTED_MEMORY_KINDS = Object.freeze(["rule", "prefers", "decided"]);
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-memory-lines.js
+// vendor/dsh-whale/src/shared/bot-memory-lines.js
 var MEMORY_LOAD_LIMIT = 200;
 var SECRET_PATTERNS = [
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
@@ -4364,7 +4364,7 @@ function redactSecretLike(value) {
   return redacted;
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-tools-schema.js
+// vendor/dsh-whale/src/shared/bot-tools-schema.js
 var BOT_TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 var BOT_TOOL_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 var BOT_TOOL_ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -4719,7 +4719,7 @@ var BOT_NATIVE_TOOL_PARAM_SCHEMAS = Object.freeze({
   bot_reply: BOT_REPLY_TOOL_SCHEMA
 });
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-types.js
+// vendor/dsh-whale/src/shared/bot-types.js
 var BOT_LIMITS = Object.freeze({
   nameMaxLength: 64,
   folderMaxLength: 40,
@@ -4875,7 +4875,7 @@ function hasBotNameConflict(trimmed, options) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-package.js
+// vendor/dsh-whale/src/shared/bot-package.js
 var BOT_PACKAGE_SCHEMA_VERSION = 1;
 var BOT_PACKAGE_AVATAR_PATH = BOT_AVATAR_FILE;
 var BOT_PACKAGE_MAX_MANIFEST_BYTES = 256 * 1024;
@@ -5255,7 +5255,7 @@ function scanBotText(text, options = {}) {
   };
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotShareDialog.tsx
+// vendor/dsh-whale/src/client/components/BotShareDialog.tsx
 var import_jsx_runtime6 = require("react/jsx-runtime");
 var FALLBACK_RULES = [
   {
@@ -6090,7 +6090,7 @@ function BotShareDialog({ open, mode, botId, initialJson, onClose }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotImportDialog.tsx
+// vendor/dsh-whale/src/client/components/BotImportDialog.tsx
 var import_jsx_runtime7 = require("react/jsx-runtime");
 var SOURCE_LABELS = {
   orca: "Orca",
@@ -6523,10 +6523,10 @@ ${f.content}`)
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
 var import_react9 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-look-around.js
+// vendor/dsh-whale/src/shared/bot-look-around.js
 var LOOK_AROUND_AGENTS = Object.freeze(["claude", "codex", "deepseek-harness"]);
 var LOOK_AROUND_EVERY_CHOICES = Object.freeze([
   "every-4h",
@@ -6601,7 +6601,7 @@ function nextLookAroundAt(setting, now = Date.now()) {
   return null;
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-tidy-up.js
+// vendor/dsh-whale/src/shared/bot-tidy-up.js
 var TIDY_UP_EVERY_CHOICES = Object.freeze(["night", "week"]);
 var TIDY_UP_EVERY_LABELS = Object.freeze({
   night: "Each night after 3 AM",
@@ -6713,7 +6713,7 @@ function botTidyUp(bot) {
   };
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsSubpagesA.tsx
 var import_jsx_runtime8 = require("react/jsx-runtime");
 var unsavedSoulBots = /* @__PURE__ */ new Set();
 var SOUL_DRAFT_SESSION_PREFIX = "dsh-bots.unsavedSoul:";
@@ -6908,15 +6908,83 @@ function BotComputerSubpage({ bot }) {
     ] })
   ] });
 }
+function formatLookNowFailure(res, zh) {
+  if (res.reason === "budget_exceeded") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u8D85\u51FA\u9884\u7B97\u9650\u5236" : "Look around skipped: budget_exceeded";
+  }
+  if (res.reason === "off_peak_only") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u4EC5\u8C37\u6BB5\u8FD0\u884C" : "Look around skipped: off_peak_only";
+  }
+  const detail = res.summary || res.error || res.reason;
+  if (res.skipped) {
+    return detail ? zh ? `\u5DE1\u89C6\u8DF3\u8FC7\uFF1A${detail}` : `Look around skipped: ${detail}` : zh ? "\u5DE1\u89C6\u5DF2\u8DF3\u8FC7" : "Look around skipped";
+  }
+  return detail ? zh ? `\u5DE1\u89C6\u5931\u8D25\uFF1A${detail}` : `Look around failed: ${detail}` : zh ? "\u5DE1\u89C6\u5931\u8D25" : "Look around failed";
+}
 function BotLookAroundSubpage({ bot }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === "zh-CN";
   const cfg = botLookAround(bot);
   const [focusDraft, setFocusDraft] = (0, import_react9.useState)(cfg.focus ?? "");
   const [running, setRunning] = (0, import_react9.useState)(false);
+  const mountedRef = (0, import_react9.useRef)(true);
+  const activeBotIdRef = (0, import_react9.useRef)(bot.id);
+  const runningRef = (0, import_react9.useRef)(false);
+  (0, import_react9.useEffect)(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  (0, import_react9.useEffect)(() => {
+    activeBotIdRef.current = bot.id;
+    runningRef.current = false;
+    setRunning(false);
+  }, [bot.id]);
   (0, import_react9.useEffect)(() => {
     setFocusDraft(cfg.focus ?? "");
   }, [cfg.focus]);
+  const handleLookNow = async () => {
+    if (runningRef.current) {
+      return;
+    }
+    const targetBotId = bot.id;
+    runningRef.current = true;
+    setRunning(true);
+    try {
+      const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
+        botId: targetBotId,
+        background: true
+      });
+      if (!mountedRef.current || activeBotIdRef.current !== targetBotId) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatLookNowFailure(res, zh), tone: "error" });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? "\u5DE1\u89C6\u6B63\u5728\u8FDB\u884C\u4E2D" : "Look around is already running",
+          tone: "info"
+        });
+        return;
+      }
+      botsStore.pushToast({
+        message: zh ? "\u5DF2\u542F\u52A8\u7ACB\u5373\u5DE1\u89C6" : "Look around sweep started",
+        tone: "success"
+      });
+    } catch (err) {
+      if (mountedRef.current && activeBotIdRef.current === targetBotId) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    } finally {
+      if (mountedRef.current && activeBotIdRef.current === targetBotId) {
+        runningRef.current = false;
+        setRunning(false);
+      }
+    }
+  };
   const patchLook = async (patch) => {
     await callBotRpc(RPC_METHODS2.LOOK_AROUND_SET, { botId: bot.id, ...patch });
     await botsStore.refresh();
@@ -7006,17 +7074,7 @@ function BotLookAroundSubpage({ bot }) {
             type: "button",
             className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary",
             disabled: running || bot.paused,
-            onClick: async () => {
-              setRunning(true);
-              try {
-                await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, { botId: bot.id });
-                botsStore.pushToast({ message: zh ? "\u5DF2\u5F00\u59CB\u5DE1\u89C6" : "Look around started", tone: "success" });
-              } catch (err) {
-                botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
-              } finally {
-                setRunning(false);
-              }
-            },
+            onClick: () => void handleLookNow(),
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(IconRefresh, { size: 11 }),
               /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: running ? tr("settings.bots.lookAround.looking", "Looking\u2026") : tr("bots.upNext.lookNow", "Look now") })
@@ -7484,11 +7542,11 @@ function BotSoulSubpage({ bot, onRegisterLeaveGuard }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
+// vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
 var import_react10 = require("react");
 var import_react_dom5 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-builtin-skills-a.js
+// vendor/dsh-whale/src/shared/bot-builtin-skills-a.js
 var BOT_BUILTIN_SKILLS_PART_A = Object.freeze({
   "pr-review-checklist": `---
 name: pr-review-checklist
@@ -7745,7 +7803,7 @@ Before calling a risky coding change done, run two focused, independent checks i
 `
 });
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-builtin-skills-b.js
+// vendor/dsh-whale/src/shared/bot-builtin-skills-b.js
 var BOT_BUILTIN_SKILLS_PART_B = Object.freeze({
   "issue-triage": `---
 name: issue-triage
@@ -7936,7 +7994,7 @@ For every Work Item with non-trivial trade-offs or verification gates, append st
 `
 });
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-builtin-skills.js
+// vendor/dsh-whale/src/shared/bot-builtin-skills.js
 var BOT_BUILTIN_SKILL_IDS = Object.freeze([
   "pr-review-checklist",
   "bug-reproduction",
@@ -7967,7 +8025,7 @@ var BOT_BUILTIN_SKILLS = Object.freeze({
   ...BOT_BUILTIN_SKILLS_PART_B
 });
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-template-catalog-a.js
+// vendor/dsh-whale/src/shared/bot-template-catalog-a.js
 var BOT_TEMPLATES_CODING = Object.freeze([
   {
     id: "pr-review",
@@ -8458,7 +8516,7 @@ var BOT_TEMPLATES_SUPPORT = Object.freeze([
   }
 ]);
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-template-catalog-b.js
+// vendor/dsh-whale/src/shared/bot-template-catalog-b.js
 var BOT_TEMPLATES_PLANNING = Object.freeze([
   {
     id: "briefing",
@@ -8805,7 +8863,7 @@ var BOT_TEMPLATES_PERSONAL = Object.freeze([
   }
 ]);
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-template-catalog.js
+// vendor/dsh-whale/src/shared/bot-template-catalog.js
 var BOT_TEMPLATES_CAPTAIN = Object.freeze([
   {
     id: "engineering-captain",
@@ -8929,7 +8987,7 @@ var BOT_TEMPLATES_CAPTAIN = Object.freeze([
   }
 ]);
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-templates.js
+// vendor/dsh-whale/src/shared/bot-templates.js
 var LEGACY_BOT_TEMPLATE_IDS = Object.freeze([
   "support",
   "release",
@@ -9059,7 +9117,7 @@ function searchTemplates(query, category = "all") {
   });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
+// vendor/dsh-whale/src/client/components/BotTemplatesDialog.tsx
 var import_jsx_runtime9 = require("react/jsx-runtime");
 function BotTemplatesDialog({ open, onClose }) {
   const { locale, tr } = useBotsLocale();
@@ -9330,7 +9388,7 @@ function BotTemplatesDialog({ open, onClose }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/HandToBotDialog.tsx
+// vendor/dsh-whale/src/client/components/HandToBotDialog.tsx
 var import_react11 = require("react");
 var import_react_dom6 = require("react-dom");
 var import_jsx_runtime10 = require("react/jsx-runtime");
@@ -9700,7 +9758,7 @@ function HandToBotDialog({
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/NewBotDialog.tsx
+// vendor/dsh-whale/src/client/components/NewBotDialog.tsx
 var import_react12 = require("react");
 var import_react_dom7 = require("react-dom");
 var import_jsx_runtime11 = require("react/jsx-runtime");
@@ -10354,7 +10412,7 @@ function NewBotDialog({ open, draft, onClose }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
+// vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
 var import_jsx_runtime12 = require("react/jsx-runtime");
 function detectUnsavedDraftsForBot(botId, homeSessionId) {
   const soulDirty = hasUnsavedSoulDraft(botId);
@@ -10852,7 +10910,7 @@ function BotsModalHost() {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConversationChrome.tsx
+// vendor/dsh-whale/src/client/components/BotConversationChrome.tsx
 var import_react14 = require("react");
 var import_jsx_runtime13 = require("react/jsx-runtime");
 function useDropdownDismiss(open, onClose) {
@@ -11172,7 +11230,7 @@ function BotConversationFrame({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotFirstScreen.tsx
+// vendor/dsh-whale/src/client/components/BotFirstScreen.tsx
 var import_react15 = require("react");
 var import_jsx_runtime14 = require("react/jsx-runtime");
 var STEP_ORDER = ["create", "start", "first-message", "done"];
@@ -11498,10 +11556,10 @@ function BotFirstScreen({ bot, className, onDismiss }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
+// vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
 var import_react17 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupReplyPicker.tsx
+// vendor/dsh-whale/src/client/components/BotGroupReplyPicker.tsx
 var import_react16 = require("react");
 var import_jsx_runtime15 = require("react/jsx-runtime");
 function BotGroupReplyPicker({
@@ -11736,7 +11794,7 @@ function BotGroupReplyPicker({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
+// vendor/dsh-whale/src/client/components/BotGroupRoomView.tsx
 var import_jsx_runtime16 = require("react/jsx-runtime");
 var PAGE_LIMIT = 40;
 var NEAR_BOTTOM_PX = 88;
@@ -12949,13 +13007,13 @@ function BotGroupRoomView() {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotRightPanel.tsx
+// vendor/dsh-whale/src/client/components/BotRightPanel.tsx
 var import_react31 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotActivityTab.tsx
+// vendor/dsh-whale/src/client/components/BotActivityTab.tsx
 var import_react21 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/shared/bot-items.js
+// vendor/dsh-whale/src/shared/bot-items.js
 var BOT_ITEM_STATUSES = Object.freeze(["planned", "working", "needs_you", "done", "canceled"]);
 var BOT_ITEM_OPEN_STATUSES = Object.freeze(["planned", "working", "needs_you"]);
 var BOT_ITEM_ERROR_CODES = Object.freeze([
@@ -13215,9 +13273,48 @@ function isBotItemStale(item, staleDays = BOT_ITEM_DEFAULT_STALE_DAYS, now = Dat
   return false;
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotActivityUpcoming.tsx
+// vendor/dsh-whale/src/client/components/BotActivityUpcoming.tsx
 var import_react18 = require("react");
 var import_jsx_runtime17 = require("react/jsx-runtime");
+function formatSuggestionStartFailure(res, zh) {
+  if (res.error) return res.error;
+  if (res.alreadyResolved) {
+    const suffix = res.status ? zh ? `\uFF08${res.status}\uFF09` : ` (${res.status})` : "";
+    return zh ? `\u8BE5\u5EFA\u8BAE\u5DF2\u5904\u7406${suffix}` : `Suggestion already resolved${suffix}`;
+  }
+  if (res.status) {
+    return zh ? `\u65E0\u6CD5\u6267\u884C\u8BE5\u5EFA\u8BAE\uFF08${res.status}\uFF09` : `Cannot start suggestion (${res.status})`;
+  }
+  return zh ? "\u542F\u52A8\u5EFA\u8BAE\u5931\u8D25" : "Failed to start suggestion";
+}
+function formatLookNowFailure2(res, zh) {
+  if (res.reason === "budget_exceeded") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u8D85\u51FA\u9884\u7B97\u9650\u5236" : "Look around skipped: budget_exceeded";
+  }
+  if (res.reason === "off_peak_only") {
+    return zh ? "\u5DE1\u89C6\u8DF3\u8FC7\uFF1A\u4EC5\u8C37\u6BB5\u8FD0\u884C" : "Look around skipped: off_peak_only";
+  }
+  const detail = res.summary || res.error || res.reason;
+  if (res.skipped) {
+    return detail ? zh ? `\u5DE1\u89C6\u8DF3\u8FC7\uFF1A${detail}` : `Look around skipped: ${detail}` : zh ? "\u5DE1\u89C6\u5DF2\u8DF3\u8FC7" : "Look around skipped";
+  }
+  return detail ? zh ? `\u5DE1\u89C6\u5931\u8D25\uFF1A${detail}` : `Look around failed: ${detail}` : zh ? "\u5DE1\u89C6\u5931\u8D25" : "Look around failed";
+}
+function formatAutomationRunFailure(res, name2, zh) {
+  const budgetCode = res.budgetReason || res.reason;
+  if (budgetCode === "budget_exceeded") {
+    return zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08\u8D85\u51FA\u9884\u7B97\u9650\u5236\uFF09\uFF1A${name2}` : `Automation skipped (budget_exceeded): ${name2}`;
+  }
+  if (budgetCode === "off_peak_only") {
+    return zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08\u4EC5\u8C37\u6BB5\u8FD0\u884C\uFF09\uFF1A${name2}` : `Automation skipped (off_peak_only): ${name2}`;
+  }
+  if (res.skipped || res.reason === "skipped_budget") {
+    const detail2 = res.budgetReason || res.error || res.summary || res.reason;
+    return detail2 ? zh ? `\u4EFB\u52A1\u8DF3\u8FC7\uFF08${name2}\uFF09\uFF1A${detail2}` : `Automation skipped (${name2}): ${detail2}` : zh ? `\u4EFB\u52A1\u5DF2\u8DF3\u8FC7\uFF1A${name2}` : `Automation skipped: ${name2}`;
+  }
+  const detail = res.error || res.reason || res.summary;
+  return detail ? zh ? `\u8FD0\u884C\u5931\u8D25\uFF08${name2}\uFF09\uFF1A${detail}` : `Failed to run ${name2}: ${detail}` : zh ? `\u8FD0\u884C\u5931\u8D25\uFF1A${name2}` : `Failed to run ${name2}`;
+}
 var MAX_VISIBLE_AUTOMATIONS = 5;
 var AUTOMATION_DRAFT_PREFILL_EVENT = "dsh-bots:prefill-chat-draft";
 function isAutomationFailed(auto) {
@@ -13301,7 +13398,31 @@ function BotActivityUpcoming({
   const [autosSectionOpen, setAutosSectionOpen] = (0, import_react18.useState)(true);
   const [showAllAutos, setShowAllAutos] = (0, import_react18.useState)(false);
   const [localUnreadIds, setLocalUnreadIds] = (0, import_react18.useState)({});
+  const [busySuggestionIds, setBusySuggestionIds] = (0, import_react18.useState)({});
+  const [busyAutoActions, setBusyAutoActions] = (0, import_react18.useState)({});
   const markedSeenForBotRef = (0, import_react18.useRef)(null);
+  const mountedRef = (0, import_react18.useRef)(true);
+  const activeBotIdRef = (0, import_react18.useRef)(bot.id);
+  const lookingNowRef = (0, import_react18.useRef)(false);
+  const busySuggestionRef = (0, import_react18.useRef)(/* @__PURE__ */ new Set());
+  const busyAutoRef = (0, import_react18.useRef)(/* @__PURE__ */ new Set());
+  (0, import_react18.useEffect)(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  (0, import_react18.useEffect)(() => {
+    activeBotIdRef.current = bot.id;
+    lookingNowRef.current = false;
+    busySuggestionRef.current.clear();
+    busyAutoRef.current.clear();
+    setLookingNow(false);
+    setBusySuggestionIds({});
+    setBusyAutoActions({});
+    setLocalUnreadIds({});
+  }, [bot.id]);
+  const isCurrentBot = (targetBotId) => mountedRef.current && activeBotIdRef.current === targetBotId;
   const scheduledAutos = (0, import_react18.useMemo)(
     () => sortAutomations(automations.filter((a) => !a.once)),
     [automations]
@@ -13381,20 +13502,218 @@ function BotActivityUpcoming({
     });
   };
   const handleLookNow = async () => {
+    if (lookingNowRef.current) {
+      return;
+    }
+    const targetBotId = bot.id;
+    lookingNowRef.current = true;
     setLookingNow(true);
     try {
-      await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, { botId: bot.id });
+      const res = await callBotRpc(RPC_METHODS2.LOOK_AROUND_NOW, {
+        botId: targetBotId,
+        background: true
+      });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatLookNowFailure2(res, zh), tone: "error" });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? "\u5DE1\u89C6\u6B63\u5728\u8FDB\u884C\u4E2D" : "Look around is already running",
+          tone: "info"
+        });
+        return;
+      }
       botsStore.pushToast({
         message: zh ? "\u5DF2\u542F\u52A8\u7ACB\u5373\u5DE1\u89C6" : "Look around sweep started",
         tone: "success"
       });
       onReload();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
     } finally {
-      setLookingNow(false);
+      if (isCurrentBot(targetBotId)) {
+        lookingNowRef.current = false;
+        setLookingNow(false);
+      }
     }
   };
+  const handleStartSuggestion = async (sug) => {
+    if (busySuggestionRef.current.has(sug.id)) {
+      return;
+    }
+    const targetBotId = bot.id;
+    busySuggestionRef.current.add(sug.id);
+    setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: "start" }));
+    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: targetBotId, ids: [sug.id] }).catch(() => {
+    });
+    try {
+      const res = await callBotRpc(RPC_METHODS2.SUGGESTIONS_START, {
+        botId: targetBotId,
+        suggestionId: sug.id,
+        background: true
+      });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatSuggestionStartFailure(res, zh), tone: "error" });
+        if (res.alreadyResolved) {
+          onReload();
+        }
+        return;
+      }
+      if (res && res.turnError) {
+        botsStore.pushToast({ message: res.turnError, tone: "error" });
+        onReload();
+        void botsStore.openBotHome(targetBotId);
+        return;
+      }
+      onReload();
+      void botsStore.openBotHome(targetBotId);
+      botsStore.pushToast({
+        message: zh ? `\u5DF2\u5F00\u59CB\u6267\u884C\uFF1A${sug.title}` : `Started: ${sug.title}`,
+        tone: "success"
+      });
+    } catch (err) {
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    } finally {
+      if (isCurrentBot(targetBotId)) {
+        busySuggestionRef.current.delete(sug.id);
+        setBusySuggestionIds((prev) => {
+          const next = { ...prev };
+          delete next[sug.id];
+          return next;
+        });
+      }
+    }
+  };
+  const handleDismissSuggestion = async (sug) => {
+    if (busySuggestionRef.current.has(sug.id)) {
+      return;
+    }
+    const targetBotId = bot.id;
+    busySuggestionRef.current.add(sug.id);
+    setBusySuggestionIds((prev) => ({ ...prev, [sug.id]: "dismiss" }));
+    void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: targetBotId, ids: [sug.id] }).catch(() => {
+    });
+    try {
+      const res = await callBotRpc(RPC_METHODS2.SUGGESTIONS_DISMISS, {
+        botId: targetBotId,
+        suggestionId: sug.id
+      });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({
+          message: res.error || (zh ? "\u5FFD\u7565\u5EFA\u8BAE\u5931\u8D25" : "Failed to dismiss suggestion"),
+          tone: "error"
+        });
+        return;
+      }
+      onReload();
+      botsStore.pushToast({
+        message: zh ? "\u5DF2\u5FFD\u7565\u5EFA\u8BAE" : "Suggestion dismissed",
+        tone: "info"
+      });
+    } catch (err) {
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    } finally {
+      if (isCurrentBot(targetBotId)) {
+        busySuggestionRef.current.delete(sug.id);
+        setBusySuggestionIds((prev) => {
+          const next = { ...prev };
+          delete next[sug.id];
+          return next;
+        });
+      }
+    }
+  };
+  const withBusyAuto = async (autoId, action, fn) => {
+    if (busyAutoRef.current.has(autoId)) {
+      return;
+    }
+    const targetBotId = bot.id;
+    busyAutoRef.current.add(autoId);
+    setBusyAutoActions((prev) => ({ ...prev, [autoId]: action }));
+    try {
+      await fn(targetBotId);
+    } finally {
+      if (isCurrentBot(targetBotId)) {
+        busyAutoRef.current.delete(autoId);
+        setBusyAutoActions((prev) => {
+          const next = { ...prev };
+          delete next[autoId];
+          return next;
+        });
+      }
+    }
+  };
+  const handleRunAutomation = (auto) => withBusyAuto(auto.id, "run", async (targetBotId) => {
+    try {
+      const res = await callBotRpc(RPC_METHODS2.AUTOMATIONS_RUN_NOW, {
+        id: auto.id,
+        background: true
+      });
+      if (!isCurrentBot(targetBotId)) {
+        return;
+      }
+      if (res && res.ok === false) {
+        botsStore.pushToast({ message: formatAutomationRunFailure(res, auto.name, zh), tone: "error" });
+        return;
+      }
+      if (res && res.alreadyRunning) {
+        botsStore.pushToast({
+          message: zh ? "\u4EFB\u52A1\u6B63\u5728\u8FD0\u884C\u4E2D" : "Automation is already running",
+          tone: "info"
+        });
+        return;
+      }
+      botsStore.pushToast({
+        message: zh ? `\u5DF2\u542F\u52A8\uFF1A${auto.name}` : `Started ${auto.name}`,
+        tone: "success"
+      });
+      onReload();
+    } catch (err) {
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    }
+  });
+  const handleToggleAutomation = (auto) => withBusyAuto(auto.id, "update", async (targetBotId) => {
+    try {
+      await callBotRpc(RPC_METHODS2.AUTOMATIONS_UPDATE, { id: auto.id, enabled: !auto.enabled });
+      if (isCurrentBot(targetBotId)) {
+        onReload();
+      }
+    } catch (err) {
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    }
+  });
+  const handleDeleteAutomation = (auto) => withBusyAuto(auto.id, "delete", async (targetBotId) => {
+    try {
+      await callBotRpc(RPC_METHODS2.AUTOMATIONS_DELETE, { id: auto.id });
+      if (isCurrentBot(targetBotId)) {
+        onReload();
+      }
+    } catch (err) {
+      if (isCurrentBot(targetBotId)) {
+        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      }
+    }
+  });
   const handleCreateAuto = async () => {
     if (!autoPrompt.trim()) {
       return;
@@ -13418,6 +13737,8 @@ function BotActivityUpcoming({
   const renderAutomationCard = (auto) => {
     const failed = isAutomationFailed(auto);
     const running = isAutomationRunning(auto);
+    const busyAction = busyAutoActions[auto.id];
+    const rowBusy = Boolean(busyAction);
     return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
       "div",
       {
@@ -13436,17 +13757,11 @@ function BotActivityUpcoming({
                 {
                   type: "button",
                   className: "dsh-bots-pbtn dsh-bots-pbtn-xs",
-                  onClick: () => {
-                    void callBotRpc("bots.automations.runNow", { id: auto.id }).then(() => {
-                      botsStore.pushToast({ message: zh ? `\u5DF2\u8FD0\u884C\uFF1A${auto.name}` : `Ran ${auto.name}`, tone: "success" });
-                      onReload();
-                    }).catch((err) => {
-                      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
-                    });
-                  },
+                  disabled: rowBusy,
+                  onClick: () => void handleRunAutomation(auto),
                   children: [
                     /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconPlay, { size: 10 }),
-                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: zh ? "\u8FD0\u884C" : "Run" })
+                    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: busyAction === "run" ? zh ? "\u542F\u52A8\u4E2D\u2026" : "Starting\u2026" : zh ? "\u8FD0\u884C" : "Run" })
                   ]
                 }
               ),
@@ -13456,9 +13771,8 @@ function BotActivityUpcoming({
                   type: "button",
                   className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon",
                   title: auto.enabled ? zh ? "\u6682\u505C" : "Pause" : zh ? "\u6062\u590D" : "Resume",
-                  onClick: () => {
-                    void callBotRpc("bots.automations.update", { id: auto.id, enabled: !auto.enabled }).then(() => onReload()).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                  },
+                  disabled: rowBusy,
+                  onClick: () => void handleToggleAutomation(auto),
                   children: auto.enabled ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconPause, { size: 11 }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconPlay, { size: 11 })
                 }
               ),
@@ -13468,9 +13782,8 @@ function BotActivityUpcoming({
                   type: "button",
                   className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon dsh-bots-pbtn-danger",
                   title: zh ? "\u5220\u9664" : "Delete",
-                  onClick: () => {
-                    void callBotRpc("bots.automations.delete", { id: auto.id }).then(() => onReload()).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                  },
+                  disabled: rowBusy,
+                  onClick: () => void handleDeleteAutomation(auto),
                   children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconTrash, { size: 11 })
                 }
               )
@@ -13664,6 +13977,8 @@ function BotActivityUpcoming({
       suggestions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "dsh-bots-empty", children: zh ? "\u6682\u65E0\u5DE1\u89C6\u5EFA\u8BAE\u3002\u70B9\u51FB\u300C\u7ACB\u5373\u5DE1\u89C6\u300D\u8BA9\u5927\u80A5\u9C7C\u961F\u53CB\u626B\u63CF\u8FD1\u671F\u4E0A\u4E0B\u6587\u3002" : "No suggestions right now." }) : suggestions.map((sug) => {
         const unread = localUnreadIds[sug.id] !== void 0 ? localUnreadIds[sug.id] : isSuggestionUnread(sug, upNextSeenAt);
         const href = sug.link || sug.url || null;
+        const busyAction = busySuggestionIds[sug.id];
+        const cardBusy = Boolean(busyAction);
         return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
           "div",
           {
@@ -13693,6 +14008,7 @@ function BotActivityUpcoming({
                       type: "button",
                       className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon",
                       title: unread ? zh ? "\u6807\u4E3A\u5DF2\u8BFB" : "Mark as read" : zh ? "\u6807\u4E3A\u672A\u8BFB" : "Mark as unread",
+                      disabled: cardBusy,
                       onClick: () => void toggleSuggestionUnread(sug, !unread),
                       children: unread ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconEye, { size: 11 }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconEyeOff, { size: 11 })
                     }
@@ -13706,15 +14022,9 @@ function BotActivityUpcoming({
                   {
                     type: "button",
                     className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary",
-                    onClick: () => {
-                      void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
-                      });
-                      void callBotRpc(RPC_METHODS2.SUGGESTIONS_START, { botId: bot.id, suggestionId: sug.id }).then(() => {
-                        onReload();
-                        void botsStore.openBotHome(bot.id);
-                      }).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                    },
-                    children: tr("bots.upNext.start", "Start")
+                    disabled: cardBusy,
+                    onClick: () => void handleStartSuggestion(sug),
+                    children: busyAction === "start" ? zh ? "\u6267\u884C\u4E2D\u2026" : "Starting\u2026" : tr("bots.upNext.start", "Start")
                   }
                 ),
                 /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
@@ -13722,12 +14032,9 @@ function BotActivityUpcoming({
                   {
                     type: "button",
                     className: "dsh-bots-pbtn dsh-bots-pbtn-xs",
-                    onClick: () => {
-                      void callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId: bot.id, ids: [sug.id] }).catch(() => {
-                      });
-                      void callBotRpc(RPC_METHODS2.SUGGESTIONS_DISMISS, { botId: bot.id, suggestionId: sug.id }).then(() => onReload()).catch((err) => botsStore.pushToast({ message: String(err), tone: "error" }));
-                    },
-                    children: tr("bots.upNext.dismiss", "Dismiss")
+                    disabled: cardBusy,
+                    onClick: () => void handleDismissSuggestion(sug),
+                    children: busyAction === "dismiss" ? zh ? "\u5FFD\u7565\u4E2D\u2026" : "Dismissing\u2026" : tr("bots.upNext.dismiss", "Dismiss")
                   }
                 )
               ] })
@@ -13740,10 +14047,10 @@ function BotActivityUpcoming({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
+// vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
 var import_react20 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemQuestionStep.tsx
+// vendor/dsh-whale/src/client/components/BotItemQuestionStep.tsx
 var import_react19 = require("react");
 var import_jsx_runtime18 = require("react/jsx-runtime");
 function buildOptionSummary(decision, picks) {
@@ -14001,7 +14308,7 @@ function BotItemQuestionStep({
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemReplyingTo.tsx
+// vendor/dsh-whale/src/client/components/BotItemReplyingTo.tsx
 var import_jsx_runtime19 = require("react/jsx-runtime");
 function BotItemReplyingTo({
   summary,
@@ -14040,7 +14347,7 @@ function BotItemReplyingTo({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
+// vendor/dsh-whale/src/client/components/BotItemDetailView.tsx
 var import_jsx_runtime20 = require("react/jsx-runtime");
 var DRAFT_STORAGE_PREFIX = "dsh-bots.itemDraft:";
 function draftStorageKey(botId, itemUid) {
@@ -15185,7 +15492,7 @@ ${text}` : text);
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotActivityTab.tsx
+// vendor/dsh-whale/src/client/components/BotActivityTab.tsx
 var import_jsx_runtime21 = require("react/jsx-runtime");
 var STATUS_GROUPS = [
   "needs_you",
@@ -15972,7 +16279,7 @@ function BotActivityTab({ bot, filterOpen }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotChatsTab.tsx
+// vendor/dsh-whale/src/client/components/BotChatsTab.tsx
 var import_react22 = require("react");
 var import_react_dom9 = require("react-dom");
 var import_jsx_runtime22 = require("react/jsx-runtime");
@@ -17017,7 +17324,7 @@ function BotChatsTab({ bot }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotConnectorsTab.tsx
+// vendor/dsh-whale/src/client/components/BotConnectorsTab.tsx
 var import_react23 = require("react");
 var import_jsx_runtime23 = require("react/jsx-runtime");
 var CHANNEL_LABELS = {
@@ -17417,7 +17724,7 @@ function BotConnectorsTab({ bot, embedded = false }) {
   return embedded ? content : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "dsh-bots-panel-scroll", children: content });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotFilesTab.tsx
+// vendor/dsh-whale/src/client/components/BotFilesTab.tsx
 var import_react24 = require("react");
 var import_jsx_runtime24 = require("react/jsx-runtime");
 var PINNED_FILES = ["SOUL.md", "MEMORY.md", "AGENTS.md", "bot.json"];
@@ -17666,7 +17973,7 @@ function BotFilesTab({ bot }) {
   ] }) });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupItemsPanel.tsx
+// vendor/dsh-whale/src/client/components/BotGroupItemsPanel.tsx
 var import_react25 = require("react");
 var import_jsx_runtime25 = require("react/jsx-runtime");
 var RPC_GROUPS_ITEMS = RPC_METHODS2.GROUPS_ITEMS;
@@ -18266,7 +18573,7 @@ function BotGroupItemsPanel({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotPanelHeader.tsx
+// vendor/dsh-whale/src/client/components/BotPanelHeader.tsx
 var import_react26 = require("react");
 var import_jsx_runtime26 = require("react/jsx-runtime");
 function computeNextTidyUpAt2(cfg, now) {
@@ -18618,13 +18925,13 @@ function BotPanelHeader({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsView.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsView.tsx
 var import_react30 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
 var import_react28 = require("react");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesC.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsSubpagesC.tsx
 var import_react27 = require("react");
 var import_jsx_runtime27 = require("react/jsx-runtime");
 function BotToolsSubpage({ bot }) {
@@ -19300,7 +19607,7 @@ function BotSharingSubpage({ bot }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsSubpagesB.tsx
 var import_jsx_runtime28 = require("react/jsx-runtime");
 function factBody(fact) {
   return String(fact?.body ?? fact?.text ?? fact?.raw ?? "");
@@ -19883,7 +20190,7 @@ function BotWhoCanAskSubpage({ bot }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsSubpagesD.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsSubpagesD.tsx
 var import_react29 = require("react");
 var import_jsx_runtime29 = require("react/jsx-runtime");
 function formatToolEntry(entry) {
@@ -20334,7 +20641,7 @@ function BotBudgetSubpage({ bot }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSettingsView.tsx
+// vendor/dsh-whale/src/client/components/BotSettingsView.tsx
 var import_jsx_runtime30 = require("react/jsx-runtime");
 var SUBPAGE_META = [
   { id: "agent", zh: "\u667A\u80FD\u4F53\u548C\u6A21\u578B", en: "Agent & model", descZh: "\u6A21\u578B\u9009\u62E9\u4E0E\u63A8\u7406\u5F3A\u5EA6", descEn: "Model and reasoning effort" },
@@ -20860,7 +21167,7 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotRightPanel.tsx
+// vendor/dsh-whale/src/client/components/BotRightPanel.tsx
 var import_jsx_runtime31 = require("react/jsx-runtime");
 function usePanelOffscreen(ref) {
   const [offscreen, setOffscreen] = (0, import_react31.useState)(false);
@@ -21142,7 +21449,7 @@ function BotRightPanel({ sessionId, botId: explicitBotId }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/GlobalBotsSettings.tsx
+// vendor/dsh-whale/src/client/components/GlobalBotsSettings.tsx
 var import_react32 = require("react");
 var import_jsx_runtime32 = require("react/jsx-runtime");
 function GlobalBotsSettings({ closeSettings }) {
@@ -21327,11 +21634,11 @@ function GlobalBotsSettings({ closeSettings }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
+// vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
 var import_react37 = require("react");
 var import_react_dom14 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotGroupSidebarCard.tsx
+// vendor/dsh-whale/src/client/components/BotGroupSidebarCard.tsx
 var import_react33 = require("react");
 var import_react_dom10 = require("react-dom");
 var import_jsx_runtime33 = require("react/jsx-runtime");
@@ -21535,11 +21842,11 @@ function BotGroupSidebarCard({
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
+// vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
 var import_react36 = require("react");
 var import_react_dom13 = require("react-dom");
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotHoverCard.tsx
+// vendor/dsh-whale/src/client/components/BotHoverCard.tsx
 var import_react34 = require("react");
 var import_react_dom11 = require("react-dom");
 var import_jsx_runtime34 = require("react/jsx-runtime");
@@ -21740,7 +22047,7 @@ function BotHoverCard({
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSubChatList.tsx
+// vendor/dsh-whale/src/client/components/BotSubChatList.tsx
 var import_react35 = require("react");
 var import_react_dom12 = require("react-dom");
 var import_jsx_runtime35 = require("react/jsx-runtime");
@@ -22180,7 +22487,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
   ] });
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
+// vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
 var import_jsx_runtime36 = require("react/jsx-runtime");
 function HighlightedSegments({ segments }) {
   return /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(import_jsx_runtime36.Fragment, { children: segments.map(
@@ -22612,7 +22919,7 @@ function BotSidebarCard({
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
+// vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
 var import_jsx_runtime37 = require("react/jsx-runtime");
 function OptionsPopover({
   anchorRect,
@@ -23299,7 +23606,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
   );
 }
 
-// ../../Users/48818/.gemini/antigravity/brain/4999e1fb-28c9-4075-9f4b-e1f7434838d0/scratch/wt-popup-pr/vendor/dsh-whale/src/client/index.tsx
+// vendor/dsh-whale/src/client/index.tsx
 var import_jsx_runtime38 = require("react/jsx-runtime");
 var NS = "dsh-whale";
 var BOTS_RIGHT_TAB_ID = "dsh-whale:bots-panel";
