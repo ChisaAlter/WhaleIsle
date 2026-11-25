@@ -7,6 +7,7 @@ function readStyles(path: string): string {
 }
 
 const conversationCss = readStyles('../src/client/skeleton/ConversationRoot.module.css')
+const inputBarCss = readStyles('../src/client/skeleton/InputBar.module.css')
 
 /** Return the body of the rule whose selector list starts with `selector`. */
 function rule(css: string, selector: string): string {
@@ -39,5 +40,31 @@ describe('docked composer seat styles', () => {
     expect(conversationCss).toContain("html[data-dsh-wallpaper]) .embeddedBody[data-content-phase='active'] .composerSeat")
     expect(conversationCss).toContain("html[data-dsh-gradient]) .embeddedBody[data-content-phase='active'] .composerSeat")
     expect(conversationCss).toContain("html[data-dsh-transparent]) .embeddedBody[data-content-phase='active'] .composerSeat")
+  })
+})
+
+describe('input bar resize and collapsed bar styles', () => {
+  it('keeps resized width bounded by the unified axis or standalone fallback instead of 100%', () => {
+    const resizedRule = rule(inputBarCss, '.card[data-composer-resized-width]')
+    expect(resizedRule).toContain('min(100%, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)))')
+    expect(resizedRule).not.toMatch(/max-width:\s*100%;/)
+  })
+
+  it('keeps collapsed bar full-width, directly editable on one horizontally scrollable line, and free of horizontal scale', () => {
+    const collapsedCard = rule(inputBarCss, '.card[data-composer-collapsed]')
+    expect(collapsedCard).not.toContain('380px')
+    expect(collapsedCard).not.toMatch(/max-width:/)
+    expect(collapsedCard).toMatch(/cursor:\s*text;/)
+
+    const collapsedInput = rule(inputBarCss, '.card[data-composer-collapsed] .input')
+    expect(collapsedInput).toMatch(/white-space:\s*pre;/)
+    expect(collapsedInput).toMatch(/overflow-x:\s*auto;/)
+    expect(collapsedInput).toMatch(/cursor:\s*text;/)
+    expect(collapsedInput).not.toContain('text-overflow: ellipsis')
+
+    const collapseKeyframes = /@keyframes composer-collapse-in\s*\{([\s\S]*?)\n\}/.exec(inputBarCss)?.[1] ?? ''
+    const expandKeyframes = /@keyframes composer-expand-in\s*\{([\s\S]*?)\n\}/.exec(inputBarCss)?.[1] ?? ''
+    expect(collapseKeyframes).not.toContain('scale(')
+    expect(expandKeyframes).not.toContain('scale(')
   })
 })

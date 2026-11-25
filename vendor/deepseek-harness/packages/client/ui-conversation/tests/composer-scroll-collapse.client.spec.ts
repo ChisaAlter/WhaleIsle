@@ -16,7 +16,7 @@ const ALL_CLEAR: ComposerCollapseGuards = {
   activePhase: true,
   hasOverlay: false,
   hasPendingInteraction: false,
-  hasDraftOrAttachment: false,
+  hasMultilineOrAttachment: false,
   hasEditSession: false,
   hasOpenPopover: false,
 }
@@ -39,13 +39,13 @@ describe('composer-scroll-collapse state machine', () => {
     expect(canCollapseComposer({ ...ALL_CLEAR, activePhase: false })).toBe(false)
     expect(canCollapseComposer({ ...ALL_CLEAR, hasOverlay: true })).toBe(false)
     expect(canCollapseComposer({ ...ALL_CLEAR, hasPendingInteraction: true })).toBe(false)
-    expect(canCollapseComposer({ ...ALL_CLEAR, hasDraftOrAttachment: true })).toBe(false)
+    expect(canCollapseComposer({ ...ALL_CLEAR, hasMultilineOrAttachment: true })).toBe(false)
     expect(canCollapseComposer({ ...ALL_CLEAR, hasEditSession: true })).toBe(false)
     expect(canCollapseComposer({ ...ALL_CLEAR, hasOpenPopover: true })).toBe(false)
 
     const collapsed = { mode: 'collapsed' as const, pinnedScrollTop: null }
     expect(isComposerCollapsed(collapsed, ALL_CLEAR)).toBe(true)
-    expect(isComposerCollapsed(collapsed, { ...ALL_CLEAR, hasDraftOrAttachment: true })).toBe(false)
+    expect(isComposerCollapsed(collapsed, { ...ALL_CLEAR, hasMultilineOrAttachment: true })).toBe(false)
     expect(isComposerCollapsed(INITIAL_COMPOSER_COLLAPSE_STATE, ALL_CLEAR)).toBe(false)
     expect(isComposerCollapsed(pinComposerExpanded(400), ALL_CLEAR)).toBe(false)
   })
@@ -169,7 +169,7 @@ describe('composer-scroll-collapse state machine', () => {
   })
 
   it('resets collapsed or updates pinnedScrollTop when a guard blocks collapse', () => {
-    const blocked = { ...ALL_CLEAR, hasDraftOrAttachment: true }
+    const blocked = { ...ALL_CLEAR, hasMultilineOrAttachment: true }
     expect(
       reduceComposerScroll({ mode: 'collapsed', pinnedScrollTop: null }, sample({ scrollTop: 400 }), blocked),
     ).toBe(INITIAL_COMPOSER_COLLAPSE_STATE)

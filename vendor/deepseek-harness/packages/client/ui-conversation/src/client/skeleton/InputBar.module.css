@@ -87,7 +87,7 @@
 
 .notice {
   width: 100%;
-  max-width: var(--dsh-composer-card-max-width);
+  max-width: min(100%, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)));
   margin-bottom: 6px;
   padding: 4px 8px;
   border-radius: var(--dsw-radius-md);
@@ -302,7 +302,7 @@
 }
 
 .card[data-composer-resized-width] {
-  max-width: 100%;
+  max-width: min(100%, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)));
 }
 
 /* Auto-grow anchor: the contenteditable is in normal flow and sets the
@@ -665,10 +665,9 @@
 }
 
 .card[data-composer-collapsed] {
-  max-width: min(var(--dsh-composer-card-max-width), 380px);
   padding: 5px 6px 5px 14px;
   gap: 0;
-  cursor: pointer;
+  cursor: text;
 }
 
 .card[data-composer-collapsed] .cardBody {
@@ -688,11 +687,20 @@
 
 .card[data-composer-collapsed] .input {
   min-height: 28px;
-  padding: 2px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
+  padding: 2px 4px 2px 0;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  cursor: text;
+}
+
+.card[data-composer-collapsed] .input::-webkit-scrollbar {
+  display: none;
+}
+
+.card[data-composer-collapsed] .inputDisabled {
+  cursor: not-allowed;
 }
 
 .card[data-composer-collapsed] .placeholder {
@@ -735,8 +743,8 @@
 
 @keyframes composer-collapse-in {
   from {
-    opacity: 0.72;
-    transform: translateY(10px) scale(1.04);
+    opacity: 0.78;
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
@@ -747,7 +755,7 @@
 @keyframes composer-expand-in {
   from {
     opacity: 0.78;
-    transform: translateY(8px) scale(0.96);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
