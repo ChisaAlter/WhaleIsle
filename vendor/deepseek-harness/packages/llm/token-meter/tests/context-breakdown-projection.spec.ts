@@ -606,11 +606,11 @@ describe('shared estimator', () => {
       content: [{ type: 'text', text: chinese100 }],
       source: { kind: 'user' },
     }))).toBe(128)
-    // Multi-block system prompt sums text weights before rounding.
+    // Multi-block system prompt sums text weights with blank-line separator before rounding.
     expect(estimateSystemMessage(createMessage({
       role: 'system',
       content: [{ type: 'text', text: 'ab' }, { type: 'text', text: 'cd' }],
       source: SYSTEM_SOURCE,
-    }))).toBe(5)
+    }))).toBe(6)
   })
 })

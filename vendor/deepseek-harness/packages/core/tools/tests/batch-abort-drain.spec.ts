@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
@@ -13,6 +14,7 @@ import { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '../src/contracts.ts'
 async function setup() {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(NativeToolExecutor)
   return ctx

@@ -1308,7 +1308,7 @@ it('sends the system prompt as system when the route declines the developer role
   })
 
   expect(server.requests[0]).toMatchObject({
-    messages: [{ role: 'system', content: 'be helpful' }, { role: 'user', content: 'hi' }],
+    messages: [{ role: 'system', content: 'be helpful' }, { role: 'user', content: [{ type: 'text', text: 'hi' }] }],
   })
 })
 

@@ -695,6 +695,7 @@ describe('partial-read observation and cross-session resume backfill', () => {
       const stack = new Context()
       provideWorkingDirectoryFixture(stack)
       await stack.plugin(SystemPrompt)
+      await stack.plugin(SessionProjectionRegistry)
       await stack.plugin(ToolRuntime)
       await stack.plugin(NativeToolExecutor)
       await stack.plugin(LocalFileSystem, { cwd: workspace })
