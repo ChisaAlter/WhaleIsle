@@ -285,7 +285,15 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-git/src/client/BranchMenu.tsx', includes: ['WARM_DELAY_MS', "t('branch.loading')"] },
   { file: 'packages/client/ui-git/src/client/locales.ts', includes: ["'branch.loading'"] },
   { file: 'packages/client/ui-git/tests/branch-menu.client.spec.tsx', includes: ['lists branches once the workspace settles'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['@property --dsh-composer-reserve', 'margin-bottom: var(--dsh-composer-reserve)', '--dsh-composer-dock-overhang', '.header > :is(.titleRow, .tabs)'], excludes: ['.header > :not([data-conversation-header-leading])'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['@property --dsh-composer-reserve', ':not(:has([data-chat-flow]))', 'padding-bottom: var(--dsh-composer-reserve)', 'background: transparent', 'data-composer-collapsed', '--dsh-composer-dock-overhang', '.header > :is(.titleRow, .tabs)'], excludes: ['.header > :not([data-conversation-header-leading])'] },
+  // Scroll-driven composer collapse: transcript scrolls behind the frosted
+  // composer card via ChatView's .scroll padding-bottom (so .frame reaches the
+  // scrollport floor and sticky .toBottomSlot tracks seat height + 16px cleanly),
+  // and scrolling up collapses the composer into a narrow capsule pill.
+  { file: 'packages/client/ui-conversation/src/client/skeleton/composer-scroll-collapse.ts', includes: ['reduceComposerScroll', 'isComposerCollapsed', 'pinComposerExpanded'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['data-composer-collapsed', 'reduceComposerScroll'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css', includes: ['backdrop-filter: var(--dsw-menu-backdrop-filter)', 'data-composer-collapsed', 'data-composer-collapse-transition'] },
+  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['--dsh-to-bottom-offset', '--dsh-chat-composer-reserve'] },
   // :has() rules never end in a featureless or tag-only compound: Chromium
   // merges their invalidation sets, so one such rule restyled the whole
   // transcript (or every icon) on each composer keystroke and row mount.

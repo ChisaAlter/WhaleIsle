@@ -579,6 +579,10 @@ export interface ComposerBarOwnerProps {
   placeholder?: string
   /** Optional content rendered above the composer surface. */
   accessory?: ReactNode
+  /** Whether the composer is collapsed into a floating pill while reading history. */
+  collapsed?: boolean
+  /** Expand a collapsed composer pill and pin it open at the current scroll position. */
+  onExpandCollapsed?: () => void
 }
 
 /** One composer's entry in the document-level paste route. */

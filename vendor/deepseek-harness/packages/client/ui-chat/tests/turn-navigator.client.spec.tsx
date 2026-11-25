@@ -59,6 +59,48 @@ describe('TurnNavigator', () => {
     }
   })
 
+  it('subtracts the composer seat height from --turn-rail-band when present', () => {
+    const callbacks: ResizeObserverCallback[] = []
+    const observed: Element[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { callbacks.push(callback) }
+      observe(target: Element): void { observed.push(target) }
+      unobserve(): void {}
+      disconnect(): void {}
+    })
+    let seatHeight = 148
+    const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')
+    const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: Element) { return this.hasAttribute('data-conversation-scroll') ? 612 : 0 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) { return this.hasAttribute('data-composer-seat') ? seatHeight : 0 },
+    })
+    try {
+      const view = render(
+        <div data-conversation-scroll="">
+          <TurnNavigator items={items} activeTurn={1} busyTurn={null} onNavigate={vi.fn()} t={t} />
+          <div data-composer-seat="" />
+        </div>,
+      )
+      const nav = view.getByRole('navigation')
+      const seat = view.container.querySelector('[data-composer-seat]')!
+      expect(observed).toContain(seat)
+      expect(nav.style.getPropertyValue('--turn-rail-band')).toBe('464px')
+
+      seatHeight = 40
+      act(() => { for (const callback of callbacks) callback([], undefined as never) })
+      expect(nav.style.getPropertyValue('--turn-rail-band')).toBe('572px')
+      view.unmount()
+    } finally {
+      if (clientHeight !== undefined) Object.defineProperty(Element.prototype, 'clientHeight', clientHeight)
+      if (offsetHeight !== undefined) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight)
+    }
+  })
+
   it('places the latest committed active turn on its first viewport size without scroll commands', () => {
     const observer = installTurnNavigatorObserver(null)
     const onNavigate = vi.fn()

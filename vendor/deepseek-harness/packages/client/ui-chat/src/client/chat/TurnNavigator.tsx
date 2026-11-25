@@ -184,10 +184,15 @@ function TurnNavigatorRail(
     const frame = railRef.current
     const scroller = frame?.closest<HTMLElement>('[data-conversation-scroll]') ?? null
     if (frame === null || scroller === null || typeof ResizeObserver === 'undefined') return
-    const publish = (): void => { frame.style.setProperty('--turn-rail-band', `${scroller.clientHeight}px`) }
+    const seat = scroller.querySelector<HTMLElement>('[data-composer-seat]')
+    const publish = (): void => {
+      const band = Math.max(0, scroller.clientHeight - (seat?.offsetHeight ?? 0))
+      frame.style.setProperty('--turn-rail-band', `${band}px`)
+    }
     publish()
     const observer = new ResizeObserver(publish)
     observer.observe(scroller)
+    if (seat !== null) observer.observe(seat)
     return () => {
       observer.disconnect()
       frame.style.removeProperty('--turn-rail-band')
