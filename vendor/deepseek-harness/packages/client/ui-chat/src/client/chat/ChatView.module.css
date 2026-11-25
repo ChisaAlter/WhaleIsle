@@ -57,6 +57,12 @@
   overflow-anchor: none;
 }
 
+@property --dsh-chat-composer-reserve {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 :global([data-conversation-scroll]) .frame,
 :global([data-conversation-scroll]) .root {
   flex: 0 0 auto;
@@ -71,6 +77,9 @@
   overflow-y: visible;
   flex: 0 0 auto;
   min-height: auto;
+  /* Reserve the composer height inside .scroll (non-inherited property) so
+     .frame reaches the scrollport floor and sticky .toBottomSlot never clamps. */
+  padding-bottom: calc(16px + var(--dsh-chat-composer-reserve));
 }
 
 /* Message column: shared chat width (ConversationRoot --dsh-chat-content-width),
@@ -426,8 +435,9 @@
 
 :global([data-conversation-scroll]) .toBottomSlot {
   position: sticky;
-  /* ConversationRoot reserves the footer outside this scrollport. */
-  bottom: 16px;
+  /* ConversationRoot reserves the footer inside this scrollport via padding;
+     track the live composer seat height so the control floats 16px above it. */
+  bottom: calc(var(--dsh-to-bottom-offset, 0px) + 16px);
 }
 
 .toBottom {

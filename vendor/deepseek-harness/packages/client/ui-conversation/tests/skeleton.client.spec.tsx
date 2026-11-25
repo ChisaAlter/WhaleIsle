@@ -1505,4 +1505,118 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getAllByTestId('view-conversation.session.header.actions')).toHaveLength(1)
     delete document.documentElement.dataset.titlebarDensity
   })
+
+  it('collapses composer on scroll up while freezing expanded reserve, and restores on bottom or pill click', async () => {
+    vi.useFakeTimers()
+    try {
+      const b = mount(sessionSnapshotOf())
+      act(() => { b.wiring.setDraft('') })
+      const scroller = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
+      const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')!
+      const card = b.view.container.querySelector<HTMLElement>('[data-composer-card]')!
+      const textbox = b.view.getByRole('textbox')
+
+      let seatHeight = 140
+      let scrollTop = 1200
+      Object.defineProperty(seat, 'offsetHeight', { configurable: true, get: () => seatHeight })
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => 800 })
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => 2000 })
+      Object.defineProperty(scroller, 'scrollTop', {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => { scrollTop = value },
+      })
+
+      act(() => {
+        fireResize(seat)
+        vi.advanceTimersByTime(50)
+      })
+      expect(scroller.style.getPropertyValue('--dsh-composer-reserve')).toBe('140px')
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+
+      // Initial scroll sync at bottom establishes baseline prevScrollTop = 1200.
+      act(() => { fireEvent.scroll(scroller) })
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+
+      // Scroll up > 64px collapses seat and card, while keeping reserve frozen at 140px.
+      scrollTop = 900
+      act(() => { fireEvent.scroll(scroller) })
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+      expect(card.hasAttribute('data-composer-collapsed')).toBe(true)
+
+      seatHeight = 38
+      act(() => {
+        fireResize(seat)
+        vi.advanceTimersByTime(50)
+      })
+      expect(scroller.style.getPropertyValue('--dsh-composer-reserve')).toBe('140px')
+
+      // Clicking the collapsed pill expands, pins, and focuses the editor.
+      textbox.blur()
+      act(() => { fireEvent.click(card) })
+      await act(async () => { await Promise.resolve() })
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+      expect(card.hasAttribute('data-composer-collapsed')).toBe(false)
+      expect(document.activeElement).toBe(textbox)
+
+      seatHeight = 140
+      act(() => {
+        fireResize(seat)
+        vi.advanceTimersByTime(50)
+      })
+      expect(scroller.style.getPropertyValue('--dsh-composer-reserve')).toBe('140px')
+
+      // Small scroll delta while pinned (< 32px) stays expanded; larger delta re-collapses.
+      scrollTop = 880
+      act(() => { fireEvent.scroll(scroller) })
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+
+      scrollTop = 840
+      act(() => { fireEvent.scroll(scroller) })
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+
+      // Scrolling back near bottom restores expanded state.
+      scrollTop = 1190
+      act(() => { fireEvent.scroll(scroller) })
+      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prevents scroll collapse when draft is non-empty or a composer overlay is active', () => {
+    const b = mount(sessionSnapshotOf())
+    const scroller = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')!
+
+    let scrollTop = 1200
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => 800 })
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => 2000 })
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => { scrollTop = value },
+    })
+
+    // Non-empty draft ('ordinary draft') prevents collapse on scroll up.
+    act(() => { fireEvent.scroll(scroller) })
+    scrollTop = 900
+    act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+
+    // Clear draft, scroll to bottom then up -> collapses; mounting an overlay expands it.
+    act(() => { b.wiring.setDraft('') })
+    scrollTop = 1200
+    act(() => { fireEvent.scroll(scroller) })
+    scrollTop = 900
+    act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+
+    const overlay = document.createElement('div')
+    overlay.setAttribute('data-conversation-composer-overlay', '')
+    scroller.appendChild(overlay)
+    scrollTop = 850
+    act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+  })
 })

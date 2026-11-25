@@ -47,14 +47,22 @@ function CenterColumn(props: { children?: ReactNode }) {
   return <div className={css.centerCol} data-dsh-frame-region="center">{props.children}</div>
 }
 
+/** Non-conversation main panels that own their own 48px Row-1 caption header. */
+const FULL_HEIGHT_MAIN_PANELS = new Set<string>(['projects'])
+
 /** Subscribe to the main key without subscribing the column frame to each panel id. */
 function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'usePanelInfo'> & PropsRenderSlots<'main'>) {
   const panelId = usePanelInfo(info => info.activePanelId)
   const entryKey = panelId ?? 'conversation'
   const panel = renderSlot('main', {}, { entryKey })
   // Only the Conversation owns the shared titlebar row through the centerCol
-  // subgrid; every other panel gets the content row (see .mainPanel).
+  // subgrid; every other panel gets the content row (see .mainPanel), except
+  // full-height workspaces such as Projects that render their own 48px header
+  // inside the caption band.
   if (entryKey === 'conversation') return panel
+  if (FULL_HEIGHT_MAIN_PANELS.has(entryKey)) {
+    return <div className={css.mainPanelFull} data-main-panel-full={entryKey}>{panel}</div>
+  }
   return <div className={css.mainPanel} data-main-panel>{panel}</div>
 }
 

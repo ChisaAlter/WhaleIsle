@@ -32,87 +32,26 @@ export const LOOK_AROUND_MAX_CONSECUTIVE_FAILURES = 3;
 /** Explicit read-only + suggestion tool allowlist during Look Around sweeps. */
 export const LOOK_AROUND_ALLOWED_TOOLS = Object.freeze(new Set([
   // Native bot read-only & suggest tools
-  'bot_suggest',
-  'bot_list',
-  'bot_chats',
-  'bot_work_list',
-  'bot_item_list',
-  'bot_item_show',
+  'bot_suggest', 'bot_list', 'bot_chats', 'bot_work_list', 'bot_item_list', 'bot_item_show',
   // Standard read-only filesystem / code inspection tools
-  'read_file',
-  'view_file',
-  'view_file_outline',
-  'view_code_item',
-  'read',
-  'list_dir',
-  'list_directory',
-  'ls',
-  'glob',
-  'find_files',
-  'find_by_name',
-  'grep',
-  'grep_search',
-  'ripgrep',
-  'search_files',
-  'file_search',
-  'stat_file',
+  'read_file', 'view_file', 'view_file_outline', 'view_code_item', 'read',
+  'list_dir', 'list_directory', 'ls', 'glob', 'find_files', 'find_by_name',
+  'grep', 'grep_search', 'ripgrep', 'search_files', 'file_search', 'stat_file',
   // Read-only git inspection tools
-  'git_status',
-  'git_log',
-  'git_diff',
-  'git_show',
+  'git_status', 'git_log', 'git_diff', 'git_show',
 ]));
 
 /** Explicit write / side-effect / shell / external tools always blocked. */
 export const LOOK_AROUND_DISALLOWED_TOOLS = Object.freeze(new Set([
-  'bot_work_start',
-  'bot_work_forget',
-  'bot_tools_manage',
-  'bot_reply',
-  'bot_send',
-  'bot_create_offer',
-  'bot_automation_create',
-  'bot_new_chat',
-  'bot_memory_forget',
-  'bot_look_around_set',
-  'bot_item_add',
-  'bot_item_set',
-  'bot_item_comment',
-  'bot_item_done',
-  'bot_item_cancel',
-  'bot_item_link',
-  'write_file',
-  'edit_file',
-  'replace_file_content',
-  'multi_replace_file_content',
-  'apply_patch',
-  'patch_file',
-  'delete_file',
-  'remove_file',
-  'rename_file',
-  'move_file',
-  'mkdir',
-  'write',
-  'edit',
-  'notebook_edit',
-  'notebookedit',
-  'bash',
-  'sh',
-  'shell',
-  'exec',
-  'run_command',
-  'execute_command',
-  'terminal',
-  'powershell',
-  'cmd',
-  'spawn',
-  'web_fetch',
-  'fetch_url',
-  'http_request',
-  'subagent',
-  'invoke_subagent',
-  'task',
-  'agent',
+  'bot_work_start', 'bot_work_forget', 'bot_tools_manage', 'bot_reply', 'bot_send',
+  'bot_create_offer', 'bot_automation_create', 'bot_new_chat', 'bot_memory_forget',
+  'bot_look_around_set', 'bot_item_add', 'bot_item_set', 'bot_item_comment',
+  'bot_item_done', 'bot_item_cancel', 'bot_item_link',
+  'write_file', 'edit_file', 'replace_file_content', 'multi_replace_file_content',
+  'apply_patch', 'patch_file', 'delete_file', 'remove_file', 'rename_file', 'move_file',
+  'mkdir', 'write', 'edit', 'notebook_edit', 'notebookedit',
+  'bash', 'sh', 'shell', 'exec', 'run_command', 'execute_command', 'terminal', 'powershell', 'cmd', 'spawn',
+  'web_fetch', 'fetch_url', 'http_request', 'subagent', 'invoke_subagent', 'task', 'agent',
 ]));
 
 const DANGEROUS_FLAG_RE = /(?:^|\s)(?:--join|--download|--offer|--output|--upload-file|--in-place|--write|--delete|--force|--exec|--apply|-X|-T|-o|-c)(?:\s|=|$)/u;
@@ -368,8 +307,11 @@ export function createLookAroundService(deps) {
   const file = stateFilePath(metaRoot);
   /** @type {Set<string>} */
   const runningBots = new Set();
+  /** @type {Set<string>} */
+  const startingSuggestions = new Set();
   /** @type {Map<string, number>} */
   const deferredUntil = new Map();
+  let closed = false;
 
   /** @param {unknown} error @param {Record<string, any>} [context] */
   function reportError(error, context = {}) {
@@ -535,6 +477,9 @@ export function createLookAroundService(deps) {
       kind: 'look-around',
       origin: 'automation',
     });
+    if (!started || started.ok === false || !started.sessionId) {
+      return { ok: false, summary: String(started?.error ?? 'session_unavailable') };
+    }
     const res = await sessionRuntime.runSingleTurn(started.sessionId, prompt, {
       timeoutMs: 90_000,
       botId: bot.id,
@@ -542,7 +487,9 @@ export function createLookAroundService(deps) {
       sourceKind: 'dsh-bots:look-around',
       source: { kind: 'dsh-bots:look-around', phase: 'sweep' },
     });
-    botsStore.closeChat(started.sessionId, Date.now());
+    if (!closed) {
+      botsStore.closeChat(started.sessionId, Date.now());
+    }
     return { ok: Boolean(res.ok), summary: res.error || 'completed' };
   }
 
@@ -582,7 +529,7 @@ export function createLookAroundService(deps) {
     };
   }
 
-  /** @param {string} botId @param {number} [now] @param {{ isBackground?: boolean }} [options] */
+  /** @param {string} botId @param {number} [now] @param {{ isBackground?: boolean, background?: boolean }} [options] */
   async function lookNow(botId, now = Date.now(), options = {}) {
     const bot = botsStore.getBot(botId);
     if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
@@ -590,46 +537,45 @@ export function createLookAroundService(deps) {
     const blocked = checkBudgetGate(bot.id, now, options);
     if (blocked) return blocked;
 
-    runningBots.add(bot.id);
     const runId = `look-${crypto.randomUUID().slice(0, 8)}`;
     const beforeState = readBotState(bot.id, now);
     const priorOpenIds = new Set(
       beforeState.suggestions.filter((/** @type {any} */ s) => s.status === 'open').map((/** @type {any} */ s) => s.id),
     );
     const prompt = buildLookAroundPrompt(bot, botLookAround(bot), beforeState);
+    runningBots.add(bot.id);
 
-    /** @type {{ ok: boolean, summary?: string }} */
-    let outcome = { ok: true, summary: 'completed' };
-    try {
-      outcome = await executeSweepTurn(bot, prompt);
-    } catch (error) {
-      reportError(error, { phase: 'lookNow', botId: bot.id, runId });
-      outcome = { ok: false, summary: String(/** @type {any} */ (error)?.message ?? error) };
-    } finally {
-      runningBots.delete(bot.id);
+    const runAndSettle = async () => {
+      /** @type {{ ok: boolean, summary?: string }} */
+      let outcome = { ok: true, summary: 'completed' };
+      try {
+        outcome = await executeSweepTurn(bot, prompt);
+      } catch (error) {
+        reportError(error, { phase: 'lookNow', botId: bot.id, runId });
+        outcome = { ok: false, summary: String(/** @type {any} */ (error)?.message ?? error) };
+      } finally {
+        runningBots.delete(bot.id);
+      }
+      if (closed) {
+        return { ok: false, closed: true, runId, botId: bot.id, summary: outcome?.summary ?? '' };
+      }
+      return settleLookNowOutcome(bot, runId, outcome, priorOpenIds, now);
+    };
+
+    if (options.background === true) {
+      void runAndSettle().catch((error) => {
+        reportError(error, { phase: 'lookNow:background', botId: bot.id, runId });
+      });
+      return { ok: true, started: true, background: true, runId, botId: bot.id };
     }
-    return settleLookNowOutcome(bot, runId, outcome, priorOpenIds, now);
+    return runAndSettle();
   }
 
-  /** @param {string} botId @param {string} suggestionId @param {{ chat?: string, now?: number }} [opts] */
-  async function startSuggestion(botId, suggestionId, { chat = 'home', now = Date.now() } = {}) {
-    const bot = botsStore.getBot(botId);
-    if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
-    const state = readBotState(bot.id, now);
-    const entry = state.suggestions.find((/** @type {any} */ s) => s.id === suggestionId);
-    if (!entry) throw Object.assign(new Error(`Suggestion not found: ${suggestionId}`), { code: 'not_found' });
-
-    entry.status = 'started';
-    entry.resolvedAt = now;
-    writeBotState(bot.id, state, now);
-
-    const target = chat === 'new'
-      ? await sessionRuntime.startSideChat(bot.id, { title: entry.title })
-      : await sessionRuntime.openHomeChat(bot.id);
-    const prompt = entry.link ? `${entry.ask}\n\nLink: ${entry.link}` : entry.ask;
+  /** @param {any} bot @param {string} suggestionId @param {string} sessionId @param {string} prompt */
+  async function runSuggestionTurn(bot, suggestionId, sessionId, prompt) {
     let turnError = null;
     try {
-      const turnRes = await sessionRuntime.runSingleTurn(target.sessionId, prompt, {
+      const turnRes = await sessionRuntime.runSingleTurn(sessionId, prompt, {
         timeoutMs: 30_000,
         botId: bot.id,
         sourceKind: 'dsh-bots:look-around',
@@ -637,29 +583,87 @@ export function createLookAroundService(deps) {
       });
       if (turnRes && turnRes.ok === false) {
         turnError = String(turnRes.error ?? 'turn_failed');
-        reportError(new Error(turnError), {
-          phase: 'startSuggestion',
-          botId: bot.id,
-          suggestionId,
-          sessionId: target.sessionId,
-        });
+        reportError(new Error(turnError), { phase: 'startSuggestion', botId: bot.id, suggestionId, sessionId });
       }
     } catch (error) {
       turnError = error instanceof Error ? error.message : String(error ?? 'turn_failed');
-      reportError(error, {
-        phase: 'startSuggestion',
-        botId: bot.id,
-        suggestionId,
-        sessionId: target.sessionId,
-      });
+      reportError(error, { phase: 'startSuggestion', botId: bot.id, suggestionId, sessionId });
     }
-    eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
-    return {
-      ok: true,
-      suggestion: entry,
-      sessionId: target.sessionId,
-      ...(turnError ? { turnError } : {}),
-    };
+    if (!closed) {
+      eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
+    }
+    return turnError;
+  }
+
+  /** @param {string} botId @param {string} suggestionId @param {number} now */
+  function readOpenSuggestion(botId, suggestionId, now) {
+    const state = readBotState(botId, now);
+    const entry = state.suggestions.find((/** @type {any} */ s) => s.id === suggestionId);
+    if (!entry) throw Object.assign(new Error(`Suggestion not found: ${suggestionId}`), { code: 'not_found' });
+    return { state, entry };
+  }
+
+  /** @param {any} bot @param {any} entry @param {string} chat */
+  async function openSuggestionTarget(bot, entry, chat) {
+    const target = chat === 'new'
+      ? await sessionRuntime.startSideChat(bot.id, { title: entry.title })
+      : await sessionRuntime.openHomeChat(bot.id);
+    if (!target || target.ok === false || !target.sessionId) {
+      return {
+        ok: false,
+        error: String(target?.error ?? 'session_unavailable'),
+        ...(target?.refusal ? { refusal: target.refusal } : {}),
+        suggestion: entry,
+      };
+    }
+    return { ok: true, sessionId: target.sessionId };
+  }
+
+  /** @param {string} botId @param {string} suggestionId @param {{ chat?: string, now?: number, background?: boolean }} [opts] */
+  async function startSuggestion(botId, suggestionId, { chat = 'home', now = Date.now(), background = false } = {}) {
+    const bot = botsStore.getBot(botId);
+    if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
+    const initial = readOpenSuggestion(bot.id, suggestionId, now);
+    if (initial.entry.status !== 'open') {
+      return { ok: false, alreadyResolved: true, status: initial.entry.status, suggestion: initial.entry };
+    }
+    const lockKey = `${bot.id}:${suggestionId}`;
+    if (startingSuggestions.has(lockKey)) {
+      return { ok: false, alreadyResolved: true, status: 'starting', suggestion: initial.entry };
+    }
+
+    startingSuggestions.add(lockKey);
+    let sessionId = '';
+    let startedEntry = initial.entry;
+    try {
+      const target = await openSuggestionTarget(bot, initial.entry, chat);
+      if (!target.ok) return target;
+      if (closed) return { ok: false, closed: true, error: 'service_closed', suggestion: initial.entry };
+
+      const latest = readOpenSuggestion(bot.id, suggestionId, now);
+      if (latest.entry.status !== 'open') {
+        return { ok: false, alreadyResolved: true, status: latest.entry.status, suggestion: latest.entry };
+      }
+      latest.entry.status = 'started';
+      latest.entry.resolvedAt = now;
+      writeBotState(bot.id, latest.state, now);
+      eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
+      sessionId = target.sessionId;
+      startedEntry = latest.entry;
+    } finally {
+      startingSuggestions.delete(lockKey);
+    }
+
+    const prompt = startedEntry.link ? `${startedEntry.ask}\n\nLink: ${startedEntry.link}` : startedEntry.ask;
+    if (background === true) {
+      void runSuggestionTurn(bot, suggestionId, sessionId, prompt).catch((error) => {
+        reportError(error, { phase: 'startSuggestion:background', botId: bot.id, suggestionId, sessionId });
+      });
+      return { ok: true, started: true, background: true, suggestion: startedEntry, sessionId };
+    }
+
+    const turnError = await runSuggestionTurn(bot, suggestionId, sessionId, prompt);
+    return { ok: true, suggestion: startedEntry, sessionId, ...(turnError ? { turnError } : {}) };
   }
 
   /** @param {string} botId @param {string} suggestionId @param {number} [now] */
@@ -667,6 +671,9 @@ export function createLookAroundService(deps) {
     const state = readBotState(botId, now);
     const entry = state.suggestions.find((/** @type {any} */ s) => s.id === suggestionId);
     if (!entry) throw Object.assign(new Error(`Suggestion not found: ${suggestionId}`), { code: 'not_found' });
+    if (entry.status === 'dismissed') {
+      return { ok: true, alreadyDismissed: true, suggestion: entry };
+    }
     entry.status = 'dismissed';
     entry.resolvedAt = now;
     state.dismissals.push({ key: entry.key, title: entry.title, link: entry.link, at: now });
@@ -767,6 +774,7 @@ export function createLookAroundService(deps) {
   }
 
   function close() {
+    closed = true;
     if (timer) clearInterval(timer);
     timer = null;
     deferredUntil.clear();

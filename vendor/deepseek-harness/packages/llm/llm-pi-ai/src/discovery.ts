@@ -79,6 +79,8 @@ interface ListingTopProvider {
 /** One entry of a supported `GET /models` reply. */
 interface ListingEntry {
   id?: unknown
+  slug?: unknown
+  visibility?: unknown
   /** Common gateway extensions; absent from the official listings. */
   name?: unknown
   display_name?: unknown
@@ -197,23 +199,32 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
     listed = rows.map(raw => ({ raw }))
   } else {
     const models = listing?.models
-    if (models === null || typeof models !== 'object' || Array.isArray(models)) {
+    if (Array.isArray(models)) {
+      const rows = models as readonly unknown[]
+      listed = rows
+        .filter((raw) => {
+          const visibility = (raw as { visibility?: unknown } | null)?.visibility
+          return visibility === undefined || visibility === 'list'
+        })
+        .map(raw => ({ raw }))
+    } else if (models !== null && typeof models === 'object') {
+      listed = Object.entries(models as Record<string, unknown>)
+        .filter(([, raw]) => raw !== null && typeof raw === 'object' && !Array.isArray(raw))
+        .map(([key, raw]) => ({ key, raw }))
+    } else {
       throw new LlmError(
-        'the endpoint\'s model listing has neither a "data" array nor a "models" object; '
+        'the endpoint\'s model listing has neither a "data" array nor a "models" array or object; '
         + 'enter this provider\'s models by hand',
         'DISCOVERY_FAILED',
       )
     }
-    listed = Object.entries(models as Record<string, unknown>)
-      .filter(([, raw]) => raw !== null && typeof raw === 'object' && !Array.isArray(raw))
-      .map(([key, raw]) => ({ key, raw }))
   }
   const models: LlmDiscoveredModel[] = []
   for (const { key, raw } of listed) {
     const entry = raw as ListingEntry | null
-    const id = label(key, entry?.id)
+    const id = label(key, entry?.slug, entry?.id)
     if (id === undefined) continue
-    const name = label(entry?.name, entry?.display_name, entry?.displayName) ?? id
+    const name = label(entry?.display_name, entry?.name, entry?.displayName) ?? id
     const contextWindow = capacity(
       entry?.contextWindow,
       entry?.context_window,

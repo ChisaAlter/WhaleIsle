@@ -9,11 +9,13 @@
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
-  CredentialInfo, LlmConfigurableProvider, LlmNativeAuth, LlmProviderInfo, SettingsNamespaceView,
+  AuthorizationEntry, CredentialInfo, CredentialRecordInfo, LlmConfigurableProvider, LlmNativeAuth, LlmProviderInfo,
+  SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { authorizationRemoteOf } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 
@@ -103,6 +105,12 @@ export interface ProviderRow {
   derivedCredential?: CredentialInfo
   /** Redacted checks for named or native references; absent when their read failed. */
   credentialChecks?: Readonly<Record<string, CredentialInfo>>
+  /** Credential record key for OAuth authorization (`llm-pi-ai/<provider>`), when offered. */
+  oauthKey?: string
+  /** Registered OAuth authorization flow for this provider, when offered. */
+  oauthFlow?: AuthorizationEntry
+  /** Redacted state of the OAuth credential record, once described. */
+  oauthCredential?: CredentialRecordInfo
 }
 
 /** Page snapshot. */
@@ -234,9 +242,10 @@ export class ModelsSettingsStore {
   /** Publish one joined answer; stale answers leave the current refresh in charge. */
   private async read(generation: number): Promise<void> {
     this.store.update((s) => { s.status = 'loading'; s.error = null })
-    const [registered, declared] = await Promise.all([
+    const [registered, declared, authEntries] = await Promise.all([
       this.ctx.remote.llm.listProviders(),
       this.ctx.remote.llm.listConfigurableProviders(),
+      this.readAuthorizations(),
       this.describeFace.ensure(),
     ])
     if (generation !== this.generation) return
@@ -296,6 +305,31 @@ export class ModelsSettingsStore {
       if (response.ok) Object.assign(credentials, response.value)
       else { credentialError = response.error.message; break }
     }
+    const oauthFlowsByProvider = new Map<string, AuthorizationEntry>()
+    for (const entry of authEntries) {
+      if (!entry.key.startsWith('llm-pi-ai/')) continue
+      if (!entry.methods.some(method => method.id === 'oauth')) continue
+      const providerId = entry.key.slice('llm-pi-ai/'.length)
+      if (providerId.length > 0) oauthFlowsByProvider.set(providerId, entry)
+    }
+    const oauthKeys = [...new Set(rows
+      .filter(row => row.entry.settingsNs === 'llm-pi-ai')
+      .map(row => oauthFlowsByProvider.get(row.entry.provider)?.key)
+      .filter((key): key is AuthorizationEntry['key'] => key !== undefined))]
+    const oauthCredentials: Record<string, CredentialRecordInfo> = {}
+    const describeRecords = this.ctx.remote.credentials.describeRecords
+    if (oauthKeys.length > 0 && typeof describeRecords === 'function') {
+      // credentials.describeRecords accepts at most 64 keys per request.
+      for (let index = 0; index < oauthKeys.length; index += 64) {
+        try {
+          const response = await describeRecords(oauthKeys.slice(index, index + 64))
+          if (response.ok) Object.assign(oauthCredentials, response.value)
+          else break
+        } catch {
+          break
+        }
+      }
+    }
     if (generation !== this.generation) return
     this.store.update((s) => {
       s.status = 'ready'
@@ -307,10 +341,16 @@ export class ModelsSettingsStore {
         if (row.entry.provider === 'deepseek-account') return row
         const named = row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv]
         const derived = row.apiKeyEnv !== undefined ? undefined : credentials[deriveKeyRef(row.entry.provider)]
+        const oauthFlow = row.entry.settingsNs === 'llm-pi-ai' ? oauthFlowsByProvider.get(row.entry.provider) : undefined
+        const oauthKey = oauthFlow?.key
+        const oauthCredential = oauthKey === undefined ? undefined : oauthCredentials[oauthKey]
         return {
           ...row,
           ...named === undefined ? {} : { credential: named },
           ...derived === undefined ? {} : { derivedCredential: derived },
+          ...oauthKey === undefined ? {} : { oauthKey },
+          ...oauthFlow === undefined ? {} : { oauthFlow },
+          ...oauthCredential === undefined ? {} : { oauthCredential },
           ...credentialError === null ? { credentialChecks: Object.fromEntries(
             (row.apiKeyEnv === undefined ? row.entry.nativeAuth?.env ?? [] : [row.apiKeyEnv])
               .flatMap((ref) => {
@@ -322,6 +362,18 @@ export class ModelsSettingsStore {
       })
       s.namespaces = namespaces
     })
+  }
+
+  /** Safely query registered authorization flows, degrading to empty if unmounted or failing. */
+  private async readAuthorizations(): Promise<readonly AuthorizationEntry[]> {
+    const authorization = authorizationRemoteOf(this.ctx)
+    if (typeof authorization?.list !== 'function') return []
+    try {
+      const response = await authorization.list()
+      return response.ok ? response.value : []
+    } catch {
+      return []
+    }
   }
 
   /** Settle callers only while this read still owns the current refresh. */

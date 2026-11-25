@@ -1690,3 +1690,214 @@ test('Audit regressions: P0-2 internal source.kind + call-origin, P0-3 cwd/verif
     assert.equal(mockStartup.prompted.filter((p) => String(p.requestId || '').startsWith('bot-item-mail-')).length, 0);
   });
 });
+
+test('Right-panel RPCs: dismiss idempotency, non-blocking background start/lookNow/runNow, and session error propagation', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+  const { createBotsHttpHandler } = await importBots('rpc-router.js');
+
+  await withTempDir('right-panel-nonblocking', async ({ root, onClose }) => {
+    const dshHome = path.join(root, 'dsh-home');
+    fs.mkdirSync(dshHome, { recursive: true });
+
+    let activeController = null;
+    const mock = createMockHarness();
+    let pendingTurn = null;
+    const baseRunTurn = mock.controller.runTurnForTest.bind(mock.controller);
+    mock.controller.runTurnForTest = async (sid, promptText) => {
+      if (pendingTurn) {
+        const current = pendingTurn;
+        return current.promise;
+      }
+      return baseRunTurn(sid, promptText);
+    };
+    activeController = mock.controller;
+
+    let pendingSweep = null;
+    const reportedErrors = [];
+    const runtime = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome,
+      enableSchedulers: false,
+      getController: () => activeController,
+      onError: (err, ctx) => reportedErrors.push({ err, ctx }),
+      runLookAroundSweep: async (bot) => {
+        if (pendingSweep) return pendingSweep.promise;
+        runtime.lookAroundService.addSuggestion(bot.id, {
+          title: 'Sync Sweep Suggestion',
+          why: 'Immediate sweep',
+          ask: 'Inspect immediately',
+        });
+        return { ok: true, summary: 'done' };
+      },
+    });
+    onClose(() => runtime.close());
+    await runtime.recoveryPromise;
+
+    const events = [];
+    const unsub = runtime.eventBus.subscribe((ev) => events.push(ev));
+    onClose(unsub);
+
+    const httpRouter = createBotsHttpHandler(runtime, { requestRejection: () => undefined });
+    const srv = await startHttpServer(httpRouter.handler);
+    onClose(() => srv.close());
+
+    const call = async (method, params = {}) => {
+      const { body } = await rpcPost(srv.baseUrl, method, params);
+      assert.equal(body.ok, true, `${method} failed: ${JSON.stringify(body.error)}`);
+      return body.result;
+    };
+
+    const created = await call('bots.create', { name: 'PanelBot', skipKickoff: true });
+    const botId = created.bot.id;
+
+    // 1. HTTP RPC bots.suggestions.dismiss removes open suggestion + repeat dismiss is idempotent without duplicate dismissals
+    const sDismiss = (await call('bots.suggest', {
+      botId,
+      title: 'Dismiss Me',
+      why: 'No longer relevant',
+      ask: 'Skip it',
+    })).suggestion;
+    assert.equal((await call('bots.upNext.list', { botId })).openSuggestions.length, 1);
+
+    const d1 = await call('bots.suggestions.dismiss', { botId, suggestionId: sDismiss.id });
+    assert.equal(d1.ok, true);
+    assert.equal(d1.suggestion.status, 'dismissed');
+    assert.equal((await call('bots.upNext.list', { botId })).openSuggestions.length, 0);
+
+    const d2 = await call('bots.suggestions.dismiss', { botId, suggestionId: sDismiss.id });
+    assert.equal(d2.ok, true);
+    assert.equal(d2.alreadyDismissed, true);
+
+    const lookAroundFile = path.join(dshHome, 'data', 'bots', '_meta', 'bot-look-around.json');
+    const persistedAfterDismiss = JSON.parse(fs.readFileSync(lookAroundFile, 'utf8'));
+    assert.equal(persistedAfterDismiss[botId].dismissals.filter((d) => d.title === 'Dismiss Me').length, 1);
+
+    // 2. bots.suggestions.start with background: true returns immediately before slow turn resolves & emits lookAround event
+    const sStart = (await call('bots.suggest', {
+      botId,
+      title: 'Start Me Fast',
+      why: 'Needs action',
+      ask: 'Run background check',
+    })).suggestion;
+
+    let resolveStartTurn;
+    pendingTurn = { promise: new Promise((r) => { resolveStartTurn = r; }) };
+    events.length = 0;
+
+    const bgStart = await call('bots.suggestions.start', {
+      botId,
+      suggestionId: sStart.id,
+      background: true,
+    });
+    assert.equal(bgStart.ok, true);
+    assert.equal(bgStart.started, true);
+    assert.equal(bgStart.background, true);
+    assert.equal(bgStart.suggestion.status, 'started');
+    assert.ok(bgStart.sessionId);
+
+    // Immediately removed from openSuggestions and lookAround event emitted before turn resolves
+    assert.equal((await call('bots.upNext.list', { botId })).openSuggestions.length, 0);
+    runtime.eventBus.flushNow();
+    assert.ok(events.some((ev) => Array.isArray(ev.kinds) && ev.kinds.includes('lookAround')));
+
+    // Repeat start on already-started suggestion is cleanly rejected as alreadyResolved
+    const dupStart = await call('bots.suggestions.start', {
+      botId,
+      suggestionId: sStart.id,
+      background: true,
+    });
+    assert.equal(dupStart.ok, false);
+    assert.equal(dupStart.alreadyResolved, true);
+    assert.equal(dupStart.status, 'started');
+
+    resolveStartTurn({ ok: true, reply: 'background start done' });
+    pendingTurn = null;
+    await new Promise((r) => setTimeout(r, 25));
+
+    // 3. bots.suggestions.start propagates session open failure WITHOUT mutating suggestion to started
+    const sOffline = (await call('bots.suggest', {
+      botId,
+      title: 'Offline Bot Suggestion',
+      why: 'Controller offline test',
+      ask: 'Try when controller is down',
+    })).suggestion;
+    activeController = null;
+    const failedStart = await call('bots.suggestions.start', {
+      botId,
+      suggestionId: sOffline.id,
+      background: true,
+    });
+    assert.equal(failedStart.ok, false);
+    assert.equal(failedStart.error, 'session-controller-unavailable');
+    assert.equal((await call('bots.upNext.list', { botId })).openSuggestions.some((s) => s.id === sOffline.id), true);
+    activeController = mock.controller;
+
+    // 4. bots.lookAround.lookNow with background: true returns immediately, reports alreadyRunning while in flight, then settles
+    let resolveSweep;
+    pendingSweep = { promise: new Promise((r) => { resolveSweep = r; }) };
+    const bgLook = await call('bots.lookAround.lookNow', { botId, background: true });
+    assert.equal(bgLook.ok, true);
+    assert.equal(bgLook.started, true);
+    assert.equal(bgLook.background, true);
+    assert.ok(bgLook.runId);
+    assert.equal((await call('bots.upNext.list', { botId })).running, true);
+
+    const dupLook = await call('bots.lookAround.lookNow', { botId, background: true });
+    assert.equal(dupLook.ok, true);
+    assert.equal(dupLook.alreadyRunning, true);
+
+    events.length = 0;
+    resolveSweep({ ok: true, summary: 'bg sweep finished' });
+    pendingSweep = null;
+    await new Promise((r) => setTimeout(r, 30));
+    runtime.eventBus.flushNow();
+
+    const stateAfterLook = await call('bots.upNext.list', { botId });
+    assert.equal(stateAfterLook.running, false);
+    assert.ok(stateAfterLook.runs.some((r) => r.id === bgLook.runId && r.ok === true));
+    assert.ok(events.some((ev) => Array.isArray(ev.kinds) && ev.kinds.includes('lookAround')));
+
+    // 5. bots.automations.runNow with background: true returns immediately, reports alreadyRunning, and settles
+    const auto = await call('bots.automations.create', {
+      botId,
+      name: 'BG Auto',
+      prompt: 'Run async check',
+      intervalMinutes: 60,
+    });
+    let resolveAutoTurn;
+    pendingTurn = { promise: new Promise((r) => { resolveAutoTurn = r; }) };
+
+    const bgAuto = await call('bots.automations.runNow', { id: auto.id, background: true });
+    assert.equal(bgAuto.ok, true);
+    assert.equal(bgAuto.started, true);
+    assert.equal(bgAuto.background, true);
+    assert.equal(bgAuto.automationId, auto.id);
+
+    const dupAuto = await call('bots.automations.runNow', { id: auto.id, background: true });
+    assert.equal(dupAuto.ok, true);
+    assert.equal(dupAuto.alreadyRunning, true);
+
+    resolveAutoTurn({ ok: true, reply: 'auto completed' });
+    pendingTurn = null;
+    await new Promise((r) => setTimeout(r, 30));
+
+    const updatedAuto = runtime.workStore.getAutomation(auto.id);
+    assert.equal(updatedAuto.lastStatus, 'completed');
+    const claims = (await call('bots.automations.claims', { automationId: auto.id })).claims;
+    assert.ok(claims.some((c) => c.claimId === bgAuto.claimId && c.status === 'completed'));
+
+    // 6. ensureControllerSession adopts minted sessionId returned by controller.create
+    const origCreate = mock.controller.create;
+    mock.controller.create = async (spec, signal) => {
+      const mintedId = 'minted-side-session-1';
+      return origCreate({ ...spec, sessionId: mintedId }, signal);
+    };
+    const sideMinted = await runtime.sessionRuntime.startSideChat(botId, { title: 'Minted Side' });
+    assert.equal(sideMinted.ok, true);
+    assert.match(sideMinted.sessionId, /^minted-/);
+    assert.equal(runtime.botsStore.getChat(sideMinted.sessionId)?.botId, botId);
+    mock.controller.create = origCreate;
+
+    assert.equal(reportedErrors.length, 0);
+  });
+});

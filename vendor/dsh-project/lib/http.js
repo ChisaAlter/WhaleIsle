@@ -116,57 +116,131 @@ async function readSingleMemory(service, projectId, name) {
       type: found.file.type,
       modified: found.file.modified,
       size: found.file.chars,
+      estimatedTokens: found.file.estimatedTokens || 0,
+      pinned: found.file.pinned === true,
+      sourceTaskId: found.file.sourceTaskId || '',
       text: found.file.body,
       archived: found.archived,
     },
   };
 }
 
-async function routeMemoryEndpoint(service, method, projectId, parts, req, res) {
+async function handleMemoryList(service, projectId, searchParams) {
+  const project = await service.readProject(projectId);
+  const files = await service.memory.readMemoryFiles(project.id);
+  const rawQuery = searchParams && typeof searchParams.get === 'function' ? (searchParams.get('q') || '') : '';
+  const query = rawQuery.trim();
+  const memory = await service.memory.memoryPayload(project, files, { query });
+  return {
+    status: 200,
+    body: {
+      memory,
+      index: renderMemoryIndexFile(files),
+      ...(query ? { query, matches: memory.matches || [] } : {}),
+    },
+  };
+}
+
+async function handleMemoryCreate(service, projectId, req, res) {
+  const body = await readJson(req, res);
+  if (typeof body?.text !== 'string') throw httpError(400, 'text_required');
+  const name = memoryNameOrThrow(body?.name);
+  const project = await service.readProject(projectId);
+  const written = await service.memory.writeMemoryFile(project.id, {
+    name,
+    description: body?.description,
+    type: body?.type,
+    pinned: typeof body?.pinned === 'boolean' ? body.pinned : undefined,
+    sourceTaskId: body?.sourceTaskId,
+    text: body.text,
+  });
+  const compaction = await service.memory.afterMemoryWrite(project, written);
+  return {
+    status: 200,
+    body: {
+      saved: true,
+      name: written.file.name,
+      size: written.file.chars,
+      estimatedTokens: written.file.estimatedTokens || 0,
+      pinned: written.file.pinned === true,
+      sourceTaskId: written.file.sourceTaskId || '',
+      compaction,
+    },
+  };
+}
+
+async function handleMemoryItem(service, method, projectId, name, req, res) {
+  if (method === 'GET') return readSingleMemory(service, projectId, name);
+  if (method === 'PATCH') {
+    const body = await readJson(req, res);
+    const project = await service.readProject(projectId);
+    const updated = await service.memory.updateMemoryMeta(project.id, name, {
+      ...(typeof body?.pinned === 'boolean' ? { pinned: body.pinned } : {}),
+      ...(body?.description !== undefined ? { description: body.description } : {}),
+      ...(body?.type !== undefined ? { type: body.type } : {}),
+      ...(body?.sourceTaskId !== undefined ? { sourceTaskId: body.sourceTaskId } : {}),
+    });
+    return { status: 200, body: { updated: true, file: service.memory.summarizeMemoryFile(updated) } };
+  }
+  if (method === 'DELETE') {
+    const project = await service.readProject(projectId);
+    if (isMemoryIndexName(name)) throw httpError(400, MEMORY_INDEX_READ_ONLY);
+    const deleted = await service.memory.deleteMemoryFile(project.id, name);
+    return { status: 200, body: { deleted: true, name: deleted.file.name } };
+  }
+  throw httpError(405, 'method_not_allowed');
+}
+
+async function routeMemoryEndpoint(service, method, projectId, parts, req, res, searchParams) {
   if (parts.length === 3) {
-    if (method === 'GET') {
-      const project = await service.readProject(projectId);
-      const files = await service.memory.readMemoryFiles(project.id);
-      return {
-        status: 200,
-        body: { memory: await service.memory.memoryPayload(project, files), index: renderMemoryIndexFile(files) },
-      };
-    }
-    if (method === 'POST') {
-      const body = await readJson(req, res);
-      if (typeof body?.text !== 'string') throw httpError(400, 'text_required');
-      const name = memoryNameOrThrow(body?.name);
-      const project = await service.readProject(projectId);
-      const written = await service.memory.writeMemoryFile(project.id, {
-        name,
-        description: body?.description,
-        type: body?.type,
-        text: body.text,
-      });
-      const compaction = await service.memory.afterMemoryWrite(project, written);
-      return { status: 200, body: { saved: true, name: written.file.name, size: written.file.chars, compaction } };
-    }
+    if (method === 'GET') return handleMemoryList(service, projectId, searchParams);
+    if (method === 'POST') return handleMemoryCreate(service, projectId, req, res);
     throw httpError(405, 'method_not_allowed');
   }
-
   if (parts.length === 4) {
     const name = decodeSegment(parts[3], 'bad_memory_name');
-    if (method === 'GET') return readSingleMemory(service, projectId, name);
-    if (method === 'DELETE') {
-      const project = await service.readProject(projectId);
-      if (isMemoryIndexName(name)) throw httpError(400, MEMORY_INDEX_READ_ONLY);
-      const deleted = await service.memory.deleteMemoryFile(project.id, name);
-      return { status: 200, body: { deleted: true, name: deleted.file.name } };
-    }
-    throw httpError(405, 'method_not_allowed');
+    return handleMemoryItem(service, method, projectId, name, req, res);
   }
-
   throw httpError(404, 'not_found');
 }
 
+async function routeLibraryEndpoint(service, method, projectId, parts, req, res) {
+  if (parts.length === 3) {
+    if (method !== 'GET') throw httpError(405, 'method_not_allowed');
+    return { status: 200, body: await service.getLibrary(projectId) };
+  }
+  if (parts.length === 4 && parts[3] === 'references') {
+    if (method !== 'POST') throw httpError(405, 'method_not_allowed');
+    const body = await readJson(req, res);
+    return { status: 201, body: await service.addLibraryReference(projectId, body) };
+  }
+  if (parts.length === 5 && parts[3] === 'references') {
+    if (method !== 'DELETE') throw httpError(405, 'method_not_allowed');
+    const refId = decodeSegment(parts[4], 'bad_reference_id');
+    return { status: 200, body: await service.removeLibraryReference(projectId, refId) };
+  }
+  throw httpError(404, 'not_found');
+}
+
+function boolFlag(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+  }
+  return false;
+}
+
 async function routeTaskAction(service, method, projectId, taskId, action) {
+  /** @type {Record<string, { method: string, run: () => any }>} */
   const routes = {
-    approve: { method: 'POST', run: async () => ({ task: (await service.approveTask(projectId, taskId)).task }) },
+    approve: {
+      method: 'POST',
+      run: async () => {
+        const { task, dispatched } = await service.approveTask(projectId, taskId);
+        return { task, dispatched };
+      },
+    },
     stop: { method: 'POST', run: () => service.stopTask(projectId, taskId) },
     retry: { method: 'POST', run: () => service.retryTask(projectId, taskId) },
     diff: { method: 'GET', run: () => service.getTaskDiff(projectId, taskId) },
@@ -183,8 +257,14 @@ async function routeTaskEndpoint(service, method, projectId, parts, req, res, se
     const taskId = parts[3];
     if (method === 'PATCH') {
       const body = await readJson(req, res);
-      const { task } = await service.resolveTask(projectId, taskId, body);
-      return { status: 200, body: { task } };
+      const { task, dispatchedTaskIds } = await service.resolveTask(projectId, taskId, body);
+      return {
+        status: 200,
+        body: {
+          task,
+          ...(dispatchedTaskIds === undefined ? {} : { dispatchedTaskIds }),
+        },
+      };
     }
     if (method === 'DELETE') {
       const { session, worktree } = await service.removeTask(projectId, taskId, sessionActionOf(searchParams));
@@ -202,36 +282,78 @@ async function routeTaskEndpoint(service, method, projectId, parts, req, res, se
   throw httpError(404, 'not_found');
 }
 
+async function handleProjectCollection(service, method, req, res) {
+  if (method === 'GET') {
+    const projects = await service.listProjects();
+    return { status: 200, body: { projects: projects.map(summarizeProject) } };
+  }
+  if (method === 'POST') {
+    const body = await readJson(req, res);
+    const project = await service.createProject(body);
+    return { status: 201, body: { project: summarizeProject(project) } };
+  }
+  throw httpError(405, 'method_not_allowed');
+}
+
+async function handleProjectDetail(service, method, projectId, req, res, searchParams) {
+  if (method === 'GET') {
+    const project = await service.readProject(projectId);
+    const [files, library] = await Promise.all([
+      service.memory.readMemoryFiles(project.id),
+      service.library.readLibrary(project),
+    ]);
+    return {
+      status: 200,
+      body: {
+        project,
+        memory: await service.memory.memoryPayload(project, files),
+        library,
+      },
+    };
+  }
+  if (method === 'PATCH') {
+    const body = await readJson(req, res);
+    const { project, worktrees, dispatchedTaskIds } = await service.updateProject(projectId, body);
+    return {
+      status: 200,
+      body: {
+        project,
+        ...(worktrees === undefined ? {} : { worktrees }),
+        ...(dispatchedTaskIds === undefined ? {} : { dispatchedTaskIds }),
+      },
+    };
+  }
+  if (method === 'DELETE') {
+    const body = await readJson(req, res);
+    const archiveFromQuery = boolFlag(searchParams?.get?.('archiveSessions'))
+      || sessionActionOf(searchParams) === 'archive';
+    const archiveSessions = archiveFromQuery || body?.archiveSessions === true;
+    return { status: 200, body: await service.deleteProject(projectId, { archiveSessions }) };
+  }
+  throw httpError(405, 'method_not_allowed');
+}
+
 async function routeProjectEndpoint(service, method, parts, req, res, searchParams) {
   if (parts.length === 1) {
-    if (method === 'GET') {
-      const projects = await service.listProjects();
-      return { status: 200, body: { projects: projects.map(summarizeProject) } };
-    }
-    if (method === 'POST') {
-      const body = await readJson(req, res);
-      const project = await service.createProject(body);
-      return { status: 201, body: { project: summarizeProject(project) } };
-    }
-    throw httpError(405, 'method_not_allowed');
+    return handleProjectCollection(service, method, req, res);
   }
 
   const projectId = parts[1];
   if (parts.length === 2) {
-    if (method === 'GET') {
-      const project = await service.readProject(projectId);
-      const files = await service.memory.readMemoryFiles(project.id);
-      return { status: 200, body: { project, memory: await service.memory.memoryPayload(project, files) } };
-    }
-    if (method === 'PATCH') {
-      const body = await readJson(req, res);
-      const { project, worktrees } = await service.updateProject(projectId, body);
-      return { status: 200, body: { project, ...(worktrees === undefined ? {} : { worktrees }) } };
-    }
-    throw httpError(405, 'method_not_allowed');
+    return handleProjectDetail(service, method, projectId, req, res, searchParams);
   }
 
-  if (parts[2] === 'memory') return routeMemoryEndpoint(service, method, projectId, parts, req, res);
+  if (parts.length === 4 && parts[2] === 'coordinator' && parts[3] === 'ensure') {
+    if (method !== 'POST') throw httpError(405, 'method_not_allowed');
+    const body = await readJson(req, res);
+    return {
+      status: 200,
+      body: await service.ensureCoordinatorSession(projectId, { restore: body?.restore === true }),
+    };
+  }
+
+  if (parts[2] === 'memory') return routeMemoryEndpoint(service, method, projectId, parts, req, res, searchParams);
+  if (parts[2] === 'library') return routeLibraryEndpoint(service, method, projectId, parts, req, res);
   if (parts[2] === 'tasks') return routeTaskEndpoint(service, method, projectId, parts, req, res, searchParams);
   throw httpError(404, 'not_found');
 }
@@ -256,6 +378,7 @@ function checkConnection(ctx, req, res, requireConnection) {
 function formatErrorBody(error) {
   return {
     error: messageOf(error),
+    ...(typeof error?.code === 'string' && error.code ? { code: error.code } : {}),
     ...(error?.conflict === true ? { conflict: true } : {}),
     ...(error?.dirtyWorkspace === true ? { dirtyWorkspace: true } : {}),
     ...(error?.dirtyWorktree === true ? { dirtyWorktree: true } : {}),

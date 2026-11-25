@@ -2,14 +2,16 @@
  * Main ProjectService orchestrating store, shared memory, worktree, runner,
  * model catalog, session archiving, desktop open-path, and cross-plugin bridges.
  */
-import { realpath } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { realpath, rm, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 import { withinPath } from '../../dsh-shared/lib/path-guard.mjs';
 import {
   acceptAuthorizedHandoff,
   inspectBridgeProject,
   listBridgeSummaries,
 } from './bridge.js';
+import { createLibraryManager } from './library.js';
 import { createMemoryManager } from './memory.js';
 import { createRunner } from './runner.js';
 import {
@@ -25,6 +27,7 @@ import {
   MAX_TASKS,
   MEMORY_BUDGET_MAX,
   MEMORY_BUDGET_MIN,
+  SCOPE_CEILINGS,
   STATUSES,
   dependencyIds,
   effortValue,
@@ -37,6 +40,7 @@ import {
   normalizeTask,
   presetValue,
   text,
+  workerIsLive,
 } from './schema.js';
 import { createProjectStore, isDirectory } from './store.js';
 import { createWorktreeManager } from './worktree.js';
@@ -49,6 +53,100 @@ export const SESSION_DELETE_REFUSED =
   + 'The task was not deleted.';
 
 const MODEL_CACHE_MS = 60_000;
+
+function hasUnsafeWorkspaceSyntax(raw) {
+  if (/[\0\r\n]/.test(raw)) return true;
+  if (/^(?:\\\\|\/\/)/.test(raw)) return true;
+  if (process.platform === 'win32') {
+    const afterDrive = raw.replace(/^[A-Za-z]:/, '');
+    if (afterDrive.includes(':')) return true;
+    const segments = afterDrive.split(/[\\/]+/).filter(Boolean);
+    if (segments.some((segment) => segment !== '.' && segment !== '..' && /[. ]$/.test(segment))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function highRiskAnchors(dshHome) {
+  const candidates = [];
+  const home = homedir();
+  if (home) {
+    candidates.push(home);
+    if (process.platform === 'darwin') {
+      candidates.push(join(home, 'Library'), join(home, 'Library', 'Application Support'));
+    }
+    candidates.push(join(home, '.config'), join(home, '.ssh'));
+  }
+  for (const key of ['APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME']) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.trim()) candidates.push(value);
+  }
+  if (dshHome) {
+    candidates.push(dshHome, dirname(resolve(dshHome)));
+  }
+  const anchors = [];
+  for (const candidate of candidates) {
+    try {
+      anchors.push(await realpath(resolve(candidate)));
+    } catch {
+      // Missing anchor cannot be exposed.
+    }
+  }
+  return { home, dshHome, anchors };
+}
+
+export async function validateWorkspacePath(rawWorkspace, dshHome = '') {
+  const trimmed = text(rawWorkspace, 1024).trim();
+  if (!trimmed) return '';
+  if (hasUnsafeWorkspaceSyntax(trimmed)) {
+    throw httpError(
+      400,
+      '不支持网络共享路径、设备路径或含保留/异常字符的目录路径，请选择本机普通文件夹。',
+      { code: 'invalid_workspace' },
+    );
+  }
+  if (!isAbsolute(trimmed)) {
+    throw httpError(400, '工作目录必须是本机绝对路径。', { code: 'invalid_workspace' });
+  }
+  let canonical;
+  try {
+    canonical = await realpath(resolve(trimmed));
+    const info = await stat(canonical);
+    if (!info.isDirectory()) {
+      throw httpError(400, '所选工作路径不是文件夹。', { code: 'invalid_workspace' });
+    }
+  } catch (error) {
+    if (error?.status) throw error;
+    throw httpError(400, `找不到工作目录：${trimmed}`, { code: 'invalid_workspace' });
+  }
+  if (parse(canonical).root === canonical) {
+    throw httpError(400, '磁盘根目录不能作为项目工作目录，请选择具体的项目文件夹。', { code: 'invalid_workspace' });
+  }
+  const { home, anchors } = await highRiskAnchors(dshHome);
+  const canonicalHome = home ? await realpath(resolve(home)).catch(() => '') : '';
+  if (canonicalHome && withinPath(canonical, canonicalHome)) {
+    throw httpError(400, '用户主目录不能作为项目工作目录，请选择其中的具体项目文件夹。', { code: 'invalid_workspace' });
+  }
+  const canonicalDshHome = dshHome ? await realpath(resolve(dshHome)).catch(() => '') : '';
+  if (canonicalDshHome && (withinPath(canonicalDshHome, canonical) || withinPath(canonical, canonicalDshHome))) {
+    throw httpError(400, '鲸屿数据目录不能作为项目工作目录，请选择你的项目文件夹。', { code: 'invalid_workspace' });
+  }
+  if (anchors.some((anchor) => anchor !== canonicalHome && anchor !== canonicalDshHome && withinPath(canonical, anchor))) {
+    throw httpError(400, '系统配置目录不能作为项目工作目录，请选择具体的项目文件夹。', { code: 'invalid_workspace' });
+  }
+  return canonical;
+}
+
+export function coordinatorPresentationOf(project) {
+  return {
+    owner: 'dsh-project',
+    title: text(project?.name, 120).trim() || 'Project',
+    ...(typeof project?.workspace === 'string' && project.workspace.trim()
+      ? { workingDirectory: project.workspace.trim() }
+      : {}),
+  };
+}
 
 async function reasoningOf(llm, providerId, modelId) {
   let resolved;
@@ -174,12 +272,15 @@ export class ProjectService {
     this.desktop = typeof options.desktop === 'function' ? options.desktop : null;
     this.store = createProjectStore({ home: options.home || '' });
     this.memory = createMemoryManager(this.store);
+    this.library = createLibraryManager(this.store);
     this.worktree = createWorktreeManager(this.store);
     this.runner = createRunner({
       ctx,
       store: this.store,
       memory: this.memory,
       worktree: this.worktree,
+      library: this.library,
+      ...(options.notifyBatchMs !== undefined ? { notifyBatchMs: options.notifyBatchMs } : {}),
     });
     this.modelCache = new Map();
     this.handoffReceipts = new Map();
@@ -200,6 +301,96 @@ export class ProjectService {
   /** Hook invoked by `dsh-task-control` when desktop task admission unlocks. */
   schedule() {
     this.store.emitChange({ type: 'schedule.unlocked' });
+    for (const project of this.store.getCachedProjects()) {
+      if (project.archived || project.paused) continue;
+      void this.runner.scheduleReadyTasks(project.id).catch(() => {
+        // Best-effort wake on admission unlock.
+      });
+    }
+  }
+
+  async syncCoordinatorPresentation(project) {
+    const sid = typeof project?.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
+    if (!sid) return false;
+    const controller = this.ctx?.get?.('sessionController') ?? this.ctx?.sessionController;
+    if (!controller || typeof controller.setPresentation !== 'function') return false;
+    try {
+      await controller.setPresentation({
+        sessionId: sid,
+        presentation: coordinatorPresentationOf(project),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  isSessionArchived(sessionId) {
+    if (!sessionId) return false;
+    const registry = this.ctx?.get?.('workspaceRegistry') ?? this.ctx?.workspaceRegistry;
+    if (!registry) return false;
+    if (Array.isArray(registry.archivedSessionIds)) {
+      return registry.archivedSessionIds.includes(sessionId);
+    }
+    if (typeof registry.isArchived === 'function') {
+      return Boolean(registry.isArchived(sessionId));
+    }
+    return false;
+  }
+
+  async inspectExistingCoordinatorSession(project, controller, registry, restore) {
+    const sid = typeof project.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
+    if (!sid) return null;
+    if (typeof controller?.inspect === 'function') {
+      try {
+        await controller.inspect(sid);
+      } catch (error) {
+        const err = /** @type {{ name?: string } | null} */ (error);
+        if (err?.name === 'ApiSessionNotFound' || /not found/i.test(messageOf(error))) {
+          return null;
+        }
+      }
+    }
+    let archived = this.isSessionArchived(sid);
+    if (archived && restore && typeof registry?.unarchiveSession === 'function') {
+      await registry.unarchiveSession(sid);
+      archived = false;
+    }
+    await this.syncCoordinatorPresentation(project);
+    return { project, coordinatorSessionId: sid, created: false, archived };
+  }
+
+  async ensureCoordinatorSession(projectId, { restore = false } = {}) {
+    const outcome = await this.store.withProjectLock(projectId, async () => {
+      const project = await this.store.readProject(projectId);
+      const controller = this.ctx?.get?.('sessionController') ?? this.ctx?.sessionController;
+      const registry = this.ctx?.get?.('workspaceRegistry') ?? this.ctx?.workspaceRegistry;
+
+      const existing = await this.inspectExistingCoordinatorSession(project, controller, registry, restore);
+      if (existing) return existing;
+
+      if (project.archived) throw httpError(409, 'project_archived');
+      if (!controller || typeof controller.create !== 'function') {
+        throw httpError(503, 'session_controller_unavailable');
+      }
+
+      const created = await controller.create({
+        ...(project.workspace ? { cwd: project.workspace } : {}),
+        presentation: coordinatorPresentationOf(project),
+      });
+      const sid = String(created?.sessionId || created?.id || '').trim();
+      if (!sid) throw httpError(500, 'coordinator_session_create_failed');
+      project.coordinatorSessionId = sid;
+      project.updatedAt = Date.now();
+      const saved = await this.store.writeProject(project);
+      await this.syncCoordinatorPresentation(saved);
+      return { project: saved, coordinatorSessionId: sid, created: true, archived: false };
+    });
+
+    if (outcome.created) {
+      this.store.emitChange({ type: 'project.updated', projectId: outcome.project.id });
+    }
+    return outcome;
   }
 
   getCachedProjects() {
@@ -237,11 +428,14 @@ export class ProjectService {
   }
 
   async createProject(input = {}) {
+    const workspace = input?.workspace !== undefined
+      ? await validateWorkspacePath(input.workspace, this.store.getHome())
+      : '';
     const project = normalizeProject({
       id: newId('p'),
       name: input?.name,
       goal: input?.goal,
-      workspace: input?.workspace,
+      workspace,
       autonomy: input?.autonomy,
       concurrency: input?.concurrency,
       paused: input?.paused,
@@ -261,18 +455,113 @@ export class ProjectService {
   }
 
   async updateProject(id, patch = {}) {
+    const sanitizedPatch = patch && typeof patch === 'object' ? { ...patch } : {};
+    if (sanitizedPatch.workspace !== undefined) {
+      sanitizedPatch.workspace = await validateWorkspacePath(sanitizedPatch.workspace, this.store.getHome());
+    }
     const result = await this.store.withProjectLock(id, async () => {
       const project = await this.store.readProject(id);
-      applyProjectPatch(project, patch);
-      const worktrees = patch?.archived === true
+      const prevName = project.name;
+      const prevWorkspace = project.workspace;
+      const prevAutonomy = project.autonomy;
+      const prevPaused = project.paused === true;
+      const prevCoordinator = project.coordinatorSessionId || '';
+      applyProjectPatch(project, sanitizedPatch);
+      const worktrees = sanitizedPatch.archived === true
         ? await this.worktree.removeProjectWorktrees(project)
         : undefined;
       project.updatedAt = Date.now();
       const saved = await this.store.writeProject(project);
-      return { project: saved, ...(worktrees === undefined ? {} : { worktrees }) };
+      return {
+        project: saved,
+        ...(worktrees === undefined ? {} : { worktrees }),
+        shouldSyncPresentation: Boolean(saved.coordinatorSessionId)
+          && (saved.name !== prevName
+            || saved.workspace !== prevWorkspace
+            || saved.coordinatorSessionId !== prevCoordinator),
+        shouldSchedule: !saved.archived
+          && !saved.paused
+          && ((prevAutonomy !== 'auto' && saved.autonomy === 'auto')
+            || (prevPaused && !saved.paused)),
+      };
     });
+
+    if (result.shouldSyncPresentation) {
+      await this.syncCoordinatorPresentation(result.project);
+    }
     this.store.emitChange({ type: 'project.updated', projectId: result.project.id });
-    return result;
+
+    let finalProject = result.project;
+    let dispatchedTaskIds;
+    if (result.shouldSchedule) {
+      const scheduled = await this.runner.scheduleReadyTasks(id);
+      if (scheduled.length > 0) {
+        dispatchedTaskIds = scheduled;
+        finalProject = await this.store.readProject(id);
+      }
+    }
+    return {
+      project: finalProject,
+      ...(result.worktrees === undefined ? {} : { worktrees: result.worktrees }),
+      ...(dispatchedTaskIds === undefined ? {} : { dispatchedTaskIds }),
+    };
+  }
+
+  async deleteProject(projectId, { archiveSessions = false } = {}) {
+    const initial = await this.store.readProject(projectId);
+    const stoppedTasks = [];
+    for (const task of initial.tasks || []) {
+      if (!workerIsLive(task) && task.status !== 'running') continue;
+      try {
+        await this.stopTask(projectId, task.id);
+        stoppedTasks.push(task.id);
+      } catch {
+        // Task may already have settled before stopTask ran.
+      }
+    }
+
+    const result = await this.store.withProjectLock(projectId, async () => {
+      const project = await this.store.readProject(projectId);
+      const worktrees = await this.worktree.removeProjectWorktrees(project);
+      const archivedSessions = [];
+      if (archiveSessions) {
+        const registry = this.ctx?.get?.('workspaceRegistry') ?? this.ctx?.workspaceRegistry;
+        if (registry && typeof registry.archiveSession === 'function') {
+          const sessionIds = new Set();
+          if (typeof project.coordinatorSessionId === 'string' && project.coordinatorSessionId.trim()) {
+            sessionIds.add(project.coordinatorSessionId.trim());
+          }
+          for (const task of project.tasks || []) {
+            if (typeof task?.childSessionId === 'string' && task.childSessionId.trim()) {
+              sessionIds.add(task.childSessionId.trim());
+            }
+          }
+          for (const sid of sessionIds) {
+            try {
+              await registry.archiveSession(sid);
+              archivedSessions.push(sid);
+            } catch {
+              // Ignore already-archived or missing sessions during project deletion.
+            }
+          }
+        }
+      }
+      await this.store.deleteProjectDir(projectId);
+      // Best-effort cleanup of empty per-project worktree pool folder (never touches user workspace).
+      await rm(join(this.store.worktreesRootDir(), projectId), { recursive: true, force: true }).catch(() => {
+        // Pool folder may already be absent.
+      });
+      return { archivedSessions, worktrees };
+    });
+
+    this.store.emitChange({ type: 'project.deleted', projectId });
+    return {
+      deleted: true,
+      projectId,
+      stoppedTasks,
+      archivedSessions: result.archivedSessions,
+      worktrees: result.worktrees,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -289,6 +578,10 @@ export class ProjectService {
           `too_many_dependencies: a task may depend on at most ${MAX_DEPENDS_ON} tasks (got ${dependsOn.length})`,
         );
       }
+      const scopeCeiling = typeof input?.scopeCeiling === 'string' && SCOPE_CEILINGS.includes(input.scopeCeiling.trim())
+        ? input.scopeCeiling.trim()
+        : undefined;
+      const writePaths = Array.isArray(input?.writePaths) ? input.writePaths : undefined;
       const task = normalizeTask({
         id: newId('t'),
         title: input?.title,
@@ -299,6 +592,8 @@ export class ProjectService {
         model: input?.model,
         agentPreset: input?.agentPreset,
         reasoningEffort: input?.reasoningEffort,
+        ...(scopeCeiling ? { scopeCeiling } : {}),
+        ...(writePaths ? { writePaths } : {}),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -325,6 +620,9 @@ export class ProjectService {
       return { project: saved, task: storedTask };
     });
     this.store.emitChange({ type: 'task.updated', projectId: result.project.id, taskId: result.task.id });
+    if (Array.isArray(patch?.artifacts) && patch.artifacts.length > 0) {
+      await this.library.recordTaskArtifacts(result.project, result.task, patch.artifacts, { source: 'explicit' });
+    }
     return result;
   }
 
@@ -348,7 +646,16 @@ export class ProjectService {
         `the page may only set status to "resolved" or "review" (rejected: ${JSON.stringify(body.status)})`,
       );
     }
-    return this.updateTask(projectId, taskId, { status: body.status });
+    const updated = await this.updateTask(projectId, taskId, { status: body.status });
+    if (body.status === 'resolved') {
+      const dispatchedTaskIds = await this.runner.scheduleReadyTasks(projectId);
+      if (dispatchedTaskIds.length > 0) {
+        const latestProject = await this.store.readProject(projectId);
+        const latestTask = latestProject.tasks.find((item) => item.id === taskId) || updated.task;
+        return { project: latestProject, task: latestTask, dispatchedTaskIds };
+      }
+    }
+    return updated;
   }
 
   async approveTask(projectId, taskId) {
@@ -368,7 +675,18 @@ export class ProjectService {
     if (result.changed) {
       this.store.emitChange({ type: 'task.approved', projectId: result.project.id, taskId: result.task.id });
     }
-    return { project: result.project, task: result.task };
+    let finalProject = result.project;
+    let finalTask = result.task;
+    let dispatched = false;
+    if (finalTask.status === 'queued') {
+      const dispatchedIds = await this.runner.scheduleReadyTasks(projectId, { preferredTaskId: taskId });
+      dispatched = dispatchedIds.includes(taskId);
+      if (dispatchedIds.length > 0) {
+        finalProject = await this.store.readProject(projectId);
+        finalTask = finalProject.tasks.find((item) => item.id === taskId) || finalTask;
+      }
+    }
+    return { project: finalProject, task: finalTask, dispatched };
   }
 
   async archiveTaskSession(project, task) {
@@ -423,7 +741,28 @@ export class ProjectService {
     });
 
     this.store.emitChange({ type: 'task.deleted', projectId, taskId });
+    await this.library.removeTaskArtifacts(projectId, taskId).catch(() => {
+      // Task deletion is already persisted; library artifact index cleanup is best-effort.
+    });
     return result;
+  }
+
+  // -------------------------------------------------------------------------
+  // Project Library (references & task artifacts)
+
+  async getLibrary(projectId) {
+    const project = await this.store.readProject(projectId);
+    return this.library.readLibrary(project);
+  }
+
+  async addLibraryReference(projectId, input = {}) {
+    const project = await this.store.readProject(projectId);
+    return this.library.addReference(project, input);
+  }
+
+  async removeLibraryReference(projectId, refId) {
+    const project = await this.store.readProject(projectId);
+    return this.library.removeReference(project, refId);
   }
 
   // -------------------------------------------------------------------------
@@ -569,7 +908,8 @@ export class ProjectService {
   async collectAllowedOpenRoots(project) {
     const candidates = [
       project.workspace,
-      this.store.projectDir(project.id),
+      this.memory.memoryDir(project.id),
+      join(this.store.projectDir(project.id), 'docs'),
       ...(project.tasks || []).map((task) => task.worktreePath),
     ].filter(Boolean);
     const roots = [];
@@ -579,8 +919,22 @@ export class ProjectService {
     return roots;
   }
 
-  async openPath({ projectId, path: requestedPath = '' } = {}) {
-    const project = await this.store.readProject(projectId);
+  async findMatchingWorktreeTask(project, actualTarget) {
+    for (const task of project.tasks || []) {
+      if (!task?.worktreePath) continue;
+      try {
+        const wtReal = await realpath(task.worktreePath);
+        if (withinPath(wtReal, actualTarget)) {
+          return { id: task.id, path: wtReal };
+        }
+      } catch {
+        // Ignore stale worktree path.
+      }
+    }
+    return null;
+  }
+
+  async resolveOpenPathCandidate(project, requestedPath) {
     const rawTarget = typeof requestedPath === 'string' && requestedPath.trim()
       ? requestedPath.trim()
       : project.workspace;
@@ -591,22 +945,29 @@ export class ProjectService {
         ? resolve(project.workspace, rawTarget)
         : '';
     if (!candidate) throw httpError(400, 'invalid_path');
-
-    let actualTarget;
     try {
-      actualTarget = await realpath(candidate);
+      return await realpath(candidate);
     } catch {
       throw httpError(404, 'path_not_found');
     }
+  }
+
+  async openPath({ projectId = '', path: requestedPath = '' } = {}) {
+    const project = await this.store.readProject(projectId);
+    const actualTarget = await this.resolveOpenPathCandidate(project, requestedPath);
 
     const allowedRoots = await this.collectAllowedOpenRoots(project);
-    if (!allowedRoots.some((root) => withinPath(root, actualTarget))) {
+    const inAllowedRoot = allowedRoots.some((root) => withinPath(root, actualTarget));
+    const inLibrary = inAllowedRoot ? false : await this.library.isRegisteredLibraryFile(project.id, actualTarget);
+    if (!inAllowedRoot && !inLibrary) {
       throw httpError(403, 'path_outside_project_scope');
     }
     if (!this.desktop) throw httpError(503, 'desktop_bridge_unavailable');
+    const matchingWorktreeTask = await this.findMatchingWorktreeTask(project, actualTarget);
     const response = await this.desktop('open-path', {
       projectId: project.id,
-      workingDirectory: project.workspace || actualTarget,
+      ...(matchingWorktreeTask ? { taskId: matchingWorktreeTask.id } : {}),
+      workingDirectory: matchingWorktreeTask ? matchingWorktreeTask.path : (project.workspace || actualTarget),
       path: actualTarget,
     });
     return { ok: true, opened: true, path: response?.canonicalPath || actualTarget };

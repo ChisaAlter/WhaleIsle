@@ -22,6 +22,11 @@ function operations(discoverModels: ModelsOperations['discoverModels']): ModelsO
     storeCredential: vi.fn(),
     removeCredential: vi.fn(),
     writeSettings: vi.fn(),
+    startAuthorization: vi.fn(async () => {}),
+    respondAuthorizationPrompt: vi.fn(async () => undefined),
+    cancelAuthorization: vi.fn(async () => undefined),
+    removeCredentialRecord: vi.fn(async () => undefined),
+    openExternalUrl: vi.fn(),
   }
 }
 

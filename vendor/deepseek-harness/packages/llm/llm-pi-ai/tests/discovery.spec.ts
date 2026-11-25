@@ -173,6 +173,26 @@ describe('draft-provider model discovery', () => {
     ])
   })
 
+  it('reads an OpenAI SIWC models array, filtering by visibility and using slug/display_name', async () => {
+    const server = await listingServer({
+      body: JSON.stringify({
+        models: [
+          { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list' },
+          { slug: 'gpt-5.4-mini', visibility: 'list' },
+          { slug: 'hidden-internal', display_name: 'Hidden', visibility: 'hide' },
+          { id: 'fallback-id', name: 'Fallback Name' },
+        ],
+      }),
+    })
+    const ctx = await harness()
+
+    expect(await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })).toEqual([
+      { id: 'gpt-5.4', name: 'GPT-5.4' },
+      { id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' },
+      { id: 'fallback-id', name: 'Fallback Name' },
+    ])
+  })
+
   it('uses Anthropic model-listing paths, headers, and capacity fields', async () => {
     const server = await listingServer({
       body: JSON.stringify({
@@ -391,11 +411,11 @@ describe('draft-provider model discovery', () => {
   })
 
   it('reports a reply that is not a model listing', async () => {
-    const server = await listingServer({ body: '{"models":[]}' })
+    const server = await listingServer({ body: '{"models":"not-a-list"}' })
     const ctx = await harness()
 
     await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url }))
-      .rejects.toThrow(/neither a "data" array nor a "models" object/)
+      .rejects.toThrow(/neither a "data" array nor a "models"/)
 
     const broken = await listingServer({ body: 'not json at all' })
     await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: broken.url }))

@@ -4929,6 +4929,65 @@ describe('ChatView', () => {
     }
   })
 
+  it('publishes --dsh-to-bottom-offset directly from [data-composer-seat] and syncs --dsh-chat-composer-reserve on .scroll', async () => {
+    const observers = new Set<Observer>()
+    class Observer implements ResizeObserver {
+      readonly targets = new Set<Element>()
+      constructor(readonly callback: ResizeObserverCallback) { observers.add(this) }
+      observe(target: Element): void { this.targets.add(target) }
+      unobserve(target: Element): void { this.targets.delete(target) }
+      disconnect(): void { observers.delete(this) }
+    }
+    vi.stubGlobal('ResizeObserver', Observer)
+
+    const host = document.createElement('div')
+    host.setAttribute('data-conversation-scroll', '')
+    host.style.setProperty('--dsh-composer-reserve', '130px')
+    Object.defineProperty(host, 'scrollHeight', { value: 2000, writable: true, configurable: true })
+    Object.defineProperty(host, 'clientHeight', { value: 500, writable: true, configurable: true })
+    Object.defineProperty(host, 'scrollTop', { value: 0, writable: true, configurable: true })
+    const mount = document.createElement('div')
+    const seat = document.createElement('div')
+    seat.setAttribute('data-composer-seat', '')
+    let seatHeight = 148
+    Object.defineProperty(seat, 'offsetHeight', { configurable: true, get: () => seatHeight })
+    host.append(mount, seat)
+    document.body.appendChild(host)
+    try {
+      const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+      const view = render(<h.ChatView {...h.props} />, { container: mount })
+      const scrollList = mount.querySelector('[data-chat-flow]')!.parentElement as HTMLElement
+      expect(scrollList.style.getPropertyValue('--dsh-chat-composer-reserve')).toBe('130px')
+      expect(host.style.getPropertyValue('--dsh-chat-composer-reserve')).toBe('')
+
+      await act(async () => {
+        host.style.setProperty('--dsh-composer-reserve', '160px')
+        await Promise.resolve()
+      })
+      expect(scrollList.style.getPropertyValue('--dsh-chat-composer-reserve')).toBe('160px')
+
+      readerScroll(host, 100)
+      const button = view.getByLabelText('回到底部')
+      const slot = button.parentElement as HTMLElement
+      expect(slot.style.getPropertyValue('--dsh-to-bottom-offset')).toBe('148px')
+      expect(host.style.getPropertyValue('--dsh-to-bottom-offset')).toBe('')
+      expect([...observers].some(observer => observer.targets.has(seat))).toBe(true)
+
+      seatHeight = 40
+      act(() => {
+        for (const observer of observers) {
+          if (observer.targets.has(seat)) observer.callback([], observer)
+        }
+      })
+      expect(slot.style.getPropertyValue('--dsh-to-bottom-offset')).toBe('40px')
+      view.unmount()
+      expect([...observers].some(observer => observer.targets.has(seat))).toBe(false)
+      expect(scrollList.style.getPropertyValue('--dsh-chat-composer-reserve')).toBe('')
+    } finally {
+      host.remove()
+    }
+  })
+
   it('a remount restores the saved semantic row after width reflow', () => {
     const host = document.createElement('div')
     host.setAttribute('data-conversation-scroll', '')

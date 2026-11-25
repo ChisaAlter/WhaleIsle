@@ -531,3 +531,66 @@ it('rejects a settled session commit before and during the next attempt', async 
   }
   expect(await ctx.credentials.readRecord(KEY)).toMatchObject({ payload: { token: 'grant-2' } })
 })
+
+describe('AuthorizationService.revoke', () => {
+  it('cancels an in-flight attempt, calls the flow revoke hook, and deletes the local record', async () => {
+    const ctx = await harness()
+    await ctx.credentials.modifyRecord(KEY, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 'granted' } }))
+    const started = Promise.withResolvers<undefined>()
+    const revokeHook = vi.fn().mockResolvedValue(undefined)
+    ctx.authorization.registerFlow({
+      key: KEY,
+      label: 'ChatGPT',
+      methods: [{ id: 'oauth', label: 'Sign in with ChatGPT' }],
+      run: session => new Promise((_resolve, reject) => {
+        session.signal.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
+        started.resolve(undefined)
+      }),
+      revoke: revokeHook,
+    })
+
+    const attempt = ctx.authorization.begin({ key: KEY, interaction: surface() })
+    await started.promise
+
+    await ctx.authorization.revoke(KEY)
+
+    await expect(attempt).resolves.toEqual({ status: 'cancelled' })
+    expect(revokeHook).toHaveBeenCalledTimes(1)
+    expect(await ctx.credentials.readRecord(KEY)).toBeUndefined()
+  })
+
+  it('still deletes the local record when the flow revoke hook throws', async () => {
+    const ctx = await harness()
+    await ctx.credentials.modifyRecord(KEY, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 'granted' } }))
+    const revokeHook = vi.fn().mockRejectedValue(new Error('network down'))
+    ctx.authorization.registerFlow({
+      key: KEY,
+      label: 'ChatGPT',
+      methods: [{ id: 'oauth', label: 'Sign in with ChatGPT' }],
+      run: () => Promise.resolve(),
+      revoke: revokeHook,
+    })
+
+    await expect(ctx.authorization.revoke(KEY)).resolves.toBeUndefined()
+
+    expect(revokeHook).toHaveBeenCalledTimes(1)
+    expect(await ctx.credentials.readRecord(KEY)).toBeUndefined()
+  })
+
+  it('deletes the local record when no flow or revoke hook is registered', async () => {
+    const ctx = await harness()
+    await ctx.credentials.modifyRecord(KEY, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 'orphan' } }))
+    await ctx.credentials.modifyRecord(OTHER, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 'no-hook' } }))
+    ctx.authorization.registerFlow(committingFlow(ctx, OTHER))
+
+    await ctx.authorization.revoke(KEY)
+    await ctx.authorization.revoke(OTHER)
+
+    expect(await ctx.credentials.readRecord(KEY)).toBeUndefined()
+    expect(await ctx.credentials.readRecord(OTHER)).toBeUndefined()
+  })
+})

@@ -38,6 +38,14 @@ const freshSignal = () => new AbortController().signal;
 
 const INTERNAL_RPC_PREFIXES = ['bot-kickoff-', 'bot-item-mail-', 'bot-turn-', 'bot-takeover-', 'whale-pulse-'];
 
+/** @param {any} res */
+function extractSessionOpenFailure(res) {
+  return {
+    error: res && 'error' in res && res.error ? res.error : 'session-controller-unavailable',
+    refusal: res && 'refusal' in res && res.refusal ? res.refusal : undefined,
+  };
+}
+
 /** @param {string} action */
 export function buildControllerUnavailableRefusal(action = 'start-session') {
   return {
@@ -284,8 +292,9 @@ export function createSessionRuntime(deps) {
     const validPerm = normalizePermissionMode(permissionMode);
     if (!existing) {
       startingSessions.add(sessionId);
+      let createdResult = null;
       try {
-        await controller.create({
+        createdResult = await controller.create({
           sessionId,
           cwd,
           agentPreset: preset,
@@ -295,8 +304,11 @@ export function createSessionRuntime(deps) {
       } finally {
         startingSessions.delete(sessionId);
       }
-      await applyLaunchModel(controller, sessionId, launch);
-      return { ok: true, sessionId, created: true };
+      const actualSessionId = sessionIdFromRow(createdResult)
+        || sessionIdFromRow(createdResult?.session)
+        || sessionId;
+      await applyLaunchModel(controller, actualSessionId, launch);
+      return { ok: true, sessionId: actualSessionId, created: true };
     }
     if (typeof controller.setPresentation === 'function') {
       await controller.setPresentation({ sessionId, presentation: { owner, title } }, freshSignal()).catch(() => null);
@@ -310,9 +322,9 @@ export function createSessionRuntime(deps) {
     if (!existingId && !createIfMissing) {
       return { ok: false, botId: bot.id, sessionId: null };
     }
-    const sessionId = existingId || `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+    const requestedSessionId = existingId || `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
     const ensured = await ensureControllerSession({
-      sessionId,
+      sessionId: requestedSessionId,
       cwd: homeDirFor(bot),
       title: bot.name,
       owner: BOT_OWNER_HOME,
@@ -320,6 +332,17 @@ export function createSessionRuntime(deps) {
       permissionMode: bot.permissionMode,
       botId: bot.id,
     });
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        error: ensured.error,
+        ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
+        ...(ensured.blocked ? { blocked: true, code: ensured.code, deferUntilMs: ensured.deferUntilMs ?? null } : {}),
+      };
+    }
+    const sessionId = ensured.sessionId || requestedSessionId;
     const now = Date.now();
     botsStore.upsertChat({
       sessionId,
@@ -341,12 +364,9 @@ export function createSessionRuntime(deps) {
     const bot = requireBot(botId);
     const previousSessionId = bot.chatSessionId || null;
     const now = Date.now();
-    if (previousSessionId) {
-      botsStore.closeChat(previousSessionId, now);
-    }
-    const nextSessionId = `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
-    await ensureControllerSession({
-      sessionId: nextSessionId,
+    const requestedSessionId = `bot-home-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+    const ensured = await ensureControllerSession({
+      sessionId: requestedSessionId,
       cwd: homeDirFor(bot),
       title: bot.name,
       owner: BOT_OWNER_HOME,
@@ -354,6 +374,20 @@ export function createSessionRuntime(deps) {
       permissionMode: bot.permissionMode,
       botId: bot.id,
     });
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        previousSessionId,
+        error: ensured.error,
+        ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
+      };
+    }
+    const nextSessionId = ensured.sessionId || requestedSessionId;
+    if (previousSessionId && previousSessionId !== nextSessionId) {
+      botsStore.closeChat(previousSessionId, now);
+    }
     botsStore.upsertChat({
       sessionId: nextSessionId,
       botId: bot.id,
@@ -384,10 +418,21 @@ export function createSessionRuntime(deps) {
       ownerChat: BOT_OWNER_CHAT,
       defaultPreset: BOT_PRESET_ID,
     });
-    await ensureControllerSession(spec.ensureInput);
-    const chat = botsStore.upsertChat(spec.chatRecord, now);
+    const ensured = await ensureControllerSession(spec.ensureInput);
+    if (!ensured.ok) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        error: ensured.error,
+        ...(ensured.refusal ? { refusal: ensured.refusal } : {}),
+        ...(ensured.blocked ? { blocked: true, code: ensured.code, deferUntilMs: ensured.deferUntilMs ?? null } : {}),
+      };
+    }
+    const sessionId = ensured.sessionId || spec.sessionId;
+    const chat = botsStore.upsertChat({ ...spec.chatRecord, sessionId }, now);
     eventBus.emit({ botIds: [bot.id], kinds: ['chats'] });
-    return { ok: true, botId: bot.id, sessionId: spec.sessionId, chat };
+    return { ok: true, botId: bot.id, sessionId, chat };
   }
 
   async function sendKickoff(bot, { template = null, note = null } = {}) {
@@ -397,14 +442,15 @@ export function createSessionRuntime(deps) {
     setKickoffState(bot.id, { status: 'running', step: 'start', prompt, error: null });
     const opened = await openHomeChat(bot.id);
     const controller = controllerOf();
-    if (!controller || typeof controller.prompt !== 'function') {
+    if (!opened.ok || !opened.sessionId || !controller || typeof controller.prompt !== 'function') {
+      const failure = extractSessionOpenFailure(opened);
       setKickoffState(bot.id, { status: 'ready', step: 'done', prompt, error: null });
       return {
         ok: false,
-        sessionId: opened.sessionId,
+        sessionId: opened.sessionId ?? null,
         queued: false,
-        error: 'session-controller-unavailable',
-        refusal: buildControllerUnavailableRefusal('kickoff'),
+        error: failure.error,
+        refusal: failure.refusal ?? buildControllerUnavailableRefusal('kickoff'),
       };
     }
     setKickoffState(bot.id, { status: 'running', step: 'first-message', prompt, error: null });
@@ -444,6 +490,17 @@ export function createSessionRuntime(deps) {
     const target = chat === 'new'
       ? await startSideChat(bot.id, { title: title || path.basename(cwd), cwd: entry.worktreeId })
       : await openHomeChat(bot.id);
+    if (!target || target.ok === false || !target.sessionId) {
+      const failure = extractSessionOpenFailure(target);
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        cwd: entry.worktreeId,
+        error: failure.error,
+        ...(failure.refusal ? { refusal: failure.refusal } : {}),
+      };
+    }
     const text = prompt || `已将工作区 \`${entry.worktreeId}\` 移交给你负责。请先了解当前仓库状态并回报。`;
     const controller = controllerOf();
     if (typeof controller?.prompt === 'function') {

@@ -108,8 +108,11 @@ function api(overrides: {
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
   describeSettings?: () => Promise<RemoteAnswer<SettingsDescribeValue>>
   describeCredentials?: (refs: readonly string[]) => Promise<RemoteAnswer<Record<string, unknown>>>
+  listAuthorizations?: () => Promise<RemoteAnswer<unknown[]>>
+  describeCredentialRecords?: (keys: readonly string[]) => Promise<RemoteAnswer<Record<string, unknown>>>
 } = {}) {
   const seenRefs: string[][] = []
+  const seenRecordKeys: string[][] = []
   const providers = overrides.providers ?? (() => Promise.resolve(ok({ providers: DIRECTORY })))
   let providerBatch: Promise<RpcResponse<{ providers: typeof DIRECTORY }>> | undefined
   let providerBatchReads = 0
@@ -152,13 +155,24 @@ function api(overrides: {
           Object.fromEntries(asked.map(ref => [ref, { configured: ref === 'OPENAI_API_KEY', writable: true }])),
         ))))(refs)
       },
+      ...overrides.describeCredentialRecords === undefined ? {} : {
+        describeRecords: (keys: readonly string[]) => {
+          seenRecordKeys.push([...keys])
+          return overrides.describeCredentialRecords!(keys)
+        },
+      },
       set: () => Promise.resolve(remoteOk(undefined)),
       unset: () => Promise.resolve(remoteOk(undefined)),
+    },
+    ...overrides.listAuthorizations === undefined ? {} : {
+      authorization: {
+        list: overrides.listAuthorizations,
+      },
     },
   }
   // The page plugin's context, scripted down to the namespaces it reaches.
   const ctx = { remote: face } as never
-  return { ctx, face, mirror: new SettingsDescribeMirror(ctx), seenRefs }
+  return { ctx, face, mirror: new SettingsDescribeMirror(ctx), seenRefs, seenRecordKeys }
 }
 
 describe('ModelsSettingsStore', () => {
@@ -590,4 +604,70 @@ it.each([
   expect(rows[0]).toMatchObject({ accountAvailable: false, accountManaged: true })
   expect(providerUsable(rows[0]!)).toBe(false)
   expect(seenRefs).toEqual([])
+})
+
+it('enriches llm-pi-ai rows with oauth flows and batched describeRecords while ignoring non-oauth flows', async () => {
+  const providers = [
+    ...Array.from({ length: 65 }, (_, index) => ({
+      provider: `oauth-${index}`,
+      displayName: `OAuth ${index}`,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', `oauth-${index}`],
+      active: true,
+    })),
+    { provider: 'apikey-only', displayName: 'Key Only', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'apikey-only'], active: false },
+    { provider: 'other-ns', displayName: 'Other', settingsNs: 'llm-other', settingsPath: ['providers', 'other-ns'], active: false },
+  ]
+  const flows = [
+    ...Array.from({ length: 65 }, (_, index) => ({
+      key: `llm-pi-ai/oauth-${index}`,
+      label: `Sign in ${index}`,
+      methods: [{ id: 'oauth', label: 'Browser OAuth' }],
+      inFlight: false,
+    })),
+    {
+      key: 'llm-pi-ai/apikey-only',
+      label: 'Key Only',
+      methods: [{ id: 'api-key', label: 'API Key' }],
+      inFlight: false,
+    },
+    {
+      key: 'llm-other/other-ns',
+      label: 'Other NS',
+      methods: [{ id: 'oauth', label: 'Other OAuth' }],
+      inFlight: false,
+    },
+  ]
+  const { ctx, mirror, seenRecordKeys } = api({
+    providers: () => Promise.resolve(ok({ providers })),
+    listAuthorizations: () => Promise.resolve(remoteOk(flows)),
+    describeCredentialRecords: keys => Promise.resolve(remoteOk(
+      Object.fromEntries(keys.map(key => [key, { configured: key === 'llm-pi-ai/oauth-64', kind: 'grant', writable: true }])),
+    )),
+  })
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  await store.load()
+  expect(seenRecordKeys.map(batch => batch.length)).toEqual([64, 1])
+  const byProvider = new Map(store.store.getSnapshot().rows.map(row => [row.entry.provider, row]))
+  expect(byProvider.get('oauth-64')).toMatchObject({
+    oauthKey: 'llm-pi-ai/oauth-64',
+    oauthFlow: { key: 'llm-pi-ai/oauth-64' },
+    oauthCredential: { configured: true, kind: 'grant', writable: true },
+  })
+  expect(byProvider.get('apikey-only')?.oauthFlow).toBeUndefined()
+  expect(byProvider.get('other-ns')?.oauthFlow).toBeUndefined()
+  expect(providerUsable(byProvider.get('oauth-64')!)).toBe(true)
+})
+
+it('degrades gracefully when authorization.list or credentials.describeRecords fails', async () => {
+  const { ctx, mirror } = api({
+    listAuthorizations: () => Promise.resolve(remoteFail('auth unavailable')),
+    describeCredentialRecords: () => Promise.resolve(remoteFail('records unavailable')),
+  })
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  await store.load()
+  const state = store.store.getSnapshot()
+  expect(state.status).toBe('ready')
+  expect(state.credentialError).toBeNull()
+  expect(state.rows.every(row => row.oauthFlow === undefined)).toBe(true)
 })

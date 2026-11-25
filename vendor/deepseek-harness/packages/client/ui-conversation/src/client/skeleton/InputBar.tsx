@@ -13,8 +13,8 @@
  * trigger instead of a parallel tree.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties, KeyboardEvent, MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, CSSProperties, FocusEvent, KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import clsx from 'clsx'
 import { COMMAND_PRIORITY_HIGH, KEY_TAB_COMMAND } from 'lexical'
 import {
@@ -62,7 +62,7 @@ export const InputBar = memo(function InputBar({
   useAccess,
   useProjection, sessionId, variant, occurrence, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
-  placeholder, accessory,
+  placeholder, accessory, collapsed = false, onExpandCollapsed,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
@@ -188,6 +188,7 @@ export const InputBar = memo(function InputBar({
   // exists; the trigger itself is read-only rather than disabled so pointer
   // and keyboard users can reach the recovery action.
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
+  const isCollapsed = collapsed && variant === 'composer' && !workspaceTrigger && edit === null
   const editorDisabled = removed || (locked && !workspaceTrigger)
   const editable = live && !locked && !machineBusy
   const { onResizePointerDown, onResizePointerMove, onResizePointerUp }
@@ -222,9 +223,10 @@ export const InputBar = memo(function InputBar({
   }
 
   // Automatic desktop focus restores and reveals the draft selection without
-  // scrolling the conversation.
+  // scrolling the conversation. Skip while collapsed so a collapsed pill never
+  // auto-expands on mount or session settle.
   useEffect(() => {
-    if (locked || editor === null) return
+    if (locked || isCollapsed || editor === null) return
     if (isMobileDevice()) return
     focusDraftEditor(editor, revealSelection)
   }, [locked, sessionId, editor])
@@ -240,7 +242,7 @@ export const InputBar = memo(function InputBar({
     }
     if (!busyPhaseSeen.current) return
     busyPhaseSeen.current = false
-    if (locked || editor === null) return
+    if (locked || isCollapsed || editor === null) return
     if (document.activeElement !== null && document.activeElement !== document.body) return
     if (isMobileDevice()) {
       if (cardRef.current !== null) focusWithoutRing(cardRef.current, { preventScroll: true })
@@ -436,15 +438,95 @@ export const InputBar = memo(function InputBar({
     add: (files, directories) => { gate.current.intakeFiles(files, directories) },
   }), [registerFileIntake, occurrence])
 
+  const prevCollapsedRef = useRef<boolean | null>(null)
+  useLayoutEffect(() => {
+    const prev = prevCollapsedRef.current
+    prevCollapsedRef.current = isCollapsed
+    const card = cardRef.current
+    if (card === null || prev === null || prev === isCollapsed) return
+    const reducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (document.documentElement.hasAttribute('data-dsh-minimal') || reducedMotion) {
+      delete card.dataset.composerCollapseTransition
+      return
+    }
+    card.dataset.composerCollapseTransition = isCollapsed ? 'collapse' : 'expand'
+  }, [isCollapsed])
+
+  useEffect(() => {
+    const card = cardRef.current
+    if (card === null) return
+    const clearTransition = (event: AnimationEvent): void => {
+      if (event.target === card) delete card.dataset.composerCollapseTransition
+    }
+    card.addEventListener('animationend', clearTransition)
+    card.addEventListener('animationcancel', clearTransition)
+    return () => {
+      card.removeEventListener('animationend', clearTransition)
+      card.removeEventListener('animationcancel', clearTransition)
+      delete card.dataset.composerCollapseTransition
+    }
+  }, [])
+
   // Button presses steal focus from the editor; suppress at mousedown so
   // typing continues seamlessly. Lexical's focus() carries preventScroll and
   // restores the previous selection, so no reveal is needed: the caret has
   // not moved, and the next keystroke gets the browser's native one.
+  // When collapsed into a pill, keep the editor unfocused so clicking Stop
+  // does not fire focus-capture expansion.
   const keepFocus = (e: MouseEvent<HTMLButtonElement>): void => {
+    if (isCollapsed) {
+      e.preventDefault()
+      return
+    }
     keepDraftFocus(e, editor)
   }
 
+  const isPrimaryTarget = (target: EventTarget | null): boolean =>
+    target instanceof Element && target.closest('[data-composer-primary]') !== null
+
+  const expandCollapsedCard = (): void => {
+    onExpandCollapsed?.()
+    if (editor !== null && !locked) {
+      queueMicrotask(() => {
+        focusDraftEditor(editor, revealSelection)
+      })
+    }
+  }
+
+  const onCardPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
+    if (workspaceTrigger) {
+      e.stopPropagation()
+      return
+    }
+    if (!isCollapsed || e.button !== 0 || isPrimaryTarget(e.target)) return
+    e.preventDefault()
+    expandCollapsedCard()
+  }
+
+  const onCardClick = (e: MouseEvent<HTMLDivElement>): void => {
+    if (workspaceTrigger) {
+      onRequestWorkspace()
+      return
+    }
+    if (!isCollapsed || isPrimaryTarget(e.target)) return
+    e.preventDefault()
+    expandCollapsedCard()
+  }
+
+  const onCardFocusCapture = (e: FocusEvent<HTMLDivElement>): void => {
+    if (!isCollapsed || isPrimaryTarget(e.target)) return
+    onExpandCollapsed?.()
+    if (editor !== null && !locked && e.target !== editor.getRootElement()) {
+      queueMicrotask(() => {
+        focusDraftEditor(editor, revealSelection)
+      })
+    }
+  }
+
   const onCardMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
+    if (isCollapsed) return
     if (!editable || editor === null || e.button !== 0 || e.defaultPrevented) return
     const target = e.target
     if (!(target instanceof Element) || !e.currentTarget.contains(target)) return
@@ -556,7 +638,10 @@ export const InputBar = memo(function InputBar({
   const inputStyle = Object.keys(inputVars).length === 0 ? undefined : inputVars as CSSProperties
 
   return (
-    <div className={clsx(css.root, variant === 'hero' && css.hero)}>
+    <div
+      className={clsx(css.root, variant === 'hero' && css.hero)}
+      data-composer-collapsed={isCollapsed ? '' : undefined}
+    >
       {toast !== null && (
         <Toast
           key={toast.seq}
@@ -583,11 +668,13 @@ export const InputBar = memo(function InputBar({
         data-composer-card
         data-dsh-composer
         data-beam={showBeam || undefined}
-        onClick={workspaceTrigger ? onRequestWorkspace : undefined}
-        onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
+        data-composer-collapsed={isCollapsed ? '' : undefined}
+        onClick={onCardClick}
+        onPointerDown={onCardPointerDown}
         onMouseDown={onCardMouseDown}
+        onFocusCapture={onCardFocusCapture}
       >
-        {composerResize && !workspaceTrigger && (
+        {composerResize && !workspaceTrigger && !isCollapsed && (
           <ComposerResizeHandles
             t={t}
             onPointerDown={onResizePointerDown}
@@ -664,7 +751,7 @@ export const InputBar = memo(function InputBar({
                   enabled={typingFx}
                   style={typingFxStyle}
                 />
-                {canSuggest && nextPrompt?.text != null && (
+                {!isCollapsed && canSuggest && nextPrompt?.text != null && (
                   <Tooltip label={`${nextPrompt.text} · ${t('input.nextPrompt.hint')}`} side="top" delayMs={500}>
                     <Button
                       variant="ghost"
@@ -720,18 +807,21 @@ export const InputBar = memo(function InputBar({
                 : renderSlot('conversation.input.left', {})}
             </div>
             <div className={css.trailing}>
-              {input === undefined || sessionId === undefined
-                ? null
-                : renderSlot('conversation.input.right', {})}
-              {managed ? null : <ContextMeter useProjection={useProjection} t={t} />}
-              {managed
-                ? (sessionId === undefined ? null : renderSlot('conversation.input.managed', { locked: modelSeatLocked }))
-                : (sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked }))}
+              <div className={css.trailingSecondary}>
+                {input === undefined || sessionId === undefined
+                  ? null
+                  : renderSlot('conversation.input.right', {})}
+                {managed ? null : <ContextMeter useProjection={useProjection} t={t} />}
+                {managed
+                  ? (sessionId === undefined ? null : renderSlot('conversation.input.managed', { locked: modelSeatLocked }))
+                  : (sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked }))}
+              </div>
               {interruptible && !cancelDenied && (
                 <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stopAction === undefined} portal>
                   <button
                     type="button"
                     className={css.primary}
+                    data-composer-primary=""
                     aria-label={t('input.stop')}
                     disabled={stopAction === undefined}
                     onMouseDown={keepFocus}
@@ -748,6 +838,7 @@ export const InputBar = memo(function InputBar({
                 <button
                   type="button"
                   className={css.primary}
+                  data-composer-primary=""
                   aria-label={primaryLabel}
                   aria-busy={sending}
                   data-sending={sending ? '' : undefined}

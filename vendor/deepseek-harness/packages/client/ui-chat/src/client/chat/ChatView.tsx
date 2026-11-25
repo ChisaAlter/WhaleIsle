@@ -1,7 +1,7 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   NodeKey, RenderEntry,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -242,6 +242,51 @@ export function ChatView({
   const interactionIds = useInteractionIds(ids => ids)
   const textInteraction = useTextInteraction(scroll.columnRef, interactionSurfaceRef, dispatchInteraction, interactionIds)
   const flowContext = useMemo<ChatFlowHookContext>(() => ({ motion: scroll.motion }), [scroll.motion])
+  useLayoutEffect(() => {
+    const list = scroll.listRef.current
+    const scroller = list?.closest<HTMLElement>('[data-conversation-scroll]') ?? null
+    if (list === null || scroller === null) return
+    const syncReserve = (): void => {
+      const value = scroller.style.getPropertyValue('--dsh-composer-reserve')
+      if (value === '') list.style.removeProperty('--dsh-chat-composer-reserve')
+      else list.style.setProperty('--dsh-chat-composer-reserve', value)
+    }
+    syncReserve()
+    if (typeof MutationObserver === 'undefined') {
+      return () => { list.style.removeProperty('--dsh-chat-composer-reserve') }
+    }
+    const observer = new MutationObserver(syncReserve)
+    observer.observe(scroller, { attributes: true, attributeFilter: ['style'] })
+    return () => {
+      observer.disconnect()
+      list.style.removeProperty('--dsh-chat-composer-reserve')
+    }
+  }, [scroll.listRef])
+  const toBottomCleanup = useRef<(() => void) | null>(null)
+  const toBottomSlotRef = useCallback((slot: HTMLDivElement | null): void => {
+    toBottomCleanup.current?.()
+    toBottomCleanup.current = null
+    if (slot === null) return
+    const scroller = slot.closest('[data-conversation-scroll]')
+    const seat = scroller?.querySelector<HTMLElement>('[data-composer-seat]') ?? null
+    if (seat === null) return
+    const publish = (): void => {
+      slot.style.setProperty('--dsh-to-bottom-offset', `${seat.offsetHeight}px`)
+    }
+    publish()
+    if (typeof ResizeObserver === 'undefined') {
+      toBottomCleanup.current = () => {
+        slot.style.removeProperty('--dsh-to-bottom-offset')
+      }
+      return
+    }
+    const observer = new ResizeObserver(publish)
+    observer.observe(seat)
+    toBottomCleanup.current = () => {
+      observer.disconnect()
+      slot.style.removeProperty('--dsh-to-bottom-offset')
+    }
+  }, [])
 
   return (
     <div className={css.frame}>
@@ -311,7 +356,7 @@ export function ChatView({
         </div>
       </div>
       {!scroll.followingTail && (
-        <div className={css.toBottomSlot}>
+        <div ref={toBottomSlotRef} className={css.toBottomSlot}>
           <button
             type="button"
             className={css.toBottom}

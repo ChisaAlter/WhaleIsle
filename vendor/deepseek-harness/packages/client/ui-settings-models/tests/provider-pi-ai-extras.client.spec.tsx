@@ -92,6 +92,11 @@ function makeOperations(overrides: Partial<ModelsOperations> = {}): ModelsOperat
       kind: 'found' as const,
       models: [{ id: 'gpt-4o' }, { id: 'gpt-4.1' }],
     })),
+    startAuthorization: vi.fn(async () => {}),
+    respondAuthorizationPrompt: vi.fn(async () => undefined),
+    cancelAuthorization: vi.fn(async () => undefined),
+    removeCredentialRecord: vi.fn(async () => undefined),
+    openExternalUrl: vi.fn(),
     ...overrides,
   }
 }

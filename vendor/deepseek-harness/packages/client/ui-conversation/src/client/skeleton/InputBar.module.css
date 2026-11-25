@@ -8,6 +8,7 @@
      is owned by the chat scroller. No top pad: the composer stack's gap owns
      the space above; the status strip still carries its own margin. */
   padding: 0 var(--dsh-composer-side-clearance) 4px;
+  pointer-events: none;
 }
 
 .dock {
@@ -20,6 +21,11 @@
   width: 100%;
   max-width: calc(var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)) - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance));
   padding-top: 4px;
+  pointer-events: none;
+}
+
+.dock > * {
+  pointer-events: auto;
 }
 
 /* Statistics share one stable row; late usage figures shrink inside it. */
@@ -131,6 +137,20 @@
      (see ui-theme styles/scrollbar.css for the rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  pointer-events: auto;
+}
+
+/* Keep backdrop-filter on a background pseudo-element so the card itself never
+   creates a containing block/backdrop root for beam overlays or descendant layers. */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  corner-shape: inherit;
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
 }
 
 .cardBody {
@@ -640,6 +660,112 @@
 .standardControls { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .tools[hidden], .standardControls[hidden] { display: none; }
 .trailingActive { flex: 1; margin-left: 0; }
+.trailingSecondary { display: contents; }
 .activity { display: flex; align-items: center; flex: none; }
 .activity:empty { display: none; }
 .activityExpanded { flex: 1; min-width: 0; }
+
+.root[data-composer-collapsed] {
+  padding-bottom: 10px;
+}
+
+.root[data-composer-collapsed] .dock {
+  display: none;
+}
+
+.card[data-composer-collapsed] {
+  max-width: min(var(--dsh-composer-card-max-width), 380px);
+  padding: 5px 6px 5px 14px;
+  gap: 0;
+  cursor: pointer;
+}
+
+.card[data-composer-collapsed] .cardBody {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.card[data-composer-collapsed] .scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px !important;
+  max-height: 28px;
+  overflow: hidden;
+  margin-right: 0;
+}
+
+.card[data-composer-collapsed] .input {
+  min-height: 28px;
+  padding: 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.card[data-composer-collapsed] .placeholder {
+  inset: 2px 0 auto 0;
+}
+
+.card[data-composer-collapsed] .row {
+  flex: none;
+  padding: 0;
+  gap: 0;
+  container-type: normal;
+}
+
+.card[data-composer-collapsed] .trailing {
+  flex: none;
+  margin-left: 0;
+  gap: 6px;
+}
+
+.card[data-composer-collapsed] .tools,
+.card[data-composer-collapsed] .trailingSecondary {
+  display: none;
+}
+
+.card[data-composer-collapsed] .primary {
+  width: 28px;
+  height: 28px;
+  transform: none;
+}
+
+.card[data-composer-collapse-transition='collapse'] {
+  animation: composer-collapse-in var(--ds-transition-duration) var(--ds-ease-in-out);
+  will-change: transform, opacity;
+}
+
+.card[data-composer-collapse-transition='expand'] {
+  animation: composer-expand-in var(--ds-transition-duration) var(--ds-ease-in-out);
+  will-change: transform, opacity;
+}
+
+@keyframes composer-collapse-in {
+  from {
+    opacity: 0.72;
+    transform: translateY(10px) scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes composer-expand-in {
+  from {
+    opacity: 0.78;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card[data-composer-collapse-transition] {
+    animation: none;
+  }
+}

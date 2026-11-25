@@ -135,6 +135,8 @@ interface BenchOptions {
   nextPrompt?: boolean
   requestNextPrompt?: InputBarProps['requestNextPrompt']
   presentation?: SessionSummary['presentation']
+  collapsed?: boolean
+  onExpandCollapsed?: () => void
 }
 
 /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
@@ -272,6 +274,8 @@ function bench(over?: BenchOptions) {
     ...(over?.onRequestWorkspace !== undefined ? { onRequestWorkspace: over.onRequestWorkspace } : {}),
     ...(over?.placeholder !== undefined ? { placeholder: over.placeholder } : {}),
     ...(over?.accessory !== undefined ? { accessory: over.accessory } : {}),
+    ...(over?.collapsed !== undefined ? { collapsed: over.collapsed } : {}),
+    ...(over?.onExpandCollapsed !== undefined ? { onExpandCollapsed: over.onExpandCollapsed } : {}),
   }
   const view = render(<InputBar {...props} />)
   const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!
@@ -2548,4 +2552,114 @@ it('opens context usage from the toolbar before the model without replacing the 
   expect(view.getByRole('dialog', { name: '上下文已用' })).toBeTruthy()
   expect(view.getByRole('textbox').textContent).toBe('draft')
   expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy()
+})
+
+describe('scroll collapse pill', () => {
+  it('applies collapsed attributes, hides resize handles, and tracks transitions except in minimal mode', () => {
+    const { view, props } = bench({ composerResize: true, collapsed: false })
+    const card = view.container.querySelector<HTMLElement>('[data-composer-card]')!
+    const root = card.parentElement!
+    expect(root.hasAttribute('data-composer-collapsed')).toBe(false)
+    expect(card.hasAttribute('data-composer-collapsed')).toBe(false)
+    expect(card.getAttribute('data-composer-collapse-transition')).toBeNull()
+    expect(view.container.querySelectorAll('[data-composer-resize-handle]')).toHaveLength(3)
+
+    view.rerender(<InputBar {...props} collapsed />)
+    expect(root.hasAttribute('data-composer-collapsed')).toBe(true)
+    expect(card.hasAttribute('data-composer-collapsed')).toBe(true)
+    expect(card.getAttribute('data-composer-collapse-transition')).toBe('collapse')
+    expect(view.container.querySelectorAll('[data-composer-resize-handle]')).toHaveLength(0)
+
+    fireEvent.animationEnd(card)
+    expect(card.getAttribute('data-composer-collapse-transition')).toBeNull()
+
+    view.rerender(<InputBar {...props} collapsed={false} />)
+    expect(card.getAttribute('data-composer-collapse-transition')).toBe('expand')
+    fireEvent(card, new Event('animationcancel', { bubbles: true }))
+    expect(card.getAttribute('data-composer-collapse-transition')).toBeNull()
+
+    document.documentElement.setAttribute('data-dsh-minimal', '')
+    try {
+      view.rerender(<InputBar {...props} collapsed />)
+      expect(card.getAttribute('data-composer-collapse-transition')).toBeNull()
+    } finally {
+      document.documentElement.removeAttribute('data-dsh-minimal')
+    }
+
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }))
+    try {
+      view.rerender(<InputBar {...props} collapsed={false} />)
+      expect(card.getAttribute('data-composer-collapse-transition')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('does not collapse hero, workspace trigger, or active edit session', () => {
+    const hero = bench({ variant: 'hero', collapsed: true })
+    expect(hero.view.container.querySelector('[data-composer-card]')?.hasAttribute('data-composer-collapsed')).toBe(false)
+    cleanup()
+
+    const trigger = bench({ inert: true, onRequestWorkspace: vi.fn(), collapsed: true })
+    expect(trigger.view.container.querySelector('[data-composer-card]')?.hasAttribute('data-composer-collapsed')).toBe(false)
+    cleanup()
+
+    const editing = bench({ collapsed: true })
+    act(() => {
+      editing.shell.beginEdit({
+        key: 'message-edit:1',
+        label: 'Editing',
+        seed: 'edit me',
+        submit: vi.fn(),
+      })
+    })
+    expect(editing.view.container.querySelector('[data-composer-card]')?.hasAttribute('data-composer-collapsed')).toBe(false)
+  })
+
+  it('expands and focuses on pill click or focus capture while letting Stop work directly', async () => {
+    const onExpandCollapsed = vi.fn()
+    const { view, props, textarea, stop } = bench({ running: true, collapsed: true, onExpandCollapsed })
+    const card = view.container.querySelector<HTMLElement>('[data-composer-card]')!
+    const stopButton = view.getByRole('button', { name: '停止生成' })
+
+    fireEvent.pointerDown(stopButton, { button: 0 })
+    fireEvent.mouseDown(stopButton, { button: 0 })
+    fireEvent.click(stopButton)
+    expect(stop).toHaveBeenCalledOnce()
+    expect(onExpandCollapsed).not.toHaveBeenCalled()
+
+    onExpandCollapsed.mockImplementationOnce(() => {
+      view.rerender(<InputBar {...props} collapsed={false} />)
+    })
+    textarea.blur()
+    fireEvent.click(card)
+    await act(async () => { await Promise.resolve() })
+    expect(onExpandCollapsed).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(textarea)
+
+    onExpandCollapsed.mockImplementationOnce(() => {
+      view.rerender(<InputBar {...props} collapsed={false} />)
+    })
+    textarea.blur()
+    view.rerender(<InputBar {...props} collapsed />)
+    fireEvent.pointerDown(textarea, { button: 0 })
+    fireEvent.click(textarea)
+    await act(async () => { await Promise.resolve() })
+    expect(onExpandCollapsed).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(textarea)
+
+    textarea.blur()
+    view.rerender(<InputBar {...props} collapsed />)
+    fireEvent.focus(textarea)
+    expect(onExpandCollapsed).toHaveBeenCalledTimes(3)
+  })
 })

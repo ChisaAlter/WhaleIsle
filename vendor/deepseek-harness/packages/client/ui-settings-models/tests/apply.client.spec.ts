@@ -1,7 +1,7 @@
 /** Models section registration: slot declaration injection, the locale-following label thunk, and HMR recovery. */
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import Schema from '@deepseek-ai/schemastery'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -11,6 +11,7 @@ import { remoteDefaultResponses } from '@deepseek-ai/dsh-client-test-runtime/src
 import { ok, RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, refreshIfLoaded } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import { authorizationRemoteOf } from '../src/client/operations.ts'
 import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'
@@ -264,6 +265,7 @@ describe('pushed invalidations', () => {
     // The fake wire face has no methods: a fetch attempt would throw.
     b.remote.emit('settings/document-updated', ['llm-pi-ai', 1])
     b.remote.emit('credentials/reference-updated', ['OPENAI_API_KEY'])
+    b.remote.emit('authorization/settled', ['llm-pi-ai/openai', 'authorized'])
     b.remote.emit('llm/adapters-updated', [])
     b.ctx.emit('connection/reset')
   })
@@ -297,7 +299,8 @@ describe('pushed invalidations', () => {
     injected.controller.store.update((state) => { state.status = 'ready' })
     const load = vi.spyOn(injected.controller, 'load').mockResolvedValue()
     b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
-    expect(load).toHaveBeenCalledTimes(1)
+    b.remote.emit('authorization/settled', ['llm-pi-ai/openai', 'authorized'])
+    expect(load).toHaveBeenCalledTimes(2)
   })
 
   it('welcome state follows the shared mirror across document commits', async () => {
@@ -363,5 +366,43 @@ describe('pushed invalidations', () => {
       expect(injected.hooks.snapshot.getSnapshot().namespaces.get('llm-test')?.revision).toBe(2)
     })
     expect(describe).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves optional remote.authorization via Cordis get without triggering inject errors', async () => {
+    class MockRemoteService extends Service {
+      constructor(ctx: Context) { super(ctx, 'remote') }
+    }
+    class MockAuthorizationService extends Service {
+      readonly list = vi.fn(async () => ok([]))
+      constructor(ctx: Context) { super(ctx, 'remote.authorization') }
+    }
+
+    const root = new Context()
+    try {
+      await root.plugin(MockRemoteService).await()
+      await root.plugin(MockAuthorizationService).await()
+      let resolvedActive: unknown
+      await root.plugin({
+        name: 'models-consumer',
+        inject: ['remote'],
+        apply(consumerCtx) {
+          resolvedActive = authorizationRemoteOf(consumerCtx as never)
+        },
+      }).await()
+      expect(typeof (resolvedActive as { list?: unknown })?.list).toBe('function')
+
+      const isolated = root.isolate('remote.authorization')
+      let resolvedIsolated: unknown = 'sentinel'
+      await isolated.plugin({
+        name: 'models-isolated-consumer',
+        inject: ['remote'],
+        apply(consumerCtx) {
+          resolvedIsolated = authorizationRemoteOf(consumerCtx as never)
+        },
+      }).await()
+      expect(resolvedIsolated).toBeUndefined()
+    } finally {
+      await root.fiber.dispose()
+    }
   })
 })

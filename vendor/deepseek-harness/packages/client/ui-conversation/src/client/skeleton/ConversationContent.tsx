@@ -6,6 +6,11 @@ import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller
 import type { ConversationContentProps, ConversationViewsProps, InputZone } from '../contract/slots.ts'
 import { conversationPhase } from '../contract/snapshot.ts'
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
+import {
+  canCollapseComposer, INITIAL_COMPOSER_COLLAPSE_STATE, isComposerCollapsed,
+  pinComposerExpanded, reduceComposerScroll,
+  type ComposerCollapseGuards, type ComposerScrollSample,
+} from './composer-scroll-collapse.ts'
 import css from './ConversationRoot.module.css'
 
 /** Quiet time before the seat's inherited size properties are rewritten; a dock animation resizes it every frame. */
@@ -40,6 +45,10 @@ export function ConversationContent(props: ConversationContentProps) {
   const presentationOwned = useSessions(s =>
     sessionId !== undefined && s.byId[sessionId]?.presentation !== undefined,
   )
+  // An embedded plugin-owned session (e.g. a blank Project coordinator) never
+  // shows the generic welcome hero or workspace gate.
+  const effectiveHero = props.variant === 'embedded' && presentationOwned ? false : hero
+  const effectivePhase = props.variant === 'embedded' && presentationOwned && phase === 'hero' ? 'active' : phase
   const Views = useFactorySlot('views', ConversationSessionView)
   const WidthControls = useFactorySlot('widthControls', NoConversationWidthControls)
   const [body, setBody] = useState<HTMLDivElement | null>(null)
@@ -57,9 +66,64 @@ export function ConversationContent(props: ConversationContentProps) {
   const [pendingNoDirectory, setPendingNoDirectory] = useState(false)
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
+  const [collapseState, setCollapseState] = useState(INITIAL_COMPOSER_COLLAPSE_STATE)
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  const seatRef = useRef<HTMLDivElement | null>(null)
+  const expandedReserveRef = useRef(0)
+  const collapsedRef = useRef(false)
+  const guardsRef = useRef<ComposerCollapseGuards>({
+    activePhase: false,
+    hasOverlay: false,
+    hasPendingInteraction: false,
+    hasDraftOrAttachment: false,
+    hasEditSession: false,
+    hasOpenPopover: false,
+  })
+  const prevScrollTopRef = useRef(0)
+  const prevScrollHeightRef = useRef(0)
+
+  const staticGuards: ComposerCollapseGuards = {
+    activePhase: effectivePhase === 'active' && !effectiveHero,
+    hasOverlay: false,
+    hasPendingInteraction: pendingInteraction !== undefined,
+    hasDraftOrAttachment: (inputState?.draft.trim() ?? '') !== '' || (inputState?.attachmentIds.length ?? 0) > 0,
+    hasEditSession: inputState?.edit != null,
+    hasOpenPopover: false,
+  }
+  const effectiveCollapsed = isComposerCollapsed(collapseState, staticGuards)
+  collapsedRef.current = effectiveCollapsed
+  guardsRef.current = staticGuards
+
+  useEffect(() => {
+    setCollapseState(INITIAL_COMPOSER_COLLAPSE_STATE)
+    const scroller = scrollerRef.current
+    prevScrollTopRef.current = scroller?.scrollTop ?? 0
+    prevScrollHeightRef.current = scroller?.scrollHeight ?? 0
+  }, [sessionId, effectivePhase, effectiveHero])
+
+  useEffect(() => {
+    if (!canCollapseComposer(staticGuards)) {
+      setCollapseState(prev => (prev.mode === 'collapsed' ? INITIAL_COMPOSER_COLLAPSE_STATE : prev))
+    }
+  }, [
+    staticGuards.activePhase,
+    staticGuards.hasPendingInteraction,
+    staticGuards.hasDraftOrAttachment,
+    staticGuards.hasEditSession,
+  ])
+
+  useLayoutEffect(() => {
+    if (effectiveCollapsed) return
+    const seat = seatRef.current
+    const scroller = scrollerRef.current
+    if (seat === null || scroller === null) return
+    expandedReserveRef.current = seat.offsetHeight
+    scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
+  }, [effectiveCollapsed])
+
   // Publishes the live measurements the scroll body and floating View chrome
   // read: the seat's height as --dsh-composer-reserve keeps footer space
-  // outside the transcript. The phone layout also reads the inherited
+  // at the bottom of the transcript. The phone layout also reads the inherited
   // --dsh-composer-height and --dsh-conversation-viewport-height (the
   // remaining scrollport); on desktop their only consumers (the turn rail and
   // the trajectory ledger) measure themselves, because one write of an
@@ -73,6 +137,10 @@ export function ConversationContent(props: ConversationContentProps) {
     seatCleanup.current = null
     const scroller = seat?.parentElement ?? null
     if (seat === null || scroller === null) return
+    scrollerRef.current = scroller
+    seatRef.current = seat
+    prevScrollTopRef.current = scroller.scrollTop
+    prevScrollHeightRef.current = scroller.scrollHeight
     // The reserve is registered and non-inherited, so writing it every frame
     // while a dock animates restyles only the scroll body. Each inherited write
     // restyles the whole transcript, so those wait until the size settles.
@@ -80,7 +148,14 @@ export function ConversationContent(props: ConversationContentProps) {
     // inside this observer's callback leaves its notification undelivered (a
     // loop error) and lands a frame late anyway.
     const publishReserve = () => {
-      scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
+      // Keep the expanded reserve frozen while collapsed so padding-bottom
+      // never shrinks and clamps scrollTop into an expand/collapse loop.
+      if (!collapsedRef.current) {
+        expandedReserveRef.current = seat.offsetHeight
+        scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
+      } else if (expandedReserveRef.current === 0) {
+        scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
+      }
     }
     const publishSettled = () => {
       if (scroller.closest('[data-phone]') === null) return
@@ -90,11 +165,39 @@ export function ConversationContent(props: ConversationContentProps) {
         `${scroller.clientHeight}px`,
       )
     }
+    const readDomGuards = (): ComposerCollapseGuards => ({
+      ...guardsRef.current,
+      hasOverlay: scroller.querySelector('[data-conversation-composer-overlay]') !== null,
+      hasOpenPopover: seat.querySelector('[data-trigger-menu], [aria-expanded="true"]') !== null,
+    })
+    const onScroll = () => {
+      const guards = readDomGuards()
+      const sample: ComposerScrollSample = {
+        scrollTop: scroller.scrollTop,
+        scrollHeight: scroller.scrollHeight,
+        clientHeight: scroller.clientHeight,
+        prevScrollTop: prevScrollTopRef.current,
+        prevScrollHeight: prevScrollHeightRef.current,
+        followingTail: scroller.querySelector('[data-chat-following-tail]') !== null,
+      }
+      prevScrollTopRef.current = sample.scrollTop
+      prevScrollHeightRef.current = sample.scrollHeight
+      setCollapseState((prev) => {
+        const next = reduceComposerScroll(prev, sample, guards)
+        return next.mode === prev.mode && next.pinnedScrollTop === prev.pinnedScrollTop ? prev : next
+      })
+    }
     let frame = 0
     let settle: ReturnType<typeof setTimeout> | undefined
     let settleSince = 0
     const observer = new ResizeObserver(() => {
       if (frame === 0) frame = requestAnimationFrame(() => { frame = 0; publishReserve() })
+      if (collapsedRef.current) {
+        const domGuards = readDomGuards()
+        if (domGuards.hasOverlay || domGuards.hasOpenPopover) {
+          setCollapseState(prev => (prev.mode === 'collapsed' ? INITIAL_COMPOSER_COLLAPSE_STATE : prev))
+        }
+      }
       if (scroller.closest('[data-phone]') === null) return
       const now = performance.now()
       if (settle === undefined) settleSince = now
@@ -108,6 +211,8 @@ export function ConversationContent(props: ConversationContentProps) {
     observer.observe(scroller)
     publishReserve()
     publishSettled()
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    scroller.addEventListener('scrollend', onScroll, { passive: true })
 
     // A viewport-positioned child does not participate in its DOM parent's
     // native wheel chain. Preserve footer scrolling, while answer fields and
@@ -139,7 +244,11 @@ export function ConversationContent(props: ConversationContentProps) {
       observer.disconnect()
       cancelAnimationFrame(frame)
       clearTimeout(settle)
+      scroller.removeEventListener('scroll', onScroll)
+      scroller.removeEventListener('scrollend', onScroll)
       seat.removeEventListener('wheel', onWheel)
+      if (scrollerRef.current === scroller) scrollerRef.current = null
+      if (seatRef.current === seat) seatRef.current = null
     }
   }, [])
 
@@ -178,7 +287,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const previousComposer = useRef<{ sessionId: typeof sessionId; hero: boolean; top: number } | null>(null)
   useLayoutEffect(() => {
     const previous = previousComposer.current
-    if (!hero && (previous?.hero !== true || previous.sessionId !== sessionId || !session?.promptAttempted)) {
+    if (!effectiveHero && (previous?.hero !== true || previous.sessionId !== sessionId || !session?.promptAttempted)) {
       previousComposer.current = null
       return
     }
@@ -186,7 +295,7 @@ export function ConversationContent(props: ConversationContentProps) {
     const card = stack?.querySelector<HTMLElement>('[data-composer-card]')
     if (stack === null || card === undefined || card === null) return
     const top = card.getBoundingClientRect().top
-    if (!hero && previous !== null && !document.documentElement.hasAttribute('data-dsh-minimal')) {
+    if (!effectiveHero && previous !== null && !document.documentElement.hasAttribute('data-dsh-minimal')) {
       // The first-send commit mounts the transcript, running chrome and dock
       // projections, and the main thread can stay busy with that work for
       // several frames. The glide therefore starts in this same commit, before
@@ -196,7 +305,7 @@ export function ConversationContent(props: ConversationContentProps) {
       stack.style.setProperty('--dsh-composer-enter-offset', `${previous.top - top}px`)
       stack.dataset.composerEntering = ''
     }
-    previousComposer.current = { sessionId, hero, top }
+    previousComposer.current = { sessionId, hero: effectiveHero, top }
   })
   useLayoutEffect(() => {
     const stack = stackRef.current
@@ -211,9 +320,9 @@ export function ConversationContent(props: ConversationContentProps) {
     stack.addEventListener('animationend', onEnd)
     stack.addEventListener('animationcancel', onEnd)
     // Keep the starting rectangle current through window and draft resizing.
-    const observer = hero ? new ResizeObserver(() => {
+    const observer = effectiveHero ? new ResizeObserver(() => {
       const card = stack.querySelector<HTMLElement>('[data-composer-card]')
-      if (card !== null) previousComposer.current = { sessionId, hero, top: card.getBoundingClientRect().top }
+      if (card !== null) previousComposer.current = { sessionId, hero: effectiveHero, top: card.getBoundingClientRect().top }
     }) : null
     if (observer !== null) {
       observer.observe(stack)
@@ -226,7 +335,7 @@ export function ConversationContent(props: ConversationContentProps) {
       stack.removeEventListener('animationcancel', onEnd)
       finish()
     }
-  }, [hero, sessionId])
+  }, [effectiveHero, sessionId])
 
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
@@ -258,7 +367,7 @@ export function ConversationContent(props: ConversationContentProps) {
 
   // Building the row eagerly would still fire the workspace-picker slot for a
   // presentation-owned session, so the JSX only exists while the hero shows.
-  const heroWorkspaceRow = !hero ? null : (
+  const heroWorkspaceRow = !effectiveHero ? null : (
     <div className={css.heroWorkspaceRow} data-composer-flow="">
       <WorkspaceChip
         buttonRef={pickerAnchor}
@@ -298,14 +407,21 @@ export function ConversationContent(props: ConversationContentProps) {
   // blank session whose workspace vanished (deleted from the sidebar). The
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  const inert = sessionId === undefined || (effectiveHero && chipTitle === undefined)
+  const handleExpandCollapsed = useCallback(() => {
+    const top = scrollerRef.current?.scrollTop ?? 0
+    setCollapseState(pinComposerExpanded(top))
+  }, [])
+
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
-    variant: hero ? 'hero' : 'composer',
+    variant: effectiveHero ? 'hero' : 'composer',
     occurrence: props.variant,
+    collapsed: effectiveCollapsed,
+    onExpandCollapsed: handleExpandCollapsed,
     ...(inert
       ? {
         disabled: true,
@@ -318,14 +434,18 @@ export function ConversationContent(props: ConversationContentProps) {
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
-        : hero ? { placeholder: t('placeholder.hero') } : {}),
+        : effectiveHero ? { placeholder: t('placeholder.hero') } : {}),
   })
 
   const composerBar = (
-    <div ref={stackRef} className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
+    <div ref={stackRef} className={clsx(css.composerStack, effectiveHero && css.composerHero)}>
+      {effectiveHero && <HeroShell t={t} renderSlot={renderSlot} />}
       {heroWorkspaceRow}
-      {zone !== undefined && renderSlot('conversation.input.dock', zone)}
+      {zone !== undefined && (
+        <div className={css.composerDockSlot} data-composer-dock-slot="">
+          {renderSlot('conversation.input.dock', zone)}
+        </div>
+      )}
       {inputBar}
     </div>
   )
@@ -339,7 +459,13 @@ export function ConversationContent(props: ConversationContentProps) {
   // The viewport anchor wraps the whole chain output: overlay:true keeps
   // the hidden fallback and elected takeover as siblings in the same seat.
   const composerSeat = (
-    <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="" data-conversation-region="composer">
+    <div
+      ref={seatResizeRef}
+      className={css.composerSeat}
+      data-composer-seat=""
+      data-conversation-region="composer"
+      data-composer-collapsed={effectiveCollapsed ? '' : undefined}
+    >
       {composer}
     </div>
   )
@@ -351,10 +477,10 @@ export function ConversationContent(props: ConversationContentProps) {
       data-conversation-content=""
       data-conversation-session={sessionId}
       data-conversation-region="chat"
-      data-content-phase={phase}
+      data-content-phase={effectivePhase}
     >
       {/* The frame wraps the scroll body in every phase, so leaving the home keeps the composer mounted. */}
-      {renderSlot('conversation.hero.frame', { hero: hero && props.variant !== 'embedded' }, {
+      {renderSlot('conversation.hero.frame', { hero: effectiveHero && props.variant !== 'embedded' }, {
         children: (
           <div className={css.scrollBody} data-conversation-scroll="">
         {presentationOwned && shellPhase === 'blank' && (
@@ -365,7 +491,7 @@ export function ConversationContent(props: ConversationContentProps) {
           </div>
         ),
       })}
-      <WidthControls container={body} phase={phase} />
+      <WidthControls container={body} phase={effectivePhase} />
     </div>
   )
 }

@@ -620,7 +620,8 @@
 
 /* An embedded occurrence has no grid parent; it fills its host's flex box. */
 .embeddedBody {
-  flex: 1;
+  flex: 1 1 0;
+  height: 100%;
   overflow: hidden;
   --dsh-chat-content-width: min(calc(100% - 32px), 920px);
   --dsh-composer-card-max-width: min(calc(100% - 16px), 952px);
@@ -629,6 +630,7 @@
 }
 
 .scrollBody {
+  box-sizing: border-box;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -683,12 +685,12 @@
   initial-value: 0px;
 }
 
-.root[data-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])),
-.embeddedBody[data-content-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])) {
-  /* The transparent footer must never cover transcript text. Reserve the
-     seat's measured height outside the scrollport, while its absolute box
-     stays anchored to .body and inside the composer event/resize ancestry. */
-  margin-bottom: var(--dsh-composer-reserve);
+.root[data-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])):not(:has([data-chat-flow])),
+.embeddedBody[data-content-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])):not(:has([data-chat-flow])) {
+  /* ChatView places the composer reserve inside its own .scroll so its sticky
+     .toBottomSlot reaches the scrollport bottom; non-chat views without an
+     overlay keep the expanded seat reserve on .scrollBody. */
+  padding-bottom: var(--dsh-composer-reserve);
 }
 
 .root[data-phase='active'] .composerSeat,
@@ -705,17 +707,39 @@
      composer stays above the pinned header on the extreme small-viewport
      overlap and the pinned header stays above the rail. */
   z-index: 7;
-  /* Input mask (figma 1205:27463): transcript fades out under a FIXED 36px
-     band at the seat's top (the figma 24% of the resting ~150px composer),
-     solid below — px stops, not %, so a growing draft only widens the solid
-     region and the fade band never stretches. The 0px stop is bg-base at
-     zero alpha (not white, which the figma export hardcodes) so both themes
-     fade from their own base. */
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px,
-    var(--dsw-alias-bg-base) 36px
-  );
+  background: transparent;
+  pointer-events: none;
+}
+
+/* The slot wrapper, overlay fallback wrapper, and composer stack span the full
+   column width; keep them click-through so blank margins beside the card/pill
+   pass pointer events to the transcript, while elected takeover panels restore
+   pointer events on themselves. */
+.root[data-phase='active'] .composerSeat :global([data-slot='conversation.composer']),
+.embeddedBody[data-content-phase='active'] .composerSeat :global([data-slot='conversation.composer']),
+.root[data-phase='active'] .composerSeat :global([data-chain-overlay-fallback='conversation.composer']),
+.embeddedBody[data-content-phase='active'] .composerSeat :global([data-chain-overlay-fallback='conversation.composer']) {
+  pointer-events: none;
+}
+
+.root[data-phase='active'] .composerSeat :global([data-slot='conversation.composer']) > :not([data-chain-overlay-fallback]),
+.embeddedBody[data-content-phase='active'] .composerSeat :global([data-slot='conversation.composer']) > :not([data-chain-overlay-fallback]),
+.root[data-phase='active'] .composerSeat > :not([data-chain-overlay-fallback]):not(:global([data-slot='conversation.composer'])),
+.embeddedBody[data-content-phase='active'] .composerSeat > :not([data-chain-overlay-fallback]):not(:global([data-slot='conversation.composer'])) {
+  pointer-events: auto;
+}
+
+.root[data-phase='active'] .composerSeat .composerStack,
+.embeddedBody[data-content-phase='active'] .composerSeat .composerStack {
+  pointer-events: none;
+}
+
+.composerDockSlot {
+  display: contents;
+}
+
+.composerSeat[data-composer-collapsed] .composerDockSlot {
+  display: none;
 }
 
 /* Wallpaper and ambient-gradient modes paint NO seat fill: any banded fill
@@ -726,7 +750,14 @@
 :global(html[data-dsh-wallpaper]:not([data-dsh-transparent])) .root[data-phase='active'] .composerSeat,
 :global(html[data-dsh-wallpaper]:not([data-dsh-transparent]) body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat,
 :global(html[data-dsh-gradient]) .root[data-phase='active'] .composerSeat,
-:global(html[data-dsh-gradient] body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat {
+:global(html[data-dsh-gradient] body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat,
+:global(html[data-dsh-wallpaper]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-wallpaper] body[data-ds-dark-theme]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-gradient]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-gradient] body[data-ds-dark-theme]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-transparent]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-transparent] body[data-ds-dark-theme]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-window-material='acrylic']) .embeddedBody[data-content-phase='active'] .composerSeat {
   background: transparent;
 }
 
@@ -735,7 +766,8 @@
    seat above the back-to-bottom control (z-index 8, ui-chat ChatView) while
    the menu is open. The steady state stays 7 so the control keeps painting
    over the card. */
-.root[data-phase='active'] .composerSeat:has([data-trigger-menu]) {
+.root[data-phase='active'] .composerSeat:has([data-trigger-menu]),
+.embeddedBody[data-content-phase='active'] .composerSeat:has([data-trigger-menu]) {
   z-index: 9;
 }
 

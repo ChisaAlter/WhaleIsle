@@ -119,6 +119,7 @@ function mount(opts: {
   managedSession?: boolean
   titlebarGit?: boolean
   useTitlebarGit?: GitActionsProps['useTitlebarGit']
+  usePanelInfo?: GitActionsProps['usePanelInfo']
   sessionState?: SessionListState
 } = {}) {
   const gitStatus = opts.gitStatus ?? vi.fn(async () => opts.git ?? null)
@@ -145,7 +146,7 @@ function mount(opts: {
     <GitActionsControl
       {...allowAllAccess}
       useContextMenu={contextMenuHook()}
-      usePanelInfo={panelInfoStub}
+      usePanelInfo={opts.usePanelInfo ?? panelInfoStub}
       useResource={resourceStub}
       surfaces={0}
       rightbarShown={false}
@@ -1371,5 +1372,22 @@ describe('GitActionsControl', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Commit' }))
     expect(await screen.findByRole('dialog', { name: 'Commit changes' })).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('hides the titlebar Git cluster and skips polling while a non-conversation main panel is active', async () => {
+    const panelStore = createSnapshotStore<{ activePanelId: string | null }>({ activePanelId: 'projects' })
+    const usePanelInfo = ((sel: (s: { activePanelId: string | null }) => unknown) => (
+      useSyncExternalStore(panelStore.subscribe, () => sel(panelStore.getSnapshot()))
+    )) as GitActionsProps['usePanelInfo']
+    const b = mount({ cwd: '/work', git: status(), usePanelInfo })
+    expect(document.querySelector('[data-git-toolbar]')).toBeNull()
+    expect(b.gitStatus).not.toHaveBeenCalled()
+
+    act(() => { panelStore.set({ activePanelId: null }) })
+    await waitFor(() => { expect(document.querySelector('[data-git-toolbar]')).not.toBeNull() })
+    expect(b.gitStatus).toHaveBeenCalledWith('/work')
+
+    act(() => { panelStore.set({ activePanelId: 'plugins' }) })
+    expect(document.querySelector('[data-git-toolbar]')).toBeNull()
   })
 })

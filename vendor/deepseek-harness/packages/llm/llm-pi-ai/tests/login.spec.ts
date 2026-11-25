@@ -7,7 +7,7 @@ import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import type { AuthorizationInteraction, AuthorizationNotice, AuthorizationPrompt } from '@deepseek-ai/dsh-authorization'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
-import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType, Credential } from '@earendil-works/pi-ai'
+import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType, Credential, LoginOptions } from '@earendil-works/pi-ai'
 
 const login = vi.hoisted(() => vi.fn())
 
@@ -19,7 +19,7 @@ vi.mock('../src/models.ts', async importOriginal => ({
   createModels: () => ({ setProvider: () => {}, login }),
 }))
 
-const { credentialStoreFrom, authContextFrom, recordKeyFor } = await import('../src/auth.ts')
+const { credentialStoreFrom, authContextFrom, DEVICE_ID_KEY, recordKeyFor } = await import('../src/auth.ts')
 const { catalogProvider } = await import('../src/catalog.ts')
 const { registerPiAiFlows } = await import('../src/login.ts')
 
@@ -77,6 +77,8 @@ async function attempt(
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   login.mockReset()
   await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
@@ -97,21 +99,33 @@ describe('pi-ai login flows', () => {
     // through its own prompt rather than leaving it to the settings form.
     expect(offered.find(entry => entry.key === recordKeyFor('deepseek'))?.methods.map(one => one.id))
       .toEqual(['api-key'])
-    // pi-ai ships Sign in with ChatGPT for `openai`, which needs an
-    // installation ID the harness does not supply; only the key login is offered.
+    // pi-ai ships Sign in with ChatGPT for `openai` first, followed by API key.
     expect(catalogProvider('openai')?.auth.oauth?.loginLabel).toBe('Sign in with ChatGPT')
-    expect(offered.find(entry => entry.key === recordKeyFor('openai'))?.methods.map(one => one.id))
-      .toEqual(['api-key'])
+    expect(offered.find(entry => entry.key === recordKeyFor('openai'))?.methods)
+      .toEqual([
+        { id: 'oauth', label: 'Sign in with ChatGPT' },
+        { id: 'api-key', label: expect.any(String) as string },
+      ])
   })
 
   it('runs the pi-ai auth type the chosen method names', async () => {
     const ctx = await harness()
 
     await attempt(ctx, () => Promise.resolve())
-    expect(login).toHaveBeenLastCalledWith('openai-codex', 'oauth', expect.anything())
+    expect(login).toHaveBeenLastCalledWith(
+      'openai-codex',
+      'oauth',
+      expect.anything(),
+      expect.objectContaining({ agentName: 'Whale Isle' }),
+    )
 
     await attempt(ctx, () => Promise.resolve(), { key: recordKeyFor('anthropic'), method: 'api-key' })
-    expect(login).toHaveBeenLastCalledWith('anthropic', 'api_key', expect.anything())
+    expect(login).toHaveBeenLastCalledWith(
+      'anthropic',
+      'api_key',
+      expect.anything(),
+      expect.objectContaining({ agentName: 'Whale Isle' }),
+    )
   })
 
   it('commits what the login produced, where the adapter reads it back', async () => {
@@ -200,5 +214,85 @@ describe('pi-ai login flows', () => {
       signal: controller.signal,
     })).resolves.toEqual({ status: 'cancelled' })
     expect(seen?.aborted).toBe(true)
+  })
+
+  it('passes Whale Isle agentName and a persistent isolated deviceId for openai OAuth login', async () => {
+    const ctx = await harness()
+    const OPENAI = recordKeyFor('openai')
+    const seenIds: string[] = []
+    login.mockImplementation(async (
+      providerId: string,
+      _type: AuthType,
+      _interaction: AuthInteraction,
+      options?: LoginOptions,
+    ) => {
+      expect(options?.agentName).toBe('Whale Isle')
+      const id = options?.getDeviceId?.()
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+      if (id !== undefined) seenIds.push(id)
+      const granted: Credential = { type: 'oauth', access: 'at', refresh: 'rt', expires: 1, clientId: 'oaiapp_123' }
+      await credentialStoreFrom(ctx).modify(providerId, () => Promise.resolve(granted))
+      return granted
+    })
+
+    await expect(ctx.authorization.begin({ key: OPENAI, method: 'oauth', interaction: surface() }))
+      .resolves.toEqual({ status: 'authorized' })
+    await expect(ctx.authorization.begin({ key: OPENAI, method: 'oauth', interaction: surface() }))
+      .resolves.toEqual({ status: 'authorized' })
+
+    expect(seenIds).toHaveLength(2)
+    expect(seenIds[0]).toBe(seenIds[1])
+    await expect(ctx.credentials.readRecord(DEVICE_ID_KEY)).resolves.toEqual({
+      kind: 'grant',
+      payload: { deviceId: seenIds[0] },
+    })
+    // Device ID is stored under its own meta scope so it is never listed as a provider credential.
+    await expect(credentialStoreFrom(ctx).list()).resolves.toEqual([
+      { providerId: 'openai', type: 'oauth' },
+    ])
+  })
+
+  it('revokes openai OAuth refresh token on sign-out and ignores revocation failures', async () => {
+    const ctx = await harness()
+    const OPENAI = recordKeyFor('openai')
+    const fetchCalls: { url: string; body: string; contentType: string | null }[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string | URL, init?: RequestInit) => {
+      const body = init?.body instanceof URLSearchParams
+        ? init.body.toString()
+        : typeof init?.body === 'string'
+          ? init.body
+          : ''
+      fetchCalls.push({
+        url: String(url),
+        body,
+        contentType: new Headers(init?.headers).get('content-type'),
+      })
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }))
+
+    await ctx.credentials.modifyRecord(OPENAI, () => Promise.resolve({
+      kind: 'grant',
+      payload: { type: 'oauth', access: 'at', refresh: 'rt-secret', expires: 1, clientId: 'oaiapp_xyz' },
+    }))
+    await ctx.authorization.revoke(OPENAI)
+
+    expect(fetchCalls).toEqual([{
+      url: 'https://auth.openai.com/api/accounts/oauth/revoke',
+      body: 'token=rt-secret&token_type_hint=refresh_token&client_id=oaiapp_xyz',
+      contentType: 'application/x-www-form-urlencoded',
+    }])
+    await expect(ctx.credentials.readRecord(OPENAI)).resolves.toBeUndefined()
+
+    // Best-effort: network errors must warn and still remove the local credential.
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))))
+    await ctx.credentials.modifyRecord(OPENAI, () => Promise.resolve({
+      kind: 'grant',
+      payload: { type: 'oauth', access: 'at', refresh: 'rt-2', expires: 1, clientId: 'oaiapp_xyz' },
+    }))
+
+    await expect(ctx.authorization.revoke(OPENAI)).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalled()
+    await expect(ctx.credentials.readRecord(OPENAI)).resolves.toBeUndefined()
   })
 })

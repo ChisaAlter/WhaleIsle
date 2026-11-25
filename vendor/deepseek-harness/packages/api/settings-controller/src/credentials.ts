@@ -6,16 +6,19 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-authorization'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
+import type { CredentialInfo, CredentialRecordInfo } from '@deepseek-ai/dsh-credentials/types'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { z } from 'zod'
+import { parseCredentialKeyOrBadRequest } from './key.ts'
 
 /**
- * Fan-out bound on one remote `describe` batch. A settings page asks about the
- * references its own rows name, so this is far above any real page and still
- * keeps one authenticated request from starting unbounded provider work.
+ * Fan-out bound on one remote `describe` / `describeRecords` batch. A settings
+ * page asks about the references or records its own rows name, so this is far
+ * above any real page and still keeps one authenticated request from starting
+ * unbounded provider work.
  */
 const MAX_DESCRIBE_REFS = 64
 
@@ -23,8 +26,12 @@ const credentialRefSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
 const describeRequestSchema = z.object({
   refs: z.array(credentialRefSchema).max(MAX_DESCRIBE_REFS),
 })
+const describeRecordsRequestSchema = z.object({
+  keys: z.array(z.string()).max(MAX_DESCRIBE_REFS),
+})
 const setRequestSchema = z.object({ ref: credentialRefSchema, value: z.string().min(1) })
 const unsetRequestSchema = z.object({ ref: credentialRefSchema })
+const deleteRecordRequestSchema = z.object({ key: z.string() })
 
 /** Parse the domain constraints that are more specific than generated TypeScript codecs. */
 function parseRequest<T>(method: string, schema: z.ZodType<T>, value: unknown): T {
@@ -48,6 +55,20 @@ function projectCredentialInfo(info: CredentialInfo): CredentialInfo {
     ...info.source === undefined ? {} : { source: info.source },
     writable: info.writable,
     ...info.masked === undefined ? {} : { masked: info.masked },
+  }
+}
+
+/**
+ * Copy exactly the fields {@link CredentialRecordInfo} declares so a provider's
+ * extra enumerable properties (such as record payloads or tokens) never cross the wire.
+ * @param info - the provider's answer for one record.
+ * @returns presence, discriminant, and writability only.
+ */
+function projectCredentialRecordInfo(info: CredentialRecordInfo): CredentialRecordInfo {
+  return {
+    configured: info.configured,
+    ...info.kind === undefined ? {} : { kind: info.kind },
+    writable: info.writable,
   }
 }
 
@@ -102,7 +123,7 @@ export class CredentialsController extends TypertRemoteService {
     const request = parseRequest('credentials.set', setRequestSchema, { ref, value })
     const branded = credentialRef(request.ref)
     const credentials = this.provider()
-    await this.write(request.ref, () => credentials.set(branded, request.value))
+    await this.write({ ref: request.ref }, () => credentials.set(branded, request.value))
   }
 
   /**
@@ -115,7 +136,41 @@ export class CredentialsController extends TypertRemoteService {
     const request = parseRequest('credentials.unset', unsetRequestSchema, { ref })
     const branded = credentialRef(request.ref)
     const credentials = this.provider()
-    await this.write(request.ref, () => credentials.unset(branded))
+    await this.write({ ref: request.ref }, () => credentials.unset(branded))
+  }
+
+  /**
+   * Describe several stored credential records for one configuration surface.
+   * Values and grant payloads never cross the wire.
+   * @param keys - credential keys (`<scope>/<id>`), at most {@link MAX_DESCRIBE_REFS}.
+   * @returns one projected record view per requested key.
+   * @throws RemoteError when the request is invalid or no credential provider is mounted.
+   */
+  @Remote
+  async describeRecords(keys: string[]): Promise<Record<string, CredentialRecordInfo>> {
+    const request = parseRequest('credentials.describeRecords', describeRecordsRequestSchema, { keys })
+    const branded = request.keys.map(key => [key, parseCredentialKeyOrBadRequest('credentials.describeRecords', key)] as const)
+    const credentials = this.provider()
+    const entries = await Promise.all(branded.map(async ([rawKey, key]) =>
+      [rawKey, projectCredentialRecordInfo(await credentials.describeRecord(key))] as const))
+    return Object.fromEntries(entries)
+  }
+
+  /**
+   * Revoke (when `ctx.authorization` is mounted) and remove one stored credential record.
+   * @param key - credential key (`<scope>/<id>`) to remove.
+   * @throws RemoteError when the request is invalid, no credential provider is mounted, or removal fails.
+   */
+  @Remote
+  async deleteRecord(key: string): Promise<void> {
+    const request = parseRequest('credentials.deleteRecord', deleteRecordRequestSchema, { key })
+    const branded = parseCredentialKeyOrBadRequest('credentials.deleteRecord', request.key)
+    const credentials = this.provider()
+    const authorization = this.ctx.get('authorization')
+    await this.write(
+      { key: request.key },
+      () => authorization !== undefined ? authorization.revoke(branded) : credentials.deleteRecord(branded),
+    )
   }
 
   /** Resolve the optional provider or report how to supply it. */
@@ -135,19 +190,22 @@ export class CredentialsController extends TypertRemoteService {
    * Run one remote write and report every refusal as `credential/rejected`
    * carrying the seam's own message: a provider refusal, such as a stored
    * document that no longer parses, is what a settings page must show
-   * verbatim. Callers brand the reference before entering, so a name outside
+   * verbatim. Callers brand the reference or key before entering, so a name outside
    * the grammar never reaches this path and fails the same way it does on the
-   * read side. The details name only the reference, so no failure path can
-   * carry the value back out.
+   * read side. The details name only the reference or key, so no failure path can
+   * carry the value or payload back out.
    */
-  private async write(ref: string, write: () => Promise<void>): Promise<void> {
+  private async write(
+    details: { readonly ref: string } | { readonly key: string },
+    write: () => Promise<void>,
+  ): Promise<void> {
     try {
       await write()
     } catch (error: unknown) {
       throw new RemoteError(
         'credential/rejected',
         error instanceof Error ? error.message : String(error),
-        { ref },
+        details,
         { cause: error },
       )
     }

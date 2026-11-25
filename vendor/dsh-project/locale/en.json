@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Projects",
-    "description": "Adds a three-column Projects board to the left sidebar. One goal, many parallel tasks: a coordinator splits and dispatches work, workers run in the project workspace or isolated Git worktrees, with real-time SSE updates, topic-file shared memory, diff review, and human acceptance."
+    "description": "Adds a Projects workspace to the left sidebar. State a goal and the coordinator clarifies key ambiguities, dispatches isolated parallel threads automatically, and reports back upon completion; an on-demand right drawer unifies Threads, Project Library (references & artifacts), inline Instructions, and pinnable searchable Shared Memory, paired with wide Diff mergeability checks, targeted revision feedback, and three-color live status dots."
   }
 }

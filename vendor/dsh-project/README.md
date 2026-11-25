@@ -1,23 +1,75 @@
 # WhaleIsle Projects (`dsh-project`)
 
-Three-column Projects workspace plugin for DeepSeek Harness & WhaleIsle Desktop.
+Full-height Projects workspace plugin (Overview canvas + 1–2 column Project workspace) for DeepSeek Harness & WhaleIsle Desktop.
 
 ## Architecture
 
+- **Client workspace** (`client/client.js`):
+  - Registered via 4 DSH slots: `sidebar.panellist` (`id: 'projects'`, `order: 30`), `main` (`key: 'projects'`, rendered in `AppFrame` `.mainPanelFull` with a single 48px Row 1 topbar), `projects.conversation`, and `tool.call.toolview` (`projects_dispatch`).
+  - **Overview (`ProjectsOverview`)**: centered empty canvas when 0 projects exist; centered `max-width: 920px` card grid with unified 3-color status dots (`waiting` > `running` > `review` > `idle`) when navigating back to all projects.
+  - **Workspace**: single 48px topbar (`← All Projects`, `ProjectSwitcher` menu, workspace pill, dispatch mode defaulting to `auto`, pause/resume, settings, `ProjectStatusDot` + `Threads · N` context drawer toggle) + wide Main Stage (isolated embedded coordinator chat or in-place wide `TaskDetailStage` with Chat/Diff tabs, `mergeability` badge, and per-file targeted feedback loop) + on-demand right 3-tab context drawer (`340px` default, auto-collapsed when 0 tasks & 0 references, auto-expanded on SSE task arrival, glass overlay drawer below `680px`).
+  - **Right 3-tab drawer (`SegmentedTabs`: `Threads` | `Library` | `Memory`)**:
+    - `Threads`: action-priority ordering (`Needs Attention` pinned on top with amber highlight → `Running` → `Review` → `Queued` → `Resolved` collapsed by default).
+    - `Library`: `References` (add/remove pointer-only files, in-app preview) and `Artifacts` (auto-collected + explicit outputs with source task jump).
+    - `Memory`: inline `Project Instructions` editor plus shared memory budget bar, 160ms debounced search, one-click pin toggle, and `sourceTaskId` jump.
+- **Coordinator & execution runtime** (`lib/service.js`, `lib/runner.js`, `lib/store.js`, `lib/scope-guard.js`):
+  - Default autonomy is `'auto'` (preserving existing `'manual'` projects on disk and explicit overrides); human acceptance is enforced in code (`projects_update_task` rejects `status: 'resolved'`).
+  - Idempotent coordinator lifecycle via `ensureCoordinatorSession(id, { restore })` creating/reusing a blank managed session with `presentation: { owner: 'dsh-project', title, workingDirectory }` (no synthetic English prompt; excluded from normal chat sidebar; `presentation` synced on rename/workspace updates).
+  - **Prompt Cache-friendly split**:
+    - Static prefix (`systemPrompt.section`, `projects:coordinator`, order 700, `interpolate: false`): coordinator protocol (clarify with 1–3 concise questions → parallel fan-out → non-overlapping `writePaths` → hide internal `taskId` → concise summary), workspace, and `project.goal`.
+    - Dynamic tail (`systemPrompt.context`, `projects:coordinator:state`, order 700, `interpolate: false, required: true`; falls back to a trailing section if unsupported): live board snapshot, Library index, and `MEMORY.md` hot index.
+  - **Automatic continuation & batched coordinator feedback**: `scheduleReadyTasks` auto-dispatches ready tasks on task approval, switching `autonomy: 'auto'`, resuming `paused: false`, worker slot release (`settleWorker`), dependency unlock (`resolveTask` returning `dispatchedTaskIds`), and `dsh-task-control` `schedule()`. Settled tasks (`review` / `failed` / `blocked`, excluding manual stop, restart recovery, and paused/archived projects) coalesce in a `1500ms` batch window into one structured receipt (idempotent by `(projectId, taskId, settledAt)`) and broadcast SSE `coordinator.notified`.
+  - Startup recovery (`store.primeSync` → `recoverInterruptedTasks`) transitions unfinished `running` tasks after host restart to `blocked` (`stopReason: 'interrupted_by_restart'`); `earlySettlements` and `stoppingTasks` guard fast-exit and stop races; `routeChanged` respawns workers on default model/preset/effort changes.
+  - Runtime worker scope enforcement (`ctx.tools.guard` in `lib/scope-guard.js`) inherits and clamps Whale Assistant handoff `scopeCeiling` (`readonly` / `research` / `docs` / `development`) and `writePaths`, blocking out-of-scope tools and writes in code.
 - **Data layout** under `$DSH_HOME/projects/<projectId>/`:
   - `project.json`: project metadata and tasks (`0o600` atomic write, per-project serial write queue).
+  - `library.json` (`lib/library.js`): pointer-only `references` (deleting a reference never deletes disk files) and `artifacts` (explicit via `projects_update_task` + auto-collected from worktree diffs on `review`, deduplicated by `(taskId, path)`).
   - `memory/MEMORY.md`: generated read-only index of topic memory files.
-  - `memory/<slug>.md`: per-topic markdown memory files with YAML frontmatter (`name`, `description`, `type`, `modified`).
+  - `memory/<slug>.md`: per-topic markdown memory files with YAML frontmatter (`name`, `description`, `type`, `modified`, `pinned`, `sourceTaskId`). Pinned topics are never archived by auto-compaction (`planFileArchive`). Metadata exposes `hotCount`, `pinnedCount`, `estimatedTokens`, and `budgetTokens`.
   - `memory/archive/`: whole topic files moved out by auto-compaction.
-- **Worktrees** (opt-in `worktreeIsolation`):
-  - Created outside the user's repo under `$DSH_HOME/project-worktrees/<projectId>/<taskId>` on branch `project/<taskId>`.
-  - Supports unified diff inspection, safe clean-merge checks, and forced cleanup.
+  - `validateWorkspacePath` rejects non-absolute/missing paths, UNC/control chars, drive roots, user home, `$DSH_HOME`, and system config directories (`400 { code: 'invalid_workspace' }`).
+- **Worktrees** (opt-in `worktreeIsolation`, `lib/worktree.js`):
+  - Created outside the user's repo under `$DSH_HOME/project-worktrees/<projectId>/<taskId>` on branch `project/<taskId>` (with `-c core.longpaths=true` on Windows).
+  - Supports repo-root `.worktreeinclude` safe file sync (via `git ls-files`, rejecting `..`, `.git`, symlink escapes, and oversized/excess files).
+  - Supports unified diff inspection (scoped by `pathspec` for degraded monorepo subdirectories), read-only `mergeability` preflight (`git merge-tree --write-tree --name-only` returning `clean` / `conflicts` + `conflictFiles` / `dirty_worktree` / `dirty_workspace` / `already_merged` / `unavailable`), safe clean-merge checks, and forced cleanup.
 - **Agent tools** (`lib/tools.js`):
-  - `projects_list`, `projects_create`, `projects_update`, `projects_get`, `projects_add_task`, `projects_update_task`, `projects_memory`, `projects_dispatch`.
+  - All 8 tools use `defineTool` with strict schemas, `presentCall`/`presentResult` cards, and `{ when }` session-role visibility isolation:
+    - Coordinator sees all 8: `projects_list`, `projects_create`, `projects_update`, `projects_get`, `projects_add_task`, `projects_update_task`, `projects_memory`, `projects_dispatch`.
+    - Project workers see only `projects_get` and `projects_memory`.
+    - Normal sessions see none.
 - **HTTP + SSE API** (`/projects-api/*`, `lib/http.js`):
-  - Connection-authenticated (`ctx.connection.admit`) with JSON + `x-projects-api: 1` write fence.
-  - Real-time SSE stream at `GET /projects-api/events`.
-  - Task controls for approve, stop, retry, resolve/review, diff, worktree merge/cleanup, and safe delete with optional session archiving.
+  - Connection-authenticated (`ctx.connection.admit`) with JSON (`content-type: application/json`) + `x-projects-api: 1` write fence (`POST` / `PATCH` / `DELETE`).
+  - **Global & stream**:
+    - `GET /projects-api/events` — real-time SSE stream (`ready` + `update` events, 20s heartbeat, including `project.deleted`, `library.updated`, and `coordinator.notified`).
+    - `GET /projects-api/models` — available models & presets for project/worker routing.
+    - `POST /projects-api/sessions/restore` — restore an archived coordinator/worker session.
+    - `POST /projects-api/open-path` — open authorized project workspace, memory, worktree, or registered Library `references`/`artifacts` path via desktop bridge.
+  - **Projects & coordinator**:
+    - `GET /projects-api/projects` — list project summaries.
+    - `POST /projects-api/projects` — create project (validates workspace path; `autonomy` defaults to `'auto'`).
+    - `GET /projects-api/projects/:id` — read full project, memory metadata, and `library: { references, artifacts }`.
+    - `PATCH /projects-api/projects/:id` — update project metadata/settings (returns `dispatchedTaskIds` when resuming or enabling auto dispatch).
+    - `DELETE /projects-api/projects/:id` — stop running tasks, clean up worktrees, optionally archive sessions (`archiveSessions` body/query or `?session=archive`), remove `$DSH_HOME/projects/<id>` safely without touching user workspace files, and emit `project.deleted`.
+    - `POST /projects-api/projects/:id/coordinator/ensure` — idempotently ensure/restore (`{ restore?: boolean }`) the isolated coordinator session.
+  - **Library (`references` & `artifacts`)**:
+    - `GET /projects-api/projects/:id/library` — return `{ references, artifacts }`.
+    - `POST /projects-api/projects/:id/library/references` — register a validated reference file pointer (`{ path, title?, note? }`, `201 { reference, references }`).
+    - `DELETE /projects-api/projects/:id/library/references/:refId` — remove a reference pointer without deleting the disk file (`200 { deleted: true, refId, references }`).
+  - **Shared memory**:
+    - `GET /projects-api/projects/:id/memory` — list memory topics (`hotCount`, `pinnedCount`, `estimatedTokens`, `budgetTokens`, pinned-first) and rendered `MEMORY.md` index; optional `?q=<keyword>` performs zero-dependency local tokenization + Chinese 2-gram ranked search returning `{ memory, index, query, matches }`.
+    - `POST /projects-api/projects/:id/memory` — create or update a topic file (supports `pinned`/`sourceTaskId`; triggers pin-preserving auto-compaction if over budget).
+    - `GET /projects-api/projects/:id/memory/:name` — read a single topic file (with `pinned`, `sourceTaskId`, `estimatedTokens`) or `MEMORY.md`.
+    - `PATCH /projects-api/projects/:id/memory/:slug` — toggle `pinned` or update metadata (`description`, `type`, `sourceTaskId`).
+    - `DELETE /projects-api/projects/:id/memory/:name` — delete a topic file (`MEMORY.md` is read-only).
+  - **Tasks & worktrees**:
+    - `PATCH /projects-api/projects/:id/tasks/:taskId` — update task acceptance state (`review` / `resolved`; returns `dispatchedTaskIds` when resolving unlocks downstream tasks).
+    - `DELETE /projects-api/projects/:id/tasks/:taskId` — delete task (`?session=archive` optionally archives worker session) and clean up its worktree.
+    - `POST /projects-api/projects/:id/tasks/:taskId/approve` — approve task and auto-dispatch if ready (returns `{ task, dispatched }`).
+    - `POST /projects-api/projects/:id/tasks/:taskId/stop` — stop running task worker.
+    - `POST /projects-api/projects/:id/tasks/:taskId/retry` — retry failed/blocked/review task.
+    - `GET /projects-api/projects/:id/tasks/:taskId/diff` — inspect task worktree/workspace diff and read-only `mergeability` preflight.
+    - `POST /projects-api/projects/:id/tasks/:taskId/worktree/merge` — safe clean-merge of task worktree branch.
+    - `DELETE /projects-api/projects/:id/tasks/:taskId/worktree` — clean up task worktree.
 - **Cross-plugin services** (`ctx.provide('projects', service)`):
   - `inspect()` and `schedule()` for `dsh-task-control`.
-  - `listBridgeSummaries()`, `inspectBridgeProject()`, and `acceptAuthorizedHandoff()` for `dsh-whale`.
+  - `listBridgeSummaries()`, `inspectBridgeProject()`, and `acceptAuthorizedHandoff()` for `dsh-whale` (reuses `ensureCoordinatorSession` with auto-restore).

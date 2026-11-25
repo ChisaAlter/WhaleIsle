@@ -273,6 +273,7 @@ function selectedLargeFiles(
 export function GitActionsControl({
   density = 'full',
   managedSession,
+  usePanelInfo,
   useSessions,
   useTitlebarGit,
   gitStatus,
@@ -294,6 +295,7 @@ export function GitActionsControl({
   openWorkspacePath,
   t,
 }: GitActionsProps): ReactNode {
+  const onConversation = usePanelInfo(info => info.activePanelId === null)
   const cwd = useSessions((s) => {
     // A presented working directory (a Project's repository) outranks the
     // Session's own cwd, matching the terminal and open-in-app targets.
@@ -430,6 +432,10 @@ export function GitActionsControl({
   }
 
   useEffect(() => {
+    if (!onConversation) {
+      setMenuOpen(false)
+      return
+    }
     if (cwd === undefined) {
       setStatus(null)
       setLoadedCwd(null)
@@ -438,7 +444,7 @@ export function GitActionsControl({
     setLoadedCwd(null)
     void refresh(cwd)
     return () => { refreshSeq.current += 1 }
-  }, [cwd, gitStatus, gitFetchForStatus, gitReadPullRequest])
+  }, [cwd, onConversation, gitStatus, gitFetchForStatus, gitReadPullRequest])
 
   // A newly opened workspace is registered by the harness asynchronously, so
   // the first status read can race that write and come back unauthorized
@@ -446,9 +452,9 @@ export function GitActionsControl({
   // changes; re-read status immediately instead of leaving the titlebar
   // unavailable until the next window focus.
   useEffect(() => {
-    if (cwd === undefined) return
+    if (!onConversation || cwd === undefined) return
     return onWorkspacesChanged(() => { void refresh(cwd) })
-  }, [cwd, onWorkspacesChanged, gitStatus, gitFetchForStatus, gitReadPullRequest])
+  }, [cwd, onConversation, onWorkspacesChanged, gitStatus, gitFetchForStatus, gitReadPullRequest])
 
   useEffect(() => {
     return onGitProgress((event) => {
@@ -489,7 +495,7 @@ export function GitActionsControl({
   }, [progress?.tone, progress?.title])
 
   useEffect(() => {
-    if (cwd === undefined) return
+    if (!onConversation || cwd === undefined) return
     let timer: number | null = null
     const schedule = (): void => {
       if (busy) return
@@ -510,7 +516,7 @@ export function GitActionsControl({
       window.removeEventListener('focus', schedule)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [busy, cwd, gitStatus])
+  }, [busy, cwd, onConversation, gitStatus])
 
   const isDefaultRef = status?.isDefaultRef ?? false
   const hasPrimaryRemote = status?.hasPrimaryRemote ?? false
@@ -889,7 +895,7 @@ export function GitActionsControl({
     </Button>
   )
 
-  return managedSession ? null : (
+  return managedSession || !onConversation ? null : (
     <>
       {showChrome && loaded && cwd !== undefined && status !== null ? (showInit ? initButton : (
         <div
