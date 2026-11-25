@@ -42,3 +42,5 @@ registerHooks({
 
 export const { ProjectService } = await import(pathToFileURL(join(projectPackage, 'lib/service.js')).href);
 export const { apply } = await import(pathToFileURL(join(projectPackage, 'lib/index.js')).href);
+export const { registerProjectTools } = await import(pathToFileURL(join(projectPackage, 'lib/tools.js')).href);
+export const { createWorkerScopeGuard } = await import(pathToFileURL(join(projectPackage, 'lib/scope-guard.js')).href);

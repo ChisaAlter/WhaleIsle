@@ -12,8 +12,14 @@
 import z from '@deepseek-ai/schemastery';
 import { internalSecret } from './internal-secret.mjs';
 import { registerProjectsHttp } from './http.js';
-import { COORDINATOR_SECTION_NAME, COORDINATOR_SECTION_ORDER } from './runner.js';
+import {
+  COORDINATOR_CONTEXT_NAME,
+  COORDINATOR_CONTEXT_ORDER,
+  COORDINATOR_SECTION_NAME,
+  COORDINATOR_SECTION_ORDER,
+} from './runner.js';
 import { messageOf } from './schema.js';
+import { createWorkerScopeGuard } from './scope-guard.js';
 import { ProjectService } from './service.js';
 import { registerProjectTools } from './tools.js';
 
@@ -108,14 +114,50 @@ export function apply(ctx) {
           promptCtx.systemPrompt.section({
             name: COORDINATOR_SECTION_NAME,
             order: COORDINATOR_SECTION_ORDER,
+            interpolate: false,
             text: (context) => service.runner.coordinatorSectionFor(context),
           }),
         'dsh-project: coordinator system prompt section',
       );
+      if (typeof promptCtx.systemPrompt.context === 'function') {
+        promptCtx.effect(
+          () =>
+            promptCtx.systemPrompt.context({
+              name: COORDINATOR_CONTEXT_NAME,
+              order: COORDINATOR_CONTEXT_ORDER,
+              interpolate: false,
+              required: true,
+              text: (context) => service.runner.coordinatorDynamicContextFor(context),
+            }),
+          'dsh-project: coordinator dynamic runtime context',
+        );
+      } else {
+        promptCtx.effect(
+          () =>
+            promptCtx.systemPrompt.section({
+              name: COORDINATOR_CONTEXT_NAME,
+              order: COORDINATOR_SECTION_ORDER + 50,
+              interpolate: false,
+              text: (context) => service.runner.coordinatorDynamicContextFor(context),
+            }),
+          'dsh-project: coordinator dynamic runtime section fallback',
+        );
+      }
     } catch (error) {
       console.warn(`dsh-project: could not register coordinator prompt section: ${messageOf(error)}`);
     }
   });
+
+  if (typeof ctx.tools?.guard === 'function') {
+    try {
+      const disposeGuard = ctx.tools.guard(createWorkerScopeGuard(service));
+      if (typeof disposeGuard === 'function') {
+        ctx.effect(() => disposeGuard, 'dsh-project: worker scopeCeiling guard');
+      }
+    } catch (error) {
+      console.warn(`dsh-project: could not register worker scope guard: ${messageOf(error)}`);
+    }
+  }
 
   registerLegacyPresetAliases(ctx);
   registerProjectsHttp(ctx, service);

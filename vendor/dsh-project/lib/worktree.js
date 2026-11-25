@@ -7,9 +7,9 @@
  */
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { copyFile, mkdir, rm } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { withinPath } from '../../dsh-shared/lib/path-guard.mjs';
 import { PROJECT_ID_RE, TASK_ID_RE, httpError, messageOf } from './schema.js';
@@ -18,9 +18,13 @@ import { isDirectory, pathExists } from './store.js';
 const execFileAsync = promisify(execFile);
 
 export const WORKTREE_BRANCH_PREFIX = 'project/';
+export const WORKTREE_INCLUDE_FILE = '.worktreeinclude';
 const GIT_TIMEOUT_MS = 120_000;
 const GIT_MAX_BUFFER = 8 * 1024 * 1024;
 const MAX_DIFF_BYTES = 512 * 1024;
+const MAX_INCLUDE_RULES = 200;
+const MAX_INCLUDE_FILES = 100;
+const MAX_INCLUDE_FILE_BYTES = 10 * 1024 * 1024;
 
 const GIT_UNSET_KEYS = [
   'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
@@ -57,8 +61,11 @@ function normalizeGitFailure(error, trim) {
 }
 
 export async function runGit(cwd, args, { allowFailure = false, env = {}, trim = true } = {}) {
+  const effectiveArgs = process.platform === 'win32'
+    ? ['-c', 'core.longpaths=true', ...args]
+    : args;
   try {
-    const { stdout, stderr } = await execFileAsync('git', args, {
+    const { stdout, stderr } = await execFileAsync('git', effectiveArgs, {
       cwd,
       env: gitEnv(env),
       timeout: GIT_TIMEOUT_MS,
@@ -121,23 +128,24 @@ function parseDiffFiles(numstatOut, nameStatusOut) {
   return files;
 }
 
-async function computeGitDiff(repoDir, baseRef) {
+async function computeGitDiff(repoDir, baseRef, pathspec = '') {
   const gitIndexRes = await runGit(repoDir, ['rev-parse', '--git-path', 'index'], { allowFailure: true });
   if (!gitIndexRes.ok) {
     throw new Error(`Could not locate git index in ${repoDir}: ${gitIndexRes.stderr}`);
   }
   const realIndexPath = resolve(repoDir, gitIndexRes.stdout);
   const tempIndex = join(tmpdir(), `whale-proj-idx-${randomUUID()}`);
+  const tail = pathspec ? ['--', pathspec] : [];
   try {
     if (await pathExists(realIndexPath)) {
       await copyFile(realIndexPath, tempIndex);
     }
     const env = { GIT_INDEX_FILE: tempIndex };
-    await runGit(repoDir, ['add', '-A'], { env });
+    await runGit(repoDir, ['add', '-A', ...tail], { env });
     const [numstat, nameStatus, rawDiff] = await Promise.all([
-      runGit(repoDir, ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-renames', '--numstat', baseRef], { env }),
-      runGit(repoDir, ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-renames', '--name-status', baseRef], { env }),
-      runGit(repoDir, ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-renames', baseRef], { env, trim: false }),
+      runGit(repoDir, ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-renames', '--numstat', baseRef, ...tail], { env }),
+      runGit(repoDir, ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-renames', '--name-status', baseRef, ...tail], { env }),
+      runGit(repoDir, ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-renames', baseRef, ...tail], { env, trim: false }),
     ]);
     const files = parseDiffFiles(numstat.stdout, nameStatus.stdout);
     const fullDiff = rawDiff.stdout;
@@ -146,6 +154,193 @@ async function computeGitDiff(repoDir, baseRef) {
     return { files, diff, truncated };
   } finally {
     await rm(tempIndex, { force: true }).catch(() => { /* Temporary git index may already be absent. */ });
+  }
+}
+
+function hasUnsafeRelSegment(rel) {
+  if (!rel || isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) return true;
+  const parts = rel.split(/[\\/]+/);
+  return parts.some((part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git');
+}
+
+async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
+  const includePath = join(repoRoot, WORKTREE_INCLUDE_FILE);
+  let includeInfo;
+  try {
+    includeInfo = await lstat(includePath);
+  } catch {
+    return [];
+  }
+  if (!includeInfo.isFile() || includeInfo.isSymbolicLink() || includeInfo.size > 256 * 1024) {
+    return [];
+  }
+  let raw;
+  try {
+    raw = await readFile(includePath, 'utf8');
+  } catch {
+    return [];
+  }
+  const rules = [];
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const cleaned = trimmed.replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!cleaned || cleaned.startsWith('/') || /^[A-Za-z]:/.test(cleaned)) continue;
+    const segments = cleaned.split('/');
+    if (segments.some((part) => part === '..' || part.toLowerCase() === '.git')) continue;
+    if (!rules.includes(cleaned)) rules.push(cleaned);
+    if (rules.length >= MAX_INCLUDE_RULES) break;
+  }
+  if (rules.length === 0) return [];
+
+  const pathspecs = rules.map((rule) => `:(glob)${rule}`);
+  const [ignoredRes, untrackedRes] = await Promise.all([
+    runGit(repoRoot, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', ...pathspecs], {
+      allowFailure: true,
+      trim: false,
+    }),
+    runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...pathspecs], {
+      allowFailure: true,
+      trim: false,
+    }),
+  ]);
+
+  const candidateSet = new Set();
+  for (const res of [ignoredRes, untrackedRes]) {
+    if (!res.ok || !res.stdout) continue;
+    for (const entry of res.stdout.split('\0')) {
+      const normalized = entry.replace(/\\/g, '/').trim();
+      if (normalized) candidateSet.add(normalized);
+    }
+  }
+  if (candidateSet.size === 0) return [];
+
+  const [realRepoRoot, realWorktreeRoot] = await Promise.all([
+    realpath(repoRoot),
+    realpath(worktreePath),
+  ]);
+  const copied = [];
+  for (const rel of candidateSet) {
+    if (copied.length >= MAX_INCLUDE_FILES) break;
+    if (hasUnsafeRelSegment(rel)) continue;
+    const src = resolve(realRepoRoot, rel);
+    if (!withinPath(realRepoRoot, src)) continue;
+    let srcLstat;
+    try {
+      srcLstat = await lstat(src);
+    } catch {
+      continue;
+    }
+    if (!srcLstat.isFile() || srcLstat.isSymbolicLink() || srcLstat.size > MAX_INCLUDE_FILE_BYTES) {
+      continue;
+    }
+    const realSrc = await realpath(src).catch(() => '');
+    if (!realSrc || !withinPath(realRepoRoot, realSrc)) continue;
+
+    const dest = resolve(realWorktreeRoot, rel);
+    if (!withinPath(realWorktreeRoot, dest)) continue;
+    try {
+      await mkdir(dirname(dest), { recursive: true });
+      await copyFile(realSrc, dest);
+      copied.push(rel);
+    } catch {
+      // Skip individual unreadable or conflicting include targets without breaking worktree setup.
+    }
+  }
+  return copied;
+}
+
+function parseMergeTreeConflicts(stdout) {
+  const lines = String(stdout || '').split(/\r?\n/);
+  const files = [];
+  // Output format of `git merge-tree --write-tree --name-only`:
+  // line 0: <tree-oid>
+  // lines 1..k: conflicted file paths (terminated by an empty line)
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) break;
+    if (!files.includes(line)) files.push(line);
+    if (files.length >= 20) break;
+  }
+  return files;
+}
+
+async function checkWorktreeMergeability(mainRoot, wtPath, branch, changedFiles) {
+  const unavailable = {
+    status: 'unavailable',
+    canMergeCleanly: false,
+    changedFiles,
+    conflictFiles: [],
+    reason: '',
+  };
+  if (!mainRoot || !branch) return unavailable;
+  try {
+    const ref = await runGit(mainRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { allowFailure: true });
+    if (!ref.ok) return unavailable;
+
+    if (wtPath && (await isDirectory(wtPath))) {
+      const wtStatus = await runGit(wtPath, ['status', '--porcelain'], { allowFailure: true });
+      if (wtStatus.ok && wtStatus.stdout.length > 0) {
+        return {
+          status: 'dirty_worktree',
+          canMergeCleanly: false,
+          changedFiles,
+          conflictFiles: [],
+          reason: '工作树存在未提交改动',
+        };
+      }
+    }
+
+    const mainStatus = await runGit(mainRoot, ['status', '--porcelain'], { allowFailure: true });
+    if (mainStatus.ok && mainStatus.stdout.length > 0) {
+      return {
+        status: 'dirty_workspace',
+        canMergeCleanly: false,
+        changedFiles,
+        conflictFiles: [],
+        reason: '主工作区存在未提交改动',
+      };
+    }
+
+    const ancestor = await runGit(mainRoot, ['merge-base', '--is-ancestor', branch, 'HEAD'], { allowFailure: true });
+    if (ancestor.ok) {
+      return {
+        status: 'already_merged',
+        canMergeCleanly: true,
+        changedFiles,
+        conflictFiles: [],
+        reason: '',
+      };
+    }
+
+    const probe = await runGit(mainRoot, ['merge-tree', '--write-tree', '--name-only', 'HEAD', branch], {
+      allowFailure: true,
+      trim: false,
+    });
+    if (probe.ok) {
+      return {
+        status: 'clean',
+        canMergeCleanly: true,
+        changedFiles,
+        conflictFiles: [],
+        reason: '',
+      };
+    }
+    if (probe.code === 1) {
+      const conflictFiles = parseMergeTreeConflicts(probe.stdout);
+      return {
+        status: 'conflicts',
+        canMergeCleanly: false,
+        changedFiles,
+        conflictFiles,
+        reason: conflictFiles.length > 0
+          ? `与主分支存在冲突（${conflictFiles.slice(0, 3).join(', ')}${conflictFiles.length > 3 ? '…' : ''}）`
+          : '与主分支存在合并冲突',
+      };
+    }
+    return unavailable;
+  } catch {
+    return unavailable;
   }
 }
 
@@ -279,7 +474,8 @@ export function createWorktreeManager(store) {
       throw new Error(`Could not create git worktree for task ${task.id}: ${messageOf(error)}`);
     }
 
-    return { path: plan.path, branch: plan.branch, repoRoot, baseCommit, reused: false };
+    const includedFiles = await syncWorktreeIncludeFiles(repoRoot, plan.path);
+    return { path: plan.path, branch: plan.branch, repoRoot, baseCommit, reused: false, includedFiles };
   }
 
   async function resolveWorktreeBaseRef(wtPath, baseCommit) {
@@ -306,7 +502,13 @@ export function createWorktreeManager(store) {
     const head = await runGit(repoRoot, ['rev-parse', '--verify', 'HEAD'], { allowFailure: true });
     if (!head.ok || !head.stdout) return null;
     const curBranchRes = await runGit(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], { allowFailure: true });
-    const { files, diff, truncated } = await computeGitDiff(repoRoot, head.stdout);
+    const [realRepoRoot, realWorkspace] = await Promise.all([
+      realpath(repoRoot).catch(() => resolve(repoRoot)),
+      realpath(workspace).catch(() => resolve(workspace)),
+    ]);
+    const rel = relative(realRepoRoot, realWorkspace).split(sep).join('/');
+    const pathspec = rel && rel !== '.' && !rel.startsWith('..') ? rel : '';
+    const { files, diff, truncated } = await computeGitDiff(repoRoot, head.stdout, pathspec);
     return {
       available: true,
       branch: curBranchRes.ok ? curBranchRes.stdout : '',
@@ -315,6 +517,13 @@ export function createWorktreeManager(store) {
       files,
       diff,
       truncated,
+      mergeability: {
+        status: 'unavailable',
+        canMergeCleanly: false,
+        changedFiles: files.length,
+        conflictFiles: [],
+        reason: '',
+      },
       note: 'Task has no isolated worktree; showing uncommitted changes in the shared workspace.',
     };
   }
@@ -327,8 +536,22 @@ export function createWorktreeManager(store) {
       const wtRepo = await gitRepositoryRoot(wtPath).catch(() => null);
       if (wtRepo) {
         const baseRef = await resolveWorktreeBaseRef(wtPath, task.baseCommit);
-        const { files, diff, truncated } = await computeGitDiff(wtPath, baseRef);
-        return { available: true, branch, worktreePath: wtPath, baseRef, files, diff, truncated, note: '' };
+        const [{ files, diff, truncated }, mainRoot] = await Promise.all([
+          computeGitDiff(wtPath, baseRef),
+          gitMainRepositoryRoot(wtPath),
+        ]);
+        const mergeability = await checkWorktreeMergeability(mainRoot, wtPath, branch, files.length);
+        return {
+          available: true,
+          branch,
+          worktreePath: wtPath,
+          baseRef,
+          files,
+          diff,
+          truncated,
+          mergeability,
+          note: '',
+        };
       }
     }
 
@@ -343,6 +566,13 @@ export function createWorktreeManager(store) {
       files: [],
       diff: '',
       truncated: false,
+      mergeability: {
+        status: 'unavailable',
+        canMergeCleanly: false,
+        changedFiles: 0,
+        conflictFiles: [],
+        reason: '',
+      },
       note: 'No git repository or worktree is available for this task.',
     };
   }

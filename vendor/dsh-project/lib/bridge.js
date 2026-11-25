@@ -241,7 +241,7 @@ function formatHandoffPrompt({
   if (sourceSummary) lines.push(`sourceSummary: ${sourceSummary}`);
   lines.push(
     '',
-    '请 Project 协调者严格在目标工作区边界与上述权限上限内，调用 projects_add_task 登记任务并按审批策略调用 projects_dispatch 派发执行。',
+    '请 Project 协调者严格在目标工作区边界与上述权限上限内，调用 projects_add_task（透传 scopeCeiling 与 writePaths）登记任务并按审批策略调用 projects_dispatch 派发执行。',
   );
   return lines.join('\n');
 }
@@ -308,6 +308,17 @@ function cachedHandoffReceipt(service, project, handoffId) {
 }
 
 async function ensureCoordinatorSessionId(service, project, sessionController) {
+  if (typeof service?.ensureCoordinatorSession === 'function') {
+    try {
+      const ensured = await service.ensureCoordinatorSession(project.id, { restore: true });
+      if (ensured?.coordinatorSessionId) return ensured.coordinatorSessionId;
+    } catch (error) {
+      if (error?.status === 503) {
+        throw fail('unavailable', `Project「${project.name}」尚未启动协调者会话，请先在项目页启动协调者。`);
+      }
+      throw fail(error?.code || 'unavailable', error?.message || `无法启动 Project「${project.name}」的协调者会话。`);
+    }
+  }
   let sid = typeof project.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
   if (!sid && typeof sessionController?.create === 'function') {
     const created = await sessionController.create(project.workspace ? { cwd: project.workspace } : {});
@@ -384,6 +395,8 @@ export async function acceptAuthorizedHandoff(service, input = {}) {
       projectId: project.id,
       coordinatorSessionId: target.coordinatorSessionId,
       messageId: existingMessageId,
+      scopeCeiling: payload.scopeCeiling,
+      writePaths: payload.writePaths,
     });
     return {
       accepted: true,
@@ -407,6 +420,8 @@ export async function acceptAuthorizedHandoff(service, input = {}) {
     projectId: project.id,
     coordinatorSessionId: target.coordinatorSessionId,
     messageId,
+    scopeCeiling: payload.scopeCeiling,
+    writePaths: payload.writePaths,
   });
   return {
     accepted: true,

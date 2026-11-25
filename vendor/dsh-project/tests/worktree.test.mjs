@@ -193,3 +193,119 @@ test('real git repo: worktree isolation under $DSH_HOME/project-worktrees, diff 
   assert.equal(archived.worktrees.removed.length, 1);
   assert.ok(!fs.existsSync(row1.worktreePath));
 });
+
+test('monorepo subdirectory workspace scopes shared-workspace diff strictly to that subdirectory', async (t) => {
+  const home = makeTempDir(t, 'dsh-proj-wt-mono-home-');
+  const repoDir = makeTempDir(t, 'dsh-proj-wt-mono-repo-');
+  const subDir = path.join(repoDir, 'packages', 'app');
+  const siblingDir = path.join(repoDir, 'packages', 'other');
+  fs.mkdirSync(subDir, { recursive: true });
+  fs.mkdirSync(siblingDir, { recursive: true });
+
+  await runGit(repoDir, ['init', '-b', 'main']);
+  await runGit(repoDir, ['config', 'user.email', 'test@whaleisle.local']);
+  await runGit(repoDir, ['config', 'user.name', 'WhaleIsle Test']);
+  fs.writeFileSync(path.join(subDir, 'index.js'), 'export const a = 1;\n');
+  fs.writeFileSync(path.join(siblingDir, 'other.js'), 'export const b = 1;\n');
+  await runGit(repoDir, ['add', '.']);
+  await runGit(repoDir, ['commit', '-m', 'Initial monorepo']);
+
+  const service = new ProjectService({ get: () => undefined }, { home });
+  t.after(() => service.dispose());
+
+  const project = await service.createProject({
+    name: 'MonorepoApp',
+    workspace: subDir,
+    worktreeIsolation: false,
+  });
+  const { task } = await service.addTask(project.id, { title: 'Edit app only' });
+
+  // Modify both app/ and other/
+  fs.writeFileSync(path.join(subDir, 'index.js'), 'export const a = 2;\n');
+  fs.writeFileSync(path.join(siblingDir, 'other.js'), 'export const b = 999;\n');
+
+  const diff = await service.getTaskDiff(project.id, task.id);
+  assert.equal(diff.available, true);
+  assert.deepEqual(diff.files.map((f) => f.path), ['packages/app/index.js']);
+  assert.doesNotMatch(diff.diff, /packages\/other\/other\.js/);
+});
+
+test('.worktreeinclude safely copies ignored local files, rejects escapes, and getTaskDiff reports mergeability + auto-collects review artifacts', async (t) => {
+  const home = makeTempDir(t, 'dsh-proj-wtinc-home-');
+  const repoDir = makeTempDir(t, 'dsh-proj-wtinc-repo-');
+  await initGitRepo(repoDir);
+
+  fs.writeFileSync(path.join(repoDir, '.gitignore'), '.env.local\nconfig/*.local.json\n', 'utf8');
+  fs.writeFileSync(
+    path.join(repoDir, '.worktreeinclude'),
+    '# Copy local env and nested config\n.env.local\nconfig/*.local.json\n../outside.txt\n.git/config\n',
+    'utf8',
+  );
+  await runGit(repoDir, ['add', '.gitignore', '.worktreeinclude']);
+  await runGit(repoDir, ['commit', '-m', 'Add gitignore and worktreeinclude']);
+
+  // Create ignored local files in main repo
+  fs.mkdirSync(path.join(repoDir, 'config'), { recursive: true });
+  fs.writeFileSync(path.join(repoDir, '.env.local'), 'SECRET_LOCAL=1\n', 'utf8');
+  fs.writeFileSync(path.join(repoDir, 'config', 'dev.local.json'), '{"port":3001}\n', 'utf8');
+
+  let seq = 0;
+  const service = new ProjectService(
+    {
+      get: (k) => (k === 'subagents'
+        ? {
+            async startActivation() {
+              seq += 1;
+              return { childId: `wt-inc-${seq}`, name: `w-${seq}` };
+            },
+          }
+        : undefined),
+    },
+    { home, notifyBatchMs: 5_000 },
+  );
+  t.after(() => service.dispose());
+
+  const project = await service.createProject({
+    name: 'IncludeAndMergeCheck',
+    workspace: repoDir,
+    autonomy: 'auto',
+    worktreeIsolation: true,
+  });
+  const { task } = await service.addTask(project.id, { title: 'Feature with env' });
+  await service.dispatchTask(project.id, task.id, { agent: { id: 'coord-wtinc' } });
+
+  const row = (await service.readProject(project.id)).tasks.find((item) => item.id === task.id);
+  assert.ok(row.worktreePath);
+  assert.equal(fs.readFileSync(path.join(row.worktreePath, '.env.local'), 'utf8'), 'SECRET_LOCAL=1\n');
+  assert.equal(fs.readFileSync(path.join(row.worktreePath, 'config', 'dev.local.json'), 'utf8'), '{"port":3001}\n');
+
+  // Uncommitted change in worktree -> mergeability reports dirty_worktree
+  fs.writeFileSync(path.join(row.worktreePath, 'deliverable.md'), '# Delivery\n', 'utf8');
+  const dirtyDiff = await service.getTaskDiff(project.id, task.id);
+  assert.equal(dirtyDiff.mergeability.status, 'dirty_worktree');
+  assert.equal(dirtyDiff.mergeability.canMergeCleanly, false);
+
+  // Commit in worktree -> mergeability reports clean, and settling into review auto-collects artifact into Library!
+  await runGit(row.worktreePath, ['add', 'deliverable.md']);
+  await runGit(row.worktreePath, ['commit', '-m', 'Add deliverable']);
+  const cleanDiff = await service.getTaskDiff(project.id, task.id);
+  assert.equal(cleanDiff.mergeability.status, 'clean');
+  assert.equal(cleanDiff.mergeability.canMergeCleanly, true);
+
+  await service.settleWorker({
+    id: 'wt-inc-1',
+    stopReason: 'completed',
+    lastAssistantMessage: [{ type: 'text', text: 'Created deliverable.md.' }],
+  });
+  const lib = await service.getLibrary(project.id);
+  assert.ok(lib.artifacts.some((a) => a.taskId === task.id && a.relativePath === 'deliverable.md'));
+
+  // Create conflicting commit on main -> mergeability reports conflicts with conflictFiles without mutating repo!
+  fs.writeFileSync(path.join(repoDir, 'deliverable.md'), '# Main Conflict\n', 'utf8');
+  await runGit(repoDir, ['add', 'deliverable.md']);
+  await runGit(repoDir, ['commit', '-m', 'Conflicting deliverable on main']);
+  const conflictDiff = await service.getTaskDiff(project.id, task.id);
+  assert.equal(conflictDiff.mergeability.status, 'conflicts');
+  assert.equal(conflictDiff.mergeability.canMergeCleanly, false);
+  assert.ok(conflictDiff.mergeability.conflictFiles.includes('deliverable.md'));
+});

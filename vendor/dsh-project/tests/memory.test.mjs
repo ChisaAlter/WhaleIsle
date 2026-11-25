@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ProjectService } from './harness-runtime.mjs';
-import { memoryIndex } from '../lib/memory.js';
+import { memoryIndex, searchMemory } from '../lib/memory.js';
 
 function makeTempHome(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-proj-mem-'));
@@ -169,4 +169,44 @@ test('legacy memory.md migrates idempotently to topic files and preserves memory
   assert.ok(!fs.existsSync(path.join(projDir, 'memory.md')));
   assert.ok(files.some((f) => f.body.includes('Use SQLite WAL.')));
   assert.ok(files.some((f) => f.body.includes('Use atomic swap.')));
+});
+
+test('pinned memory topics survive auto-compaction and Chinese 2-gram search ranks matches', async (t) => {
+  const home = makeTempHome(t);
+  const service = new ProjectService({ get: () => undefined }, { home });
+  t.after(() => service.dispose());
+
+  const project = await service.createProject({ name: 'PinAndSearch', memoryBudget: 4_000, autoCompact: true });
+
+  // Oldest file is pinned -> must NEVER be archived during compaction!
+  await service.memory.writeMemoryFile(project.id, {
+    name: 'core-rules',
+    description: '核心架构规范',
+    pinned: true,
+    sourceTaskId: 't-origin01',
+    text: `数据库迁移必须支持回滚。${'a'.repeat(1_200)}`,
+  });
+  await service.memory.writeMemoryFile(project.id, {
+    name: 'old-log-1',
+    text: `Old log 1: ${'b'.repeat(1_500)}`,
+  });
+  await service.memory.writeMemoryFile(project.id, {
+    name: 'old-log-2',
+    text: `Old log 2: ${'c'.repeat(1_500)}`,
+  });
+  const latest = await service.memory.writeMemoryFile(project.id, {
+    name: 'latest-note',
+    text: `Latest note: ${'d'.repeat(1_200)}`,
+  });
+  await service.memory.afterMemoryWrite(project, latest);
+
+  const live = await service.memory.readMemoryFiles(project.id);
+  const pinnedFile = live.find((f) => f.name === 'core-rules');
+  assert.ok(pinnedFile, 'pinned oldest topic must stay live across auto-compaction');
+  assert.equal(pinnedFile.pinned, true);
+  assert.equal(pinnedFile.sourceTaskId, 't-origin01');
+
+  // Chinese 2-gram search finds "核心规范" against "核心架构规范"
+  const hit = searchMemory(live, '核心规范');
+  assert.match(hit, /core-rules/);
 });

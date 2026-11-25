@@ -29,6 +29,7 @@ import {
   planFileArchive,
   renderMemoryIndexFile,
   searchMemory,
+  searchMemoryRanked,
   serializeMemoryFile,
   splitLegacyMemory,
   uniqueMemoryName,
@@ -38,9 +39,11 @@ import {
   MEMORY_BUDGET,
   MEMORY_INDEX_TOOL_LIMIT,
   MEMORY_TARGET_RATIO,
+  estimateTokens,
   httpError,
   memoryBudgetOf,
   messageOf,
+  text,
 } from './schema.js';
 import { pathExists, statOrNull, writeFileAtomic } from './store.js';
 
@@ -55,6 +58,7 @@ export {
   memorySlug,
   renderMemoryIndexFile,
   searchMemory,
+  searchMemoryRanked,
 };
 
 async function moveFile(from, to) {
@@ -265,14 +269,21 @@ export function createMemoryManager(store) {
       || existing?.description
       || memoryDescription(body)
       || input.name;
+    const pinned = typeof input.pinned === 'boolean' ? input.pinned : Boolean(existing?.pinned);
+    const sourceTaskId = input.sourceTaskId !== undefined
+      ? text(input.sourceTaskId, 64).trim()
+      : (existing?.sourceTaskId || '');
     const file = {
       name: input.name,
       fileName: input.name,
       description,
       type: memoryTypeOf(input.type || existing?.type),
       modified: nextMemoryModified(files),
+      pinned,
+      sourceTaskId,
       body,
       chars: body.length,
+      estimatedTokens: estimateTokens(body),
       path: join(memoryDir(id), `${input.name}.md`),
     };
     await mkdir(memoryDir(id), { recursive: true });
@@ -295,6 +306,36 @@ export function createMemoryManager(store) {
       const addition = String(input?.text ?? '').trim();
       const body = existing && existing.body ? `${existing.body}\n\n${addition}` : addition;
       return writeMemoryFileUnlocked(id, { ...input, name, text: body }, files);
+    });
+  }
+
+  async function updateMemoryMeta(id, rawName, patch = {}) {
+    if (isMemoryIndexName(rawName)) throw httpError(400, MEMORY_INDEX_READ_ONLY);
+    const wanted = memoryNameOf(rawName);
+    if (!wanted) throw httpError(400, `"${rawName}" is not a valid memory file name`);
+    return withFileLock(id, wanted, async () => {
+      const files = await readMemoryFiles(id);
+      const existing = files.find((candidate) => candidate.name === wanted || candidate.fileName === wanted);
+      if (!existing) {
+        throw httpError(
+          404,
+          `No memory file matches "${rawName}". Files: ${files.map((candidate) => candidate.name).join(' | ') || '(none)'}.`,
+        );
+      }
+      const updated = {
+        ...existing,
+        ...(typeof patch.pinned === 'boolean' ? { pinned: patch.pinned } : {}),
+        ...(patch.description !== undefined
+          ? { description: memoryDescriptionLine(patch.description) || existing.description }
+          : {}),
+        ...(patch.type !== undefined ? { type: memoryTypeOf(patch.type) } : {}),
+        ...(patch.sourceTaskId !== undefined ? { sourceTaskId: text(patch.sourceTaskId, 64).trim() } : {}),
+        modified: nextMemoryModified(files),
+      };
+      await writeFileAtomic(existing.path, serializeMemoryFile(updated));
+      await regenerateIndex(id);
+      store.emitChange({ type: 'memory.updated', projectId: id });
+      return updated;
     });
   }
 
@@ -401,17 +442,49 @@ export function createMemoryManager(store) {
     }
   }
 
-  async function memoryPayload(project, files) {
-    const index = await readMemoryIndexFile(project.id);
+  function summarizeMemoryFile(file, extra = undefined) {
     return {
-      files: files.map((file) => ({
-        name: file.name,
-        description: file.description,
-        type: file.type,
-        modified: file.modified,
-        size: file.chars,
-        stale: file.stale === true,
-      })),
+      name: file.name,
+      description: file.description,
+      type: file.type,
+      modified: file.modified,
+      size: file.chars,
+      estimatedTokens: Number(file.estimatedTokens) || estimateTokens(file.body),
+      pinned: file.pinned === true,
+      sourceTaskId: typeof file.sourceTaskId === 'string' ? file.sourceTaskId : '',
+      stale: file.stale === true,
+      ...(extra || {}),
+    };
+  }
+
+  async function memoryPayload(project, files, { query = '' } = {}) {
+    const index = await readMemoryIndexFile(project.id);
+    const allFiles = Array.isArray(files) ? files : [];
+    const liveFiles = allFiles.filter((file) => !file.stale);
+    const totalChars = memoryTotal(allFiles);
+    const totalTokens = allFiles.reduce(
+      (sum, file) => sum + (Number(file.estimatedTokens) || estimateTokens(file.body)),
+      0,
+    );
+    const pinnedCount = liveFiles.filter((file) => file.pinned === true).length;
+    const budget = memoryBudgetOf(project);
+    const budgetTokens = Math.max(1, Math.round(budget * 0.4));
+
+    const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+    let orderedFiles;
+    let matches;
+    if (trimmedQuery) {
+      const ranked = searchMemoryRanked(allFiles, trimmedQuery, 50);
+      matches = ranked.matches.map((entry) => summarizeMemoryFile(entry.file, { score: entry.score }));
+      orderedFiles = matches;
+    } else {
+      orderedFiles = [...allFiles]
+        .sort((left, right) => (right.pinned ? 1 : 0) - (left.pinned ? 1 : 0))
+        .map((file) => summarizeMemoryFile(file));
+    }
+
+    return {
+      files: orderedFiles,
       indexFile: index
         ? {
             name: index.name,
@@ -423,8 +496,13 @@ export function createMemoryManager(store) {
             isIndex: true,
           }
         : null,
-      total: memoryTotal(files),
-      budget: memoryBudgetOf(project),
+      total: totalChars,
+      budget,
+      hotCount: liveFiles.length,
+      pinnedCount,
+      estimatedTokens: totalTokens,
+      budgetTokens,
+      ...(trimmedQuery ? { query: trimmedQuery, matches } : {}),
     };
   }
 
@@ -445,10 +523,12 @@ export function createMemoryManager(store) {
     listArchiveFiles,
     writeMemoryFile,
     appendMemoryFile,
+    updateMemoryMeta,
     deleteMemoryFile,
     compactMemory,
     afterMemoryWrite,
     memoryPayload,
     memoryIndexForTool,
+    summarizeMemoryFile,
   };
 }
