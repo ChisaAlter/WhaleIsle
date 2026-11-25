@@ -1,6 +1,6 @@
-// Bot sub-chat rows (Home Chat pinned first, side/automation/connector chats, and nested worker rows).
-// Enhanced with active-chat rim flash feedback, hover '...' & context menu (Open / Delete chat,
-// protecting active Home Chat), and live 1s worker elapsed clock with hover Stop control.
+// Bot sub-chat rows (non-home side/automation/connector/worker chats, home-owned worker rows, and nested worker rows).
+// Enhanced with active-chat rim flash feedback, hover '...' & context menu (Open / Stop / Delete),
+// and live 1s worker elapsed clock with hover Stop control.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -24,7 +24,6 @@ import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 import {
   IconExternalLink,
   IconGlobe,
-  IconHome,
   IconMessageSquare,
   IconMoreHorizontal,
   IconSpinner,
@@ -39,7 +38,27 @@ export interface BotSubChatListProps {
   hideSleepingWorkers: boolean;
 }
 
+type SidebarWorkerRow = BotWorkerRow & {
+  dispatchId?: string;
+  taskId?: string;
+  createdAt?: number;
+  closedAt?: number;
+};
+
 const FLASH_CHAT_PANE_EVENT = 'dsh-bots:flash-chat-pane';
+
+function chatRowKey(chat: BotChatRow): string {
+  return chat.sessionId || chat.chatId || (chat as { id?: string }).id || '';
+}
+
+function workerRowKey(worker: SidebarWorkerRow, fallback: string): string {
+  return String(worker.id ?? worker.dispatchId ?? worker.sessionId ?? worker.workspaceId ?? fallback);
+}
+
+function workerStopWorkId(worker: SidebarWorkerRow): string | null {
+  const workId = worker.id ?? worker.dispatchId ?? worker.sessionId ?? worker.workspaceId;
+  return workId ? String(workId) : null;
+}
 
 function isWorkerActive(worker: BotWorkerRow): boolean {
   return worker.state === 'running' || worker.state === 'working';
@@ -92,9 +111,6 @@ function triggerChatPaneRimFlash(botId: string, sessionId: string): void {
 }
 
 function ChatOriginIcon({ origin }: { origin: string }) {
-  if (origin === 'home') {
-    return <IconHome size={14} />;
-  }
   if (origin === 'automation') {
     return <IconZap size={14} />;
   }
@@ -121,25 +137,61 @@ function ChatLiveBadge({ live }: { live?: BotChatRow['live'] }) {
 
 function BotChatWorkerRows({
   botId,
-  chat,
+  keyPrefix,
+  running: rawRunning,
+  finished: rawFinished,
   hideSleepingWorkers,
+  flat = false,
+  activeBotId,
+  activeSessionId,
+  openMenuKey,
+  stoppingKey,
+  onOpenSession,
+  onStopWorker,
+  onToggleWorkerMenu,
+  onOpenWorkerContextMenu,
 }: {
   botId: string;
-  chat: BotChatRow;
+  keyPrefix: string;
+  running: SidebarWorkerRow[];
+  finished: SidebarWorkerRow[];
   hideSleepingWorkers: boolean;
+  flat?: boolean;
+  activeBotId: string | null;
+  activeSessionId: string | null;
+  openMenuKey: string | null;
+  stoppingKey: string | null;
+  onOpenSession: (sessionId: string, isActive: boolean) => void;
+  onStopWorker: (worker: SidebarWorkerRow, key: string) => Promise<void>;
+  onToggleWorkerMenu: (
+    worker: SidebarWorkerRow,
+    key: string,
+    label: string,
+    isActive: boolean,
+    canStop: boolean,
+    triggerEl: HTMLElement,
+  ) => void;
+  onOpenWorkerContextMenu: (
+    worker: SidebarWorkerRow,
+    key: string,
+    label: string,
+    isActive: boolean,
+    canStop: boolean,
+    x: number,
+    y: number,
+  ) => void;
 }) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === 'zh-CN';
   const [extraShown, setExtraShown] = useState(0);
-  const [stoppingKey, setStoppingKey] = useState<string | null>(null);
 
   const running = useMemo(
-    () => (chat.running ?? []).filter((w) => !hideSleepingWorkers || w.state !== 'sleeping'),
-    [chat.running, hideSleepingWorkers],
+    () => rawRunning.filter((w) => !hideSleepingWorkers || w.state !== 'sleeping'),
+    [rawRunning, hideSleepingWorkers],
   );
   const finished = useMemo(
-    () => (chat.finished ?? []).filter((w) => !hideSleepingWorkers || w.state !== 'sleeping'),
-    [chat.finished, hideSleepingWorkers],
+    () => rawFinished.filter((w) => !hideSleepingWorkers || w.state !== 'sleeping'),
+    [rawFinished, hideSleepingWorkers],
   );
 
   const hasActiveWorker = useMemo(() => running.some(isWorkerActive), [running]);
@@ -162,64 +214,49 @@ function BotChatWorkerRows({
   const remaining = Math.max(0, running.length - shownRunning.length)
     + Math.max(0, finished.length - shownFinished.length);
 
-  const handleStopWorker = async (worker: BotWorkerRow, key: string, event: MouseEvent) => {
-    event.stopPropagation();
-    const workId = worker.id ?? worker.sessionId ?? worker.workspaceId;
-    if (!workId || stoppingKey === key) {
-      return;
-    }
-    setStoppingKey(key);
-    try {
-      await callBotRpc(RPC_METHODS.WORK_STOP, {
-        botId,
-        workId,
-        ...(worker.sessionId ? { sessionId: worker.sessionId } : {}),
-      });
-      botsStore.pushToast({
-        message: zh ? '已发送停止指令' : 'Stop requested for worker',
-        tone: 'info',
-      });
-      void botsStore.refreshBotChatTree(botId);
-      void botsStore.refresh();
-    } catch (err) {
-      botsStore.pushToast({
-        message: err instanceof Error ? err.message : String(err),
-        tone: 'error',
-      });
-    } finally {
-      setStoppingKey(null);
-    }
-  };
-
   if (shownRunning.length === 0 && shownFinished.length === 0) {
     return null;
   }
 
   return (
-    <div className="dsh-bots-worker-list">
+    <div className="dsh-bots-worker-list" data-root-workers={flat ? 'true' : undefined}>
       {[...shownRunning, ...shownFinished].map((worker, idx) => {
-        const key = worker.id ?? worker.sessionId ?? worker.workspaceId ?? `${chat.chatId}-w-${idx}`;
-        const label = worker.title ?? worker.label ?? worker.statusText ?? 'Worker';
+        const key = workerRowKey(worker, `${keyPrefix}-w-${idx}`);
+        const menuKey = `worker:${key}`;
+        const label = worker.title ?? worker.label ?? worker.statusText ?? worker.taskId ?? 'Worker';
         const active = isWorkerActive(worker);
-        const elapsed = active ? formatElapsedDuration(worker.startedAt ?? worker.updatedAt, tickNow) : '';
-        const canStop = active && Boolean(worker.id ?? worker.sessionId ?? worker.workspaceId);
+        const elapsed = active
+          ? formatElapsedDuration(worker.startedAt ?? worker.createdAt ?? worker.updatedAt, tickNow)
+          : '';
+        const canStop = active && Boolean(workerStopWorkId(worker));
+        const hasSession = Boolean(worker.sessionId);
+        const hasMenu = hasSession || canStop;
+        const isRowActive = activeBotId === botId && Boolean(activeSessionId) && worker.sessionId === activeSessionId;
+        const menuOpen = openMenuKey === menuKey;
 
         return (
           <div
             key={key}
             className="dsh-bots-worker-row"
+            data-active={isRowActive ? 'true' : 'false'}
             data-active-worker={active ? 'true' : 'false'}
+            data-menu-open={menuOpen ? 'true' : 'false'}
             onClick={(e) => {
               e.stopPropagation();
               if (worker.sessionId) {
-                botsStore.openBotChat(botId, worker.sessionId);
+                onOpenSession(worker.sessionId, isRowActive);
               }
             }}
+            onContextMenu={hasMenu ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenWorkerContextMenu(worker, menuKey, label, isRowActive, canStop, e.clientX, e.clientY);
+            } : undefined}
             title={worker.statusText || label}
           >
             <span className="dsh-bots-worker-dot" data-state={worker.state} />
             <span className="dsh-bots-subrow-title">{label}</span>
-            {(elapsed || canStop) && (
+            {(elapsed || hasMenu) && (
               <span className="dsh-bots-worker-tail">
                 {elapsed && (
                   <span className="dsh-bots-worker-elapsed">{elapsed}</span>
@@ -231,10 +268,28 @@ function BotChatWorkerRows({
                     disabled={stoppingKey === key}
                     aria-label={zh ? `停止 ${label}` : `Stop ${label}`}
                     title={zh ? '停止运行' : 'Stop worker'}
-                    onClick={(e) => void handleStopWorker(worker, key, e)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void onStopWorker(worker, key);
+                    }}
                   >
                     <IconStopSquare size={9} />
                     <span>{zh ? '停止' : 'Stop'}</span>
+                  </button>
+                )}
+                {hasMenu && (
+                  <button
+                    type="button"
+                    className="dsh-bots-icon-btn dsh-bots-icon-btn-sm dsh-bots-subrow-more-btn"
+                    aria-label={zh ? '更多子代理操作' : 'Worker actions'}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleWorkerMenu(worker, menuKey, label, isRowActive, canStop, e.currentTarget);
+                    }}
+                  >
+                    <IconMoreHorizontal size={13} />
                   </button>
                 )}
               </span>
@@ -271,14 +326,27 @@ function BotChatWorkerRows({
   );
 }
 
-interface ChatMenuState {
-  chat: BotChatRow;
-  isHome: boolean;
-  isActive: boolean;
-  x: number;
-  y: number;
-  triggerEl: HTMLElement | null;
-}
+type RowMenuState =
+  | {
+      kind: 'chat';
+      key: string;
+      chat: BotChatRow;
+      isActive: boolean;
+      x: number;
+      y: number;
+      triggerEl: HTMLElement | null;
+    }
+  | {
+      kind: 'worker';
+      key: string;
+      worker: SidebarWorkerRow;
+      label: string;
+      isActive: boolean;
+      canStop: boolean;
+      x: number;
+      y: number;
+      triggerEl: HTMLElement | null;
+    };
 
 export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatListProps) {
   const { locale, tr } = useBotsLocale();
@@ -288,8 +356,9 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
   const activeBotId = useBotsState((state) => state.activeBotId);
   const chatFolds = useBotsState((state) => state.chatFolds);
 
-  const [menuState, setMenuState] = useState<ChatMenuState | null>(null);
+  const [menuState, setMenuState] = useState<RowMenuState | null>(null);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+  const [stoppingKey, setStoppingKey] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useAnchoredPopoverDismiss({
@@ -299,58 +368,50 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
     onClose: () => setMenuState(null),
   });
 
-  const orderedChats = useMemo<BotChatRow[]>(() => {
+  const { homeRunning, homeFinished, subChats } = useMemo(() => {
     const owned = rawTree ? (botOwnChatTree(rawTree) as { chats: BotChatRow[] }) : null;
-    const base = owned?.chats ? [...owned.chats] : [];
-    const hasHome = base.some((chat) => chat.origin === 'home' && !chat.closed);
-    if (!hasHome) {
-      const homeSid = bot.chatSessionId ?? bot.homeSessionId ?? `home:${bot.id}`;
-      base.unshift({
-        chatId: homeSid,
-        sessionId: homeSid,
-        title: tr('bots.chats.home', 'Home Chat'),
-        origin: 'home',
-        unread: Boolean(bot.unread),
-        live: bot.dotState === 'working' ? 'replying' : bot.dotState === 'permission' ? 'needs-you' : 'idle',
-        lastActiveAt: bot.lastActiveAt ?? bot.updatedAt ?? bot.createdAt,
-      });
-    }
-    return orderBotChats(base) as BotChatRow[];
-  }, [bot, rawTree, tr]);
+    const openChats = (owned?.chats ?? []).filter((chat) => !chat.closed);
+    const homeChats = openChats.filter((chat) => chat.origin === 'home');
+    const nonHome = openChats.filter((chat) => chat.origin !== 'home');
+    return {
+      homeRunning: homeChats.flatMap((chat) => (chat.running ?? []) as SidebarWorkerRow[]),
+      homeFinished: homeChats.flatMap((chat) => (chat.finished ?? []) as SidebarWorkerRow[]),
+      subChats: orderBotChats(nonHome) as BotChatRow[],
+    };
+  }, [rawTree]);
 
-  const openChatRow = (chat: BotChatRow, isHome: boolean, isActive: boolean) => {
-    const sid = chat.sessionId || chat.chatId;
-    if (isActive) {
-      triggerChatPaneRimFlash(bot.id, sid);
+  const hasVisibleHomeWorkers = useMemo(() => {
+    const hasRunning = homeRunning.some((w) => !hideSleepingWorkers || w.state !== 'sleeping');
+    const hasFinished = homeFinished.some((w) => !hideSleepingWorkers || w.state !== 'sleeping');
+    return hasRunning || hasFinished;
+  }, [hideSleepingWorkers, homeFinished, homeRunning]);
+
+  const openSession = (sessionId: string, isActive: boolean) => {
+    if (!sessionId) {
       return;
     }
-    if (isHome) {
-      void botsStore.openBotHome(bot.id);
-    } else {
-      botsStore.openBotChat(bot.id, sid);
+    if (isActive) {
+      triggerChatPaneRimFlash(bot.id, sessionId);
+      return;
     }
+    botsStore.openBotChat(bot.id, sessionId);
   };
 
-  const handleDeleteChat = async (chat: BotChatRow, isHome: boolean) => {
+  const openChatRow = (chat: BotChatRow, isActive: boolean) => {
+    openSession(chatRowKey(chat), isActive);
+  };
+
+  const deleteChatSession = async (sessionId: string, lockKey: string, chatId?: string) => {
     setMenuState(null);
-    // Explicitly forbid deleting the active Home Chat.
-    if (isHome) {
-      botsStore.pushToast({
-        message: zh ? '当前活跃的主对话不可直接删除，可使用「新建主对话」归档后再清理' : 'Active Home Chat cannot be deleted directly.',
-        tone: 'info',
-      });
+    if (!sessionId || deletingChatId === lockKey) {
       return;
     }
-    const sid = chat.sessionId || chat.chatId;
-    if (!sid || deletingChatId === chat.chatId) {
-      return;
-    }
-    setDeletingChatId(chat.chatId);
+    setDeletingChatId(lockKey);
     try {
       await callBotRpc(RPC_METHODS.CHAT_DELETE, {
         botId: bot.id,
-        sessionId: sid,
-        chatId: chat.chatId,
+        sessionId,
+        ...(chatId ? { chatId } : {}),
       });
       botsStore.pushToast({
         message: zh ? '已删除该对话' : 'Chat deleted',
@@ -368,37 +429,113 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
     }
   };
 
-  const openMenuAt = (
+  const handleStopWorker = async (worker: SidebarWorkerRow, key: string) => {
+    const workId = workerStopWorkId(worker);
+    if (!workId || stoppingKey === key) {
+      return;
+    }
+    setStoppingKey(key);
+    try {
+      await callBotRpc(RPC_METHODS.WORK_STOP, {
+        botId: bot.id,
+        workId,
+        ...(worker.sessionId ? { sessionId: worker.sessionId } : {}),
+      });
+      botsStore.pushToast({
+        message: zh ? '已发送停止指令' : 'Stop requested for worker',
+        tone: 'info',
+      });
+      void botsStore.refreshBotChatTree(bot.id);
+      void botsStore.refresh();
+    } catch (err) {
+      botsStore.pushToast({
+        message: err instanceof Error ? err.message : String(err),
+        tone: 'error',
+      });
+    } finally {
+      setStoppingKey(null);
+    }
+  };
+
+  const clampMenuPos = (x: number, y: number) => ({
+    x: Math.max(8, Math.min(x, window.innerWidth - 188)),
+    y: Math.max(8, Math.min(y, window.innerHeight - 148)),
+  });
+
+  const openChatMenuAt = (
     chat: BotChatRow,
-    isHome: boolean,
     isActive: boolean,
     x: number,
     y: number,
     triggerEl: HTMLElement | null = null,
   ) => {
-    const clampedX = Math.min(x, window.innerWidth - 188);
-    const clampedY = Math.min(y, window.innerHeight - 110);
-    setMenuState({ chat, isHome, isActive, x: Math.max(8, clampedX), y: Math.max(8, clampedY), triggerEl });
+    const key = chatRowKey(chat);
+    const pos = clampMenuPos(x, y);
+    setMenuState({ kind: 'chat', key, chat, isActive, ...pos, triggerEl });
   };
+
+  const openWorkerMenuAt = (
+    worker: SidebarWorkerRow,
+    key: string,
+    label: string,
+    isActive: boolean,
+    canStop: boolean,
+    x: number,
+    y: number,
+    triggerEl: HTMLElement | null = null,
+  ) => {
+    const pos = clampMenuPos(x, y);
+    setMenuState({ kind: 'worker', key, worker, label, isActive, canStop, ...pos, triggerEl });
+  };
+
+  if (!hasVisibleHomeWorkers && subChats.length === 0) {
+    return null;
+  }
 
   return (
     <div className="dsh-bots-sublist" data-paused={bot.paused ? 'true' : 'false'}>
-      {orderedChats.map((chat) => {
-        const isHome = chat.origin === 'home' && !chat.closed;
-        const label = isHome
-          ? tr('bots.chats.home', 'Home Chat')
-          : (chat.title || (chat.origin === 'automation'
-            ? tr('bots.chats.kindAutomation', 'Automation')
-            : tr('bots.chats.kindSide', 'Side chat')));
-        const foldKey = botChatFoldKey('local', bot.id, chat.chatId);
+      {hasVisibleHomeWorkers && (
+        <BotChatWorkerRows
+          botId={bot.id}
+          keyPrefix={`home:${bot.id}`}
+          running={homeRunning}
+          finished={homeFinished}
+          hideSleepingWorkers={hideSleepingWorkers}
+          flat
+          activeBotId={activeBotId}
+          activeSessionId={activeSessionId}
+          openMenuKey={menuState?.kind === 'worker' ? menuState.key : null}
+          stoppingKey={stoppingKey}
+          onOpenSession={openSession}
+          onStopWorker={handleStopWorker}
+          onToggleWorkerMenu={(worker, key, label, isActive, canStop, triggerEl) => {
+            if (menuState?.kind === 'worker' && menuState.key === key) {
+              setMenuState(null);
+            } else {
+              const rect = triggerEl.getBoundingClientRect();
+              openWorkerMenuAt(worker, key, label, isActive, canStop, rect.left, rect.bottom + 4, triggerEl);
+            }
+          }}
+          onOpenWorkerContextMenu={(worker, key, label, isActive, canStop, x, y) => {
+            openWorkerMenuAt(worker, key, label, isActive, canStop, x, y);
+          }}
+        />
+      )}
+
+      {subChats.map((chat) => {
+        const chatKey = chatRowKey(chat);
+        const label = chat.title || (chat.origin === 'automation'
+          ? tr('bots.chats.kindAutomation', 'Automation')
+          : tr('bots.chats.kindSide', 'Side chat'));
+        const foldKey = botChatFoldKey('local', bot.id, chatKey);
         const foldCounts = chatFoldCounts(chat) as { waiting: number; running: number } | null;
         const hasWorkers = (chat.running?.length ?? 0) > 0 || (chat.finished?.length ?? 0) > 0;
         const folded = chatFolds[foldKey] ? chatFolds[foldKey] === 'folded' : !foldCounts;
         const isActive =
           activeBotId === bot.id
-          && (activeSessionId === chat.sessionId
-            || activeSessionId === chat.chatId
-            || (isHome && !activeSessionId));
+          && Boolean(activeSessionId)
+          && (activeSessionId === chat.sessionId || activeSessionId === chat.chatId || activeSessionId === chatKey);
+        const menuOpen = menuState?.kind === 'chat' && menuState.key === chatKey;
         const timeText = formatRelativeTime(chat.lastActiveAt, now, locale);
         const foldText = folded && foldCounts ? chatFoldSummary(tr, foldCounts) : '';
         const toggleWorkers = (e: MouseEvent) => {
@@ -407,21 +544,21 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
         };
 
         return (
-          <div key={chat.chatId}>
+          <div key={chatKey}>
             <div
               className="dsh-bots-subrow"
               data-active={isActive ? 'true' : 'false'}
               data-unread={chat.unread ? 'true' : 'false'}
-              data-menu-open={menuState?.chat.chatId === chat.chatId ? 'true' : 'false'}
-              title={isHome ? tr('bots.chats.homeTooltip', "Home: the bot's main chat.") : label}
+              data-menu-open={menuOpen ? 'true' : 'false'}
+              title={label}
               onClick={(e) => {
                 e.stopPropagation();
-                openChatRow(chat, isHome, isActive);
+                openChatRow(chat, isActive);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                openMenuAt(chat, isHome, isActive, e.clientX, e.clientY);
+                openChatMenuAt(chat, isActive, e.clientX, e.clientY);
               }}
             >
               <span className="dsh-bots-subrow-icon">
@@ -449,14 +586,14 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
                   className="dsh-bots-icon-btn dsh-bots-icon-btn-sm dsh-bots-subrow-more-btn"
                   aria-label={zh ? '更多对话操作' : 'Chat actions'}
                   aria-haspopup="menu"
-                  aria-expanded={menuState?.chat.chatId === chat.chatId}
+                  aria-expanded={menuOpen}
                   onClick={(e) => {
                     e.stopPropagation();
                     const rect = e.currentTarget.getBoundingClientRect();
-                    if (menuState?.chat.chatId === chat.chatId) {
+                    if (menuState?.kind === 'chat' && menuState.key === chatKey) {
                       setMenuState(null);
                     } else {
-                      openMenuAt(chat, isHome, isActive, rect.left, rect.bottom + 4, e.currentTarget);
+                      openChatMenuAt(chat, isActive, rect.left, rect.bottom + 4, e.currentTarget);
                     }
                   }}
                 >
@@ -479,8 +616,27 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
             <BotDisclosure open={hasWorkers && !folded} className="dsh-bots-workers-disclosure">
               <BotChatWorkerRows
                 botId={bot.id}
-                chat={chat}
+                keyPrefix={chatKey}
+                running={(chat.running ?? []) as SidebarWorkerRow[]}
+                finished={(chat.finished ?? []) as SidebarWorkerRow[]}
                 hideSleepingWorkers={hideSleepingWorkers}
+                activeBotId={activeBotId}
+                activeSessionId={activeSessionId}
+                openMenuKey={menuState?.kind === 'worker' ? menuState.key : null}
+                stoppingKey={stoppingKey}
+                onOpenSession={openSession}
+                onStopWorker={handleStopWorker}
+                onToggleWorkerMenu={(worker, key, wLabel, wIsActive, canStop, triggerEl) => {
+                  if (menuState?.kind === 'worker' && menuState.key === key) {
+                    setMenuState(null);
+                  } else {
+                    const rect = triggerEl.getBoundingClientRect();
+                    openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, rect.left, rect.bottom + 4, triggerEl);
+                  }
+                }}
+                onOpenWorkerContextMenu={(worker, key, wLabel, wIsActive, canStop, x, y) => {
+                  openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, x, y);
+                }}
               />
             </BotDisclosure>
           </div>
@@ -495,35 +651,84 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
           style={{ left: menuState.x, top: menuState.y, width: 176 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="dsh-bots-menu-item"
-            role="menuitem"
-            onClick={() => {
-              const { chat, isHome, isActive } = menuState;
-              setMenuState(null);
-              openChatRow(chat, isHome, isActive);
-            }}
-          >
-            <IconExternalLink size={13} />
-            <span>{zh ? '打开对话' : 'Open chat'}</span>
-          </button>
-          <div className="dsh-bots-menu-sep" />
-          <button
-            type="button"
-            className="dsh-bots-menu-item dsh-bots-menu-item-danger"
-            role="menuitem"
-            disabled={menuState.isHome || deletingChatId === menuState.chat.chatId}
-            title={menuState.isHome ? (zh ? '当前活跃主对话不可删除' : 'Active Home Chat cannot be deleted') : undefined}
-            onClick={() => void handleDeleteChat(menuState.chat, menuState.isHome)}
-          >
-            <IconTrash size={13} />
-            <span>
-              {menuState.isHome
-                ? (zh ? '主对话不可删除' : 'Home Chat protected')
-                : (zh ? '删除对话' : 'Delete chat')}
-            </span>
-          </button>
+          {menuState.kind === 'chat' ? (
+            <>
+              <button
+                type="button"
+                className="dsh-bots-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  const { chat, isActive } = menuState;
+                  setMenuState(null);
+                  openChatRow(chat, isActive);
+                }}
+              >
+                <IconExternalLink size={13} />
+                <span>{zh ? '打开对话' : 'Open chat'}</span>
+              </button>
+              <div className="dsh-bots-menu-sep" />
+              <button
+                type="button"
+                className="dsh-bots-menu-item dsh-bots-menu-item-danger"
+                role="menuitem"
+                disabled={deletingChatId === menuState.key}
+                onClick={() => void deleteChatSession(menuState.key, menuState.key, menuState.chat.chatId)}
+              >
+                <IconTrash size={13} />
+                <span>{zh ? '删除对话' : 'Delete chat'}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {menuState.worker.sessionId && (
+                <button
+                  type="button"
+                  className="dsh-bots-menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    const sid = menuState.worker.sessionId!;
+                    const { isActive } = menuState;
+                    setMenuState(null);
+                    openSession(sid, isActive);
+                  }}
+                >
+                  <IconExternalLink size={13} />
+                  <span>{zh ? '打开对话' : 'Open chat'}</span>
+                </button>
+              )}
+              {menuState.canStop && (
+                <button
+                  type="button"
+                  className="dsh-bots-menu-item"
+                  role="menuitem"
+                  disabled={stoppingKey === menuState.key.replace(/^worker:/, '')}
+                  onClick={() => {
+                    const { worker, key } = menuState;
+                    setMenuState(null);
+                    void handleStopWorker(worker, key.replace(/^worker:/, ''));
+                  }}
+                >
+                  <IconStopSquare size={13} />
+                  <span>{zh ? '停止运行' : 'Stop worker'}</span>
+                </button>
+              )}
+              {menuState.worker.sessionId && (
+                <>
+                  <div className="dsh-bots-menu-sep" />
+                  <button
+                    type="button"
+                    className="dsh-bots-menu-item dsh-bots-menu-item-danger"
+                    role="menuitem"
+                    disabled={deletingChatId === menuState.key}
+                    onClick={() => void deleteChatSession(menuState.worker.sessionId!, menuState.key)}
+                  >
+                    <IconTrash size={13} />
+                    <span>{zh ? '删除对话' : 'Delete chat'}</span>
+                  </button>
+                </>
+              )}
+            </>
+          )}
         </div>,
         document.body,
       )}

@@ -482,13 +482,16 @@ export function normalizeBotChatFolds(value) {
   return Object.fromEntries(entries.slice(-BOT_CHAT_FOLDS_MAX));
 }
 
+const chatKeyOf = (chat) => chat?.chatId ?? chat?.sessionId ?? chat?.id;
+
 export function botOwnChatTree(tree) {
-  const rooms = (tree.chats ?? []).filter((chat) => isBotGroupMemberSession(chat.chatId));
+  const rooms = (tree.chats ?? []).filter((chat) => isBotGroupMemberSession(chatKeyOf(chat)));
   const home = (tree.chats ?? []).find((chat) => chat.origin === 'home' && !chat.closed);
   if (rooms.length === 0 || !home) {
     return tree;
   }
-  const roomIds = new Set(rooms.map((chat) => chat.chatId));
+  const roomIds = new Set(rooms.map((chat) => chatKeyOf(chat)));
+  const homeKey = chatKeyOf(home);
   const movedFinished = rooms.flatMap((chat) => chat.finished ?? []);
   const merged = {
     ...home,
@@ -503,12 +506,12 @@ export function botOwnChatTree(tree) {
   const workspaceChats = Object.fromEntries(
     Object.entries(tree.workspaceChats ?? {}).map(([workspace, chatId]) => [
       workspace,
-      roomIds.has(chatId) ? home.chatId : chatId,
+      roomIds.has(chatId) ? homeKey : chatId,
     ]),
   );
   return {
     ...tree,
-    chats: tree.chats.flatMap((chat) => (roomIds.has(chat.chatId) ? [] : chat === home ? [merged] : [chat])),
+    chats: tree.chats.flatMap((chat) => (roomIds.has(chatKeyOf(chat)) ? [] : chat === home ? [merged] : [chat])),
     workspaceChats,
   };
 }
