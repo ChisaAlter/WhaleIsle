@@ -37,24 +37,12 @@ import type {
 
 export type {
   AuthorizationEntry, AuthorizationMethod, AuthorizationNotice, AuthorizationOutcome, AuthorizationPrompt,
-  AuthorizationPromptOption, AuthorizationSettlement, AuthorizationStatus,
+  AuthorizationPromptOption, AuthorizationSettlement, AuthorizationStatus, AuthorizationWirePrompt,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     authorization: AuthorizationService
-  }
-
-  interface Events {
-    /**
-     * One authorization attempt has finished and released its key. Fires for
-     * every terminal outcome, failures included, so a surface watching a key it
-     * did not start (a second browser tab) learns the attempt is over.
-     * @mode emit
-     * @param key - the credential record the finished attempt was authorizing.
-     * @param settlement - how it ended, including the `failed` case its caller sees as a thrown error.
-     */
-    'authorization/settled'(key: CredentialKey, settlement: AuthorizationSettlement): void
   }
 }
 
@@ -140,6 +128,11 @@ export interface AuthorizationFlow {
    * @throws when the attempt fails or the human declines.
    */
   run(session: AuthorizationSession): Promise<void>
+  /**
+   * Optional best-effort remote revocation hook invoked by
+   * {@link AuthorizationService.revoke} before deleting the local record.
+   */
+  revoke?: () => Promise<void>
 }
 
 /**
@@ -261,6 +254,25 @@ export class AuthorizationService extends Service {
   cancel(key: CredentialKey): void {
     const running = this.running.get(key)
     if (running !== undefined && !running.committing) running.controller.abort()
+  }
+
+  /**
+   * Cancel any attempt running for `key`, invoke the registered flow's optional
+   * `revoke()` hook on a best-effort basis, and delete the local credential record.
+   * @param key - the credential record to revoke and delete.
+   */
+  async revoke(key: CredentialKey): Promise<void> {
+    this.cancel(key)
+    const flow = this.flows.get(key)
+    if (flow?.revoke !== undefined) {
+      try {
+        await flow.revoke()
+      } catch (error) {
+        this.ctx.logger.warn('authorization: flow revoke hook for "%s" failed', key)
+        this.ctx.logger.warn(error)
+      }
+    }
+    await this.ctx.credentials.deleteRecord(key)
   }
 
   /**

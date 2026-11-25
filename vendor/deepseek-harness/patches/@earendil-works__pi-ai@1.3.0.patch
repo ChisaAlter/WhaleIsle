@@ -73,10 +73,31 @@ index 0eeaffa..2e13492 100644
                      };
                  });
              }
+diff --git a/dist/api/openai-responses-shared.d.ts b/dist/api/openai-responses-shared.d.ts
+index 9851028..afefd72 100644
+--- a/dist/api/openai-responses-shared.d.ts
++++ b/dist/api/openai-responses-shared.d.ts
+@@ -13,6 +13,7 @@ export interface ConvertResponsesMessagesOptions {
+     grammarToolInputProperties?: ReadonlyMap<string, string>;
+     /** Whether later system messages are sent in place; otherwise they are folded into the leading prompt. */
+     supportsMidConvoSystemMessages?: boolean;
++    forceDeveloperRole?: boolean;
+     supportsAdditionalTools?: boolean;
+     supportsToolSearch?: boolean;
+     toolOptions?: ConvertResponsesToolsOptions;
 diff --git a/dist/api/openai-responses-shared.js b/dist/api/openai-responses-shared.js
-index af5f042..b9f00fb 100644
+index af5f042..aa79da7 100644
 --- a/dist/api/openai-responses-shared.js
 +++ b/dist/api/openai-responses-shared.js
+@@ -128,7 +128,7 @@ export function convertResponsesMessages(model, context, allowedToolCallProvider
+         });
+     };
+     const compat = model.compat;
+-    const instructionRole = model.reasoning && compat?.supportsDeveloperRole !== false ? "developer" : "system";
++    const instructionRole = options?.forceDeveloperRole || (model.reasoning && compat?.supportsDeveloperRole !== false) ? "developer" : "system";
+     let msgIndex = 0;
+     let sourceIndex = 0;
+     for (const msg of transformedMessages) {
 @@ -561,7 +561,6 @@ export async function processResponsesStream(openaiStream, output, stream, model
              if (!slot || slot.block.partialJson === undefined)
                  continue;
@@ -85,6 +106,88 @@ index af5f042..b9f00fb 100644
              pushToolCallDelta(slot, event.delta);
          }
          else if (event.type === "response.function_call_arguments.done") {
+diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
+index 2ab985c..b3609e0 100644
+--- a/dist/api/openai-responses.js
++++ b/dist/api/openai-responses.js
+@@ -180,7 +180,8 @@ export const stream = (model, context, options) => {
+             output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+             const errorMessage = formatProviderError(normalizeProviderError(error), `${model.provider === "openai" ? "OpenAI" : model.provider} API error`);
+             // Sign in with ChatGPT shares the subscription's usage limit with other apps.
+-            output.errorMessage = errorMessage.includes("subscription_sharing_usage_limit_exceeded")
++            output.errorMessage = errorMessage.includes("subscription_sharing_usage_limit_exceeded") ||
++                errorMessage.includes("subscription_sharing_workplace_individual_usage_limit_exceeded")
+                 ? `${errorMessage}\nCheck your ChatGPT usage: ${CHATGPT_USAGE_URL}`
+                 : errorMessage;
+             stream.push({ type: "error", reason: output.stopReason, error: output });
+@@ -204,6 +205,7 @@ export const streamSimple = (model, context, options) => {
+ };
+ function createClient(model, context, apiKey, optionsHeaders, fetch, sessionId) {
+     const compat = getCompat(model);
++    const chatgptSignIn = isChatGPTSignIn(model, apiKey);
+     const headers = { "User-Agent": getPiUserAgent(), ...model.headers };
+     if (model.provider === "github-copilot") {
+         const hasImages = hasCopilotVisionInput(context.messages);
+@@ -219,7 +221,7 @@ function createClient(model, context, apiKey, optionsHeaders, fetch, sessionId)
+         }
+         else {
+             if (compat.sessionAffinityFormat === "openai") {
+-                headers.session_id = sessionId;
++                headers["session-id"] = sessionId;
+             }
+             headers["x-client-request-id"] = sessionId;
+         }
+@@ -228,21 +230,29 @@ function createClient(model, context, apiKey, optionsHeaders, fetch, sessionId)
+     if (optionsHeaders) {
+         Object.assign(headers, optionsHeaders);
+     }
++    if (chatgptSignIn) {
++        headers["openai-organization"] = null;
++        headers["openai-project"] = null;
++    }
+     return new OpenAI({
+         apiKey,
+         baseURL: model.baseUrl,
+         dangerouslyAllowBrowser: true,
+         fetch,
+         defaultHeaders: headers,
++        ...(chatgptSignIn ? { organization: null, project: null } : {}),
+     });
+ }
+ function buildParams(model, context, options, compat, grammarToolInputProperties, configurationUpdateEffort) {
++    // Sign in with ChatGPT rejects these request fields and system-role prompts.
++    const omitUnsupportedFields = isChatGPTSignIn(model, options?.apiKey);
+     const transcriptTools = resolveTranscriptTools(context.messages, compat.supportsAdditionalTools || compat.supportsToolSearch);
+     const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
+         grammarToolInputProperties,
+         supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
+         supportsAdditionalTools: compat.supportsAdditionalTools,
+         supportsToolSearch: compat.supportsToolSearch,
++        forceDeveloperRole: omitUnsupportedFields,
+         toolOptions: {
+             supportsStrictMode: compat.supportsStrictMode,
+             supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+@@ -250,8 +260,6 @@ function buildParams(model, context, options, compat, grammarToolInputProperties
+         configurationUpdateEffort,
+     });
+     const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
+-    // Sign in with ChatGPT rejects these request fields.
+-    const omitUnsupportedFields = isChatGPTSignIn(model, options?.apiKey);
+     const params = {
+         model: model.id,
+         input: messages,
+@@ -305,6 +313,11 @@ function buildParams(model, context, options, compat, grammarToolInputProperties
+     if (samplingParams) {
+         Object.assign(params, samplingParams);
+     }
++    if (omitUnsupportedFields) {
++        delete params.temperature;
++        delete params.max_output_tokens;
++        delete params.top_p;
++    }
+     return params;
+ }
+ function getServiceTierCostMultiplier(model, serviceTier) {
 diff --git a/dist/api/pi-messages.js b/dist/api/pi-messages.js
 index 7da1c45..296d131 100644
 --- a/dist/api/pi-messages.js
@@ -98,3 +201,146 @@ index 7da1c45..296d131 100644
                  break;
              }
              case "toolcall_end":
+diff --git a/dist/auth/oauth/openai-chatgpt.js b/dist/auth/oauth/openai-chatgpt.js
+index a351c28..e4d2888 100644
+--- a/dist/auth/oauth/openai-chatgpt.js
++++ b/dist/auth/oauth/openai-chatgpt.js
+@@ -19,7 +19,9 @@ const RESOURCE = "https://api.openai.com/v1";
+ const CALLBACK_HOST = getProviderEnvValue("PI_OAUTH_CALLBACK_HOST") || "127.0.0.1";
+ const CALLBACK_PORT = 1455;
+ const CALLBACK_PATH = "/auth/callback";
+-const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}${CALLBACK_PATH}`;
++function buildRedirectUri(port) {
++    return `http://127.0.0.1:${port}${CALLBACK_PATH}`;
++}
+ const DIRECT_TOKEN_SCOPE = "chatgpt.tokens.use.direct";
+ const SCOPE = `openid profile email offline_access resource.invoke ${DIRECT_TOKEN_SCOPE}`;
+ // Refresh this long before the real expiry so a request never starts with a token about to expire.
+@@ -41,7 +43,7 @@ function authorizationResultFromCallback(url, expectedState) {
+         throw new Error("OpenAI OAuth registration callback did not contain an issued client ID");
+     return { code, clientId };
+ }
+-function authorizationResultFromManualInput(input, expectedState) {
++function authorizationResultFromManualInput(input, expectedState, redirectUri) {
+     let url;
+     try {
+         url = new URL(input.trim());
+@@ -49,9 +51,9 @@ function authorizationResultFromManualInput(input, expectedState) {
+     catch {
+         throw new Error("Paste the full callback URL from the browser");
+     }
+-    const expected = new URL(REDIRECT_URI);
++    const expected = new URL(redirectUri);
+     if (url.origin !== expected.origin || url.pathname !== expected.pathname) {
+-        throw new Error(`The pasted callback URL must start with ${REDIRECT_URI}`);
++        throw new Error(`The pasted callback URL must start with ${redirectUri}`);
+     }
+     const error = url.searchParams.get("error");
+     if (error)
+@@ -62,7 +64,7 @@ function sendHtml(response, status, body) {
+     response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+     response.end(body);
+ }
+-function startCallbackServer(expectedState) {
++function listenCallbackServer(expectedState, port) {
+     return new Promise((resolve, reject) => {
+         let resolveResult;
+         let rejectResult;
+@@ -72,7 +74,9 @@ function startCallbackServer(expectedState) {
+         });
+         const server = createServer((request, response) => {
+             try {
+-                const url = new URL(request.url || "", REDIRECT_URI);
++                const address = server.address();
++                const activePort = typeof address === "object" && address !== null ? address.port : port;
++                const url = new URL(request.url || "", buildRedirectUri(activePort));
+                 if (url.pathname !== CALLBACK_PATH) {
+                     sendHtml(response, 404, oauthErrorHtml("Callback route not found."));
+                     return;
+@@ -100,13 +104,26 @@ function startCallbackServer(expectedState) {
+             }
+         });
+         server.once("error", reject);
+-        server.listen(CALLBACK_PORT, CALLBACK_HOST, () => {
++        server.listen(port, CALLBACK_HOST, () => {
+             server.removeListener("error", reject);
+             server.on("error", rejectResult);
+-            resolve({ server, result });
++            const address = server.address();
++            const boundPort = typeof address === "object" && address !== null ? address.port : port;
++            resolve({ server, result, redirectUri: buildRedirectUri(boundPort) });
+         });
+     });
+ }
++async function startCallbackServer(expectedState) {
++    try {
++        return await listenCallbackServer(expectedState, CALLBACK_PORT);
++    }
++    catch (error) {
++        if (error instanceof Error && "code" in error && error.code === "EADDRINUSE") {
++            return await listenCallbackServer(expectedState, 0);
++        }
++        throw error;
++    }
++}
+ async function requestToken(body, signal) {
+     const response = await fetch(TOKEN_URL, {
+         method: "POST",
+@@ -153,13 +170,13 @@ function credentialFromTokenResponse(token, clientId) {
+         scopes,
+     };
+ }
+-async function exchangeAuthorizationCode(code, verifier, clientId, signal) {
++async function exchangeAuthorizationCode(code, verifier, clientId, redirectUri, signal) {
+     const token = await requestToken(new URLSearchParams({
+         grant_type: "authorization_code",
+         client_id: clientId,
+         code,
+         code_verifier: verifier,
+-        redirect_uri: REDIRECT_URI,
++        redirect_uri: redirectUri,
+         resource: RESOURCE,
+     }), signal);
+     // Pi does not use the ID token to identify the user or read profile data.
+@@ -194,20 +211,15 @@ async function loginOpenAIChatGPT(interaction, options) {
+     const { verifier, challenge } = await generatePKCE();
+     const state = randomValue();
+     const nonce = randomValue();
+-    // Without this server, the browser's callback would reach whatever else holds the port (another
+-    // pending login or the Codex CLI), which rejects it as a state mismatch. Fail with a clear error instead.
+-    const callback = await startCallbackServer(state).catch((error) => {
+-        if (!(error instanceof Error && "code" in error && error.code === "EADDRINUSE"))
+-            throw error;
+-        throw new Error(`Port ${CALLBACK_PORT} is in use, probably by an unfinished login in another pi session or by the Codex CLI. Cancel that login and try again.`);
+-    });
++    const callback = await startCallbackServer(state);
++    const redirectUri = callback.redirectUri;
+     const authorizationUrl = new URL(AUTHORIZE_URL);
+     authorizationUrl.search = new URLSearchParams({
+         client_id: DYNAMIC_CLIENT_ID,
+         agent_name_hint: options?.agentName ?? AGENT_NAME_HINT,
+         ext_agent_host_id: hostId,
+         response_type: "code",
+-        redirect_uri: REDIRECT_URI,
++        redirect_uri: redirectUri,
+         resource: RESOURCE,
+         scope: SCOPE,
+         state,
+@@ -225,14 +237,14 @@ async function loginOpenAIChatGPT(interaction, options) {
+         .prompt({
+         type: "manual_code",
+         message: "Complete login in your browser, or paste the final redirect URL here:",
+-        placeholder: REDIRECT_URI,
++        placeholder: redirectUri,
+         signal: AbortSignal.any([manualAbort.signal, interaction.signal]),
+     })
+-        .then((input) => authorizationResultFromManualInput(input, state));
++        .then((input) => authorizationResultFromManualInput(input, state, redirectUri));
+     try {
+         const result = await Promise.race([callback.result, manualCode]);
+         interaction.notify({ type: "progress", message: "Exchanging authorization code for tokens..." });
+-        return await exchangeAuthorizationCode(result.code, verifier, result.clientId, interaction.signal);
++        return await exchangeAuthorizationCode(result.code, verifier, result.clientId, redirectUri, interaction.signal);
+     }
+     catch (error) {
+         if (interaction.signal.aborted)

@@ -103,6 +103,7 @@ export type { ApiRemoteForwardedEvent } from '../types.ts'
 export type {} from '@deepseek-ai/dsh-commands/types'
 export type {} from '@deepseek-ai/dsh-web/types'
 export type {} from '@deepseek-ai/dsh-cordis-host-runner/types'
+export type {} from '@deepseek-ai/dsh-authorization/types'
 export type {} from '@deepseek-ai/dsh-credentials/types'
 export type {} from '@deepseek-ai/dsh-llm/types'
 export type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -163,8 +164,17 @@ export type {
   DynamicCordisUndefineReceipt,
   RequestRunOutcome,
 } from '@deepseek-ai/dsh-cordis-host-runner/types'
-// Credential state vocabulary for the credentials namespace (values never ride it).
-export type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
+// Credential and authorization vocabulary for the credentials and authorization namespaces (values never ride them).
+export type { CredentialInfo, CredentialRecordInfo } from '@deepseek-ai/dsh-credentials/types'
+export type {
+  AuthorizationEntry,
+  AuthorizationMethod,
+  AuthorizationNotice,
+  AuthorizationSettlement,
+  AuthorizationStatus,
+  AuthorizationWirePrompt,
+} from '@deepseek-ai/dsh-authorization/types'
+export type { AuthorizationStreamEvent } from '@deepseek-ai/dsh-api-settings-controller/types'
 // Redacted namespace vocabulary for the settings namespace (secrets never ride
 // it). It travels with its seam, whose `./types` the Client face already reads.
 export type {

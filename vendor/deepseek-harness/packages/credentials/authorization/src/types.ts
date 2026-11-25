@@ -5,6 +5,7 @@
  * @module @deepseek-ai/dsh-authorization/types
  */
 
+import type {} from '@deepseek-ai/cordis'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials/types'
 
 /** One way a flow can obtain its credential, named by the flow that offers it. */
@@ -36,6 +37,26 @@ export interface AuthorizationPromptOption {
 }
 
 /**
+ * Wire-safe prompt payload without its non-serializable `signal` handle.
+ */
+export type AuthorizationWirePrompt =
+  | {
+    kind: 'text'
+    message: string
+    placeholder?: string
+  }
+  | {
+    kind: 'secret'
+    message: string
+    placeholder?: string
+  }
+  | {
+    kind: 'select'
+    message: string
+    options: readonly AuthorizationPromptOption[]
+  }
+
+/**
  * A question a flow must have answered before it can continue. `secret` differs
  * from `text` only in presentation — a surface masks it and keeps it out of
  * logs — and `select` answers with the chosen option's `id`.
@@ -47,19 +68,7 @@ export type AuthorizationPrompt = {
    * whole authorization is cancelled through the request's signal instead.
    */
   signal?: AbortSignal
-} & ({
-  kind: 'text'
-  message: string
-  placeholder?: string
-} | {
-  kind: 'secret'
-  message: string
-  placeholder?: string
-} | {
-  kind: 'select'
-  message: string
-  options: readonly AuthorizationPromptOption[]
-})
+} & AuthorizationWirePrompt
 
 /** How one authorization attempt ended, as its own caller sees it. */
 export type AuthorizationStatus = 'authorized' | 'cancelled'
@@ -88,4 +97,18 @@ export interface AuthorizationEntry {
   methods: readonly AuthorizationMethod[]
   /** Whether an attempt for this key is running right now. */
   inFlight: boolean
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * One authorization attempt has finished and released its key. Fires for
+     * every terminal outcome, failures included, so a surface watching a key it
+     * did not start (a second browser tab) learns the attempt is over.
+     * @mode emit
+     * @param key - the credential record the finished attempt was authorizing.
+     * @param settlement - how it ended, including the `failed` case its caller sees as a thrown error.
+     */
+    'authorization/settled'(key: CredentialKey, settlement: AuthorizationSettlement): void
+  }
 }

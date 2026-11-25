@@ -20,6 +20,7 @@ import { API_REMOTE_FORWARDED_EVENTS } from './remote-events.ts'
 // event vocabulary.
 import type {} from '@deepseek-ai/dsh-commands/types'
 import type {} from '@deepseek-ai/dsh-cordis-host-runner/types'
+import type {} from '@deepseek-ai/dsh-authorization/types'
 import type {} from '@deepseek-ai/dsh-credentials/types'
 import type {} from '@deepseek-ai/dsh-goal/types'
 import type {} from '@deepseek-ai/dsh-llm/types'

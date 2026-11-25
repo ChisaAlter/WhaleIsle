@@ -2255,6 +2255,11 @@ describe('input types', () => {
             removeCredential: async () => undefined,
             writeSettings: async () => ({ kind: 'refused', message: 'unused' }),
             discoverModels: async () => ({ kind: 'found', models: [] }),
+            startAuthorization: async () => {},
+            respondAuthorizationPrompt: async () => undefined,
+            cancelAuthorization: async () => undefined,
+            removeCredentialRecord: async () => undefined,
+            openExternalUrl: () => {},
           }}
           t={t}
           disabled={false}

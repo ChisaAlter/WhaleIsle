@@ -11,39 +11,78 @@ import type { AuthEvent, AuthPrompt, AuthType, Provider } from '@earendil-works/
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationMethod, AuthorizationPrompt, AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { isCredentialKeySegment } from '@deepseek-ai/dsh-credentials'
+import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
-import { recordKeyFor } from './auth.ts'
+import { getOrCreateDeviceId, recordKeyFor } from './auth.ts'
 import type { PiAiAuthInjection } from './adapter.ts'
 import { createModels } from './models.ts'
 
-/**
- * Catalog providers whose OAuth login this adapter does not offer. pi-ai's Sign
- * in with ChatGPT (`openai`) identifies the installation to OpenAI with a
- * stable UUID that the app supplies through `LoginOptions.getDeviceId`, and it
- * refuses to start without one. The harness keeps no installation ID meant for
- * a third-party account sign-in, so the route signs in with an API key.
- */
-const UNSERVED_OAUTH: ReadonlySet<string> = new Set(['openai'])
+const OPENAI_OAUTH_REVOKE_URL = 'https://auth.openai.com/api/accounts/oauth/revoke'
+const OPENAI_OAUTH_REVOKE_TIMEOUT_MS = 5000
 
 /**
  * The login methods one catalog provider offers.
  *
  * A method appears only when pi-ai can actually run it: `oauth` carries a
- * `login` that runs without app-supplied login options except for the
- * providers in {@link UNSERVED_OAUTH}, while an api-key method has one only
- * when the provider collects its key interactively — which every installed one
- * currently does, so a key is typed into pi-ai's own prompt rather than into
- * the settings form.
+ * `login` that runs either directly or with app-supplied login options, while
+ * an api-key method has one only when the provider collects its key
+ * interactively — which every installed one currently does, so a key is typed
+ * into pi-ai's own prompt rather than into the settings form.
  * @param provider - the installed catalog provider, if pi-ai ships one.
  * @returns its methods, most preferred first; empty when it offers no login.
  */
 function loginMethods(provider: Provider | undefined): AuthorizationMethod[] {
   const methods: AuthorizationMethod[] = []
-  const oauth = provider === undefined || UNSERVED_OAUTH.has(provider.id) ? undefined : provider.auth.oauth
+  const oauth = provider?.auth.oauth
   if (oauth !== undefined) methods.push({ id: 'oauth', label: oauth.loginLabel ?? oauth.name })
   const apiKey = provider?.auth.apiKey
   if (apiKey?.login !== undefined) methods.push({ id: 'api-key', label: apiKey.name })
   return methods
+}
+
+/**
+ * Best-effort OAuth refresh-token revocation for OpenAI Sign in with ChatGPT.
+ * Network and HTTP errors are logged as warnings so local credential removal
+ * always completes.
+ */
+async function revokeOpenAIOAuth(ctx: Context, key: CredentialKey): Promise<void> {
+  const record = await ctx.get('credentials')?.readRecord(key)
+  if (
+    record?.kind !== 'grant'
+    || typeof record.payload !== 'object'
+    || record.payload === null
+    || Array.isArray(record.payload)
+  ) {
+    return
+  }
+  const payload = record.payload as Record<string, unknown>
+  const refresh = payload['refresh']
+  const clientId = payload['clientId']
+  if (typeof refresh !== 'string' || refresh.trim().length === 0) return
+  if (typeof clientId !== 'string' || clientId.trim().length === 0) return
+  try {
+    const response = await fetch(OPENAI_OAUTH_REVOKE_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        token: refresh,
+        token_type_hint: 'refresh_token',
+        client_id: clientId,
+      }),
+      signal: AbortSignal.timeout(OPENAI_OAUTH_REVOKE_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      ctx.logger.warn(
+        'llm-pi-ai: OpenAI OAuth revocation failed with HTTP %d; continuing local sign-out',
+        response.status,
+      )
+    }
+  } catch (error: unknown) {
+    ctx.logger.warn(
+      'llm-pi-ai: OpenAI OAuth revocation failed (%s); continuing local sign-out',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
 }
 
 /**
@@ -146,8 +185,9 @@ export function registerPiAiFlows(ctx: Context, auth: PiAiAuthInjection): void {
         providerId)
       continue
     }
+    const key = recordKeyFor(providerId)
     ctx.authorization.registerFlow({
-      key: recordKeyFor(providerId),
+      key,
       label: provider.name,
       methods: [first, ...rest],
       async run(session) {
@@ -159,14 +199,21 @@ export function registerPiAiFlows(ctx: Context, auth: PiAiAuthInjection): void {
         // Total over the two ids declared above, and the seam only ever hands
         // back one a flow declared.
         const type: AuthType = session.method === 'oauth' ? 'oauth' : 'api_key'
+        const deviceId = providerId === 'openai' && type === 'oauth'
+          ? await getOrCreateDeviceId(ctx)
+          : undefined
         // pi-ai persists what the login returns through that same store, which
         // is what makes it the single writer of this record.
         await models.login(providerId, type, {
           signal: session.signal,
           notify: (event) => { relay(event, session) },
           prompt: prompt => session.prompt(restate(prompt)),
+        }, {
+          agentName: 'Whale Isle',
+          ...deviceId === undefined ? {} : { getDeviceId: () => deviceId },
         })
       },
+      ...providerId === 'openai' ? { revoke: () => revokeOpenAIOAuth(ctx, key) } : {},
     })
   }
 }

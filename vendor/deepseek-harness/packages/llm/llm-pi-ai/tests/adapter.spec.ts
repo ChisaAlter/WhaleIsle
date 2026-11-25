@@ -474,6 +474,19 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.paths).toEqual(['/chat/completions'])
   })
 
+  it.each([
+    'subscription_sharing_usage_limit_exceeded',
+    'subscription_sharing_workplace_individual_usage_limit_exceeded',
+  ])('maps 429 %s failures to QUOTA instead of RATE_LIMIT', async (errorCode) => {
+    const server = await mockServer([{
+      status: 429,
+      body: JSON.stringify({ error: { code: errorCode, message: 'Usage limit reached' } }),
+    }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'QUOTA' } })
+  })
+
   it('classifies a gateway 500 that relays an upstream 401 as SERVER with the rendered message', async () => {
     vi.stubEnv('PI_TEST_KEY', 'test-key')
     // The Anthropic SDK renders the whole JSON body after the gateway's own status.

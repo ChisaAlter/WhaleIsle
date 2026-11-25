@@ -23,7 +23,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { CredentialInfo, LlmNativeAuth, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  AuthorizationEntry, CredentialInfo, CredentialRecordInfo, LlmNativeAuth, SettingsNamespaceView, SettingsPathOpView,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { Button, IconQuestionOutlineRegular, Input, SettingsSelect, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -46,6 +48,7 @@ import { ApiKeyInput } from './ApiKeyInput.tsx'
 import { CompatEditor } from './CompatEditor.tsx'
 import { ConnectionTestControl } from './ConnectionTestControl.tsx'
 import { HeadersEditor } from './HeadersEditor.tsx'
+import { ProviderOAuthControl } from './ProviderOAuthControl.tsx'
 import { RetryPolicyEditor, retryPolicyDefaults, retryPolicyFailure } from './RetryPolicyEditor.tsx'
 import styles from './ModelsSection.module.css'
 
@@ -90,6 +93,16 @@ export interface ProviderEditorProps {
   credential?: CredentialInfo
   /** Redacted checks for the profile's named reference or the provider's native variables. */
   credentialChecks?: Readonly<Record<string, CredentialInfo>>
+  /** Whether this provider currently has a configured profile (false on the Add Provider card). */
+  configured?: boolean
+  /** Credential record key for OAuth authorization (e.g. `llm-pi-ai/openai`). */
+  oauthKey?: string
+  /** Registered OAuth authorization flow metadata for this provider. */
+  oauthFlow?: AuthorizationEntry
+  /** Redacted state of the OAuth credential record, from the page snapshot. */
+  oauthCredential?: CredentialRecordInfo
+  /** Refresh the page store after OAuth sign-in or sign-out settles. */
+  onAuthorizationChange?: () => void | Promise<void>
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -211,8 +224,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const keyRemoval = typeof keyDraft === 'object' ? keyDraft : undefined
   const [busy, setBusy] = useState(false)
   const [listBusy, setListBusy] = useState(false)
+  const [oauthBusy, setOauthBusy] = useState(false)
   const { onBusyChange } = props
-  useEffect(() => { onBusyChange?.(busy || listBusy) }, [busy, listBusy, onBusyChange])
+  useEffect(() => { onBusyChange?.(busy || listBusy || oauthBusy) }, [busy, listBusy, oauthBusy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [headersError, setHeadersError] = useState<string | undefined>(undefined)
   const [customizedOpen, setCustomizedOpen] = useState(false)
@@ -417,6 +431,26 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
   }
 
+  const handleOAuthAuthorized = async (): Promise<void> => {
+    if (props.configured === false && keyValue.length === 0 && !props.readOnly) {
+      const written = await operations.writeSettings(
+        namespace.ns,
+        [{ op: 'set', path: [...settingsPath], value: {} }],
+        expectedRevision,
+      )
+      if (written.kind !== 'written') {
+        setFailure(written.kind === 'conflict' ? t('conflict') : written.message)
+        await props.onAuthorizationChange?.()
+        return
+      }
+      setCommittedOriginal(schema.getPath(written.view.user, settingsPath))
+      setExpectedRevision(written.view.revision)
+      props.onClose(true)
+      return
+    }
+    await props.onAuthorizationChange?.()
+  }
+
   if (node === undefined) {
     // A directory entry addressing a position its schema cannot resolve is a
     // host-side inconsistency; showing it beats a blank card.
@@ -518,6 +552,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     )
     // A provider with no native key authentication has no key for this field to store.
     const keylessNativeAuth = nativeAuth?.env.length === 0 && nativeAuth.oauth
+    const hasApiKeyConflict = namedRef !== undefined && detected !== undefined
     const keyPlaceholder = keyHint === undefined || props.credentialRequired === true
       ? t('keyPlaceholder')
       : t('keyPlaceholderFallback').replace('{hint}', () => keyHint)
@@ -534,6 +569,23 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
     return (
       <>
+        {family === 'pi-ai' && props.oauthFlow !== undefined && props.oauthKey !== undefined
+          ? (
+            <ProviderOAuthControl
+              provider={props.provider}
+              oauthKey={props.oauthKey}
+              oauthFlow={props.oauthFlow}
+              {...props.oauthCredential === undefined ? {} : { oauthCredential: props.oauthCredential }}
+              hasApiKeyConflict={hasApiKeyConflict}
+              disabled={disabled}
+              operations={operations}
+              t={t}
+              onAuthorized={handleOAuthAuthorized}
+              onSignedOut={async () => { await props.onAuthorizationChange?.() }}
+              onBusyChange={setOauthBusy}
+            />
+          )
+          : null}
         {keylessNativeAuth
           ? null
           : <div className={styles['field']}>

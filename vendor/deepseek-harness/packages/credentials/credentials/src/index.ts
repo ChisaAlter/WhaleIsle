@@ -10,10 +10,10 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { CredentialInfo, CredentialKey, CredentialRecord, CredentialRef } from './types.ts'
+import type { CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordInfo, CredentialRef } from './types.ts'
 
 export type {
-  ApiKeyRecord, CredentialInfo, CredentialKey, CredentialRecord, CredentialRef, GrantRecord,
+  ApiKeyRecord, CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordInfo, CredentialRef, GrantRecord,
 } from './types.ts'
 
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -120,21 +120,6 @@ export interface ResolvedCredential {
   value: string
   /** Provider-defined source layer id (the local provider uses `env`, `file`, `project-env`, and `user-env`). */
   source: string
-}
-
-/** Presence and writability facts for one record, safe for configuration UIs — never the value. */
-export interface CredentialRecordInfo {
-  /**
-   * Whether a record is stored. Unlike a reference, presence alone answers
-   * this: an {@link ApiKeyRecord} carrying neither a key nor environment
-   * values states that its owner confirmed ambient authentication, which is
-   * configured, not blank.
-   */
-  configured: boolean
-  /** Discriminant of the stored record; absent while none is stored. */
-  kind?: CredentialRecord['kind']
-  /** Whether {@link CredentialProvider.modifyRecord} would currently succeed. */
-  writable: boolean
 }
 
 /** One stored record's address and tag, for enumeration — never its value. */

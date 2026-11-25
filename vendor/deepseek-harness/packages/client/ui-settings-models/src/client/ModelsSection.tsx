@@ -118,7 +118,7 @@ interface CatalogDraft {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose'
+  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'onAuthorizationChange'
 > {
   target: EditorTarget
   row: ProviderRow
@@ -131,12 +131,16 @@ function renderProviderEditor({ target, row, ...props }: ProviderEditorRenderPro
       provider={target.provider}
       displayName={target.displayName}
       settingsPath={target.settingsPath}
+      configured={row.configured}
       {...target.declared === true ? { declared: true } : {}}
       {...target.defaultBaseURL === undefined ? {} : { defaultBaseURL: target.defaultBaseURL }}
       {...target.baseURLEnv === undefined ? {} : { baseURLEnv: target.baseURLEnv }}
       {...target.nativeAuth === undefined ? {} : { nativeAuth: target.nativeAuth }}
       {...row.credential === undefined ? {} : { credential: row.credential }}
       {...row.credentialChecks === undefined ? {} : { credentialChecks: row.credentialChecks }}
+      {...row.oauthKey === undefined ? {} : { oauthKey: row.oauthKey }}
+      {...row.oauthFlow === undefined ? {} : { oauthFlow: row.oauthFlow }}
+      {...row.oauthCredential === undefined ? {} : { oauthCredential: row.oauthCredential }}
       {...row.accountModels === undefined ? {} : { catalogModels: row.accountModels }}
       {...props}
     />
@@ -477,6 +481,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   operations,
                   t,
                   readOnly: !state.writable,
+                  onAuthorizationChange: () => controller.load(),
                   onClose: (changed) => { closeSetup(changed, target) },
                 })}
                 {renderSlot(
@@ -504,7 +509,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     ? <span className={styles['rowTag']}>{t('customTag')}</span>
                     : null}
                   {/* An empty saved catalog stays editable without claiming sign-in. */}
-                  {row.entry.provider === 'deepseek-account' && row.accountAvailable === true
+                  {(row.entry.provider === 'deepseek-account' && row.accountAvailable === true)
+                    || (row.apiKeyEnv === undefined && row.oauthCredential?.configured === true)
                     ? (
                       <span className={styles['accountStatus']}>
                         <span className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`} aria-hidden="true" />
@@ -582,6 +588,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   operations,
                   t,
                   readOnly: !state.writable,
+                  onAuthorizationChange: () => controller.load(),
                   onClose: (changed) => { closeEditor(changed, target) },
                 })
                 : null}
@@ -661,6 +668,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       provider={draft.target.provider}
                       displayName={draft.target.displayName}
                       hideTitle
+                      configured={addRow?.configured ?? false}
                       namespace={draft.namespace}
                       schema={schema}
                       settingsPath={draft.target.settingsPath}
@@ -669,8 +677,12 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       {...draft.target.baseURLEnv === undefined ? {} : { baseURLEnv: draft.target.baseURLEnv }}
                       {...draft.target.nativeAuth === undefined ? {} : { nativeAuth: draft.target.nativeAuth }}
                       {...addRow?.credentialChecks === undefined ? {} : { credentialChecks: addRow.credentialChecks }}
+                      {...addRow?.oauthKey === undefined ? {} : { oauthKey: addRow.oauthKey }}
+                      {...addRow?.oauthFlow === undefined ? {} : { oauthFlow: addRow.oauthFlow }}
+                      {...addRow?.oauthCredential === undefined ? {} : { oauthCredential: addRow.oauthCredential }}
                       t={t}
                       readOnly={!state.writable}
+                      onAuthorizationChange={() => controller.load()}
                       onClose={(changed) => { closeEditor(changed, draft.target) }}
                       onBusyChange={setCatalogBusy}
                     />

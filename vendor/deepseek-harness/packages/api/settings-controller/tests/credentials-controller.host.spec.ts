@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
+import AuthorizationService from '@deepseek-ai/dsh-authorization'
+import { credentialKey } from '@deepseek-ai/dsh-credentials'
+import type { CredentialInfo, CredentialKey, CredentialRecordInfo } from '@deepseek-ai/dsh-credentials/types'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import CredentialsController from '../src/credentials.ts'
 import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
@@ -10,6 +12,12 @@ class LeakyCredentials extends MemoryCredentials {
   override describe(): Promise<CredentialInfo> {
     return Promise.resolve(
       { configured: true, source: 'memory', writable: true, masked: '•'.repeat(9), value: 'sk-leaked', preview: 'sk…ed' } as CredentialInfo,
+    )
+  }
+
+  override describeRecord(): Promise<CredentialRecordInfo> {
+    return Promise.resolve(
+      { configured: true, kind: 'grant', writable: true, payload: { token: 'leaked-record-token' } } as CredentialRecordInfo,
     )
   }
 }
@@ -25,6 +33,10 @@ class LiteralRejectingCredentials extends MemoryCredentials {
 class RejectingCredentials extends MemoryCredentials {
   override set(): Promise<void> {
     return Promise.reject(new Error('the stored document no longer parses'))
+  }
+
+  override deleteRecord(): Promise<void> {
+    return Promise.reject(new Error('cannot delete locked store'))
   }
 }
 
@@ -48,6 +60,8 @@ describe('the credentials Remote namespace a configuration surface calls', () =>
       { method: 'describe', invocation: { kind: 'direct' } },
       { method: 'set', invocation: { kind: 'direct' } },
       { method: 'unset', invocation: { kind: 'direct' } },
+      { method: 'describeRecords', invocation: { kind: 'direct' } },
+      { method: 'deleteRecord', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -58,6 +72,8 @@ describe('the credentials Remote namespace a configuration surface calls', () =>
       () => ctx.credentialsController.describe(['DEEPSEEK_API_KEY']),
       () => ctx.credentialsController.set('DEEPSEEK_API_KEY', 'sk-live'),
       () => ctx.credentialsController.unset('DEEPSEEK_API_KEY'),
+      () => ctx.credentialsController.describeRecords(['llm-pi-ai/openai']),
+      () => ctx.credentialsController.deleteRecord('llm-pi-ai/openai'),
     ]) {
       const failure = await call().catch((error: unknown) => error)
       expect(remoteErrorOf(failure)).toMatchObject({
@@ -135,5 +151,83 @@ describe('the credentials Remote namespace a configuration surface calls', () =>
     const controller = await boot({}, LiteralRejectingCredentials)
     const failure = await controller.set('DEEPSEEK_API_KEY', 'sk-live').catch((error: unknown) => error)
     expect(remoteErrorOf(failure)?.message).toBe('the store refused')
+  })
+
+  it('describes a batch of records with strict field projection and no payload leakage', async () => {
+    const ctx = new Context()
+    await ctx.plugin(MemoryCredentials)
+    await ctx.plugin(CredentialsController)
+    const storedKey: CredentialKey = credentialKey('llm-pi-ai', 'openai')
+    await ctx.credentials.modifyRecord(storedKey, () =>
+      Promise.resolve({ kind: 'grant', payload: { access: 'secret-access-token' } }))
+
+    const described = await ctx.credentialsController.describeRecords(['llm-pi-ai/openai', 'llm-pi-ai/anthropic'])
+    expect(described).toEqual({
+      'llm-pi-ai/openai': { configured: true, kind: 'grant', writable: true },
+      'llm-pi-ai/anthropic': { configured: false, writable: true },
+    })
+    expect(JSON.stringify(described)).not.toContain('secret-access-token')
+
+    const leaky = await boot({}, LeakyCredentials)
+    const leakyDescribed = await leaky.describeRecords(['llm-pi-ai/openai'])
+    expect(leakyDescribed['llm-pi-ai/openai']).toEqual({ configured: true, kind: 'grant', writable: true })
+    expect(JSON.stringify(leakyDescribed)).not.toContain('leaked-record-token')
+  })
+
+  it('rejects invalid record keys or oversized batches in describeRecords and deleteRecord', async () => {
+    const controller = await boot()
+    for (const call of [
+      () => controller.describeRecords(['llm-pi-ai/openai', 'invalid-key']),
+      () => controller.describeRecords(['BadScope/openai']),
+      () => controller.deleteRecord('not-a-key'),
+    ]) {
+      const failure = await call().catch((error: unknown) => error)
+      expect(remoteErrorOf(failure)).toMatchObject({ code: 'gateway/bad-request' })
+    }
+
+    const accepted = Array.from({ length: 64 }, (_unused, index) => `scope/id-${String(index)}`)
+    expect(Object.keys(await controller.describeRecords(accepted))).toHaveLength(64)
+    const oversized = await controller.describeRecords([...accepted, 'scope/id-64']).catch((error: unknown) => error)
+    expect(remoteErrorOf(oversized)).toMatchObject({ code: 'gateway/bad-request' })
+  })
+
+  it('deletes records directly when authorization is absent and via revoke when authorization is mounted', async () => {
+    const ctxNoAuth = new Context()
+    await ctxNoAuth.plugin(MemoryCredentials)
+    await ctxNoAuth.plugin(CredentialsController)
+    const key = credentialKey('llm-pi-ai', 'openai')
+    await ctxNoAuth.credentials.modifyRecord(key, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 't1' } }))
+
+    await ctxNoAuth.credentialsController.deleteRecord('llm-pi-ai/openai')
+    expect(await ctxNoAuth.credentials.readRecord(key)).toBeUndefined()
+
+    const ctxWithAuth = new Context()
+    await ctxWithAuth.plugin(MemoryCredentials)
+    await ctxWithAuth.plugin(AuthorizationService)
+    await ctxWithAuth.plugin(CredentialsController)
+    await ctxWithAuth.credentials.modifyRecord(key, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 't2' } }))
+    const revokeHook = vi.fn().mockResolvedValue(undefined)
+    ctxWithAuth.authorization.registerFlow({
+      key,
+      label: 'ChatGPT',
+      methods: [{ id: 'oauth', label: 'Sign in with ChatGPT' }],
+      run: () => Promise.resolve(),
+      revoke: revokeHook,
+    })
+
+    await ctxWithAuth.credentialsController.deleteRecord('llm-pi-ai/openai')
+    expect(revokeHook).toHaveBeenCalledTimes(1)
+    expect(await ctxWithAuth.credentials.readRecord(key)).toBeUndefined()
+  })
+
+  it('reports a refused deleteRecord as credential/rejected naming only the key', async () => {
+    const controller = await boot({}, RejectingCredentials)
+    const failure = await controller.deleteRecord('llm-pi-ai/openai').catch((error: unknown) => error)
+    const { code, message, details } = remoteErrorOf(failure) ?? {}
+    expect(code).toBe('credential/rejected')
+    expect(message).toContain('cannot delete locked store')
+    expect(details).toEqual({ key: 'llm-pi-ai/openai' })
   })
 })

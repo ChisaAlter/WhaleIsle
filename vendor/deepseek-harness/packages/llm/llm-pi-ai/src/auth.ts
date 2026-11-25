@@ -8,6 +8,7 @@
  * @module dsh-llm-pi-ai/auth
  */
 
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { access } from 'node:fs/promises'
 import { resolve as resolvePath } from 'node:path'
@@ -29,12 +30,49 @@ import { LlmError } from '@deepseek-ai/dsh-llm'
 export const RECORD_SCOPE = 'llm-pi-ai'
 
 /**
+ * Separate scope for non-credential plugin metadata so `credentialStoreFrom(ctx).list()`
+ * never surfaces installation metadata as a configured provider credential.
+ */
+export const DEVICE_ID_KEY = credentialKey('llm-pi-ai-meta', 'device-id')
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
  * The record address for one pi-ai provider id.
  * @param providerId - pi-ai's own provider id, which is also the harness route key.
  * @returns the scoped credential key this adapter family reads and writes.
  */
 export function recordKeyFor(providerId: string): CredentialKey {
   return credentialKey(RECORD_SCOPE, providerId)
+}
+
+/**
+ * Return the installation's stable UUID for Sign in with ChatGPT
+ * (`ext_agent_host_id`), creating and persisting it on first use under
+ * {@link DEVICE_ID_KEY}.
+ * @param ctx - the plugin context carrying `ctx.credentials`.
+ * @returns the stable UUID string.
+ */
+export async function getOrCreateDeviceId(ctx: Context): Promise<string> {
+  let resolvedId = ''
+  await writableStore(ctx).modifyRecord(DEVICE_ID_KEY, (current) => {
+    if (
+      current?.kind === 'grant'
+      && typeof current.payload === 'object'
+      && current.payload !== null
+      && !Array.isArray(current.payload)
+    ) {
+      const existing = (current.payload as Record<string, unknown>)['deviceId']
+      if (typeof existing === 'string' && UUID_PATTERN.test(existing)) {
+        resolvedId = existing
+        return Promise.resolve(undefined)
+      }
+    }
+    const deviceId = randomUUID()
+    resolvedId = deviceId
+    return Promise.resolve({ kind: 'grant', payload: { deviceId } })
+  })
+  return resolvedId
 }
 
 /**
