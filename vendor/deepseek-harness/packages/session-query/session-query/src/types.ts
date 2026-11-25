@@ -14,11 +14,45 @@ import type {
   SessionSeq,
   OptionalSessionSeq,
   SurfaceEvent,
-} from '@deepseek-ai/dsh-session'
-import type { SessionTitleSnapshot } from '@deepseek-ai/dsh-session-title'
+} from '@deepseek-ai/dsh-session/types'
+import type { SessionTitleSnapshot } from '@deepseek-ai/dsh-session-title/types'
 import type { SessionSearchCursor } from './cursor.ts'
 
 export type { SessionSearchCursor } from './cursor.ts'
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap {
+    /** Persisted facts used to summarize a Session without activating it. */
+    sessionListMetadata: SessionListMetadata
+  }
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Log-only navigation metadata; never enters model history or changes permissions. */
+    'session/presentation': SessionPresentation | null
+  }
+}
+
+/** Plugin-owned conversation presentation, not an execution authority. */
+export interface SessionPresentation {
+  readonly owner: string
+  readonly title: string
+  /** User-facing file navigation root; does not change the Agent cwd or grant filesystem access. */
+  readonly workingDirectory?: string | undefined
+  /** Selects the shared composer with plugin-owned trailing controls. */
+  readonly composer?: 'managed' | undefined
+}
+
+/** Persisted hints used to summarize a cold Session. */
+export interface SessionListMetadata {
+  /** Whether the folded prefix contains no turn. */
+  readonly blank: boolean
+  /** Latest human-authored prompt time in the folded prefix. */
+  readonly lastPromptAt: number | null
+  /** Persistent plugin navigation owner, absent for ordinary conversations. */
+  readonly presentation?: SessionPresentation | undefined
+}
 
 /** Whether an event is current model context, replaced context, or raw-log-only. */
 export type SessionEventSurface = 'current' | 'shadowed' | 'log-only'

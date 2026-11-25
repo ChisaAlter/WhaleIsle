@@ -14,6 +14,14 @@ const runtime = path.resolve(arg('--runtime-root') ?? path.join(root, 'vendor/de
 const output = path.resolve(arg('--output') ?? path.join(root, 'work/whale-big-fish-qa'));
 const cli = createRequire(path.join(runtime, 'apps/cli/package.json'));
 const load = name => import(pathToFileURL(cli.resolve(name)).href);
+/** @param {any} ctx @param {number} port */
+function resolveQaEntryUrl(ctx, port) {
+  const baseUrl = `http://127.0.0.1:${port}/`;
+  /** @type {Array<{ url?: string, open?: boolean }>} */
+  const entryUrls = [];
+  ctx.emit(ctx.webServer, 'webserver/entry-url', baseUrl, entryUrls);
+  return entryUrls.find((entry) => entry?.open)?.url ?? entryUrls[0]?.url ?? baseUrl;
+}
 await withOwnedTempDir('whale-big-fish-qa-', async (home) => {
 const priorHome = process.env.DSH_HOME, priorTelemetry = process.env.DSH_TELEMETRY_DISABLED;
 process.env.DSH_HOME = home; process.env.DSH_TELEMETRY_DISABLED = '1';
@@ -72,7 +80,7 @@ try {
     }
   }
   app.ctx.llm.registerAdapter(['scripted'], new Scripted());
-  const url = app.ctx.connection.authenticatedUrl(`http://127.0.0.1:${port}/`);
+  const url = resolveQaEntryUrl(app.ctx, port);
   console.log(`QA_URL=${url}\nQA_HOME=${home}`);
   // --serve is useful for inspecting the same candidate, with cleanup on Ctrl+C.
   if (process.argv.includes('--serve')) await new Promise(resolve => { process.once('SIGINT', resolve); process.once('SIGTERM', resolve); });
@@ -113,8 +121,6 @@ try {
 
     await page.locator('#dshpad-ball').click();
     await page.getByText('今日工作台', { exact: true }).waitFor();
-    await page.getByText('这张面板要在本机运行以下数据源：', { exact: true }).waitFor();
-    await page.getByRole('button', { name: '允许运行', exact: true }).click();
     await page.locator('.dshpad-root iframe').waitFor();
     const frame = page.frameLocator('.dshpad-root iframe');
     await frame.getByText('已授权读数：42', { exact: true }).waitFor();

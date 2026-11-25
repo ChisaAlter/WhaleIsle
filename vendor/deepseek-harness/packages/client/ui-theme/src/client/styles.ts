@@ -1,42 +1,25 @@
+/** Theme CSS is compiled into module resources; DPR presentation follows the plugin lifetime. */
 import type { Context } from '@deepseek-ai/cordis'
-import base from '../styles/base.css?inline'
-import motion from '../styles/motion.css?inline'
-import minimal from '../styles/minimal.css?inline'
-import cornerShape from '../styles/corner-shape.css?inline'
-import designPlatform from '../styles/design-platform.css?inline'
-import skins from '../styles/skins.css?inline'
-import focus from '../styles/focus.css?inline'
-import onboarding from '../styles/onboarding.css?inline'
-import wallpaper from '../styles/wallpaper.css?inline'
-import scrollbar from '../styles/scrollbar.css?inline'
-import gradientShadowText from '../styles/gradient-shadow-text.css?inline'
-import metallicPaint from '../styles/metallic-paint.css?inline'
-import shiki from '../styles/shiki.css?inline'
-
-const PLUGIN_ID = '@deepseek-ai/dsh-client-ui-theme'
-const HAIRLINE_WIDTH = '--dsh-hairline-width'
-
 // motion.css follows base.css (it reads that sheet's duration and easing
 // tokens); wallpaper.css follows the token sheets so chrome can mix those
 // fills; scrollbar.css follows design-platform.css (it reads its tokens).
-const STYLES = [
-  ['base.css', base],
-  ['motion.css', motion],
-  ['corner-shape.css', cornerShape],
-  ['design-platform.css', designPlatform],
-  ['skins.css', skins],
-  ['focus.css', focus],
-  ['onboarding.css', onboarding],
-  ['wallpaper.css', wallpaper],
-  ['scrollbar.css', scrollbar],
-  ['gradient-shadow-text.css', gradientShadowText],
-  ['metallic-paint.css', metallicPaint],
-  ['shiki.css', shiki],
-  ['minimal.css', minimal],
-] as const
+import '../styles/base.css'
+import '../styles/motion.css'
+import '../styles/corner-shape.css'
+import '../styles/design-platform.css'
+import '../styles/skins.css'
+import '../styles/focus.css'
+import '../styles/onboarding.css'
+import '../styles/wallpaper.css'
+import '../styles/scrollbar.css'
+import '../styles/gradient-shadow-text.css'
+import '../styles/metallic-paint.css'
+import '../styles/shiki.css'
+import '../styles/minimal.css'
 
+const HAIRLINE_WIDTH = '--dsh-hairline-width'
 /**
- * Mount global theme sheets; window-backed documents also publish the DPR-aware stroke width.
+ * Publish the current document's DPR-aware stroke width for the theme plugin lifetime.
  * @param ctx - Owning plugin context.
  */
 export function installThemeStyles(ctx: Context): void {
@@ -64,14 +47,4 @@ export function installThemeStyles(ctx: Context): void {
       else root.style.setProperty(HAIRLINE_WIDTH, previousWidth, previousPriority)
     }
   }, 'ui-theme: DPR-aware hairline width')
-  for (const [name, css] of STYLES) {
-    ctx.effect(() => {
-      const tag = document.createElement('style')
-      tag.dataset.plugin = PLUGIN_ID
-      tag.dataset.pluginCss = `${PLUGIN_ID}/${name}`
-      tag.textContent = css
-      document.head.appendChild(tag)
-      return () => { tag.remove() }
-    }, `ui-theme: ${name} stylesheet`)
-  }
 }

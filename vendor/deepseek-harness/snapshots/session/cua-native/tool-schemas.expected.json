@@ -234,9 +234,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -293,9 +292,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "includeMenus": {
                     "description": "Expand menu contents; omitted or false shows menu-bar entries only.",
@@ -345,9 +343,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "snapshotId": {
                     "type": "string",
@@ -378,6 +375,33 @@
             "properties": {
               "method": {
                 "type": "string",
+                "const": "getActionSchema"
+              },
+              "params": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "method",
+              "params"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
                 "const": "performAction"
               },
               "params": {
@@ -388,9 +412,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "snapshotId": {
                     "type": "string",
@@ -439,9 +462,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "snapshotId": {
                     "type": "string",
@@ -472,6 +494,59 @@
             "properties": {
               "method": {
                 "type": "string",
+                "const": "toggleMouse"
+              },
+              "params": {
+                "type": "object",
+                "properties": {
+                  "appHandle": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "windowId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mouseButton": {
+                    "type": "string",
+                    "enum": [
+                      "left",
+                      "right",
+                      "middle"
+                    ]
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "down",
+                      "up"
+                    ]
+                  },
+                  "useSystemInput": {
+                    "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "appHandle",
+                  "windowId",
+                  "mouseButton",
+                  "direction"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "method",
+              "params"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
                 "const": "mouseMove"
               },
               "params": {
@@ -484,9 +559,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -497,8 +571,8 @@
                         "minLength": 1,
                         "description": "Opaque string defined by the platform provider, valid for at least the lifetime of one snapshot."
                       },
-                      "useSystemPointer": {
-                        "description": "Request use of the system pointer. The Host checks permission before dispatch.",
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
                         "type": "boolean"
                       }
                     },
@@ -517,9 +591,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -538,8 +611,8 @@
                         "type": "boolean",
                         "const": false
                       },
-                      "useSystemPointer": {
-                        "description": "Request use of the system pointer. The Host checks permission before dispatch.",
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
                         "type": "boolean"
                       }
                     },
@@ -559,9 +632,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -582,8 +654,8 @@
                         "const": true,
                         "description": "Use integer thousandths of the window width and height, from 0 to 999."
                       },
-                      "useSystemPointer": {
-                        "description": "Request use of the system pointer. The Host checks permission before dispatch.",
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
                         "type": "boolean"
                       }
                     },
@@ -622,9 +694,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -650,8 +721,11 @@
                           "enum": [
                             "command",
                             "control",
+                            "ctrl",
                             "option",
+                            "alt",
                             "shift",
+                            "win",
                             "fn"
                           ]
                         }
@@ -673,6 +747,10 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
+                      },
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -690,9 +768,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -726,8 +803,11 @@
                           "enum": [
                             "command",
                             "control",
+                            "ctrl",
                             "option",
+                            "alt",
                             "shift",
+                            "win",
                             "fn"
                           ]
                         }
@@ -749,6 +829,10 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
+                      },
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -767,9 +851,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -805,8 +888,11 @@
                           "enum": [
                             "command",
                             "control",
+                            "ctrl",
                             "option",
+                            "alt",
                             "shift",
+                            "win",
                             "fn"
                           ]
                         }
@@ -828,6 +914,10 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
+                      },
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -863,9 +953,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "snapshotId": {
                     "type": "string",
@@ -910,9 +999,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "snapshotId": {
                     "type": "string",
@@ -972,9 +1060,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "text": {
                     "type": "string"
@@ -1008,9 +1095,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "text": {
                     "type": "string"
@@ -1050,10 +1136,13 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "useSystemInput": {
+                    "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                    "type": "boolean"
+                  },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "key": {
                     "type": "string",
@@ -1093,10 +1182,13 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "useSystemInput": {
+                    "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                    "type": "boolean"
+                  },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   },
                   "key": {
                     "type": "string",
@@ -1141,9 +1233,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -1191,9 +1282,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "snapshotId": {
                         "type": "string",
@@ -1262,9 +1352,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "mouseButton": {
                         "type": "string",
@@ -1281,8 +1370,11 @@
                           "enum": [
                             "command",
                             "control",
+                            "ctrl",
                             "option",
+                            "alt",
                             "shift",
+                            "win",
                             "fn"
                           ]
                         }
@@ -1310,6 +1402,10 @@
                       "toY": {
                         "type": "number",
                         "minimum": 0
+                      },
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -1330,9 +1426,8 @@
                         "minLength": 1
                       },
                       "windowId": {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 4294967295
+                        "type": "string",
+                        "minLength": 1
                       },
                       "mouseButton": {
                         "type": "string",
@@ -1349,8 +1444,11 @@
                           "enum": [
                             "command",
                             "control",
+                            "ctrl",
                             "option",
+                            "alt",
                             "shift",
+                            "win",
                             "fn"
                           ]
                         }
@@ -1383,6 +1481,10 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 999
+                      },
+                      "useSystemInput": {
+                        "description": "True sends system keyboard or mouse input and presses any requested keyboard modifiers. Omitted or false uses the provider default.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -1420,9 +1522,8 @@
                     "minLength": 1
                   },
                   "windowId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 4294967295
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -1623,7 +1724,7 @@
     },
     {
       "name": "list_agents",
-      "description": "List your entire subagent tree: the root agent and all reachable continuable descendants, including yourself. Rows carry names, descriptions, and status. A descendant's name is its path from the root, such as reviewer/checker. You can message any other agent in the subagent tree. running means it is working; inactive means no turn is executing; it does not indicate task completion, success, or failure. corrupt, unsupported, or unavailable means this row's own descendants could not be read; the row itself is still a member you can message. While you remain active, you will be notified when a direct child finishes; there is no need to keep checking its status. Use send_message to continue the conversation.",
+      "description": "List your entire subagent tree: the root agent and all reachable continuable descendants, including yourself. Shared capacity reports running/limit; do not spawn more agents when capacity is limited. Rows carry names, descriptions, and status. A descendant's name is its path from the root, such as reviewer/checker. You can message any other agent in the subagent tree. running means it is working; inactive means no turn is executing; it does not indicate task completion, success, or failure. corrupt, unsupported, or unavailable means this row's own descendants could not be read; the row itself is still a member you can message. While you remain active, you will be notified when a direct child finishes; there is no need to keep checking its status. Use send_message to continue the conversation.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -1712,10 +1813,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "cwd": {
-            "type": "string",
-            "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-          },
           "description": {
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -1741,10 +1838,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "cwd": {
-            "type": "string",
-            "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-          },
           "description": {
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -1972,19 +2065,6 @@
           "script",
           "meta"
         ]
-      }
-    },
-    {
-      "name": "working_directory",
-      "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "cd": {
-            "type": "string",
-            "description": "Existing directory to enter. Omit to read the current directory."
-          }
-        }
       }
     },
     {

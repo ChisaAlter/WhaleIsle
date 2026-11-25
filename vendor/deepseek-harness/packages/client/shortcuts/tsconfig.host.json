@@ -13,7 +13,7 @@
     "src/persistence.ts",
     "src/policy.ts",
     "src/index.ts",
-    "src/config.ts"
+    "src/types.ts"
   ],
   "references": [
     {
@@ -27,9 +27,6 @@
     },
     {
       "path": "../../../vendor/cordis"
-    },
-    {
-      "path": "../../host/webserver"
     },
     {
       "path": "../../util/values"

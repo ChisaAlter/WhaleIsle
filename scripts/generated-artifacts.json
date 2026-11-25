@@ -84,8 +84,8 @@
           "src/renderer/assets/welcome-brand.svg",
           "src/renderer/assets/window-material.css"
         ],
-        "sourceHash": "7d6033d5bfe2637520743059965ec0508a4a740563d5e458fd4b24656c00473c",
-        "artifactHash": "04a8d16708801c2b862592a20e42cf6719945c0eff06015040012f54e65ce9bd"
+        "sourceHash": "f087d01416a68d7539d5db016148ac0b30b1da811f96a214c1016b76dda5b43d",
+        "artifactHash": "b267dbf316e3b254d48037b025e530d32006922627b15ade110509a50111517e"
       }
     },
     "dsh-acp/lib/vendor": {
@@ -104,8 +104,8 @@
         "artifacts": [
           "dsh-acp/lib/vendor"
         ],
-        "sourceHash": "9dd4d21926996ba7036da9893afc77bbecb15e5e1181aacc86908dcff30accc0",
-        "artifactHash": "26438dc8e6c751f87fe9eea81c247e75d5fd7a15558320e000946fc499271bde",
+        "sourceHash": "1c00725b83003aceb96fafb120a006e856deb00fa237553b26febd63114688be",
+        "artifactHash": "e64fd26ad25025675251b173567bd0bb6bb45ad191374a4d466a7ce634dff180",
         "recordCommands": [
           [
             "dsh-acp/tools/runtime-build/build.mjs"

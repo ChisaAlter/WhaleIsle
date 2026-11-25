@@ -6,7 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
+import { sessionDirectory } from '@deepseek-ai/dsh-api-session-controller/client/directories'
 import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { GroupKey } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -114,25 +114,42 @@ export function apply(ctx: Context): void {
       // replacement or paging never does, because an old failure scrolling
       // back into view is not news.
       const dispose = binding.ctx.effect(() => {
-        const stop = binding.eventSource.subscribe(() => {
-          const { change } = binding.eventSource.getSnapshot()
-          if (change.kind !== 'append') return
-          for (const { event } of change.entries) {
-            if (event.type === 'user/message' && event.data.source.kind === 'user' && 'edit' in event.data.source) {
-              const notice = quotaNotice.getSnapshot()
-              if (notice?.sessionId === binding.sessionId && notice.turn === event.data.source.edit.turn) {
-                quotaNoticeHolds.clear()
-                quotaNotice.set(null)
-              }
-            }
-            if (event.type !== 'turn/end' || event.data.reason.kind !== 'error') continue
-            const { code } = event.data.reason.error
-            if (quotaNoticeHolds.size > 0 || (code !== 'QUOTA' && code !== 'ACCOUNT_QUOTA')) continue
-            quotaNotice.set({ code, seq: ++quotaNoticeSeq, sessionId: binding.sessionId, turn: event.data.turn })
+        // Live quota failures are reported only while a rendering reference retains the Session's Conversation.
+        const retainInfo = ctx.sessions.retainInfo(binding.sessionId)
+        const retained = (): boolean => ctx.sessions.binding(binding.sessionId) === binding
+          && (retainInfo.getSnapshot().retainedFacets?.conversation ?? 0) > 0
+        let stopEvents: (() => void) | undefined
+        const follow = (): void => {
+          if (!retained()) {
+            stopEvents?.()
+            stopEvents = undefined
+            return
           }
-        })
+          stopEvents ??= binding.eventSource.subscribe(() => {
+            // A dispatch in progress keeps calling copied listeners after unsubscription.
+            if (!retained()) return
+            const { change } = binding.eventSource.getSnapshot()
+            if (change.kind !== 'append') return
+            for (const { event } of change.entries) {
+              if (event.type === 'user/message' && event.data.source.kind === 'user' && 'edit' in event.data.source) {
+                const notice = quotaNotice.getSnapshot()
+                if (notice?.sessionId === binding.sessionId && notice.turn === event.data.source.edit.turn) {
+                  quotaNoticeHolds.clear()
+                  quotaNotice.set(null)
+                }
+              }
+              if (event.type !== 'turn/end' || event.data.reason.kind !== 'error') continue
+              const { code } = event.data.reason.error
+              if (quotaNoticeHolds.size > 0 || (code !== 'QUOTA' && code !== 'ACCOUNT_QUOTA')) continue
+              quotaNotice.set({ code, seq: ++quotaNoticeSeq, sessionId: binding.sessionId, turn: event.data.turn })
+            }
+          })
+        }
+        const stopRetained = retainInfo.subscribe(follow)
+        follow()
         return () => {
-          stop()
+          stopRetained()
+          stopEvents?.()
           chatSources.delete(binding)
           quotaSubscriptions.delete(dispose)
         }
@@ -262,6 +279,7 @@ export function apply(ctx: Context): void {
         'conversation.image.preview': { kind: 'single', scope: 'session' },
         'conversation.chat.text-interaction': { kind: 'keyed', scope: 'session' },
         'conversation.chat.markdown.fence': { kind: 'hoc', scope: 'session' },
+        'conversation.chat.aside': { kind: 'single', scope: 'session' },
       },
       store: chatStore,
       inject: (sessionId: SessionId): ChatViewInjected => {
@@ -276,17 +294,16 @@ export function apply(ctx: Context): void {
           dispatchInteraction: gesture => ctx.uiConversation.interactions.dispatch(sessionId, gesture),
           // Every chat file open funnels through the shared `workspaces.openPath`
           // seam, so the desktop surfaces intercept (Files tab, Browser for
-          // html/pdf) sees tool rows and mentions alike. A relative path resolves
-          // from the Session's working directory at click time, which a directory
-          // change can move away from the workspace root, and a line travels as an
-          // option so the opened file can reveal it.
+          // html/pdf, mini player, Office preview) sees tool rows and mentions
+          // alike. A relative path resolves from the Session's current directory
+          // at click time via `sessionDirectory`, and a line travels as an option
+          // so the opened file can reveal it.
           openFile: async (path, options) => {
-            const cwd = sessionWorkingDirectory(ctx.sessions.list.getSnapshot().byId[sessionId])
-            const current = session.projections.faceOf('workingDirectory').getSnapshot() as string | null | undefined
+            const directory = sessionDirectory(ctx.sessions, sessionId)
             const workspaces = ctx.workspaces as IWorkspaces & WorkspacePathOpener
             const openPath = workspaces.openPath
             if (typeof openPath !== 'function') throw new Error('workspace path opener is unavailable')
-            await openPath.call(workspaces, resolveWorkspacePath(current ?? cwd, path), {
+            await openPath.call(workspaces, resolveWorkspacePath(directory, path), {
               ...options,
               sessionId,
             })

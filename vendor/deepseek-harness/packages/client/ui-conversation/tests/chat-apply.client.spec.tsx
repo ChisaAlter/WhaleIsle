@@ -50,7 +50,10 @@ async function bench() {
     'settings.usage.item': { kind: 'list', scope: 'root' },
   }, (_p: { renderSlot?: unknown }) => null)
 
-  const feature = await runtime.mount({ inject: [...inject], apply })
+  const feature = await runtime.mount(
+    { inject: [...inject], apply },
+    { maxConcurrentFileUploads: createSnapshotStore<number | undefined>(2) },
+  )
   return { runtime, feature, slots: runtime.slots }
 }
 

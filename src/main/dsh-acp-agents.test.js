@@ -331,6 +331,11 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
           return () => routes.delete(spec.path);
         },
       },
+      connection: {
+        requestRejection() {
+          return undefined;
+        },
+      },
       approval: {
         policyOf() { return 'ask'; },
         async request(req) {

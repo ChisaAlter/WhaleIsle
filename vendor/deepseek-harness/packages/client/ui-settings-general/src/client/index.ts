@@ -55,6 +55,7 @@ import { PetSection, type PetSectionInjected } from './PetSection.tsx'
 import { AboutSection, type AboutSectionInjected } from './AboutSection.tsx'
 import { HarnessRestartRow } from './HarnessRestartRow.tsx'
 import { canPersistCloseBehavior, desktopShell } from './desktop-shell.ts'
+import { SettingsSectionView } from './SettingsSectionView.tsx'
 import { CurrentVersionRow } from './CurrentVersionRow.tsx'
 import { DeveloperToolsRow, type DeveloperToolsRowInjected } from './DeveloperToolsRow.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
@@ -355,11 +356,11 @@ export function apply(ctx: ClientContext): void {
         store: shellStore,
         children: {
           'settings.launcher': { kind: 'single', scope: 'root' },
+          'settings.notice': { kind: 'single', scope: 'root' },
           'settings.trigger': { kind: 'single', scope: 'root' },
           'settings.header': { kind: 'single', scope: 'root' },
           'settings.action': { kind: 'list', scope: 'root' },
           'settings.close': { kind: 'single', scope: 'root' },
-          'settings.section': { kind: 'list', scope: 'root' },
           'settings.section.icon': { kind: 'list', scope: 'root', inline: true },
           'settings.onboarding': { kind: 'list', scope: 'root' },
         },
@@ -383,6 +384,11 @@ export function apply(ctx: ClientContext): void {
   }
   ctx.slots.inject('settings.close', () =>
     ctx.slots.register({ name: 'settings.close', locale: NS }, CloseLabel))
+  // Every surface that shows a settings page renders it through this Factory, which declares `settings.section`.
+  ctx.slots.registerFactory({
+    name: 'settings.section.view', scope: 'root',
+    children: { 'settings.section': { kind: 'list', scope: 'root' } },
+  }, SettingsSectionView)
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'general',

@@ -21,6 +21,7 @@ import { BrowserLogin } from './browser-login.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountPlatformHost, type AccountPlatformHostInjected } from './AccountPlatformHost.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
+import { AccountNotices } from './AccountNotices.tsx'
 import { createPlatformPages, type PlatformPages } from './platform-pages.ts'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected, type AccountLauncherActionRow } from './AccountSection.tsx'
 import { accountClientMetadata } from './client-metadata.ts'
@@ -360,8 +361,12 @@ export function apply(ctx: Context): void {
   }
   ctx.remoteAccess.whenAccess('account/watch', () => ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', locale: 'settings.account', inject: () => operations,
-    children: { 'settings.launcher.action': { kind: 'list', scope: 'root' }, 'settings.launcher.notifications': { kind: 'single', scope: 'root' } },
+    children: { 'settings.launcher.action': { kind: 'list', scope: 'root' } },
   }, AccountMenu)))
+  ctx.remoteAccess.whenAccess('account/watch', () => ctx.slots.inject('settings.notice', () => ctx.slots.register({
+    name: 'settings.notice', inject: () => operations,
+    children: { 'settings.launcher.notifications': { kind: 'single', scope: 'root' } },
+  }, AccountNotices)))
   ctx.remoteAccess.whenAccess('account/watch', () => ctx.slots.inject('settings.section', () => {
     let unregister: (() => void) | undefined
     const update = () => {

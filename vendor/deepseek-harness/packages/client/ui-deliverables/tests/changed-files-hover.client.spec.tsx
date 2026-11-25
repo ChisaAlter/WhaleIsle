@@ -4,18 +4,19 @@ import { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ChangedFiles } from '../src/client/ChangedFiles.tsx'
 import { ChangesDiffStore } from '../src/client/changes-diff.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import { renderFileActions } from './file-actions.tsx'
 import { changesDiffUrl } from '../src/changes.ts'
 import { en } from '../src/client/locales.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
-const sessionId = SessionId('hover-session')
+const sessionId = brandString<SessionId>('hover-session')
 const files = ['main.ts', 'second.ts'].map(path => ({ path, display: path, added: 1, deleted: 1 }))
 
 function mount(fileCount = 2) {
@@ -24,10 +25,10 @@ function mount(fileCount = 2) {
   const openReview = vi.fn()
   const subscribe = diffs.state.subscribe.bind(diffs.state)
   const getSnapshot = diffs.state.getSnapshot.bind(diffs.state)
-  const changes = { seq: 5, files: files.slice(0, fileCount), total: fileCount, added: fileCount, deleted: fileCount }
+  const changes = { seq: 5, cwd: '/workspace', files: files.slice(0, fileCount), total: fileCount, added: fileCount, deleted: fileCount }
   const opener = new PresentedOpenController()
   const view = render(<ChangedFiles changes={changes}
-    cwd="/workspace" sessionId={sessionId} t={makeTranslate(en)} openReview={openReview}
+    sessionId={sessionId} t={makeTranslate(en)} openReview={openReview}
     loadChangesDiff={loadChangesDiff}
     usePresentedOpen={select => select(opener.state.getSnapshot())}
     usePresentedHost={select => select(opener.host.getSnapshot())}

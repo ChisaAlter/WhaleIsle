@@ -40,7 +40,7 @@ export function configureRuntimeHost(ctx) {
         hostContext = null;
       }
     });
-    lifecycleChain = disposal.catch(() => {});
+    lifecycleChain = disposal.catch(() => { /* Keep shared lifecycle chain settled even if a prior disposal failed. */ });
     return disposal;
   };
 }
@@ -64,7 +64,7 @@ function hostPtyAdapter() {
     try: async () => {
       const terminal = await subprocess.spawnTerminal({ argv: [input.shell, ...(input.args || [])], cwd: input.cwd,
         env: input.env, cols: input.cols, rows: input.rows, terminalType: 'xterm-256color', graceMs: 5000 });
-      const safeTerminate = () => Promise.resolve().then(() => terminal.terminate()).catch(() => {});
+      const safeTerminate = () => Promise.resolve().then(() => terminal.terminate()).catch(() => { /* Subprocess may already have exited; ignore best-effort terminate error. */ });
       return {
         pid: terminal.pid,
         write: (data) => { void Promise.resolve().then(() => terminal.write(data)).catch(safeTerminate); },

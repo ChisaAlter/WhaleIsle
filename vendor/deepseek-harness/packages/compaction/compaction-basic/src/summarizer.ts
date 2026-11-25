@@ -15,7 +15,7 @@ import {
 import { estimateContent, estimateMessage, estimateToolsTokens, ROLE_OVERHEAD } from '@deepseek-ai/dsh-token-meter/estimate'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
-  ContentBlock, FinishReason, GenerateOptions, LlmCallConfig, Message, RequestMessage, TokenUsage, ToolSchema,
+  ContentBlock, FinishReason, GenerateOptions, Message, RequestMessage, TokenUsage, ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
@@ -54,6 +54,9 @@ interface SummaryConfig {
   readonly summarizationModel: string
   readonly maxTokens: number
 }
+
+/** Exact provider/model pair that receives one summarization request. */
+export type SummaryRoute = Pick<GenerateOptions, 'provider' | 'model'>
 
 /** Tags wrapping the structured summary inside the landed checkpoint node. */
 const SUMMARY_OPEN_TAG = '<compacted-summary>'
@@ -143,18 +146,6 @@ export type SummaryResult = {
   }
 )
 
-/**
- * Run the default cache-reusing `ctx.llm.stream()` summarization call: replay
- * the conversation prefix, then append the compaction instruction as the final
- * user message so the provider's warm prefix cache is reused.
- * @param ctx - context providing the LLM service.
- * @param config - resolved backend configuration.
- * @param input - replayed conversation prefix (system, tools, and leading messages) to condense.
- * @param agent - supplies routed-model history, fallback model, and session id.
- * @param signal - optional cancellation forwarded to the adapter.
- * @param overrideTarget - optional fallback provider/model when the routed model is unavailable.
- * @returns safe text-only summary blocks and the exact call envelope and output.
- */
 function trimText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
   const half = Math.max(32, Math.floor((maxChars - 40) / 2))
@@ -418,25 +409,32 @@ async function summarizeInChunks(
   }
 }
 
+/**
+ * Run the default cache-reusing `ctx.llm.stream()` summarization call: replay
+ * the conversation prefix, then append the compaction instruction as the final
+ * user message so the provider's warm prefix cache is reused.
+ * @param ctx - context providing the LLM service.
+ * @param config - resolved backend configuration.
+ * @param input - replayed conversation prefix (system, tools, and leading messages) to condense.
+ * @param agent - supplies tool history and session id.
+ * @param conversation - route used when `config` names no summary target; `undefined` when the conversation has none.
+ * @param signal - optional cancellation forwarded to the adapter.
+ * @param overrideTarget - optional fallback provider/model when the routed model is unavailable.
+ * @returns safe text-only summary blocks and the exact call envelope and output.
+ */
 export async function summarizeWithLlm(
   ctx: Context,
   config: SummaryConfig,
   input: SummarizationInput,
   agent: Agent,
+  conversation: SummaryRoute | undefined,
   signal?: AbortSignal,
-  overrideTarget?: Pick<LlmCallConfig, 'provider' | 'model'>,
+  overrideTarget?: SummaryRoute,
 ): Promise<SummaryResult> {
-  const latest = agent.session.requestHeader()?.config
   const configured = config.summarizationProvider.length === 0
     ? undefined
     : { provider: config.summarizationProvider, model: config.summarizationModel }
-  const agentTarget = agent.options.provider !== undefined
-    && agent.options.provider.length > 0
-    && agent.options.model !== undefined
-    && agent.options.model.length > 0
-    ? { provider: agent.options.provider, model: agent.options.model }
-    : undefined
-  const target = configured ?? overrideTarget ?? latest ?? agentTarget
+  const target = configured ?? overrideTarget ?? conversation
   if (target === undefined) {
     throw new Error(
       'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',

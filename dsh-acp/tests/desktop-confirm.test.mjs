@@ -88,38 +88,36 @@ test('confirmModelAction and showDesktopSecret fail closed on decline, HTTP erro
   let mode = 'allow';
   let lastRequest = null;
   let holdResponse = null;
-  const srv = await startServer((req, res) => {
+  const srv = await startServer(async (req, res) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      lastRequest = {
-        method: req.method,
-        url: req.url,
-        auth: req.headers.authorization,
-        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
-      };
-      if (mode === 'allow') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
-      } else if (mode === 'decline') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{"ok":false}');
-      } else if (mode === 'http401') {
-        res.writeHead(401, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
-      } else if (mode === 'http500') {
-        res.writeHead(500, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
-      } else if (mode === 'redirect') {
-        res.writeHead(302, { location: 'http://127.0.0.1:1/steal' });
-        res.end();
-      } else if (mode === 'badjson') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end('not json');
-      } else if (mode === 'hang') {
-        holdResponse = res;
-      }
-    });
+    for await (const c of req) chunks.push(c);
+    lastRequest = {
+      method: req.method,
+      url: req.url,
+      auth: req.headers.authorization,
+      body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+    };
+    if (mode === 'allow') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    } else if (mode === 'decline') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":false}');
+    } else if (mode === 'http401') {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    } else if (mode === 'http500') {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    } else if (mode === 'redirect') {
+      res.writeHead(302, { location: 'http://127.0.0.1:1/steal' });
+      res.end();
+    } else if (mode === 'badjson') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('not json');
+    } else if (mode === 'hang') {
+      holdResponse = res;
+    }
   });
 
   try {
@@ -160,7 +158,7 @@ test('confirmModelAction and showDesktopSecret fail closed on decline, HTTP erro
     });
   } finally {
     holdResponse?.destroy();
-    await srv.close().catch(() => {});
+    await srv.close().catch(() => { /* Server may already be closed by the unreachable-port subcase above. */ });
   }
   assert.ok(DECLINED_TEXT.length > 0);
 });

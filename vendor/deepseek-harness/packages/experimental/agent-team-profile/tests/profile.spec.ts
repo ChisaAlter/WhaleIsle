@@ -4,8 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import * as yaml from 'js-yaml'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { parseEntryYaml } from '@deepseek-ai/cordis-plugin-include'
 
 describe('Agent Teams profile bundle', () => {
   it('declares a public parseable layer with Team-owned controls', () => {
@@ -25,9 +24,8 @@ describe('Agent Teams profile bundle', () => {
       '@deepseek-ai/dsh-experimental-tool-agent-team': 'workspace:*',
     })
 
-    const parsed = yaml.load(
+    const parsed = parseEntryYaml(
       readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'),
-      { schema: entryListSchema },
     )
     expect(Array.isArray(parsed)).toBe(true)
     const patches = parsed as {

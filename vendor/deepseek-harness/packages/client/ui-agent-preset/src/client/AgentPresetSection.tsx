@@ -103,8 +103,10 @@ export function AgentPresetSection({
       </button>
     )
   return <section className={css.section}>
-    <h2 className={css.title}>{t('nav')}</h2>
-    <p className={css.intro}>{t('sectionIntro')}</p>
+    <div className={css.sectionHeader}>
+      <h2 className={css.title}>{t('nav')}</h2>
+      <p className={css.intro}>{t('sectionIntro')}</p>
+    </div>
     {state.error !== null && state.error !== dismissedError ? <Toast key={state.error}
       text={state.error} holdMs={null} dismissLabel={t('close')}
       onDone={() => { setDismissedError(state.error) }} /> : null}

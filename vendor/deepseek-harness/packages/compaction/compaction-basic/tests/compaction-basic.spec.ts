@@ -3,20 +3,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentId } from '@deepseek-ai/dsh-attachment/types'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { selectCompactableRange } from '@deepseek-ai/dsh-compaction-basic/src/region.ts'
+import { answeredRouteProjectionDefinition } from '@deepseek-ai/dsh-compaction-basic/src/answered-route.ts'
 import { frameSummary } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
-import { CompactionId, toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { CompactionId } from '@deepseek-ai/dsh-compaction/types'
+import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
 import {
   resolveCompactSpec,
   resolveConfig,
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter, LlmError, createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, type ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter, LlmError, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
@@ -28,8 +31,9 @@ import type {
   StreamChunk,
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, type SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionCheckpoint } from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { estimateContent, ROLE_OVERHEAD } from '@deepseek-ai/dsh-token-meter/estimate'
 import { agentEvents, type Agent, type RequestErrorAction } from '@deepseek-ai/dsh-agent'
@@ -130,8 +134,13 @@ function promptInput(text: string): SummarizationInput {
  * Closed two-message turns followed by one open turn for durable compaction events.
  * A `system` text puts a `system/message` at surface node 0 before turn 1's user message.
  */
-function conversation(turns = 4, text = 'fixture '.repeat(40).trim(), system?: string): Session {
-  const session = Session.create(SessionId(`conversation-${turns}`))
+function conversation(
+  turns = 4,
+  text = 'fixture '.repeat(40).trim(),
+  system?: string,
+  route: { provider: string; model: string } = { provider: MODEL, model: MODEL },
+): Session {
+  const session = Session.create(brandString<SessionId>(`conversation-${turns}`))
   for (let turn = 1; turn <= turns; turn += 1) {
     session.append('turn/start', { turn })
     if (turn === 1 && system !== undefined) {
@@ -148,7 +157,7 @@ function conversation(turns = 4, text = 'fixture '.repeat(40).trim(), system?: s
     session.append('step/start', { turn, step: 1 })
     if (turn === 1) {
       session.append('request/header', {
-        header: { config: { provider: MODEL, model: MODEL } },
+        header: { config: { provider: route.provider, model: route.model } },
         reason: 'initial',
       })
     }
@@ -161,7 +170,7 @@ function conversation(turns = 4, text = 'fixture '.repeat(40).trim(), system?: s
         content: [{ type: 'text', text: `${text} assistant ${turn}` }],
         source: {
           kind: 'model',
-          ...{ provider: MODEL, model: MODEL },
+          ...{ provider: route.provider, model: route.model },
         },
       }),
     }, { surfaceOp: 'append' })
@@ -175,9 +184,9 @@ function conversation(turns = 4, text = 'fixture '.repeat(40).trim(), system?: s
 }
 
 function toolConversation(): Session {
-  const session = Session.create(SessionId('tools'))
+  const session = Session.create(brandString<SessionId>('tools'))
   for (let turn = 1; turn <= 3; turn += 1) {
-    const callId = ToolCallId(`call-${turn}`)
+    const callId = brandString<ToolCallId>(`call-${turn}`)
     session.append('turn/start', { turn })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: `request ${turn} `.repeat(300) }],
@@ -225,8 +234,8 @@ function toolConversation(): Session {
 
 /** One closed routed tool step followed by an open turn for rewrite events. */
 function oversizedToolResult(chars = 3_000, withCompactablePrompt = false): Session {
-  const session = Session.create(SessionId(`oversized-tool-${chars}`))
-  const callId = ToolCallId('oversized')
+  const session = Session.create(brandString<SessionId>(`oversized-tool-${chars}`))
+  const callId = brandString<ToolCallId>('oversized')
   session.append('turn/start', { turn: 1 })
   if (withCompactablePrompt) {
     session.append('user/message', createUserMessage({
@@ -629,7 +638,7 @@ describe('pressure measurement and retention', () => {
 
   it('skips when no durable routed model exists instead of using AgentOptions fallback', async () => {
     const compact = service(compactConfig)
-    const session = Session.create(SessionId('headerless'))
+    const session = Session.create(brandString<SessionId>('headerless'))
     session.append('turn/start', { turn: 1 })
     await expect(compact.compactIfNeeded(agent(session, MODEL), 'pressure', SIGNAL))
       .resolves.toBeNull()
@@ -751,8 +760,8 @@ describe('pressure measurement and retention', () => {
 
   it('declines forced overflow when the whole surface is one indivisible tool pair', async () => {
     const compact = service(compactConfig)
-    const session = Session.create(SessionId('single-tool-pair'))
-    const callId = ToolCallId('single-call')
+    const session = Session.create(brandString<SessionId>('single-tool-pair'))
+    const callId = brandString<ToolCallId>('single-call')
     session.append('turn/start', { turn: 1 })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('request/header', {
@@ -878,7 +887,7 @@ describe('pressure measurement and retention', () => {
   it('declines when envelope pressure is high but the surface has no compactable range', async () => {
     const compact = service(compactConfig)
     const bulkTools = [{ name: 'bulk', description: 'x'.repeat(100_000), parameters: { type: 'object' } }]
-    const empty = Session.create(SessionId('empty'))
+    const empty = Session.create(brandString<SessionId>('empty'))
     empty.append('turn/start', { turn: 1 })
     empty.append('request/header', {
       header: { config: { provider: MODEL, model: MODEL }, tools: bulkTools },
@@ -953,8 +962,8 @@ describe('pressure measurement and retention', () => {
 
   it('declines when rounding a cut would consume the only tool pair', () => {
     const ctx = createContext()
-    const session = Session.create(SessionId('one-tool-pair'))
-    const callId = ToolCallId('only')
+    const session = Session.create(brandString<SessionId>('one-tool-pair'))
+    const callId = brandString<ToolCallId>('only')
     session.append('turn/start', { turn: 1 })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
@@ -1104,7 +1113,7 @@ describe('compaction region transaction', () => {
     expect(head.content[0]?.type === 'text' ? head.content[0].text : '').toContain('<compacted-summary>')
     expect(head.content.at(-1)).toEqual({ type: 'text', text: '</compacted-summary>' })
 
-    const replay = Session.create(SessionId('replay'), session.snapshotEvents())
+    const replay = Session.create(brandString<SessionId>('replay'), session.snapshotEvents())
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
   })
 
@@ -1141,16 +1150,44 @@ describe('compaction region transaction', () => {
     expect(compact.calls[1]!.input.messages[0]).toMatchObject({ role: 'user' })
   })
 
-  it('surfaces the session rejection of a range that covers the system head', async () => {
+  it('rejects a range covering the initial system node before recording compaction', async () => {
     const compact = service()
     const session = conversation(3, undefined, 'PROTECTED SYSTEM')
-    const nodes = [...session.surface.nodes]
+    const nodes = session.surface.nodes
+    const before = session.snapshotEvents()
     await expect(compact.compactRegion(nodes[0]!, nodes[3]!, agent(session, MODEL), SIGNAL))
-      .rejects.toThrow(/node 0 holds the system prompt/)
+      .rejects.toThrow('protected initial system message')
+    expect(session.snapshotEvents()).toEqual(before)
+    expect(compact.calls).toEqual([])
+  })
 
-    expect(session.surface.nodes).toEqual(nodes)
-    const end = session.snapshotEvents().findLast(event => event.type === 'compaction/end')
-    expect(end?.type === 'compaction/end' && end.data.error).toBeDefined()
+  it('compacts a balanced middle range without changing retained system messages', async () => {
+    const compact = service()
+    const session = conversation(3, undefined, 'INITIAL SYSTEM')
+    const update = session.append('system/message', {
+      turn: 4, step: 1, message: createSystemMessage('LATER SYSTEM'),
+    }, { surfaceOp: 'append' })
+    const nodes = [...session.surface.nodes]
+    const systems = session.deriveMessages().filter(message => message.role === 'system')
+    const result = await compact.compactRegion(nodes[3]!, nodes[4]!, agent(session, MODEL), SIGNAL)
+    expect(session.surface.nodes).toEqual([...nodes.slice(0, 3), result.summarySeq + 1, ...nodes.slice(5)])
+    expect(session.deriveMessages().filter(message => message.role === 'system')).toEqual(systems)
+    expect(session.surface.nodes.at(-1)).toBe(update.seq)
+    expect(session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(2)
+  })
+
+  it('omits empty system records from the summary input without rebuilding the head', async () => {
+    const compact = service()
+    const session = conversation(2, undefined, 'INITIAL SYSTEM')
+    const head = session.surface.nodes[0]!
+    const empty = session.append('system/message', {
+      turn: 3, step: 1, message: createSystemMessage(''),
+    }, { surfaceOp: 'append' })
+    const visible = session.deriveMessages()
+    await compact.compactRegion(session.surface.nodes[1]!, empty.seq, agent(session, MODEL), SIGNAL)
+    expect(compact.calls[0]?.input.messages).toEqual(visible)
+    expect(session.surface.nodes[0]).toBe(head)
+    expect(session.deriveMessages()[0]).toEqual(visible[0])
   })
 
   it.each([
@@ -1204,7 +1241,7 @@ describe('compaction region transaction', () => {
 
     const locked = conversation(1)
     locked.append('compaction/start', {
-      compactionId: CompactionId('locked-compaction'),
+      compactionId: brandString<CompactionId>('locked-compaction'),
       turn: 2,
     })
     const lockedNodes = locked.surface.nodes
@@ -1217,7 +1254,7 @@ describe('compaction region transaction', () => {
 
   it('rejects a session with no turn boundary at all', async () => {
     const compact = service()
-    const session = Session.create(SessionId('turnless'))
+    const session = Session.create(brandString<SessionId>('turnless'))
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'orphan' }],
       source: { kind: 'user' },
@@ -1337,7 +1374,7 @@ describe('compaction region transaction', () => {
 
   it('lets a model-independent custom summarizer compact without a conversation model', async () => {
     const compact = service()
-    const session = Session.create(SessionId('model-less-region'))
+    const session = Session.create(brandString<SessionId>('model-less-region'))
     session.append('turn/start', { turn: 1 })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'history '.repeat(100) }],
@@ -1468,7 +1505,7 @@ describe('default one-shot summarizer', () => {
     const { adapter, compact } = await summarizerHarness([
       { type: 'reasoning', text: 'private' },
       { type: 'text', text: 'public summary' },
-      { type: 'tool-call', id: ToolCallId('unexpected'), name: 'x', arguments: '{}' },
+      { type: 'tool-call', id: brandString<ToolCallId>('unexpected'), name: 'x', arguments: '{}' },
     ], undefined, MODEL, {
       auto: false,
       summarizationProvider: MODEL,
@@ -1484,7 +1521,7 @@ describe('default one-shot summarizer', () => {
       rawOutput: [
         { type: 'reasoning', text: 'private' },
         { type: 'text', text: 'public summary' },
-        { type: 'tool-call', id: ToolCallId('unexpected'), name: 'x', arguments: '{}' },
+        { type: 'tool-call', id: brandString<ToolCallId>('unexpected'), name: 'x', arguments: '{}' },
       ],
       llmStreamCall: true,
       provider: MODEL,
@@ -1514,7 +1551,7 @@ describe('default one-shot summarizer', () => {
         {
           type: 'image',
           attachment: {
-            attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+            attachmentId: brandString<AttachmentId>(`sha256:${'a'.repeat(64)}`),
             mediaType: 'image/png',
             bytes: 1,
             width: 1,
@@ -1586,7 +1623,7 @@ describe('default one-shot summarizer', () => {
 
   it('resolves the latest routed provider/model before the AgentOptions pair', async () => {
     const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }], undefined, 'routed')
-    const session = conversation(1)
+    const session = Session.create(brandString<SessionId>('unanswered-route'))
     session.append('request/header', {
       header: { config: { provider: 'routed', model: 'routed' } },
       reason: 'initial',
@@ -1596,6 +1633,104 @@ describe('default one-shot summarizer', () => {
     expect(output.model).toBe('routed')
     expect(adapter.lastOptions?.provider).toBe('routed')
     expect(adapter.lastOptions?.model).toBe('routed')
+  })
+
+  it('summarizes on the route that last answered, with its policy, after a later request got no response', async () => {
+    const { ctx, adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }], undefined, MODEL, {
+      auto: false,
+      maxTokens: 111,
+      modelPolicies: [
+        { provider: MODEL, model: MODEL, maxTokens: 222 },
+        { provider: 'unanswered', model: 'unanswered', maxTokens: 333 },
+      ],
+    })
+    const unanswered = new ScriptedAdapter([{ type: 'text', text: 'wrong route' }])
+    ctx.llm.registerAdapter(['unanswered'], unanswered)
+    const session = conversation(1)
+    session.append('request/header', {
+      header: { config: { provider: 'unanswered', model: 'unanswered' } },
+      reason: 'change',
+    })
+
+    const output = await compact.runSummarize(promptInput('history'), agent(session, 'fallback'))
+
+    expect(session.requestHeader()?.config.model).toBe('unanswered')
+    expect(output).toMatchObject({ provider: MODEL, model: MODEL, maxTokens: 222 })
+    expect(adapter.lastOptions).toMatchObject({ provider: MODEL, model: MODEL, maxTokens: 222 })
+    expect(unanswered.lastOptions).toBeUndefined()
+  })
+
+  it.each([false, true])('restores the answered route from a JSON checkpoint and folds only the suffix (answer in suffix: %s)', async (answerInSuffix) => {
+    const { ctx, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
+    ctx.llm.registerAdapter(['later'], new ScriptedAdapter([{ type: 'text', text: 'later summary' }]))
+    const session = conversation(1)
+    const checkpoint = JSON.parse(JSON.stringify(ctx.sessionProjections.checkpoint(session))) as ProjectionCheckpoint
+    expect(checkpoint['compactionAnsweredRoute']).toMatchObject({ ver: 1, val: { provider: MODEL, model: MODEL } })
+    const cut = session.seq
+    session.append('step/start', { turn: 2, step: 1 })
+    session.append('request/header', { header: { config: { provider: 'later', model: 'later' } }, reason: 'change' })
+    if (answerInSuffix) {
+      session.append('assistant/message', {
+        stream: [],
+        turn: 2,
+        step: 1,
+        message: createMessage({
+          role: 'assistant',
+          content: [{ type: 'text', text: 'later answer' }],
+          source: { kind: 'model', provider: 'later', model: 'later' },
+        }),
+      }, { surfaceOp: 'append' })
+    }
+    const events = session.snapshotEvents()
+    const restored = Session.fromRestore(session.id, events, session.header, SessionLogOffset(0), 'detached')
+    const apply = vi.spyOn(answeredRouteProjectionDefinition, 'apply')
+    onTestFinished(() => { apply.mockRestore() })
+    ctx.sessionProjections.hydrate(restored, checkpoint, events.slice(cut), cut)
+    expect(apply.mock.calls.map(([, event]) => event.seq)).toEqual(events.slice(cut).map(event => event.seq))
+
+    const expected = answerInSuffix ? 'later' : MODEL
+    await expect(compact.runSummarize(promptInput('history'), agent(restored))).resolves
+      .toMatchObject({ provider: expected, model: expected })
+    await expect(compact.runSummarize(promptInput('history'), agent(session))).resolves
+      .toMatchObject({ provider: expected, model: expected })
+  })
+
+  it('keeps the answered-route state reference for unrelated events and an unchanged route', () => {
+    const { init, apply } = answeredRouteProjectionDefinition
+    const events = conversation(2).snapshotEvents()
+    const answers = events.filter(event => event.type === 'assistant/message')
+    const first = apply(init(), answers[0]!)
+    expect(first).toEqual({ provider: MODEL, model: MODEL })
+    for (const event of events) expect(apply(first, event)).toBe(first)
+    expect(apply(null, events.find(event => event.type === 'request/header')!)).toBeNull()
+    expect(answers).toHaveLength(2)
+  })
+
+  it('registers the answered-route projection with the plugin and releases it on unload', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(TokenMeter)
+    const fiber = await ctx.plugin(BasicCompactionEngine, { auto: false })
+    expect(ctx.sessionProjections.checkpoint(conversation(1))).toHaveProperty('compactionAnsweredRoute')
+
+    await fiber.dispose()
+    expect(ctx.sessionProjections.checkpoint(conversation(2))).not.toHaveProperty('compactionAnsweredRoute')
+  })
+
+  it('fails plugin activation when the answered-route projection cannot register', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(TokenMeter)
+    await ctx.sessionProjections.register({ ...answeredRouteProjectionDefinition, stateVersion: 2 })
+
+    await expect(ctx.plugin(BasicCompactionEngine, { auto: false })).rejects.toThrow('compactionAnsweredRoute')
+    expect(ctx.get('compaction')).toBeUndefined()
   })
 
   it('records the model actually dispatched after one-shot stream routing', async () => {
@@ -1627,13 +1762,13 @@ describe('default one-shot summarizer', () => {
     await ctx.plugin(SessionProjectionRegistry)
     void new TokenMeter(ctx)
     const compact = new ExposedCompactionEngine(ctx, { auto: false })
-    await expect(compact.runSummarize(promptInput('history'), agent(Session.create(SessionId('model-less')))))
+    await expect(compact.runSummarize(promptInput('history'), agent(Session.create(brandString<SessionId>('model-less')))))
       .rejects.toThrow(/no provider\/model available for summarization/)
   })
 
   it('uses a complete AgentOptions target when no durable route exists', async () => {
     const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
-    const session = Session.create(SessionId('headerless-summary'))
+    const session = Session.create(brandString<SessionId>('headerless-summary'))
 
     await expect(compact.runSummarize(promptInput('history'), agent(session, MODEL))).resolves.toMatchObject({
       provider: MODEL,
@@ -1649,7 +1784,7 @@ describe('default one-shot summarizer', () => {
   ])('rejects incomplete AgentOptions target %#', async (options) => {
     const { compact } = await summarizerHarness([{ type: 'text', text: 'unused' }])
     const owner = {
-      session: Session.create(SessionId(`incomplete-${String(options.model)}`)),
+      session: Session.create(brandString<SessionId>(`incomplete-${String(options.model)}`)),
       options,
     } as Agent
     await expect(compact.runSummarize(promptInput('history'), owner))
@@ -1688,7 +1823,7 @@ describe('default one-shot summarizer', () => {
       {
         type: 'image',
         attachment: {
-          attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
+          attachmentId: brandString<AttachmentId>(`sha256:${'b'.repeat(64)}`),
           mediaType: 'image/png',
           bytes: 1,
           width: 1,
@@ -1705,7 +1840,7 @@ describe('default one-shot summarizer', () => {
     const { compact } = await summarizerHarness([{
       type: 'image',
       attachment: {
-        attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+        attachmentId: brandString<AttachmentId>(`sha256:${'c'.repeat(64)}`),
         mediaType: 'image/png',
         bytes: 1,
         width: 1,
@@ -1881,7 +2016,7 @@ describe('model-switch pressure', () => {
   it('skips initial, incomplete, unchanged, below-threshold, disabled and already cancelled requests', async () => {
     const { ctx, adapter } = harness()
     const selected = { provider: 'small', model: 'small' }
-    await request(ctx, Session.create(SessionId('initial-switch')), selected)
+    await request(ctx, Session.create(brandString<SessionId>('initial-switch')), selected)
     await request(ctx, conversation(4), { provider: MODEL, model: MODEL })
     for (const config of [{ provider: '', model: 'small' }, { provider: 'small', model: '' }]) {
       await expect(request(ctx, conversation(4), config)).resolves.toEqual(config)
@@ -1921,7 +2056,7 @@ describe('model-switch pressure', () => {
 
   it('rejects pressure with no compactable span before making a summary call', async () => {
     const { ctx, adapter } = harness()
-    const session = Session.create(SessionId('indivisible-switch'))
+    const session = Session.create(brandString<SessionId>('indivisible-switch'))
     session.append('request/header', { header: { config: { provider: MODEL, model: MODEL } }, reason: 'initial' })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'large '.repeat(800) }], source: { kind: 'user' },
@@ -2017,7 +2152,7 @@ describe('retired model compaction fallback', () => {
   }
 
   function retiredSession(provider = PROVIDER, model = RETIRED_MODEL, closed = false): Session {
-    const session = conversation(4, 'fixture '.repeat(80))
+    const session = conversation(4, 'fixture '.repeat(80), undefined, { provider, model })
     session.append('request/header', {
       header: { config: { provider, model } },
       reason: 'resume',
@@ -2516,7 +2651,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx)
     const session = conversation(2)
     const fakeResult: CompactionResult = {
-      compactionId: CompactionId('fake-compaction'),
+      compactionId: brandString<CompactionId>('fake-compaction'),
       startSeq: SessionSeq(1),
       summarySeq: SessionSeq(2),
       endSeq: SessionSeq(3),
@@ -2608,7 +2743,7 @@ describe('automatic listener and loader composition', () => {
   it('delegates canonical overflow when no durable routed target exists', async () => {
     const ctx = createContext()
     void new TestCompactionEngine(ctx)
-    const session = Session.create(SessionId('headerless-overflow'))
+    const session = Session.create(brandString<SessionId>('headerless-overflow'))
     session.append('turn/start', {
       turn: 1,
     })
@@ -2753,7 +2888,7 @@ describe('route-priced image pressure', () => {
 
   /** Closed short-text turns whose user messages each carry one image. */
   function imageConversation(turns = 4): Session {
-    const session = Session.create(SessionId(`image-dense-${turns}`))
+    const session = Session.create(brandString<SessionId>(`image-dense-${turns}`))
     for (let turn = 1; turn <= turns; turn += 1) {
       session.append('turn/start', { turn })
       session.append('user/message', createUserMessage({
@@ -2762,7 +2897,7 @@ describe('route-priced image pressure', () => {
           {
             type: 'image',
             attachment: {
-              attachmentId: AttachmentId(`sha256:${String(turn).repeat(8)}`),
+              attachmentId: brandString<AttachmentId>(`sha256:${String(turn).repeat(8)}`),
               mediaType: 'image/png',
               bytes: 2048,
               width: 800,
@@ -2900,7 +3035,7 @@ describe('baseline instruction preservation and overflow deadlock recovery', () 
       retainTokens: 10,
       auto: false,
     })
-    const session = Session.create(SessionId('baseline-protected'))
+    const session = Session.create(brandString<SessionId>('baseline-protected'))
     session.append('turn/start', { turn: 1 })
     session.append('system/message', {
       turn: 1,
@@ -2989,14 +3124,14 @@ describe('baseline instruction preservation and overflow deadlock recovery', () 
       auto: true,
     })
 
-    const session = Session.create(SessionId('chunked-summary'))
+    const session = Session.create(brandString<SessionId>('chunked-summary'))
     session.append('turn/start', { turn: 1 })
     session.append('request/header', {
       header: { config: { provider: 'bounded', model: 'bounded' } },
       reason: 'initial',
     })
     for (let turn = 1; turn <= 12; turn += 1) {
-      const callId = ToolCallId(`c-${turn}`)
+      const callId = brandString<ToolCallId>(`c-${turn}`)
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: `turn ${turn} prompt `.repeat(80) }],
         source: { kind: 'user' },
@@ -3072,14 +3207,14 @@ describe('baseline instruction preservation and overflow deadlock recovery', () 
       auto: true,
     })
 
-    const session = Session.create(SessionId('zero-llm-fallback'))
+    const session = Session.create(brandString<SessionId>('zero-llm-fallback'))
     session.append('turn/start', { turn: 1 })
     session.append('request/header', {
       header: { config: { provider: 'always-overflow', model: 'always-overflow' } },
       reason: 'initial',
     })
     for (let turn = 1; turn <= 4; turn += 1) {
-      const callId = ToolCallId(`fc-${turn}`)
+      const callId = brandString<ToolCallId>(`fc-${turn}`)
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: `request ${turn} `.repeat(60) }],
         source: { kind: 'user' },
@@ -3196,7 +3331,7 @@ describe('baseline instruction preservation and overflow deadlock recovery', () 
       auto: false,
     })
 
-    const session = Session.create(SessionId('abort-chunk-merge'))
+    const session = Session.create(brandString<SessionId>('abort-chunk-merge'))
     session.append('turn/start', { turn: 1 })
     session.append('request/header', {
       header: { config: { provider: 'abort-chunk', model: 'abort-chunk' } },

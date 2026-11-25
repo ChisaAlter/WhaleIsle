@@ -1,3 +1,4 @@
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { describe, expect, it } from 'vitest'
@@ -11,6 +12,7 @@ import Lsp, { LspError, LspProviderId, type LspProvider, type LspProviderQuery, 
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import { DEFAULT_LSP_TOOL_TIMEOUT_MS, LSP_PROMPT_TEXT } from '@deepseek-ai/dsh-tool-lsp'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 /** A scripted provider recording queries; `respond` yields the result or throws. */
 function stubProvider(
@@ -19,7 +21,7 @@ function stubProvider(
 ): LspProvider & { seen: LspProviderQuery[] } {
   const seen: LspProviderQuery[] = []
   return {
-    id: LspProviderId('stub'),
+    id: brandString<LspProviderId>('stub'),
     extensionToLanguage,
     seen,
     query(request) {
@@ -36,6 +38,7 @@ async function mount(
 ): Promise<{ ctx: Context }> {
   const ctx = new Context()
   provideWorkingDirectoryFixture(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(NativeToolExecutor)
@@ -239,7 +242,7 @@ describe('tool-lsp execution', () => {
   it('forwards exec.signal to the seam query', async () => {
     const seen: (AbortSignal | undefined)[] = []
     const provider: LspProvider = {
-      id: LspProviderId('sig'),
+      id: brandString<LspProviderId>('sig'),
       extensionToLanguage: { '.ts': 'typescript' },
       query(_request, signal) {
         seen.push(signal)

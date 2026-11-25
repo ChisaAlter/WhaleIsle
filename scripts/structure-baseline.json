@@ -1,10 +1,33 @@
 {
   "complexity": {
+    "dsh-acp/client-src/delegation.js": {
+      "buildDelegationViewModel": 44
+    },
+    "dsh-acp/client-src/picker-data.js": {
+      "handlePickerKeyDown": 27
+    },
+    "dsh-acp/client-src/settings-actions.js": {
+      "createAccountInstance": 22
+    },
+    "dsh-acp/client-src/settings-section.js": {
+      "AgentsSettingsSection": 29
+    },
+    "dsh-acp/lib/acp-config-options.js": {
+      "modelsFromConfigOptions": 23,
+      "syncConnectionModelAndEffort": 28
+    },
+    "dsh-acp/lib/acp-probe.js": {
+      "probeAcpAgent": 28
+    },
+    "dsh-acp/lib/acp-session-handlers.js": {
+      "resolveSessionPermission": 58,
+      "wireSessionHandlers/handleElicitation": 41
+    },
     "dsh-acp/lib/acp-session.js": {
-      "_onRuntimeEvent": 52,
+      "_onRuntimeEvent": 59,
       "_requestApproval": 22,
       "_resolvePermission": 60,
-      "_start": 50,
+      "_start": 64,
       "_wireHandlers/handleElicitation": 41,
       "handleEvent": 40,
       "modelsFromConfigOptions": 23,
@@ -14,6 +37,17 @@
     "dsh-acp/lib/agent-auth.js": {
       "accountHintsFor": 77,
       "getAgentAccountStatus": 64
+    },
+    "dsh-acp/lib/catalog-models.js": {
+      "createCatalogManager/getAllModelsForAgent": 29
+    },
+    "dsh-acp/lib/delegate-cwd.js": {
+      "assertWorkspaceContainment": 23,
+      "validateExplicitDelegateCwd": 21
+    },
+    "dsh-acp/lib/delegation.js": {
+      "buildDelegateConfirmRequest": 21,
+      "registerDelegation/acp_delegate": 22
     },
     "dsh-acp/lib/index.js": {
       "apply/6d6ecf10aebee4fd/handler": 34,
@@ -28,23 +62,104 @@
       "extractLatestUserPromptBlocks": 22,
       "resolveActiveDshAgent": 26
     },
+    "dsh-acp/lib/llm-adapter.js": {
+      "createLlmAdapter/_streamImpl": 77,
+      "createLlmAdapter/autoDeliver": 22,
+      "createLlmAdapter/executeTrackedToolCall": 25,
+      "createLlmAdapter/requestAcpApproval": 34,
+      "resolveActiveDshAgent": 26
+    },
     "dsh-acp/lib/mcp-server.js": {
       "createWhaleIsleMcp/callTool": 101,
-      "createWhaleIsleMcp/dispatch": 23
+      "createWhaleIsleMcp/dispatch": 25,
+      "createWhaleIsleMcp/handleAgentControl": 32
     },
     "dsh-acp/lib/presets.js": {
-      "buildAgentRuntimeEnv": 37,
+      "buildAgentRuntimeEnv": 41,
       "inferBaseAgentId": 21,
       "mergeAgentsWithPresets": 25,
       "normalizeAgentRecord": 100,
       "normalizeModelList": 22,
       "resolveCommandBinary": 35
     },
+    "dsh-acp/lib/prompt-context.js": {
+      "prepareConversationPrompt": 30
+    },
+    "dsh-acp/lib/rpc-handlers.js": {
+      "createHttpHandler/handler": 37,
+      "createRpcHandler/handleRpc": 198
+    },
     "dsh-acp/lib/tasks.js": {
-      "createTaskStore/snapshot": 26
+      "createTaskStore/checkActivity": 22,
+      "createTaskStore/install/5e0b1aed76bfd971": 24,
+      "createTaskStore/snapshot": 27
     },
     "dsh-acp/tests/agent-fixture.cjs": {
       "18206621b25e14e9": 69
+    },
+    "dsh-acp\\client-src\\delegation.js": {
+      "buildDelegationViewModel": 44
+    },
+    "dsh-acp\\client-src\\picker-data.js": {
+      "handlePickerKeyDown": 27
+    },
+    "dsh-acp\\client-src\\settings-actions.js": {
+      "createAccountInstance": 22
+    },
+    "dsh-acp\\client-src\\settings-section.js": {
+      "AgentsSettingsSection": 29
+    },
+    "dsh-acp\\lib\\acp-config-options.js": {
+      "modelsFromConfigOptions": 23,
+      "syncConnectionModelAndEffort": 28
+    },
+    "dsh-acp\\lib\\acp-probe.js": {
+      "probeAcpAgent": 28
+    },
+    "dsh-acp\\lib\\acp-session-handlers.js": {
+      "resolveSessionPermission": 58,
+      "wireSessionHandlers/handleElicitation": 41
+    },
+    "dsh-acp\\lib\\acp-session.js": {
+      "_onRuntimeEvent": 59,
+      "_start": 64
+    },
+    "dsh-acp\\lib\\catalog-models.js": {
+      "createCatalogManager/getAllModelsForAgent": 29
+    },
+    "dsh-acp\\lib\\delegate-cwd.js": {
+      "assertWorkspaceContainment": 23,
+      "validateExplicitDelegateCwd": 21
+    },
+    "dsh-acp\\lib\\delegation.js": {
+      "buildDelegateConfirmRequest": 21,
+      "registerDelegation/acp_delegate": 22
+    },
+    "dsh-acp\\lib\\llm-adapter.js": {
+      "createLlmAdapter/_streamImpl": 77,
+      "createLlmAdapter/autoDeliver": 22,
+      "createLlmAdapter/executeTrackedToolCall": 25,
+      "createLlmAdapter/requestAcpApproval": 34,
+      "resolveActiveDshAgent": 26
+    },
+    "dsh-acp\\lib\\mcp-server.js": {
+      "createWhaleIsleMcp/dispatch": 25,
+      "createWhaleIsleMcp/handleAgentControl": 32
+    },
+    "dsh-acp\\lib\\presets.js": {
+      "buildAgentRuntimeEnv": 41
+    },
+    "dsh-acp\\lib\\prompt-context.js": {
+      "prepareConversationPrompt": 30
+    },
+    "dsh-acp\\lib\\rpc-handlers.js": {
+      "createHttpHandler/handler": 37,
+      "createRpcHandler/handleRpc": 198
+    },
+    "dsh-acp\\lib\\tasks.js": {
+      "createTaskStore/checkActivity": 22,
+      "createTaskStore/install/5e0b1aed76bfd971": 24,
+      "createTaskStore/snapshot": 27
     },
     "mobile/web/app/connect.js": {
       "finishChisaCodeConnect": 21

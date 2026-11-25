@@ -9,8 +9,9 @@ import {
 import { createWhaleScope } from './scope.js';
 
 const output = {
-  schema: { type: 'object', additionalProperties: true },
-  render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+  schema: /** @type {const} */ ({ type: 'object', additionalProperties: true }),
+  /** @param {any} _args @param {any} value */
+  render: (_args, value) => [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
 };
 
 /**

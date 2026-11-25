@@ -207,7 +207,7 @@ export function createTaskStore(ctx, storeFile) {
       operation.then((value) => {
         if (![...tasks.values()].some((task) => task.requestKey === key)) return;
         if (value?.result && typeof value.result.finally === 'function') {
-          value.result.finally(releaseReceipt).catch(() => {});
+          value.result.finally(releaseReceipt).catch(() => { /* Task outcome is observed via result/snapshot; suppress duplicate unhandled rejection. */ });
         } else {
           releaseReceipt();
         }

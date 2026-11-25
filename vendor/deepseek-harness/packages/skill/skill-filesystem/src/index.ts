@@ -23,6 +23,7 @@ import { canonicalizeWatchPath, defaultAgentsHome, resolveAgentsHome, resolveDsh
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
+  SkillError,
   type SkillCandidate,
   type SkillDefinition,
   type SkillInvocationPolicy,
@@ -642,7 +643,7 @@ async function settleWatcherOpening(opening: Promise<void> | undefined): Promise
   if (opening === undefined) return
   try {
     await opening
-  } catch {
+  } catch (_watchStartupFailed) {
     // Watch startup already logged the underlying failure; teardown only contains it.
   }
 }
@@ -893,7 +894,7 @@ async function readSkillText(ctx: Context, path: string, signal?: AbortSignal, t
   } catch (error) {
     signal?.throwIfAborted()
     if (isAbsentSkillPathError(error)) return undefined
-    throw error
+    throw new SkillError(`failed to read skill file ${path}: ${errorMessage(error)}`, 'SKILL_READ_FAILED', { cause: error })
   }
 }
 

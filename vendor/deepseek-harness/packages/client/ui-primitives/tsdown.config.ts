@@ -38,6 +38,10 @@ const highlightWorker: NonNullable<UserConfig['plugins']> = [{
 
 export default (options: Parameters<typeof bundle>[0]): UserConfig[] => bundle(options).map(config =>
   config.name?.endsWith('ui-primitives') === true
-    ? { ...config, plugins: [...(config.plugins as unknown[] ?? []), ...highlightWorker] }
+    ? {
+        ...config,
+        outputOptions: { ...(typeof config.outputOptions === 'object' ? config.outputOptions : {}), codeSplitting: false },
+        plugins: [...(config.plugins as unknown[] ?? []), ...highlightWorker],
+      }
     : config,
 )

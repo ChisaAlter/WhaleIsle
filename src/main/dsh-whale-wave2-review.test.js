@@ -57,7 +57,7 @@ test('dsh-whale RPC memory/replace and memory/clear work end-to-end without Refe
       const ctx = {
         logger: { warn() {} },
         systemPrompt: { section() {} },
-        connection: { requestRejection: () => undefined },
+        connection: {},
         webServer: {
           register(route) {
             if (route?.path === '/dsh-whale' || !webHandler) webHandler = route.handler;
@@ -89,7 +89,7 @@ test('dsh-whale RPC memory/replace and memory/clear work end-to-end without Refe
           rpcId: 'rpc-1',
           method: endpoint,
           payload,
-        }), res);
+        }), res, { principal: { kind: 'owner' } });
         return res.json();
       };
 
@@ -123,6 +123,7 @@ test('dsh-whale RPC memory/replace and memory/clear work end-to-end without Refe
 
 test('installMemoryToolGuard works on real Harness ToolsService + NativeToolExecutor + ToolExecutionPipeline (exec.arguments, replace_all, apply_patch, dual-dim shrink)', async () => {
   const { Context } = harnessRequire('@deepseek-ai/cordis');
+  const { default: SessionProjectionRegistry } = await import(toUrl('vendor/deepseek-harness/packages/session/session-projection/lib/index.js'));
   const { default: SystemPrompt } = await import(toUrl('vendor/deepseek-harness/packages/core/system-prompt/lib/index.js'));
   const { default: ToolsService, defineTool } = await import(toUrl('vendor/deepseek-harness/packages/core/tools/lib/index.js'));
   const NativeToolExecutor = await import(toUrl('vendor/deepseek-harness/packages/core/tool-executor-native/lib/index.js'));
@@ -137,6 +138,7 @@ test('installMemoryToolGuard works on real Harness ToolsService + NativeToolExec
     fs.writeFileSync(atomPath, 'body', 'utf8');
 
     const ctx = new Context();
+    await ctx.plugin(SessionProjectionRegistry);
     await ctx.plugin(SystemPrompt);
     await ctx.plugin(ToolsService);
     await ctx.plugin(NativeToolExecutor);
@@ -588,7 +590,7 @@ test('WhaleTodos rejects indirect dependency cycles, prevents concurrent auto-ad
 
 test('dsh-im single-owner RPC works through REAL Harness HostConnectionService + serverResponseSchema and exposes internal owner ID without leaking publicly', async () => {
   const { Context } = harnessRequire('@deepseek-ai/cordis');
-  const { HostConnectionService, serverResponseSchema } = await import(toUrl('vendor/deepseek-harness/packages/client/connection/lib/index.js'));
+  const { ConnectionAuthentication, HostConnectionService, serverResponseSchema } = await import(toUrl('vendor/deepseek-harness/packages/client/connection/lib/index.js'));
   const { installSingleOwnerRpc, SINGLE_OWNER_RPC_CHANNEL } = await import(toUrl('vendor/dsh-im/plugin-src/host/channels/shared/single-owner-rpc.mjs'));
   const { SingleOwnerAccessGate } = await import(toUrl('vendor/dsh-im/src/channels/shared/single-owner-gate.mjs'));
 
@@ -608,23 +610,17 @@ test('dsh-im single-owner RPC works through REAL Harness HostConnectionService +
 
     const ctx = new Context();
     let mountedPrefix = null;
-    ctx.webServer = {
+    ctx.provide('webServer', {
       register(route) {
         mountedPrefix = route;
         return () => {};
       },
-    };
-    const connection = new HostConnectionService(ctx, [], {
-      token: 't',
-      sessionId: 's',
-      ensureSession: () => 's',
-      verifyRequest: () => true,
-      hasValidSession: () => true,
-      isAuthenticated: () => true,
     });
+    new ConnectionAuthentication(ctx);
+    const connection = new HostConnectionService(ctx, []);
 
     const dispose = installSingleOwnerRpc({ connection }, gate);
-    const server = http.createServer((req, res) => { void mountedPrefix.handler(req, res); });
+    const server = http.createServer((req, res) => { void mountedPrefix.handler(req, res, connection.browserPeer); });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const { port } = server.address();
     try {

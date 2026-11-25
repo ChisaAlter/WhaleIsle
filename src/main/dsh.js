@@ -852,7 +852,7 @@ class DshManager extends EventEmitter {
         );
       }
       if (!nodeBin) {
-        throw new Error('未找到 Node.js。请安装 Node.js 24.9+。');
+        throw new Error('未找到 Node.js。请安装 Node.js 24.22.3+。');
       }
       if (typeof source.root !== 'string' || !source.root) {
         throw new Error('终端 Ghostty 资源不完整，请运行 npm run setup:harness：缺少 harness 根路径');
@@ -895,7 +895,7 @@ class DshManager extends EventEmitter {
     }
 
     if (!npxBin) {
-      throw new Error('未找到 Node.js / npx。请安装 Node.js 24.9+ 并确保 npx 在 PATH 中。');
+      throw new Error('未找到 Node.js / npx。请安装 Node.js 24.22.3+ 并确保 npx 在 PATH 中。');
     }
 
     const pin = this._deps.readPin();

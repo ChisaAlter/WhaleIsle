@@ -33,7 +33,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session-status/client'
 import {
   ConversationSession, ConversationSessionHeader,
   type ConversationSessionHeaderProps, type ConversationSessionProps,
@@ -1565,10 +1565,9 @@ describe('TrajectoryView state', () => {
       content: [], isError: false, subCalls: [],
     }, ...Array.from({ length: 39 }, (_, index) => ({
       kind: 'compaction' as const,
+      summaryEventSeq: null,
       seq: index + 4,
       time: index + 4,
-      summary: null,
-      summaryEventSeq: null,
       shadowedItemCount: null,
       shadowedTokenCount: null,
     })), ...visibleNodes]

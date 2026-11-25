@@ -226,7 +226,7 @@ export class AcpSessionConnection {
       if (this.closed || signal?.aborted) {
         const plan = this._agyPlan;
         this._agyPlan = null;
-        await plan?.cleanup?.().catch(() => {});
+        await plan?.cleanup?.().catch(() => { /* Startup already aborted/closed; ignore best-effort plan cleanup error. */ });
         throw signal?.aborted ? abortSignalError() : new Error('connection closed');
       }
       spawn = this._agyPlan.spawn;
@@ -333,7 +333,7 @@ export class AcpSessionConnection {
       if (this.closed && this._agyPlan) {
         const plan = this._agyPlan;
         this._agyPlan = null;
-        await plan.cleanup().catch(() => {});
+        await plan.cleanup().catch(() => { /* createSession already failed; ignore best-effort plan cleanup error. */ });
       }
       throw error;
     }
@@ -345,7 +345,7 @@ export class AcpSessionConnection {
       if (this._agyPlan) {
         const plan = this._agyPlan;
         this._agyPlan = null;
-        await plan.cleanup().catch(() => {});
+        await plan.cleanup().catch(() => { /* createSession already failed; ignore best-effort plan cleanup error. */ });
       }
       throw this.closed ? new Error('connection closed') : abortSignalError();
     }
@@ -356,12 +356,12 @@ export class AcpSessionConnection {
       if (!this.closed && !signal?.aborted) return;
       if (this.handle === handle) {
         this.handle = null;
-        await disposeSession(handle).catch(() => {});
+        await disposeSession(handle).catch(() => { /* Connection closed/aborted after handle set; ignore stale dispose error. */ });
       }
       if (this._agyPlan) {
         const plan = this._agyPlan;
         this._agyPlan = null;
-        await plan.cleanup().catch(() => {});
+        await plan.cleanup().catch(() => { /* createSession already failed; ignore best-effort plan cleanup error. */ });
       }
       throw this.closed ? new Error('connection closed') : abortSignalError();
     };
@@ -773,7 +773,7 @@ export class AcpSessionConnection {
       if (handle || !this._startupPromise) {
         const agyPlan = this._agyPlan;
         this._agyPlan = null;
-        if (agyPlan) await agyPlan.cleanup().catch(() => {});
+        if (agyPlan) await agyPlan.cleanup().catch(() => { /* Teardown already shutting down; ignore best-effort plan cleanup error. */ });
       } else {
         // Never block watchdog/abort teardown indefinitely on a hung startup;
         // _start's closed checkpoints reap late handles and _agyPlan cleanly.
@@ -787,7 +787,7 @@ export class AcpSessionConnection {
         if (settled) {
           const agyPlan = this._agyPlan;
           this._agyPlan = null;
-          if (agyPlan) await agyPlan.cleanup().catch(() => {});
+          if (agyPlan) await agyPlan.cleanup().catch(() => { /* Teardown already shutting down; ignore best-effort plan cleanup error. */ });
         }
       }
     }

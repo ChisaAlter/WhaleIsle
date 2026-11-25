@@ -65,6 +65,7 @@ export function apply(ctx) {
       const route = {
         kind: 'prefix',
         path: CONTROL_PREFIX,
+        auth: 'anonymous',
         handler: createControlHandler(ctx, state, {
           token,
           onUnlock() {

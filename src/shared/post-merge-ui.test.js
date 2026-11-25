@@ -259,7 +259,7 @@ const NO_DRAG_FILES = [
   'packages/client/ui-settings-general/src/client/SettingsRoot.module.css',
   'packages/client/ui-settings-remote/src/client/RemoteSection.module.css',
   'packages/client/ui-sidebar/src/client/SidebarRoot.module.css',
-  'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css',
+  'packages/client/ui-subagent/src/client/SubagentCatalog.module.css',
   'packages/client/ui-titlebar/src/client/PanelToggles.module.css',
   'packages/extensions/ui-cordis/src/client/CordisPanel.module.css',
 ];

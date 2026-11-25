@@ -37,7 +37,7 @@ function writePayload(root) {
     arch: process.arch,
     payloadDigest: 'sha256-test',
     python: '3.12.14',
-    node: '24.21.0',
+    node: '24.22.3',
     pnpm: '11.0.9',
     pythonPackages: {},
   })}\n`, 'utf8');

@@ -10,9 +10,8 @@ import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-sess
 import type {
   WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type {
-  SessionPendingInteraction, SessionStatus, SessionStatusSnapshot,
-} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatus, SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session-status/client'
+import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -93,6 +92,11 @@ const workspaceState = (
 const noPendingInteraction: SessionStatusSnapshot = new Map()
 function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
+}
+
+/** jsdom lacks DragEvent — fireEvent builds no dataTransfer, which a Session row reads at drag end. */
+function dragEnd(row: Element, dropEffect: DataTransfer['dropEffect'] = 'none'): void {
+  fireEvent.dragEnd(row, { dataTransfer: { dropEffect } })
 }
 
 /** jsdom lacks DragEvent — the fireEvent fallback drops clientY, so pin it on the built event. */
@@ -983,7 +987,7 @@ describe('WorkspaceBrowser', () => {
     })
     const status = (id: string, value: Partial<SessionStatus>) =>
       hook<SessionStatusSnapshot>(new Map([[sid(id), {
-        running: false, pendingInteraction: undefined, completionUnread: false, ...value,
+        running: false, pendingInteraction: undefined, completionUnread: false, completionFailed: false, ...value,
       }]]))
     const expectVisible = (count: number) => {
       expect(mainListRows().map(row => within(row).getByText(/^(alpha|session-\d+)$/u).textContent))
@@ -1004,7 +1008,7 @@ describe('WorkspaceBrowser', () => {
       pendingInteraction: { key: 'question:1', kind: 'plan-review', sessionId: sid('session-7') } as SessionPendingInteraction,
     }) })
     expectVisible(7)
-    rerender(b, { useSessionStatus: status('session-8', { completionUnread: true }) })
+    rerender(b, { useSessionStatus: status('session-8', { completionUnread: true, completionFailed: false }) })
     expectVisible(8)
     fireEvent.click(screen.getByRole('button', { name: '展开其余 4 个会话' }))
     expectVisible(12)
@@ -1020,7 +1024,7 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.click(screen.getByText('alpha'))
     const running = (value: boolean) => hook<SessionStatusSnapshot>(new Map([[sid('session-9'), {
-      running: value, pendingInteraction: undefined, completionUnread: false,
+      running: value, pendingInteraction: undefined, completionUnread: false, completionFailed: false,
     }]]))
     rerender(b, { useSessionStatus: running(true) })
     rerender(b, { useSessionStatus: running(false) })
@@ -1043,15 +1047,15 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.click(screen.getByText('alpha'))
     const running = (...ids: string[]) => hook<SessionStatusSnapshot>(new Map(ids.map(id => [sid(id), {
-      running: true, pendingInteraction: undefined, completionUnread: false,
+      running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false,
     }])))
     rerender(b, {
       useSessions: hook(sessionState(items, { main: sid('session-53') })),
       useSessionStatus: hook<SessionStatusSnapshot>(new Map([
-        [sid('session-55'), { running: true, pendingInteraction: undefined, completionUnread: false }],
-        [sid('session-56'), { running: false, pendingInteraction: undefined, completionUnread: true }],
+        [sid('session-55'), { running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false }],
+        [sid('session-56'), { running: false, pendingInteraction: undefined, completionUnread: true, completionFailed: false }],
         [sid('session-57'), {
-          running: false, completionUnread: false,
+          running: false, completionUnread: false, completionFailed: false,
           pendingInteraction: { key: 'question:1', kind: 'question', sessionId: sid('session-57') } as SessionPendingInteraction,
         }],
       ])),
@@ -1217,7 +1221,7 @@ describe('WorkspaceBrowser', () => {
     const session5 = screen.getByText('session-5').closest('[role="treeitem"]') as HTMLElement
     fireEvent.dragStart(session5, { dataTransfer: dragData() })
     fireDrag(blankRow, 'drop', 205)
-    fireEvent.dragEnd(session5)
+    dragEnd(session5)
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha)
       .toEqual(['blank', 'session-5', 'session-1', 'session-2', 'session-3', 'session-4', 'session-6'])
     expect(screen.getByText('session-5')).toBeTruthy()
@@ -2337,7 +2341,7 @@ describe('WorkspaceBrowser', () => {
     Object.defineProperty(outsideDrop, 'dataTransfer', { value: dragData() })
     fireEvent(document.body, outsideDrop)
     expect(outsideDrop.defaultPrevented).toBe(true)
-    fireEvent.dragEnd(source)
+    dragEnd(source)
     expect(insertWorkspaceBefore).toHaveBeenCalledWith(wid('tail'), wid('beta'))
   })
 
@@ -2401,7 +2405,7 @@ describe('WorkspaceBrowser', () => {
     ])
   })
 
-  it('keeps pinned-section rows undraggable because their order is the pin order', () => {
+  it('keeps pinned-section rows draggable as copy only because their order is the pin order', () => {
     const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
     mount({
       useSessions: hook(sessions),
@@ -2410,8 +2414,17 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('treeitem', { name: /^alpha$/ }))
     const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
-    expect(one.getAttribute('draggable')).not.toBe('true')
+    expect(one.getAttribute('draggable')).toBe('true')
     expect(two.getAttribute('draggable')).toBe('true')
+    const pinnedTransfer = dragData()
+    fireEvent.dragStart(one, { dataTransfer: pinnedTransfer })
+    expect(pinnedTransfer.effectAllowed).toBe('copy')
+    expect(pinnedTransfer.setData).toHaveBeenCalledWith('application/x-dsh-session', 'one')
+    dragEnd(one)
+    const ordinaryTransfer = dragData()
+    fireEvent.dragStart(two, { dataTransfer: ordinaryTransfer })
+    expect(ordinaryTransfer.effectAllowed).toBe('copyMove')
+    dragEnd(two)
   })
 
   it('moves a row between its group and the pinned section as its pin changes', () => {
@@ -2478,7 +2491,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.dragStart(three, { dataTransfer: dragData() })
     fireDrag(one, 'dragOver', 105)
     fireDrag(one, 'drop', 105)
-    fireEvent.dragEnd(three)
+    dragEnd(three)
     expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY])
       .toEqual(['two', 'one', 'three'])
   })
@@ -2499,7 +2512,7 @@ describe('WorkspaceBrowser', () => {
       })
       fireEvent.dragStart(source, { dataTransfer: dragData() })
       fireDrag(target, 'drop', 180)
-      fireEvent.dragEnd(source)
+      dragEnd(source)
     }
 
     dragAfter('one', 'three')
@@ -2564,7 +2577,7 @@ describe('WorkspaceBrowser', () => {
     })
     const dataTransfer = dragData()
     fireEvent.dragStart(one, { dataTransfer })
-    fireEvent.dragEnd(one)
+    dragEnd(one)
     // The drag ended: rows no longer accept drops.
     fireDrag(two, 'drop', 180)
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toBeUndefined()
@@ -2592,7 +2605,7 @@ describe('WorkspaceBrowser', () => {
     Object.defineProperty(outsideDrop, 'dataTransfer', { value: dragData() })
     fireEvent(document.body, outsideDrop)
     expect(outsideDrop.defaultPrevented).toBe(true)
-    fireEvent.dragEnd(one)
+    dragEnd(one)
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
   })
 
@@ -2600,6 +2613,36 @@ describe('WorkspaceBrowser', () => {
     // The row menu entries and the adopt call live in the plugin (see apply.client.spec); the browser only shows the outcome.
     mount({ useDirectoryActionFailure: select => select('Project unavailable') })
     expect(screen.getByText('Project unavailable')).toBeTruthy()
+  })
+
+  it('discards the last Session marker when another drop target claims the Session as a copy', () => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    const [one, two] = mainListRows().slice(1) as [HTMLElement, HTMLElement]
+    const rect = () => ({
+      top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
+    })
+    two.getBoundingClientRect = rect
+    fireEvent.dragStart(one, { dataTransfer: dragData() })
+    fireDrag(two, 'dragOver', 180)
+    dragEnd(one, 'copy')
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toBeUndefined()
+
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    const flatOne = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    const flatTwo = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
+    flatTwo.getBoundingClientRect = rect
+    fireEvent.dragStart(flatOne, { dataTransfer: dragData() })
+    fireDrag(flatTwo, 'dragOver', 180)
+    dragEnd(flatOne, 'copy')
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toBeUndefined()
+    // The marker is gone: an ordinary drag end afterwards commits nothing.
+    dragEnd(flatOne)
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toBeUndefined()
   })
 
   it('labels an unrenamed default Workspace in the reader’s language and every other title verbatim', () => {
@@ -3190,7 +3233,7 @@ describe('Workspace tree grouping', () => {
     fireEvent.click(screen.getByText('Child'))
     fireEvent.click(screen.getByText('Projects'))
     const status = (running: boolean) => hook<SessionStatusSnapshot>(new Map([[sid('child-8'), {
-      running, pendingInteraction: undefined, completionUnread: false,
+      running, pendingInteraction: undefined, completionUnread: false, completionFailed: false,
     }]]))
     rerender(b, { useSessionStatus: status(true) })
     rerender(b, { useSessionStatus: status(false) })
@@ -3249,7 +3292,7 @@ describe('Workspace tree grouping', () => {
     fireEvent.dragStart(source, { dataTransfer: dragData() })
     fireDrag(section('Child'), 'dragOver', 190)
     fireDrag(section('Child'), 'drop', 190)
-    fireEvent.dragEnd(source)
+    dragEnd(source)
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledExactlyOnceWith(wid('outside'), wid('tail'))
   })
 
@@ -3263,7 +3306,7 @@ describe('Workspace tree grouping', () => {
     const source = screen.getByText('Projects').closest('[role="treeitem"]')!
     fireEvent.dragStart(source, { dataTransfer: dragData() })
     fireDrag(section('outside'), 'drop', 10)
-    fireEvent.dragEnd(source)
+    dragEnd(source)
     expect(b.props.insertWorkspaceBefore).not.toHaveBeenCalled()
   })
 
@@ -3274,7 +3317,7 @@ describe('Workspace tree grouping', () => {
     const source = screen.getByText('Projects').closest('[role="treeitem"]')!
     fireEvent.dragStart(source, { dataTransfer: dragData() })
     fireDrag(section('outside'), 'drop', 100)
-    fireEvent.dragEnd(source)
+    dragEnd(source)
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledExactlyOnceWith(root.workspaceId, undefined)
     rerender(b, { useWorkspaces: hook(workspaceState([team, child, other, outside, root])) })
     expect(mainListRows().map(row => row.textContent)).toEqual([
@@ -3317,15 +3360,15 @@ describe('Workspace tree grouping', () => {
     fireDrag(beta.parentElement as HTMLElement, 'dragOver', 100)
     fireDrag(outside.parentElement as HTMLElement, 'dragOver', 100)
     fireDrag(outside.parentElement as HTMLElement, 'drop', 100)
-    fireEvent.dragEnd(alpha)
+    dragEnd(alpha)
     expect(b.props.insertWorkspaceBefore).not.toHaveBeenCalled()
     fireEvent.dragStart(beta, { dataTransfer: dragData() })
     fireDrag(alpha.parentElement as HTMLElement, 'drop', 100)
-    fireEvent.dragEnd(beta)
+    dragEnd(beta)
     expect(b.props.insertWorkspaceBefore).not.toHaveBeenCalled()
     fireEvent.dragStart(alpha, { dataTransfer: dragData() })
     fireDrag(beta.parentElement as HTMLElement, 'drop', 100)
-    fireEvent.dragEnd(alpha)
+    dragEnd(alpha)
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
   })

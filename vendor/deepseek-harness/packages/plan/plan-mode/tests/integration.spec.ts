@@ -2,7 +2,7 @@ import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage, type GenerateOptions, type Message, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { type SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -12,6 +12,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import UserQuestionService, { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const PLAN_CONFIG = { section: 'Test plan mode instructions.' }
 
@@ -68,18 +69,14 @@ function textOf(message: Message): string {
   return message.content.filter(block => block.type === 'text').map(block => block.text).join('')
 }
 
-/** Text of the session's current system node: the `system/message` at surface node 0. */
+/** System instructions and updates in their model-visible order. */
 function systemText(agent: Agent): string {
-  const head = agent.session.deriveMessages()[0]
-  if (head?.role !== 'system') throw new Error('surface node 0 is not a system message')
-  return textOf(head)
+  return agent.session.deriveMessages().filter(message => message.role === 'system').map(textOf).join('\n\n')
 }
 
-/** Text of the leading system message of one loop-built request. */
+/** System instructions and updates in one loop-built request. */
 function requestSystem(options: GenerateOptions | undefined): string {
-  const head = options?.messages[0]
-  if (head?.role !== 'system') throw new Error('the request does not lead with a system message')
-  return textOf(head)
+  return options?.messages.filter(message => message.role === 'system').map(textOf).join('\n\n') ?? ''
 }
 
 function findEvent<T extends SessionEvent['type']>(
@@ -101,7 +98,7 @@ describe('plan mode through the agent loop', () => {
       textResponse('Noted in the plan.'),
     ])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('it-plan-seed'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('it-plan-seed'), { provider: 'mock', model: 'mock' })
     // Selected while idle: the mode commits immediately, before the first assembly.
     ctx.planMode.set(agent, true)
 
@@ -115,38 +112,38 @@ describe('plan mode through the agent loop', () => {
     expect(planMode.seq).toBeLessThan(header.seq)
     expect(header.data.reason).toBe('initial')
     expect(header.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
-    // Node 0 stays static across plan states; policy is delivered in runtime-context.
+    // The first system node already carries the section: appended, never replaced.
     expect(systemNode.surfaceOp).toBe('append')
     expect(log.filter(event => event.type === 'system/message')).toHaveLength(1)
     expect(agent.session.surface.nodes[0]).toBe(systemNode.seq)
-    expect(systemText(agent)).not.toContain(PLAN_CONFIG.section)
-    const requestTexts = adapter.requests[0]?.messages.flatMap(m => m.content)
-      .filter(b => b.type === 'text').map(b => b.text).join('\n') ?? ''
-    expect(requestTexts).toContain(PLAN_CONFIG.section)
+    expect(systemText(agent)).toContain('plan mode')
 
     // Plan mode hard-gates mutating tools at tools/pre-execute.
     const result = findEvent(log, 'tool/result')
     expect(result.data.message.isError).toBe(true)
     expect(textOf(result.data.message)).toContain('Plan mode is read-only')
     expect(planActive(ctx, agent)).toBe(true)
-    expect(log.some(event => event.type === 'user/message' && event.data.source.kind === 'plan-mode')).toBe(false)
+    expect(log.filter(event => event.type === 'user/message').filter(event => event.data.source.kind === 'plan-mode')
+      .map(event => event.data.content)).toEqual([
+      [{ type: 'text', text: 'The user switched this session to plan mode.' }],
+    ])
   })
 
-  it('a user flip between turns appends runtime context without rewriting node 0 or changing tool schemas', async () => {
+  it('a user flip between turns appends plan instructions and status with the exit tool', async () => {
     const adapter = new MockAdapter([
       textResponse('First turn, default mode.'),
       textResponse('Second turn, plan mode.'),
     ])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('it-plan-flip'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('it-plan-flip'), { provider: 'mock', model: 'mock' })
 
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
     expect(planActive(ctx, agent)).toBe(false)
     const first = findEvent(agent.session.snapshotEvents(), 'request/header')
-    expect(first.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
-    const firstSystemText = systemText(agent)
-    expect(firstSystemText).not.toContain(PLAN_CONFIG.section)
+    expect(first.data.header.tools?.map(tool => tool.name)).toEqual(['read', 'write'])
+    const firstSystem = findEvent(agent.session.snapshotEvents(), 'system/message')
+    expect(systemText(agent)).not.toContain(PLAN_CONFIG.section)
 
     ctx.planMode.set(agent, true)
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'now plan' }], source: { kind: 'user' } }))
@@ -159,17 +156,17 @@ describe('plan mode through the agent loop', () => {
     expect(notices[0]?.type === 'user/message' && notices[0].data.content).toEqual([
       { type: 'text', text: 'The user switched this session to plan mode.' },
     ])
-    // Surface node 0 and tool schemas stay identical across plan transitions for KV prefix caching.
     const systemNodes = log.filter(event => event.type === 'system/message')
-    expect(systemNodes).toHaveLength(1)
-    expect(systemText(agent)).toBe(firstSystemText)
-    expect(requestSystem(adapter.requests[1])).toBe(requestSystem(adapter.requests[0]))
-    const secondRequestText = adapter.requests[1]?.messages.flatMap(m => m.content)
-      .filter(b => b.type === 'text').map(b => b.text).join('\n') ?? ''
-    expect(secondRequestText).toContain(PLAN_CONFIG.section)
-    const headers = log.filter(event => event.type === 'request/header')
-    expect(headers.map(event => event.data.reason)).toEqual(['initial'])
-    expect(first.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
+    expect(systemNodes).toHaveLength(2)
+    const second = systemNodes[1]
+    expect(second?.surfaceOp).toBe('append')
+    expect(second?.sourceEventSeqs).toBeUndefined()
+    expect(agent.session.surface.nodes[0]).toBe(firstSystem.seq)
+    expect(systemText(agent)).toContain('plan mode')
+    expect(log.filter(event => event.type === 'request/header').map(event => event.data.reason)).toEqual(['initial', 'change'])
+    const secondHeader = findEvent(log, 'request/header', 'last')
+    expect(secondHeader.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
+    expect(secondHeader.data.header.tools).not.toEqual(first.data.header.tools)
   })
 
   it('a mode flip at error settlement waits until the step after a same-step retry', async () => {
@@ -183,7 +180,7 @@ describe('plan mode through the agent loop', () => {
       textResponse('Entered plan mode on the next step.'),
     ])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('it-plan-retry-flip'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('it-plan-retry-flip'), { provider: 'mock', model: 'mock' })
     ctx.on('agent/request-error', async ({ agent: subject }, next) => {
       if (subject !== agent) return next()
       ctx.planMode.set(agent, true)
@@ -194,11 +191,9 @@ describe('plan mode through the agent loop', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'plan after the transient failure' }], source: { kind: 'user' } }))
     await idle
 
-    const allTexts = (idx: number) => adapter.requests[idx]?.messages.flatMap(m => m.content)
-      .filter(b => b.type === 'text').map(b => b.text).join('\n') ?? ''
     expect(adapter.requests).toHaveLength(2)
-    expect(allTexts(0)).not.toContain(PLAN_CONFIG.section)
-    expect(allTexts(1)).not.toContain(PLAN_CONFIG.section)
+    expect(requestSystem(adapter.requests[0])).not.toContain(PLAN_CONFIG.section)
+    expect(requestSystem(adapter.requests[1])).not.toContain(PLAN_CONFIG.section)
     expect(adapter.requests[1]?.tools).toEqual(adapter.requests[0]?.tools)
     expect(ctx.planMode.get(agent)).toEqual({ active: false, pending: true })
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
@@ -208,8 +203,7 @@ describe('plan mode through the agent loop', () => {
     await nextIdle
 
     expect(adapter.requests).toHaveLength(3)
-    expect(requestSystem(adapter.requests[2])).toBe(requestSystem(adapter.requests[0]))
-    expect(allTexts(2)).toContain(PLAN_CONFIG.section)
+    expect(requestSystem(adapter.requests[2])).toContain(PLAN_CONFIG.section)
     expect(adapter.requests[2]?.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
     const log = agent.session.snapshotEvents()
     const planMode = findEvent(log, 'plan/mode')
@@ -220,10 +214,76 @@ describe('plan mode through the agent loop', () => {
     expect(firstEnd?.seq).toBeLessThan(planMode.seq)
     expect(planMode.seq).toBeLessThan(nextStart?.seq ?? 0)
     const systemNodes = log.filter(event => event.type === 'system/message')
-    expect(systemNodes).toHaveLength(1)
-    const notice = log.find(event => event.type === 'user/message' && event.data.source.kind === 'plan-mode')
+    expect(systemNodes).toHaveLength(2)
+    expect(systemNodes[1]?.surfaceOp).toBe('append')
+    expect(nextStart?.seq).toBeLessThan(systemNodes[1]?.seq ?? 0)
+    expect(systemText(agent)).toContain(PLAN_CONFIG.section)
+    const notice = log.find(event => event.type === 'user/message' && event.data.source.kind !== 'user')
     expect(notice?.type === 'user/message' && notice.data.content).toEqual([
       { type: 'text', text: 'The user switched this session to plan mode.' },
+    ])
+  })
+
+  it('a rejected pre-step leaves a queued switch pending until the next accepted step', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('call-1', 'select_plan', {}, 'Selecting plan mode.'),
+      textResponse('Entered plan mode on the next accepted step.'),
+    ])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('it-plan-rejected-step'), { provider: 'mock', model: 'mock' })
+    // The selection arrives while the first step's tool runs, so it waits for a pre-step.
+    ctx.tools.register(defineContentToolFixture({
+      name: 'select_plan',
+      description: 'select plan mode during the turn',
+      parameters: {},
+      execute: () => Promise.resolve([{ type: 'text', text: ctx.planMode.set(agent, true) }]),
+    }))
+    const rejecting = ctx.on('agent/pre-step', async ({ step }, next) => step === 2 ? { kind: 'reject' } : next())
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'select plan mode' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(1)
+    const blocked = agent.session.snapshotEvents()
+    expect(findEvent(blocked, 'tool/result').data.message.content).toEqual([{ type: 'text', text: 'queued' }])
+    expect(findEvent(blocked, 'turn/end').data.reason).toEqual({ kind: 'blocked' })
+    expect(blocked.some(event => event.type === 'plan/mode')).toBe(false)
+    expect(blocked.some(event => event.type === 'user/message' && event.data.source.kind === 'plan-mode')).toBe(false)
+    expect(ctx.planMode.get(agent)).toEqual({ active: false, pending: true })
+
+    rejecting()
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(2)
+    expect(ctx.planMode.get(agent)).toEqual({ active: true })
+    const log = agent.session.snapshotEvents()
+    const nextStart = log.find(event => event.type === 'step/start' && event.data.turn === 2)
+    expect(findEvent(log, 'plan/mode').seq).toBeLessThan(nextStart?.seq ?? 0)
+    expect(log.filter(event => event.type === 'user/message' && event.data.source.kind === 'plan-mode')
+      .map(event => event.type === 'user/message' && event.data.content)).toEqual([
+      [{ type: 'text', text: 'The user switched this session to plan mode.' }],
+    ])
+    expect(requestSystem(adapter.requests[1])).toContain(PLAN_CONFIG.section)
+  })
+
+  it('introduces policy once and sends only status on exit and reentry', async () => {
+    const adapter = new MockAdapter(Array.from({ length: 3 }, () => textResponse('ok')))
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('plan-status-cycle'), { provider: 'mock', model: 'mock' })
+    for (const active of [true, false, true]) {
+      ctx.planMode.set(agent, active)
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } }))
+      await agent.whenIdle()
+    }
+    const updates = agent.session.snapshotEvents().flatMap(event => event.type === 'system/message' ? [event.data.message] : [])
+    expect(updates).toHaveLength(3)
+    expect(updates[0]?.content.some(block => block.type === 'text' && block.text.includes(PLAN_CONFIG.section))).toBe(true)
+    expect(updates.slice(1).map(message => message.source.sections?.map(section => section.name)))
+      .toEqual([['plan:status'], ['plan:status']])
+    expect(updates.slice(1).map(textOf)).toEqual([
+      'Plan mode is inactive. The plan-mode instructions no longer apply.',
+      'Plan mode is active. Follow the plan-mode instructions.',
     ])
   })
 
@@ -236,7 +296,7 @@ describe('plan mode through the agent loop', () => {
     const ctx = await harness(adapter)
     await ctx.plugin(UserQuestionService)
     ctx.on('user-questions/request', () => Promise.reject(new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')))
-    const agent = await ctx.agentLoop.create(SessionId('it-plan-dismiss'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('it-plan-dismiss'), { provider: 'mock', model: 'mock' })
     ctx.planMode.set(agent, true)
 
     const idle = waitForIdle(ctx, agent)

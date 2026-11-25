@@ -39,7 +39,7 @@ async function host(t, services = {}) {
   };
   const ctx = {
     systemPrompt: { section() {} },
-    connection: { requestRejection: () => undefined },
+    connection: {},
     webServer: {
       register: (value) => {
         if (value?.path === '/dsh-whale' || !route) route = value;
@@ -69,7 +69,11 @@ async function host(t, services = {}) {
       const req = Readable.from([Buffer.from(JSON.stringify({ type: 'client-request', rpcId: 'test', method, payload }))]);
       req.method = 'POST'; req.url = `/dsh-whale/${method}`; req.headers = { 'content-type': 'application/json' };
       let body;
-      await route.handler(req, { writeHead() {}, end(value) { body = JSON.parse(value); } });
+      await route.handler(
+        req,
+        { writeHead() {}, end(value) { body = JSON.parse(value); } },
+        { principal: { kind: 'owner' } },
+      );
       return body.result;
     },
   };

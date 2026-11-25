@@ -334,6 +334,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
     text: ({ scope }) => ctx.tools.get('glob', scope) === undefined
       ? ''
       : 'Use the glob tool — not shell find — to discover files by path pattern.',
+    retirement: 'The glob tool is no longer available. Its guidance no longer applies.',
   })
 
   const overCapDescription = caps.sampleOverCapGlobResults ? 'is sampled across top-level entries' : 'keeps the first paths'

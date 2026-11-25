@@ -187,12 +187,12 @@ export async function wireSessionHandlers(conn) {
       }),
     );
     if (conn.closed) {
-      await effect.runCatch(bridge.dispose).catch(() => {});
+      await effect.runCatch(bridge.dispose).catch(() => { /* Connection already closed; ignore best-effort bridge disposal failure. */ });
       return;
     }
     conn._mcpBridge = bridge;
     if (conn.handle?.scope && effect.Scope?.addFinalizer) {
-      await effect.runCatch(effect.Scope.addFinalizer(conn.handle.scope, bridge.dispose)).catch(() => {});
+      await effect.runCatch(effect.Scope.addFinalizer(conn.handle.scope, bridge.dispose)).catch(() => { /* Finalizer registration is best-effort when scope is already closing. */ });
     }
     handlers.handleMcpConnect = (request) =>
       effect.runCatch(bridge.connect(request));

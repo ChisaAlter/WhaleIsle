@@ -191,12 +191,30 @@ async function handleInboundWebhookPost(runtime, rawSegment, req, res) {
  * and directly in Node HTTP integration tests).
  * @param {any} runtime
  * @param {Record<string, (p: any) => any>} table
- * @param {{ mascotsDir?: string, requestRejection?: (req: any) => number | undefined }} [options]
+ * @param {{ mascotsDir?: string, requestRejection?: (req: any, peer?: any) => number | undefined }} [options]
  */
 export function buildBotsHttpHandler(runtime, table, options = {}) {
   const mascotsDir = path.resolve(options.mascotsDir || ASSETS_MASCOTS_DIR);
-  const checkAuth = options.requestRejection
-    ?? ((req) => runtime.ctx?.connection?.requestRejection?.(req));
+  /** @param {any} req @param {any} [peer] */
+  const checkAuth = (req, peer) => {
+    if (typeof options.requestRejection === 'function') {
+      return options.requestRejection(req, peer);
+    }
+    let admittedPeer = peer;
+    if (admittedPeer === undefined) {
+      const connection = runtime.ctx?.get?.('connection') ?? runtime.ctx?.connection;
+      if (connection && typeof connection.admit === 'function') {
+        const admission = connection.admit(req);
+        if (admission && typeof admission === 'object' && 'rejection' in admission) {
+          return admission.rejection;
+        }
+        admittedPeer = admission?.peer;
+      }
+    }
+    if (!admittedPeer) return 401;
+    if (admittedPeer.principal?.kind !== 'owner') return 403;
+    return undefined;
+  };
 
   /** @param {any} method @param {any} params */
   async function invokeRpc(method, params) {
@@ -266,8 +284,8 @@ export function buildBotsHttpHandler(runtime, table, options = {}) {
     }
   }
 
-  /** @param {any} req @param {any} res */
-  async function handler(req, res) {
+  /** @param {any} req @param {any} res @param {any} [peer] */
+  async function handler(req, res, peer) {
     const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname;
     if (req.method === 'GET' && pathname.startsWith('/dsh-bots/assets/mascots/')) {
       serveMascotAsset(pathname.slice('/dsh-bots/assets/mascots/'.length), res);
@@ -277,7 +295,7 @@ export function buildBotsHttpHandler(runtime, table, options = {}) {
       await handleInboundWebhookPost(runtime, pathname.slice(WEBHOOKS_PREFIX.length), req, res);
       return;
     }
-    const rejection = checkAuth(req);
+    const rejection = checkAuth(req, peer);
     if (rejection !== undefined) {
       res.writeHead(rejection);
       res.end(rejection === 401 ? 'unauthorized' : 'forbidden');

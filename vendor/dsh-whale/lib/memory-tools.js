@@ -113,7 +113,7 @@ export function registerMemoryTools(ctx) {
       const home = process.env.DSH_HOME || '';
       if (!home) return { ok: false, items: [], detail: 'DSH home is unavailable.' };
       const items = searchMemoryFacts(home, {
-        query: args.query,
+        query: args.query ?? '',
         category: args.category,
         includeSuperseded: args.includeSuperseded === true,
         limit: args.limit,

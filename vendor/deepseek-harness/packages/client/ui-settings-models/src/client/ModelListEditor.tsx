@@ -22,6 +22,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { AnimatedRows, Button, Checkbox, IconPlusOutlineRegular, Input, Modal, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { TextSearchIndex } from '@deepseek-ai/dsh-util-text-search'
 import { formatCapacity, parseCapacity, validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
@@ -84,9 +85,8 @@ export interface ModelListEditorProps {
   /** Installed provider whose catalog supplies defaults without endpoint I/O. */
   catalogProvider?: string | undefined
   /**
-   * Reasoning levels a hand-declared route's rows may declare in
-   * `reasoningEfforts`, in escalation order; absent or empty shows no
-   * reasoning control, leaving a catalog model's levels to the catalog.
+   * Reasoning levels the rows may declare in `reasoningEfforts`, in
+   * escalation order; absent or empty shows no reasoning control.
    */
   reasoningLevels?: readonly string[] | undefined
   /** Whether the route's protocol accepts only {@link reasoningLevels}, each sent under its own name. */
@@ -332,6 +332,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const isPicked = (id: string): boolean => pickedByDefault(id) !== flipped.has(id)
 
   const activeCandidates = candidates ?? []
+  const candidateIndex = useMemo(
+    () => new TextSearchIndex(candidates ?? [], candidate => ({ fuzzy: [candidate.id, candidate.name] })),
+    [candidates],
+  )
   const listed = new Set(activeCandidates.map(candidate => candidate.id))
   // An unchecked candidate leaves the list. A row the listing does not name,
   // including a half-typed row without an id, is outside the picker and stays.
@@ -364,11 +368,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const normalizedCandidateQuery = candidateQuery.trim().toLowerCase()
-  const visibleCandidates = normalizedCandidateQuery.length === 0
-    ? activeCandidates
-    : activeCandidates.filter(candidate => candidate.id.toLowerCase().includes(normalizedCandidateQuery)
-      || candidate.name?.toLowerCase().includes(normalizedCandidateQuery) === true)
+  const visibleCandidates = candidateIndex.search(candidateQuery)
   const allVisibleCandidatesPicked = visibleCandidates.length > 0
     && visibleCandidates.every(candidate => isPicked(candidate.id))
 

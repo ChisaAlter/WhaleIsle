@@ -36,10 +36,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.workspace.directoryFlow.remote': { kind: 'single'; scope: 'root'; owner: RemoteFlowOwnerProps }
     /** Remote-workspace hole inside the sidebar browser's directory dialog (declared by the sidebar flow entry). */
     'sidebar.workspaces.directoryFlow.remote': { kind: 'single'; scope: 'root'; owner: RemoteFlowOwnerProps }
+    /** Remote-workspace hole inside the shared workspace picker's directory dialog (declared by the picker flow entry). */
+    'workspace.picker.directoryFlow.remote': { kind: 'single'; scope: 'root'; owner: RemoteFlowOwnerProps }
   }
 }
 
-/** The two remote-flow holes; a remote workspace plugin registers one component into both. */
+/** The three remote-flow holes; a remote workspace plugin registers one component into the holes it serves. */
 export type RemoteFlowSlotName =
   | 'conversation.hero.workspace.directoryFlow.remote'
   | 'sidebar.workspaces.directoryFlow.remote'
+  | 'workspace.picker.directoryFlow.remote'

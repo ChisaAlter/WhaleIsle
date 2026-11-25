@@ -105,10 +105,29 @@ function piAiNamespace(
   providers: Record<string, JsonValue>,
   userProviders: Record<string, JsonValue> = providers,
   baseProviders: Record<string, JsonValue> = {},
+  withReasoningSchema = true,
 ): SettingsNamespaceView {
+  const schema = withReasoningSchema
+    ? PiAiConfig
+    : Schema.object({
+      providers: Schema.dict(Schema.object({
+        apiKey: Schema.string().role('secret'),
+        apiKeyEnv: Schema.string().role('credential-ref'),
+        displayName: Schema.string(),
+        api: Schema.union(PROTOCOLS),
+        baseURL: Schema.string(),
+        models: Schema.array(Schema.object({
+          id: Schema.string().required(),
+          name: Schema.string(),
+          contextWindow: Schema.number(),
+          maxTokens: Schema.number(),
+        })),
+        reasoning: Schema.union(['off', 'high']),
+      })),
+    })
   return {
     ns: 'llm-pi-ai',
-    schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
+    schema: JSON.parse(JSON.stringify(schema.toJSON())) as JsonValue,
     // `value` is the effective section; `user` is only the layer this page
     // writes. They differ whenever a composition `base` supplies something.
     value: { providers },
@@ -128,6 +147,8 @@ function scriptedFace(options: {
   baseProviders?: Record<string, JsonValue>
   /** Routes the adapter reports as hand-declared; the rest come back as shipped. */
   declaredRoutes?: readonly string[]
+  /** Whether the namespace schema declares per-model reasoning levels (default true). */
+  withReasoningSchema?: boolean
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
@@ -135,7 +156,12 @@ function scriptedFace(options: {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
   }
-  const namespace = piAiNamespace(providers, options.userProviders ?? providers, options.baseProviders ?? {})
+  const namespace = piAiNamespace(
+    providers,
+    options.userProviders ?? providers,
+    options.baseProviders ?? {},
+    options.withReasoningSchema ?? true,
+  )
   const discover = options.discover ?? vi.fn(() => Promise.resolve(ok([])))
   const mutate = options.mutate ?? vi.fn(() => Promise.resolve(remoteOk(namespace)))
   const set = options.set ?? vi.fn(() => Promise.resolve(remoteOk(undefined)))
@@ -445,8 +471,8 @@ describe('model list editing', () => {
     ])
   })
 
-  it('offers every pi-ai thinking intensity on a new model row', async () => {
-    await mountSection()
+  it('offers every pi-ai thinking intensity on a new model row when schema exposes no reasoning levels', async () => {
+    await mountSection({ withReasoningSchema: false })
     openEditor('openai')
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     const group = screen.getByRole('group', { name: en.effortTitle })
@@ -461,8 +487,8 @@ describe('model list editing', () => {
     ])
   })
 
-  it('writes checked thinking intensities as reasoningEfforts on the model', async () => {
-    const { mutate } = await mountSection()
+  it('writes checked thinking intensities as reasoningEfforts on the model when schema exposes no reasoning levels', async () => {
+    const { mutate } = await mountSection({ withReasoningSchema: false })
     openEditor('openai')
 
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
@@ -480,8 +506,8 @@ describe('model list editing', () => {
     }])
   })
 
-  it('refuses apply when Off is the only checked thinking intensity', async () => {
-    await mountSection()
+  it('refuses apply when Off is the only checked thinking intensity in fallback checkbox mode', async () => {
+    await mountSection({ withReasoningSchema: false })
     openEditor('openai')
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-think' } })
@@ -490,8 +516,9 @@ describe('model list editing', () => {
     expect(screen.getByText(`${en.model} 1: ${en.effortOffAlone}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
   })
 
-  it('drops reasoningEfforts when every thinking intensity is unchecked', async () => {
+  it('drops reasoningEfforts when every thinking intensity is unchecked in fallback checkbox mode', async () => {
     const { mutate } = await mountSection({
+      withReasoningSchema: false,
       providers: {
         openai: {
           baseURL: 'https://proxy.example/v1',
@@ -593,6 +620,24 @@ describe('model list editing', () => {
     expect(screen.queryByText(en.resetModels)).toBeNull()
   })
 
+  it('declares reasoning levels on a catalog route model and stores them in its models list', async () => {
+    const { mutate } = await mountSection({
+      providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', models: [{ id: 'gpt-5', name: 'GPT-5' }] } },
+    })
+    openEditor('openai')
+    expandModel(1)
+    // Switched off, the field is absent and the model keeps the installed catalog's levels.
+    const toggle = screen.getByRole('switch', { name: `${en.modelReasoning} 1` })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(firstMutate(mutate).ops).toEqual([{
+      op: 'set', path: ['providers', 'openai', 'models'],
+      value: [{ id: 'gpt-5', name: 'GPT-5', reasoningEfforts: { off: null, low: 'low', medium: 'medium', high: 'high' } }],
+    }])
+  })
 })
 
 describe('capacity spellings', () => {
@@ -1479,11 +1524,11 @@ describe('hand-declared providers', () => {
   })
 
   it.each([
-    ['blocks a hand-declared route', true, 'modelReasoningNeedsLevel'],
-    ['blocks a catalog route through the desktop intensity checkboxes', false, 'effortOffAlone'],
-  ] as const)('%s whose stored reasoning levels the adapter refuses', async (_label, declared, key) => {
-    // A hand-declared route's rows edit reasoning levels in their own editor;
-    // other rows keep the desktop intensity checkboxes and their Off-only check.
+    ['a hand-declared route', true],
+    ['a catalog route', false],
+  ])('blocks %s whose stored reasoning levels the adapter refuses', async (_label, declared) => {
+    // The adapter refuses the same declarations on both kinds of route, and
+    // both edit them, so the card names the row and offers the switch that repairs it.
     await mountSection({
       providers: {
         'acme-gateway': {
@@ -1495,7 +1540,7 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    expect(screen.getByText(`${en.model} 1: ${en[key]}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
+    expect(screen.getByText(`${en.model} 1: ${en.modelReasoningNeedsLevel}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
     expect(buttonNamed(en.apply).disabled).toBe(true)
   })
 

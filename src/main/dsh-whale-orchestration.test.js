@@ -136,12 +136,14 @@ test('configured whale name survives prompt assembly instead of a blank complete
     'complete:true on the empty prefix discards dsh-whale:persona at assembly');
   const bundledPersona = fs.readFileSync(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'presets', 'whale-girl', 'agent.cordis.yml'), 'utf8');
   assert.doesNotMatch(bundledPersona, /^\s+complete:\s+true\s*$/m);
-  const [{ default: SystemPrompt, renderPrompt }, { Context }] = await Promise.all([
+  const [{ default: SystemPrompt, renderPrompt }, { default: SessionProjectionRegistry }, { Context }] = await Promise.all([
     import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'core', 'system-prompt', 'lib', 'index.js')).href),
+    import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'session', 'session-projection', 'lib', 'index.js')).href),
     importHarnessPeer('@deepseek-ai/cordis'),
   ]);
   const ctx = new Context();
   try {
+    await ctx.plugin(SessionProjectionRegistry);
     await ctx.plugin(SystemPrompt, {});
     ctx.systemPrompt.section({
       name: 'whale-preset:prefix', order: 0, text: runtimePersona.config.prefix,
@@ -211,18 +213,20 @@ test('apply() registers the persona section so real assembly carries her setting
     else process.env.DSH_HOME = saved;
     fs.rmSync(home, { recursive: true, force: true });
   });
-  const [{ default: SystemPrompt, renderPrompt }, { Context }] = await Promise.all([
+  const [{ default: SystemPrompt, renderPrompt }, { default: SessionProjectionRegistry }, { Context }] = await Promise.all([
     import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'core', 'system-prompt', 'lib', 'index.js')).href),
+    import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'session', 'session-projection', 'lib', 'index.js')).href),
     importHarnessPeer('@deepseek-ai/cordis'),
   ]);
   const ctx = new Context();
   try {
+    await ctx.plugin(SessionProjectionRegistry);
     await ctx.plugin(SystemPrompt, {});
     await ctx.plugin({
       name: 'stub-host-surface',
       apply(c) {
         c.provide('connection');
-        c.connection = { requestRejection: () => undefined };
+        c.connection = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) };
         c.provide('webServer');
         c.webServer = { register: () => () => {} };
         c.provide('agentPresets');
