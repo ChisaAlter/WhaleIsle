@@ -207,6 +207,25 @@ export function createLibraryManager(store) {
     return hydrateLibrary(project, doc);
   }
 
+  async function assertReferenceOutsideSensitiveRoots(projectId, canonical) {
+    const { roots, realDshHome, realTmp } = await sensitiveRefRoots(store.getHome());
+    if (realDshHome && withinPath(realDshHome, canonical)) {
+      const [realMemory, realDocs] = await Promise.all([
+        realpath(join(store.projectDir(projectId), 'memory')).catch(() => ''),
+        realpath(join(store.projectDir(projectId), 'docs')).catch(() => ''),
+      ]);
+      const inOwnSafeDir = (realMemory && withinPath(realMemory, canonical))
+        || (realDocs && withinPath(realDocs, canonical));
+      if (!inOwnSafeDir) {
+        throw httpError(403, '禁止将鲸屿内部数据文件添加为项目参考资料。', { code: 'forbidden_reference_path' });
+      }
+    }
+    const inSystemTmp = Boolean(realTmp && withinPath(realTmp, canonical));
+    if (!inSystemTmp && roots.some((root) => withinPath(root, canonical))) {
+      throw httpError(403, '禁止将系统配置或密钥目录下的文件添加为项目参考资料。', { code: 'forbidden_reference_path' });
+    }
+  }
+
   async function validateReferencePath(project, rawPath) {
     const trimmed = text(rawPath, 1024).trim();
     if (!trimmed) throw httpError(400, 'path_required');
@@ -214,11 +233,7 @@ export function createLibraryManager(store) {
       throw httpError(400, '不支持网络共享路径、设备路径或含异常字符的文件路径。', { code: 'invalid_reference_path' });
     }
     const workspace = typeof project?.workspace === 'string' ? project.workspace.trim() : '';
-    const candidate = isAbsolute(trimmed)
-      ? resolve(trimmed)
-      : workspace
-        ? resolve(workspace, trimmed)
-        : '';
+    const candidate = isAbsolute(trimmed) ? resolve(trimmed) : (workspace ? resolve(workspace, trimmed) : '');
     if (!candidate) {
       throw httpError(400, '未设置项目工作区时，参考资料必须使用绝对路径。', { code: 'invalid_reference_path' });
     }
@@ -238,24 +253,8 @@ export function createLibraryManager(store) {
     }
 
     const realWorkspace = workspace ? await realpath(workspace).catch(() => '') : '';
-    const insideWorkspace = Boolean(realWorkspace && withinPath(realWorkspace, canonical));
-    if (!insideWorkspace) {
-      const { roots, realDshHome, realTmp } = await sensitiveRefRoots(store.getHome());
-      if (realDshHome && withinPath(realDshHome, canonical)) {
-        const allowedMemory = join(store.projectDir(project.id), 'memory');
-        const allowedDocs = join(store.projectDir(project.id), 'docs');
-        const realMemory = await realpath(allowedMemory).catch(() => '');
-        const realDocs = await realpath(allowedDocs).catch(() => '');
-        const inOwnSafeDir = (realMemory && withinPath(realMemory, canonical))
-          || (realDocs && withinPath(realDocs, canonical));
-        if (!inOwnSafeDir) {
-          throw httpError(403, '禁止将鲸屿内部数据文件添加为项目参考资料。', { code: 'forbidden_reference_path' });
-        }
-      }
-      const inSystemTmp = Boolean(realTmp && withinPath(realTmp, canonical));
-      if (!inSystemTmp && roots.some((root) => withinPath(root, canonical))) {
-        throw httpError(403, '禁止将系统配置或密钥目录下的文件添加为项目参考资料。', { code: 'forbidden_reference_path' });
-      }
+    if (!realWorkspace || !withinPath(realWorkspace, canonical)) {
+      await assertReferenceOutsideSensitiveRoots(project.id, canonical);
     }
 
     return {
@@ -351,12 +350,10 @@ export function createLibraryManager(store) {
     };
   }
 
-  async function recordTaskArtifacts(project, task, items = [], { source = 'explicit', replaceSource = false } = {}) {
-    if (!project?.id || !task?.id) return [];
+  async function resolveUniqueArtifacts(project, task, items) {
     const list = Array.isArray(items) ? items : [];
     const resolved = [];
     const seenKeys = new Set();
-
     for (const raw of list.slice(0, 50)) {
       const rawPath = typeof raw === 'string' ? raw : raw?.path;
       const target = await resolveArtifactCandidate(project, task, rawPath);
@@ -364,16 +361,48 @@ export function createLibraryManager(store) {
       const key = pathKey(target.canonical);
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
-      const title = text(typeof raw === 'object' ? raw?.title : '', MAX_TITLE).trim() || basename(target.canonical);
-      const kind = normalizeArtifactKind(typeof raw === 'object' ? raw?.kind : '', target.canonical);
+      const rawObj = raw && typeof raw === 'object' ? raw : null;
       resolved.push({
         path: target.canonical,
         relativePath: target.relativePath,
-        title,
-        kind,
+        title: text(rawObj?.title, MAX_TITLE).trim() || basename(target.canonical),
+        kind: normalizeArtifactKind(rawObj?.kind, target.canonical),
       });
     }
+    return resolved;
+  }
 
+  function upsertArtifactEntry(doc, task, item, source, now) {
+    const wantedKey = pathKey(item.path);
+    const existing = doc.artifacts.find(
+      (entry) => entry.taskId === task.id && pathKey(entry.path) === wantedKey,
+    );
+    if (existing) {
+      existing.taskTitle = text(task.title, 200).trim() || existing.taskTitle;
+      existing.relativePath = item.relativePath;
+      if (source === 'explicit' || !existing.title) existing.title = item.title;
+      existing.kind = item.kind;
+      if (source === 'explicit') existing.source = 'explicit';
+      existing.updatedAt = now;
+      return;
+    }
+    doc.artifacts.push({
+      id: newId('art'),
+      taskId: task.id,
+      taskTitle: text(task.title, 200).trim(),
+      path: item.path,
+      relativePath: item.relativePath,
+      title: item.title,
+      kind: item.kind,
+      source,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async function recordTaskArtifacts(project, task, items = [], { source = 'explicit', replaceSource = false } = {}) {
+    if (!project?.id || !task?.id) return [];
+    const resolved = await resolveUniqueArtifacts(project, task, items);
     if (resolved.length === 0 && !replaceSource) return [];
 
     const changed = await store.withProjectLock(project.id, async () => {
@@ -391,42 +420,14 @@ export function createLibraryManager(store) {
       }
 
       for (const item of resolved) {
-        const wantedKey = pathKey(item.path);
-        const existing = doc.artifacts.find(
-          (entry) => entry.taskId === task.id && pathKey(entry.path) === wantedKey,
-        );
-        if (existing) {
-          existing.taskTitle = text(task.title, 200).trim() || existing.taskTitle;
-          existing.relativePath = item.relativePath;
-          if (source === 'explicit' || !existing.title) existing.title = item.title;
-          existing.kind = item.kind;
-          if (source === 'explicit') existing.source = 'explicit';
-          existing.updatedAt = now;
-          mutated = true;
-        } else {
-          doc.artifacts.push({
-            id: newId('art'),
-            taskId: task.id,
-            taskTitle: text(task.title, 200).trim(),
-            path: item.path,
-            relativePath: item.relativePath,
-            title: item.title,
-            kind: item.kind,
-            source,
-            createdAt: now,
-            updatedAt: now,
-          });
-          mutated = true;
-        }
+        upsertArtifactEntry(doc, task, item, source, now);
+        mutated = true;
       }
 
       if (doc.artifacts.length > MAX_ARTIFACTS) {
         doc.artifacts = doc.artifacts.slice(-MAX_ARTIFACTS);
       }
-
-      if (mutated) {
-        await writeRawDoc(project.id, doc);
-      }
+      if (mutated) await writeRawDoc(project.id, doc);
       return { mutated, items: resolved };
     });
 

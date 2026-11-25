@@ -7,7 +7,7 @@
  */
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { copyFile, lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, realpath, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
@@ -34,6 +34,7 @@ const GIT_UNSET_KEYS = [
 ];
 
 function gitEnv(extra = {}) {
+  /** @type {Record<string, any>} */
   const env = {
     ...process.env,
     GIT_TERMINAL_PROMPT: '0',
@@ -138,7 +139,11 @@ async function computeGitDiff(repoDir, baseRef, pathspec = '') {
   const tail = pathspec ? ['--', pathspec] : [];
   try {
     if (await pathExists(realIndexPath)) {
+      const indexStat = await stat(realIndexPath);
       await copyFile(realIndexPath, tempIndex);
+      // Floor mtime to whole seconds (<= realIndexPath mtime) so git's racy-git check
+      // still re-hashes working tree files modified in the same tick with identical size.
+      await utimes(tempIndex, indexStat.atime, Math.floor(indexStat.mtimeMs / 1000));
     }
     const env = { GIT_INDEX_FILE: tempIndex };
     await runGit(repoDir, ['add', '-A', ...tail], { env });
@@ -163,8 +168,7 @@ function hasUnsafeRelSegment(rel) {
   return parts.some((part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git');
 }
 
-async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
-  const includePath = join(repoRoot, WORKTREE_INCLUDE_FILE);
+async function parseWorktreeIncludeRules(includePath) {
   let includeInfo;
   try {
     includeInfo = await lstat(includePath);
@@ -180,6 +184,7 @@ async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
   } catch {
     return [];
   }
+  /** @type {string[]} */
   const rules = [];
   for (const rawLine of raw.split(/\r?\n/)) {
     const trimmed = rawLine.trim();
@@ -191,8 +196,10 @@ async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
     if (!rules.includes(cleaned)) rules.push(cleaned);
     if (rules.length >= MAX_INCLUDE_RULES) break;
   }
-  if (rules.length === 0) return [];
+  return rules;
+}
 
+async function collectIncludeCandidates(repoRoot, rules) {
   const pathspecs = rules.map((rule) => `:(glob)${rule}`);
   const [ignoredRes, untrackedRes] = await Promise.all([
     runGit(repoRoot, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', ...pathspecs], {
@@ -204,47 +211,59 @@ async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
       trim: false,
     }),
   ]);
-
-  const candidateSet = new Set();
+  const candidates = new Set();
   for (const res of [ignoredRes, untrackedRes]) {
     if (!res.ok || !res.stdout) continue;
     for (const entry of res.stdout.split('\0')) {
       const normalized = entry.replace(/\\/g, '/').trim();
-      if (normalized) candidateSet.add(normalized);
+      if (normalized) candidates.add(normalized);
     }
   }
-  if (candidateSet.size === 0) return [];
+  return candidates;
+}
+
+async function copyIncludedFile(realRepoRoot, realWorktreeRoot, rel) {
+  if (hasUnsafeRelSegment(rel)) return false;
+  const src = resolve(realRepoRoot, rel);
+  if (!withinPath(realRepoRoot, src)) return false;
+  let srcLstat;
+  try {
+    srcLstat = await lstat(src);
+  } catch {
+    return false;
+  }
+  if (!srcLstat.isFile() || srcLstat.isSymbolicLink() || srcLstat.size > MAX_INCLUDE_FILE_BYTES) {
+    return false;
+  }
+  const realSrc = await realpath(src).catch(() => '');
+  if (!realSrc || !withinPath(realRepoRoot, realSrc)) return false;
+  const dest = resolve(realWorktreeRoot, rel);
+  if (!withinPath(realWorktreeRoot, dest)) return false;
+  try {
+    await mkdir(dirname(dest), { recursive: true });
+    await copyFile(realSrc, dest);
+    return true;
+  } catch {
+    // Skip individual unreadable or conflicting include targets without breaking worktree setup.
+    return false;
+  }
+}
+
+async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
+  const rules = await parseWorktreeIncludeRules(join(repoRoot, WORKTREE_INCLUDE_FILE));
+  if (rules.length === 0) return [];
+  const candidates = await collectIncludeCandidates(repoRoot, rules);
+  if (candidates.size === 0) return [];
 
   const [realRepoRoot, realWorktreeRoot] = await Promise.all([
     realpath(repoRoot),
     realpath(worktreePath),
   ]);
   const copied = [];
-  for (const rel of candidateSet) {
+  for (const rel of candidates) {
     if (copied.length >= MAX_INCLUDE_FILES) break;
-    if (hasUnsafeRelSegment(rel)) continue;
-    const src = resolve(realRepoRoot, rel);
-    if (!withinPath(realRepoRoot, src)) continue;
-    let srcLstat;
-    try {
-      srcLstat = await lstat(src);
-    } catch {
-      continue;
-    }
-    if (!srcLstat.isFile() || srcLstat.isSymbolicLink() || srcLstat.size > MAX_INCLUDE_FILE_BYTES) {
-      continue;
-    }
-    const realSrc = await realpath(src).catch(() => '');
-    if (!realSrc || !withinPath(realRepoRoot, realSrc)) continue;
-
-    const dest = resolve(realWorktreeRoot, rel);
-    if (!withinPath(realWorktreeRoot, dest)) continue;
-    try {
-      await mkdir(dirname(dest), { recursive: true });
-      await copyFile(realSrc, dest);
+    if (await copyIncludedFile(realRepoRoot, realWorktreeRoot, rel)) {
       copied.push(rel);
-    } catch {
-      // Skip individual unreadable or conflicting include targets without breaking worktree setup.
     }
   }
   return copied;
@@ -252,6 +271,7 @@ async function syncWorktreeIncludeFiles(repoRoot, worktreePath) {
 
 function parseMergeTreeConflicts(stdout) {
   const lines = String(stdout || '').split(/\r?\n/);
+  /** @type {string[]} */
   const files = [];
   // Output format of `git merge-tree --write-tree --name-only`:
   // line 0: <tree-oid>

@@ -48,8 +48,13 @@ export function messageOf(error) {
   return String(error ?? '');
 }
 
+/**
+ * @param {number} status
+ * @param {string} message
+ * @param {Record<string, any>} [extra]
+ */
 export function httpError(status, message, extra = undefined) {
-  const error = new Error(message);
+  const error = /** @type {Error & Record<string, any>} */ (new Error(message));
   error.status = status;
   if (extra && typeof extra === 'object') Object.assign(error, extra);
   return error;

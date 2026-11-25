@@ -307,17 +307,23 @@ function cachedHandoffReceipt(service, project, handoffId) {
   };
 }
 
+async function ensureCoordinatorViaService(service, project) {
+  try {
+    const ensured = await service.ensureCoordinatorSession(project.id, { restore: true });
+    return ensured?.coordinatorSessionId || '';
+  } catch (error) {
+    const err = /** @type {{ status?: number, code?: string, message?: string } | null} */ (error);
+    if (err?.status === 503) {
+      throw fail('unavailable', `Project「${project.name}」尚未启动协调者会话，请先在项目页启动协调者。`);
+    }
+    throw fail(err?.code || 'unavailable', err?.message || `无法启动 Project「${project.name}」的协调者会话。`);
+  }
+}
+
 async function ensureCoordinatorSessionId(service, project, sessionController) {
   if (typeof service?.ensureCoordinatorSession === 'function') {
-    try {
-      const ensured = await service.ensureCoordinatorSession(project.id, { restore: true });
-      if (ensured?.coordinatorSessionId) return ensured.coordinatorSessionId;
-    } catch (error) {
-      if (error?.status === 503) {
-        throw fail('unavailable', `Project「${project.name}」尚未启动协调者会话，请先在项目页启动协调者。`);
-      }
-      throw fail(error?.code || 'unavailable', error?.message || `无法启动 Project「${project.name}」的协调者会话。`);
-    }
+    const ensuredSid = await ensureCoordinatorViaService(service, project);
+    if (ensuredSid) return ensuredSid;
   }
   let sid = typeof project.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
   if (!sid && typeof sessionController?.create === 'function') {

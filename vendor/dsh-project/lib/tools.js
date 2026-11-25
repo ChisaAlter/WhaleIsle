@@ -153,6 +153,7 @@ async function mutateMemoryEntry(service, project, action, targetArg, args, exec
   if (!value) throw new Error('text is required for append or write');
   const inferredTaskId = service.store.getWorkerInfo?.(sessionIdOf(exec))?.taskId || '';
   const payload = {
+    name: slug,
     description: args?.description,
     type: args?.type,
     ...(typeof args?.pinned === 'boolean' ? { pinned: args.pinned } : {}),
@@ -163,7 +164,6 @@ async function mutateMemoryEntry(service, project, action, targetArg, args, exec
         : {}),
     text: value,
   };
-  payload.name = slug;
   if (action === 'write') {
     const written = await service.memory.writeMemoryFile(project.id, payload);
     return `Replaced memory file "${written.file.name}" (${written.file.chars} characters).${await service.memory.afterMemoryWrite(project, written)}`;

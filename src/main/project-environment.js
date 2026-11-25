@@ -234,6 +234,7 @@ function createProjectEnvironment(options = {}) {
     writeRecord(file, { ...binding, state: 'removed' });
     return { ok: true, removed: true, branchRetained: current.branch };
   }
+  /** @param {string} projectId @param {string} requested @param {string} [taskIdHint] */
   function resolveV2TaskWorktreeRoot(projectId, requested, taskIdHint) {
     let doc;
     try {
@@ -245,7 +246,7 @@ function createProjectEnvironment(options = {}) {
     const wantedTaskId = typeof taskIdHint === 'string' && taskIdHint.trim()
       ? identifier(taskIdHint.trim(), 'taskId')
       : '';
-    const tasks = wantedTaskId ? doc.tasks.filter(t => t && t.id === wantedTaskId) : doc.tasks;
+    const tasks = wantedTaskId ? doc.tasks.filter(/** @param {any} t */ t => t && t.id === wantedTaskId) : doc.tasks;
     for (const task of tasks) {
       if (!task || typeof task.id !== 'string' || !ID.test(task.id)) continue;
       if (typeof task.worktreePath !== 'string' || !task.worktreePath.trim()) continue;
@@ -262,6 +263,7 @@ function createProjectEnvironment(options = {}) {
     }
     return null;
   }
+  /** @param {string} projectId @param {string} requested */
   function resolveV2LibraryRoot(projectId, requested) {
     let doc;
     try {

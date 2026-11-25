@@ -338,52 +338,48 @@ export class ProjectService {
     return false;
   }
 
+  async inspectExistingCoordinatorSession(project, controller, registry, restore) {
+    const sid = typeof project.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
+    if (!sid) return null;
+    if (typeof controller?.inspect === 'function') {
+      try {
+        await controller.inspect(sid);
+      } catch (error) {
+        const err = /** @type {{ name?: string } | null} */ (error);
+        if (err?.name === 'ApiSessionNotFound' || /not found/i.test(messageOf(error))) {
+          return null;
+        }
+      }
+    }
+    let archived = this.isSessionArchived(sid);
+    if (archived && restore && typeof registry?.unarchiveSession === 'function') {
+      await registry.unarchiveSession(sid);
+      archived = false;
+    }
+    await this.syncCoordinatorPresentation(project);
+    return { project, coordinatorSessionId: sid, created: false, archived };
+  }
+
   async ensureCoordinatorSession(projectId, { restore = false } = {}) {
     const outcome = await this.store.withProjectLock(projectId, async () => {
       const project = await this.store.readProject(projectId);
       const controller = this.ctx?.get?.('sessionController') ?? this.ctx?.sessionController;
       const registry = this.ctx?.get?.('workspaceRegistry') ?? this.ctx?.workspaceRegistry;
 
-      let sid = typeof project.coordinatorSessionId === 'string' ? project.coordinatorSessionId.trim() : '';
-      if (sid) {
-        let missing = false;
-        if (typeof controller?.inspect === 'function') {
-          try {
-            await controller.inspect(sid);
-          } catch (error) {
-            if (error?.name === 'ApiSessionNotFound' || /not found/i.test(messageOf(error))) {
-              missing = true;
-            }
-          }
-        }
-        if (!missing) {
-          let archived = this.isSessionArchived(sid);
-          if (archived && restore && typeof registry?.unarchiveSession === 'function') {
-            await registry.unarchiveSession(sid);
-            archived = false;
-          }
-          await this.syncCoordinatorPresentation(project);
-          return { project, coordinatorSessionId: sid, created: false, archived };
-        }
-        sid = '';
-      }
+      const existing = await this.inspectExistingCoordinatorSession(project, controller, registry, restore);
+      if (existing) return existing;
 
-      if (project.archived) {
-        throw httpError(409, 'project_archived');
-      }
+      if (project.archived) throw httpError(409, 'project_archived');
       if (!controller || typeof controller.create !== 'function') {
         throw httpError(503, 'session_controller_unavailable');
       }
 
-      const presentation = coordinatorPresentationOf(project);
       const created = await controller.create({
         ...(project.workspace ? { cwd: project.workspace } : {}),
-        presentation,
+        presentation: coordinatorPresentationOf(project),
       });
-      sid = String(created?.sessionId || created?.id || '').trim();
-      if (!sid) {
-        throw httpError(500, 'coordinator_session_create_failed');
-      }
+      const sid = String(created?.sessionId || created?.id || '').trim();
+      if (!sid) throw httpError(500, 'coordinator_session_create_failed');
       project.coordinatorSessionId = sid;
       project.updatedAt = Date.now();
       const saved = await this.store.writeProject(project);
@@ -745,7 +741,9 @@ export class ProjectService {
     });
 
     this.store.emitChange({ type: 'task.deleted', projectId, taskId });
-    await this.library.removeTaskArtifacts(projectId, taskId).catch(() => {});
+    await this.library.removeTaskArtifacts(projectId, taskId).catch(() => {
+      // Task deletion is already persisted; library artifact index cleanup is best-effort.
+    });
     return result;
   }
 
@@ -921,8 +919,22 @@ export class ProjectService {
     return roots;
   }
 
-  async openPath({ projectId, path: requestedPath = '' } = {}) {
-    const project = await this.store.readProject(projectId);
+  async findMatchingWorktreeTask(project, actualTarget) {
+    for (const task of project.tasks || []) {
+      if (!task?.worktreePath) continue;
+      try {
+        const wtReal = await realpath(task.worktreePath);
+        if (withinPath(wtReal, actualTarget)) {
+          return { id: task.id, path: wtReal };
+        }
+      } catch {
+        // Ignore stale worktree path.
+      }
+    }
+    return null;
+  }
+
+  async resolveOpenPathCandidate(project, requestedPath) {
     const rawTarget = typeof requestedPath === 'string' && requestedPath.trim()
       ? requestedPath.trim()
       : project.workspace;
@@ -933,13 +945,16 @@ export class ProjectService {
         ? resolve(project.workspace, rawTarget)
         : '';
     if (!candidate) throw httpError(400, 'invalid_path');
-
-    let actualTarget;
     try {
-      actualTarget = await realpath(candidate);
+      return await realpath(candidate);
     } catch {
       throw httpError(404, 'path_not_found');
     }
+  }
+
+  async openPath({ projectId = '', path: requestedPath = '' } = {}) {
+    const project = await this.store.readProject(projectId);
+    const actualTarget = await this.resolveOpenPathCandidate(project, requestedPath);
 
     const allowedRoots = await this.collectAllowedOpenRoots(project);
     const inAllowedRoot = allowedRoots.some((root) => withinPath(root, actualTarget));
@@ -948,19 +963,7 @@ export class ProjectService {
       throw httpError(403, 'path_outside_project_scope');
     }
     if (!this.desktop) throw httpError(503, 'desktop_bridge_unavailable');
-    let matchingWorktreeTask = null;
-    for (const task of project.tasks || []) {
-      if (!task?.worktreePath) continue;
-      try {
-        const wtReal = await realpath(task.worktreePath);
-        if (withinPath(wtReal, actualTarget)) {
-          matchingWorktreeTask = { id: task.id, path: wtReal };
-          break;
-        }
-      } catch {
-        // Ignore stale worktree path.
-      }
-    }
+    const matchingWorktreeTask = await this.findMatchingWorktreeTask(project, actualTarget);
     const response = await this.desktop('open-path', {
       projectId: project.id,
       ...(matchingWorktreeTask ? { taskId: matchingWorktreeTask.id } : {}),
