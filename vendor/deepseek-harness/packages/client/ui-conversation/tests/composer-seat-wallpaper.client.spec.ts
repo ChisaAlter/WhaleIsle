@@ -1,8 +1,7 @@
 /**
- * Wallpaper composer seat: explicit transparent fill overrides the
- * non-wallpaper transcript mask so no banded fill ever reads as a cast
- * shadow behind the input box. Transparent theme stays 0% (separate
- * glass-opacity path).
+ * Wallpaper and base composer seat: transparent background and pointer-events
+ * pass-through so transcript messages slide smoothly behind the frosted card
+ * without a bottom gradient mask or shadow band.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +23,7 @@ function declarations(selector: string): Map<string, string> | undefined {
   return found.size === 0 ? undefined : found
 }
 
-describe('ConversationRoot.module.css wallpaper composer seat', () => {
+describe('ConversationRoot.module.css composer seat transparency', () => {
   it('is transparent in wallpaper mode, no solidity dial', () => {
     const light = declarations(':global(html[data-dsh-wallpaper]:not([data-dsh-transparent])) .root[data-phase=\'active\'] .composerSeat')
     const dark = declarations(':global(html[data-dsh-wallpaper]:not([data-dsh-transparent]) body[data-ds-dark-theme]) .root[data-phase=\'active\'] .composerSeat')
@@ -33,8 +32,17 @@ describe('ConversationRoot.module.css wallpaper composer seat', () => {
     expect(css).not.toContain('--dsh-composer-seat-wallpaper-solidity')
   })
 
-  it('keeps the non-wallpaper transcript mask', () => {
+  it('uses transparent background and pointer-events none in base active mode with no bg-base mask', () => {
     const base = declarations('.root[data-phase=\'active\'] .composerSeat')
-    expect(base?.get('background')).toContain('--dsw-alias-bg-base')
+    expect(base?.get('background')).toBe('transparent')
+    expect(base?.get('pointer-events')).toBe('none')
+    expect(base?.get('background')).not.toContain('--dsw-alias-bg-base')
+
+    const slot = declarations('.root[data-phase=\'active\'] .composerSeat :global([data-slot=\'conversation.composer\'])')
+    const fallback = declarations('.root[data-phase=\'active\'] .composerSeat :global([data-chain-overlay-fallback=\'conversation.composer\'])')
+    const stack = declarations('.root[data-phase=\'active\'] .composerSeat .composerStack')
+    expect(slot?.get('pointer-events')).toBe('none')
+    expect(fallback?.get('pointer-events')).toBe('none')
+    expect(stack?.get('pointer-events')).toBe('none')
   })
 })
