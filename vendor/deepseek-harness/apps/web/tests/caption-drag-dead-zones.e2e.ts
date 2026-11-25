@@ -200,7 +200,7 @@ describe('desktop fork: caption band drags everywhere except over controls', () 
     await jobs.click()
     const jobsRegion = page.getByRole('region', { name: 'Background jobs' })
     await jobsRegion.waitFor()
-    await jobs.click()
+    await page.locator('[data-session-panel-toggle]').click()
     await jobsRegion.waitFor({ state: 'hidden' })
     await expectConsistent('after the jobs menu closed')
 
