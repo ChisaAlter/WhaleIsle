@@ -2646,9 +2646,20 @@ describe('scroll collapse pill', () => {
     expect(onExpandCollapsed).toHaveBeenCalledTimes(1)
     expect(document.activeElement).toBe(textarea)
 
+    onExpandCollapsed.mockImplementationOnce(() => {
+      view.rerender(<InputBar {...props} collapsed={false} />)
+    })
+    textarea.blur()
+    view.rerender(<InputBar {...props} collapsed />)
+    fireEvent.pointerDown(textarea, { button: 0 })
+    fireEvent.click(textarea)
+    await act(async () => { await Promise.resolve() })
+    expect(onExpandCollapsed).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(textarea)
+
     textarea.blur()
     view.rerender(<InputBar {...props} collapsed />)
     fireEvent.focus(textarea)
-    expect(onExpandCollapsed).toHaveBeenCalledTimes(2)
+    expect(onExpandCollapsed).toHaveBeenCalledTimes(3)
   })
 })

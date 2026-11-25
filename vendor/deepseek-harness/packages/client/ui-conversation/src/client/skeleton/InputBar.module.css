@@ -693,7 +693,6 @@
   max-height: 28px;
   overflow: hidden;
   margin-right: 0;
-  pointer-events: none;
 }
 
 .card[data-composer-collapsed] .input {
@@ -702,6 +701,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
 
 .card[data-composer-collapsed] .placeholder {

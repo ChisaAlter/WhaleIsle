@@ -751,7 +751,7 @@ export const InputBar = memo(function InputBar({
                   enabled={typingFx}
                   style={typingFxStyle}
                 />
-                {canSuggest && nextPrompt?.text != null && (
+                {!isCollapsed && canSuggest && nextPrompt?.text != null && (
                   <Tooltip label={`${nextPrompt.text} · ${t('input.nextPrompt.hint')}`} side="top" delayMs={500}>
                     <Button
                       variant="ghost"
