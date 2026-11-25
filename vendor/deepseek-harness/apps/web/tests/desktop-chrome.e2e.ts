@@ -89,6 +89,7 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     const branch = cluster.getByRole('button', { name: 'Switch branch' })
     const git = cluster.getByRole('button', { name: 'Commit' })
     const gitMenu = cluster.getByRole('button', { name: 'Git actions' })
+    const sessionPanel = cluster.getByRole('button', { name: 'Session panel' })
     const terminal = cluster.getByRole('button', { name: 'Toggle terminal drawer' })
     const surfaces = cluster.getByRole('button', { name: 'Toggle right panel' })
     expect(await sessionLog.count()).toBe(0)
@@ -102,11 +103,14 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     expect(await branch.isVisible()).toBe(true)
     expect(await git.isVisible()).toBe(true)
     expect(await gitMenu.isVisible()).toBe(true)
+    expect(await sessionPanel.isVisible()).toBe(true)
     expect(await terminal.isVisible()).toBe(true)
     expect(await surfaces.isVisible()).toBe(true)
     const boxes = await Promise.all([
       branch.boundingBox(),
       git.boundingBox(),
+      gitMenu.boundingBox(),
+      sessionPanel.boundingBox(),
       terminal.boundingBox(),
       surfaces.boundingBox(),
     ])
@@ -122,6 +126,7 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     expect(snapshot).toContain('Switch branch')
     expect(snapshot).toContain('Commit')
     expect(snapshot).toContain('Git actions')
+    expect(snapshot).toContain('Session panel')
     expect(snapshot).toContain('Toggle terminal drawer')
     expect(snapshot).toContain('Toggle right panel')
     expect(tripwire.pageErrors, tripwire.pageErrors.join('\n')).toEqual([])

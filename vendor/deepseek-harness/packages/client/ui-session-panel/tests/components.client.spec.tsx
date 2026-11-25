@@ -4,7 +4,11 @@ import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-l
 import { useRef, type ReactNode } from 'react'
 import { useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bindSnapshotSelector, contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  SlotCore, type FactoryComponentPropsOf, type SessionAreaProps, type SlotRendererHost,
+  type SlotScopeAdapter, type StandardSourceBinding,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import { createSlotRenderer } from '../../ui-renderer/src/client/scoped-slots.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { EnvironmentSection } from '../src/client/EnvironmentSection.tsx'
 import { PanelDetails } from '../src/client/PanelDetails.tsx'
@@ -53,12 +57,45 @@ function tooltipAfterHover(anchor: Element): { readonly early: boolean; readonly
 }
 
 describe('SessionPanelToggle', () => {
-  function toggleProps(dockable: boolean | undefined, visibility: SessionPanelVisibility, toggle = vi.fn()) {
+  interface ToggleMockOptions {
+    activePanelId?: string | null
+    managedSession?: boolean
+    mainViewSession?: {
+      id: SessionId
+      blank?: boolean
+      running?: boolean
+      presentation?: { composer?: string }
+    } | null
+  }
+
+  function toggleProps(
+    dockable: boolean | undefined,
+    visibility: SessionPanelVisibility,
+    toggle = vi.fn(),
+    options: ToggleMockOptions = {},
+  ) {
     const renderSlot = vi.fn(() => <span>需要处理</span>)
-    const entries: SessionPanelDockable = new Map(dockable === undefined ? [] : [[SID, dockable]])
+    const SessionProvider = ({ children }: SessionAreaProps): ReactNode => <>{children}</>
+    const session = options.mainViewSession === undefined
+      ? { id: SID, blank: false, running: false, retainedBy: { mainView: 1 } }
+      : options.mainViewSession === null
+        ? null
+        : { blank: false, running: false, ...options.mainViewSession, retainedBy: { mainView: 1 } }
+    const entries: SessionPanelDockable = new Map(dockable === undefined ? [] : [[session?.id ?? SID, dockable]])
     const props = {
-      sessionId: SID, useDockable: selectorOf(entries), useVisibility: selectorOf(visibility), toggle, renderSlot, t,
-    } as SessionPanelToggleProps
+      surfaces: 0,
+      rightbarShown: false,
+      terminalDrawer: 0,
+      managedSession: options.managedSession ?? false,
+      usePanelInfo: selectorOf({ activePanelId: options.activePanelId ?? null }),
+      useSessions: selectorOf({ byId: session === null ? {} : { [session.id]: session } }),
+      useDockable: selectorOf(entries),
+      useVisibility: selectorOf(visibility),
+      toggle,
+      renderSlot,
+      SessionProvider,
+      t,
+    } as unknown as SessionPanelToggleProps
     return { props, toggle, renderSlot }
   }
 
@@ -66,6 +103,7 @@ describe('SessionPanelToggle', () => {
     const { props, renderSlot } = toggleProps(true, DOCKED)
     render(<SessionPanelToggle {...props} />)
     const button = screen.getByRole('button', { name: '会话面板 需要处理' })
+    expect(button.hasAttribute('data-session-panel-toggle')).toBe(true)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(button.getAttribute('aria-controls')).toBe(`dsh-session-panel-${SID}`)
     expect(renderSlot).toHaveBeenCalledWith('conversation.session.panel.indicator', { panelShown: true })
@@ -114,6 +152,118 @@ describe('SessionPanelToggle', () => {
     fireEvent.keyDown(document.body, { key: 'Tab' })
     fireEvent.focus(button)
     expect(screen.getByRole('tooltip', { hidden: true }).textContent).toBe('切换到「对话」视图后可显示会话面板')
+  })
+
+  it('renders nothing when no active conversation is shown (blank home, no mainView session, managed session, or other panel)', () => {
+    const cases: ToggleMockOptions[] = [
+      { mainViewSession: null },
+      { mainViewSession: { id: SID, blank: true, running: false } },
+      { managedSession: true },
+      { activePanelId: 'settings' },
+    ]
+    for (const options of cases) {
+      const { props } = toggleProps(true, DOCKED, vi.fn(), options)
+      const view = render(<SessionPanelToggle {...props} />)
+      expect(view.container.innerHTML).toBe('')
+      view.unmount()
+    }
+  })
+
+  it('renders for a running blank turn or presentation-owned session and bridges session-scoped indicators from root', () => {
+    const runningBlank = toggleProps(true, DOCKED, vi.fn(), {
+      mainViewSession: { id: SID, blank: true, running: true },
+    })
+    const view1 = render(<SessionPanelToggle {...runningBlank.props} />)
+    expect(screen.getByRole('button', { name: '会话面板 需要处理' })).toBeTruthy()
+    view1.unmount()
+
+    const presentationOwned = toggleProps(true, DOCKED, vi.fn(), {
+      mainViewSession: { id: SID, blank: true, running: false, presentation: { owner: 'project' } },
+    })
+    const view2 = render(<SessionPanelToggle {...presentationOwned.props} />)
+    expect(screen.getByRole('button', { name: '会话面板 需要处理' })).toBeTruthy()
+    view2.unmount()
+
+    const core = new SlotCore()
+    const rootBinding: StandardSourceBinding = {
+      key: undefined,
+      hooks: {
+        panelInfo: { getSnapshot: () => ({ activePanelId: null }), subscribe: () => () => {} },
+        sessions: {
+          getSnapshot: () => ({ byId: { [SID]: { id: SID, blank: false, running: false, retainedBy: { mainView: 1 } } } }),
+          subscribe: () => () => {},
+        },
+      },
+      keyedHooks: {},
+      props: {},
+    }
+    const sessionBinding: StandardSourceBinding & { readonly ctx: object } = {
+      key: SID,
+      ctx: {},
+      hooks: {},
+      keyedHooks: {},
+      props: { sessionId: SID },
+    }
+    const sessionAdapter: SlotScopeAdapter = {
+      current: { getSnapshot: () => sessionBinding, subscribe: () => () => {} },
+      bindingSource: () => ({ getSnapshot: () => sessionBinding, subscribe: () => () => {} }),
+      renderArea: (_binding, { children }) => <>{children}</>,
+    }
+    const host: SlotRendererHost = {
+      subscribe: (key, fn) => core.subscribe(key, fn),
+      getVersion: key => core.getVersion(key),
+      entriesOf: key => core.entries(key),
+      entriesOfSlot: key => core.entriesOfSlot(key),
+      reportEntryError: (key, entry, error, info) => { core.reportEntryError(key, entry, error, info) },
+      reportFactoryError: (name, definition, error) => { core.reportFactoryError(name, definition, error) },
+      specOf: key => core.specDynamic(key),
+      isLive: entry => core.isLive(entry),
+      storeOf: () => undefined,
+      factoryStoreOf: () => undefined,
+      retainFactoryOccurrence: () => () => {},
+      subscribeFactory: (name, fn) => core.subscribeFactory(name, fn),
+      getFactoryVersion: name => core.factoryVersion(name),
+      factoryOf: name => core.factory(name),
+      isFactoryLive: definition => core.isFactoryLive(definition),
+      root: { getSnapshot: () => rootBinding, subscribe: () => () => {} },
+      scopeRevision: { getSnapshot: () => 0, subscribe: () => () => {} },
+      scope: () => sessionAdapter,
+      locale: {
+        bind: () => key => (zh as Record<string, string>)[key] ?? key,
+        getSnapshot: () => ({ revision: 0 }),
+        subscribe: () => () => {},
+      },
+    }
+    core.register({
+      name: 'root',
+      children: { 'shell.titlebar.trailing': { kind: 'list', scope: 'root' } },
+    } as never, ({ renderSlot }: { renderSlot: (key: string, owner: object) => ReactNode }) => (
+      <>{renderSlot('shell.titlebar.trailing', { surfaces: 0, rightbarShown: false, terminalDrawer: 0, managedSession: false })}</>
+    ))
+    core.register({
+      name: 'shell.titlebar.trailing',
+      id: 'session-panel',
+      order: 30,
+      locale: 'sessionPanel',
+      children: { 'conversation.session.panel.indicator': { kind: 'list', scope: 'session', inline: true } },
+      inject: () => ({
+        hooks: {
+          visibility: { getSnapshot: () => DOCKED, subscribe: () => () => {} },
+          dockable: { getSnapshot: () => new Map([[SID, true]]), subscribe: () => () => {} },
+        },
+        toggle: () => {},
+      }),
+    } as never, SessionPanelToggle as never)
+    core.register({
+      name: 'conversation.session.panel.indicator',
+      id: 'test-indicator',
+      order: 10,
+    } as never, (({ sessionId, panelShown }: { sessionId: SessionId; panelShown: boolean }) => (
+      <span>{`${sessionId}:${panelShown ? 'open' : 'closed'}`}</span>
+    )) as never)
+
+    render(<>{createSlotRenderer().renderRoot(host, {})}</>)
+    expect(screen.getByRole('button', { name: `会话面板 ${SID}:open` })).toBeTruthy()
   })
 })
 

@@ -9,6 +9,7 @@ import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { NS } from './locales.ts'
 
@@ -156,7 +157,7 @@ export type SessionPanelDockable = ReadonlyMap<SessionId, boolean>
  */
 export type SessionPanelProbes = ReadonlyMap<string, boolean>
 
-/** Business face of the header toggle. */
+/** Business face of the titlebar toggle. */
 export interface SessionPanelToggleInjected {
   /** Shared visibility and each Session's room to dock; the renderer binds them as `useVisibility` and `useDockable`. */
   readonly hooks: {
@@ -167,7 +168,7 @@ export interface SessionPanelToggleInjected {
    * Show or hide the panel. With room to dock this flips the docking
    * preference and closes any overlay; otherwise it opens or closes the
    * Session's overlay. No effect while no Chat View shows the Session.
-   * @param sessionId - Session whose header holds the toggle.
+   * @param sessionId - active Session whose panel is toggled.
    */
   readonly toggle: (sessionId: SessionId) => void
 }
@@ -215,9 +216,9 @@ export interface ProjectRowInjected {
   readonly hooks: { readonly host: ObservableSnapshot<RemoteHostFacts> }
 }
 
-/** Full props of the header toggle. */
+/** Full props of the titlebar toggle. */
 export type SessionPanelToggleProps =
-  PropsRuntime<'conversation.session.header.utilities'>
+  PropsRuntime<'shell.titlebar.trailing'>
   & PropsRenderSlots<'conversation.session.panel.indicator'>
   & InjectFace<SessionPanelToggleInjected>
   & PropsLocale<typeof NS>

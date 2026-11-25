@@ -1,5 +1,5 @@
 ---
-description: "会话面板：会话标题栏开关与 Chat 视图侧边层中的悬浮面板，分栏由其他插件注册，用户可以调整顺序，并内置「环境」分栏。"
+description: "会话面板：标题栏开关与 Chat 视图侧边层中的悬浮面板，分栏由其他插件注册，用户可以调整顺序，并内置「环境」分栏。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-session-panel` 在会话标题栏加一个开关，用来显示或隐藏一块汇总当前会话信息的悬浮面板。面板只出现在 Chat 视图中：它停靠在正文旁，位置是 Chat 视图的末端留白，或者正文移入起始留白后让出的位置；两者都放不下时，按需浮在对话正文上方。用户可以拖动分栏调整顺序。面板只绘制分栏标题，分栏内容交给注册分栏的插件；本包内置「环境」分栏及其工作目录行。
+`dsh-client-ui-session-panel` 在标题栏尾簇加一个开关，用来显示或隐藏一块汇总当前活跃会话信息的悬浮面板。面板只出现在 Chat 视图中：它停靠在正文旁，位置是 Chat 视图的末端留白，或者正文移入起始留白后让出的位置；两者都放不下时，按需浮在对话正文上方。用户可以拖动分栏调整顺序。面板只绘制分栏标题，分栏内容交给注册分栏的插件；本包内置「环境」分栏及其工作目录行。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`@deepseek-ai/dsh-web-app` 套件默认加载本包。开关是会话标题栏的第一个工具按钮，位于共享和计划任务目录之前。它是图标按钮：无障碍名称由面板名称和其角标组成，提示文字说明按下后是显示还是隐藏面板（悬停 500ms 后显示，键盘聚焦时立即显示），`aria-expanded` 表示面板当前是否显示。
+`@deepseek-ai/dsh-web-app` 套件默认加载本包。开关位于标题栏尾簇（`shell.titlebar.trailing`，`order: 30`），在 Git 工具之后、布局面板开关之前；无活跃会话时（例如空白首页、托管会话或非对话页面）不渲染。它是图标按钮：无障碍名称由面板名称和其角标组成，提示文字说明按下后是显示还是隐藏面板（悬停 500ms 后显示，键盘聚焦时立即显示），`aria-expanded` 表示面板当前是否显示。
 
 <a id="docking"></a>
 ### 停靠与浮层
@@ -113,7 +113,8 @@ kind: "package-reference"
 
 - [Web Client Slots](../../../docs/subsystems/slots.zh.md)——分栏依赖的 list、keyed 与 owner props 语义。
 - [`dsh-client-ui-chat`](../ui-chat/README.zh.md#scroll-ownership)——`conversation.chat.aside` 图层及其 `--dsh-chat-aside-gutter` 属性。
-- [`dsh-client-ui-conversation`](../ui-conversation/README.zh.md#end-reserve)——会话标题栏工具区与主体的末端预留。
+- [`dsh-client-ui-conversation`](../ui-conversation/README.zh.md#end-reserve)——主体的末端预留。
+- [`dsh-client-ui-layout`](../ui-layout/README.zh.md)——`shell.titlebar.trailing` 标题栏尾簇。
 - [`dsh-client-ui-primitives`](../ui-primitives/README.zh.md#component-catalog)——`Button`、`Tooltip`、图标，以及模态层与输入法组合的判断。
 
 -----

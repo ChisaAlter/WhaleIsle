@@ -1,5 +1,5 @@
 ---
-description: "The Session panel: a header toggle and a floating panel in the Chat View's aside whose sections other plugins register and the reader can reorder, with the built-in Environment section."
+description: "The Session panel: a titlebar toggle and a floating panel in the Chat View's aside whose sections other plugins register and the reader can reorder, with the built-in Environment section."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-session-panel` adds a Session header toggle that shows or hides a floating panel of facts about the current Session. The panel lives in the Chat View: it docks beside the transcript, in the Chat View's end gutter or in the room the transcript leaves by moving into its start gutter, and where neither holds it opens over the transcript on request. The reader can drag its sections into another order. It draws section titles and leaves section content to the plugins that register sections; it ships the Environment section with the working folder row.
+`dsh-client-ui-session-panel` adds a titlebar toggle that shows or hides a floating panel of facts about the active Session. The panel lives in the Chat View: it docks beside the transcript, in the Chat View's end gutter or in the room the transcript leaves by moving into its start gutter, and where neither holds it opens over the transcript on request. The reader can drag its sections into another order. It draws section titles and leaves section content to the plugins that register sections; it ships the Environment section with the working folder row.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-The `@deepseek-ai/dsh-web-app` bundle loads this package by default. The toggle is the first Session header utility, before sharing and the schedule catalog. It is an icon button with the panel name and its indicators as its accessible name, a tooltip that says whether a press shows or hides the panel, shown after 500ms of hover or at once on keyboard focus, and `aria-expanded` for whether the panel shows.
+The `@deepseek-ai/dsh-web-app` bundle loads this package by default. The toggle sits in the titlebar trailing cluster (`shell.titlebar.trailing`, `order: 30`), after Git actions and before the layout panel toggles, and hides when no active conversation is shown (such as on the blank home view, a managed session, or a non-conversation page). It is an icon button with the panel name and its indicators as its accessible name, a tooltip that says whether a press shows or hides the panel, shown after 500ms of hover or at once on keyboard focus, and `aria-expanded` for whether the panel shows.
 
 <a id="docking"></a>
 ### Docking and the overlay
@@ -38,7 +38,7 @@ A press that shows or hides the panel, on the toggle or outside an overlay, play
 
 Where the start gutter cannot give that room, the docked panel hides, so it never covers the transcript. This includes a narrow window, an expanded right sidebar, and a dragged-wide transcript column. Pressing the toggle then opens the panel over the transcript with the prominent elevation, 280px wide so it covers less of the transcript than the docked panel takes beside it, 8px from the end edge, above the composer stack and not covering it. The overlay closes from the toggle, on Escape, and on a pointer press outside the panel, the toggle, and any open menu, such as a row's context menu; Escape returns focus to the toggle when focus was inside the panel. A modal above the page, an input method composing text, and a handler that already took the key, such as an open menu's, keep Escape; otherwise the overlay takes it first, so with the overlay open the first Escape from the composer closes the overlay and does not count toward stopping a running turn. Closing it does not change the docking preference. At most one Session's overlay is open; it closes once the panel has room to dock and once no Chat View shows the Session, as after switching to another Session or View, and switching back does not reopen it. When the panel hides while focus is inside it, focus moves to the toggle.
 
-Other Views, such as the trajectory View, show no panel. While no Chat View shows the Session, the toggle is unavailable: it stays in the header with its indicators, dimmed, and its tooltip asks to switch to the Chat view.
+Other Views, such as the trajectory View, show no panel. While no Chat View shows the Session, the toggle is unavailable: it stays in the titlebar with its indicators, dimmed, and its tooltip asks to switch to the Chat view.
 
 <a id="section-order"></a>
 ### Section order
@@ -98,7 +98,7 @@ The panel projects the section list's live registrations (`entriesOfSlot`, so a 
 | [`src/client/visibility.ts`](src/client/visibility.ts) | Presentation, the shared visibility state, the dock probes, and each Session's room to dock |
 | [`src/client/sections.ts`](src/client/sections.ts) | Section roster projection, the reader's stored order with Environment held first, and the move that changes it |
 | [`src/client/SessionPanel.tsx`](src/client/SessionPanel.tsx) | The panel, its dock probe, its section titles with their drag reordering, and Escape handling |
-| [`src/client/SessionPanelToggle.tsx`](src/client/SessionPanelToggle.tsx) | The header toggle and its indicators |
+| [`src/client/SessionPanelToggle.tsx`](src/client/SessionPanelToggle.tsx) | The titlebar toggle and its indicators |
 | [`src/client/SessionPanel.module.css`](src/client/SessionPanel.module.css) | The panel's geometry, the dock probe, the request for the transcript's room, and the rules for marked rows |
 | [`src/client/ProjectRow.tsx`](src/client/ProjectRow.tsx) | The working folder row |
 | [`src/client/PanelFold.tsx`](src/client/PanelFold.tsx) | The fold control of a folded list, offered as a Component Factory |
@@ -113,7 +113,8 @@ The panel projects the section list's live registrations (`entriesOfSlot`, so a 
 
 - [Web Client Slots](../../../docs/subsystems/slots.md) — list, keyed, and owner-prop semantics the sections rely on.
 - [`dsh-client-ui-chat`](../ui-chat/README.md#scroll-ownership) — the `conversation.chat.aside` layer and its `--dsh-chat-aside-gutter` property.
-- [`dsh-client-ui-conversation`](../ui-conversation/README.md#end-reserve) — the Session header utilities and the body's end reserve.
+- [`dsh-client-ui-conversation`](../ui-conversation/README.md#end-reserve) — the Conversation body's end reserve.
+- [`dsh-client-ui-layout`](../ui-layout/README.md) — the `shell.titlebar.trailing` titlebar cluster.
 - [`dsh-client-ui-primitives`](../ui-primitives/README.md#component-catalog) — `Button`, `Tooltip`, the icons, and the modal and composition guards.
 
 -----
