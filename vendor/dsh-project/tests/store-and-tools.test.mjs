@@ -11,6 +11,16 @@ function makeTempHome(t) {
   return dir;
 }
 
+async function waitForCondition(predicate, { timeoutMs = 2000, intervalMs = 15 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await predicate();
+    if (result) return result;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return predicate();
+}
+
 function makeMockCtx(overrides = {}) {
   const tools = new Map();
   const toolOptions = new Map();
@@ -490,12 +500,11 @@ test('auto-dispatch on approveTask, autonomy=auto, paused=false, and schedule() 
   const { task: t4 } = await service.addTask(project.id, { title: 'Waiting for admission' });
   admissionOpen = true;
   service.schedule();
-  const scheduleDeadline = Date.now() + 2000;
-  let afterSchedule = await service.readProject(project.id);
-  while (afterSchedule.tasks.find((item) => item.id === t4.id).status !== 'running' && Date.now() < scheduleDeadline) {
-    await new Promise((r) => setTimeout(r, 25));
-    afterSchedule = await service.readProject(project.id);
-  }
+  await waitForCondition(async () => {
+    const current = await service.readProject(project.id);
+    return current.tasks.find((item) => item.id === t4.id).status === 'running';
+  });
+  const afterSchedule = await service.readProject(project.id);
   assert.equal(afterSchedule.tasks.find((item) => item.id === t4.id).status, 'running');
 });
 
@@ -792,7 +801,7 @@ test('default autonomy is auto, slot-freed settle auto-relays queued tasks, huma
     stopReason: 'completed',
     lastAssistantMessage: [{ type: 'text', text: 'First slice finished cleanly.' }],
   });
-  await new Promise((r) => setTimeout(r, 15));
+  await waitForCondition(() => activations.length >= 2, { intervalMs: 10 });
   assert.equal(activations.length, 2, 'settling t1 should auto-relay queued t2');
 
   // Settle t2 within the same batching window -> both t1 and t2 coalesce into ONE report-back!
@@ -801,7 +810,10 @@ test('default autonomy is auto, slot-freed settle auto-relays queued tasks, huma
     stopReason: 'error',
     lastAssistantMessage: [{ type: 'text', text: 'Second slice hit a lint error.' }],
   });
-  await new Promise((r) => setTimeout(r, 260));
+  await waitForCondition(
+    () => coordinatorPrompts.length >= 1 && sseEvents.some((ev) => ev.type === 'coordinator.notified'),
+    { intervalMs: 20 },
+  );
 
   assert.equal(coordinatorPrompts.length, 1, 'concurrent settlements should coalesce into one batched receipt');
   const receiptText = coordinatorPrompts[0].content[0].text;
