@@ -114,8 +114,45 @@ export function resultRequest(args = {}) {
   return { id, waitMs: args.wait_ms || 0 };
 }
 
+const CONFIRM_PROMPT_PREVIEW_CHARS = 2000;
+const CONFIRM_PROMPT_TAIL_CHARS = 300;
+
+/** Format long user/model text for desktop confirmation with explicit truncation warning + tail preview. */
+export function formatConfirmPromptSection(rawText) {
+  const text = String(rawText ?? '');
+  if (text.length <= CONFIRM_PROMPT_PREVIEW_CHARS) return text;
+  const head = text.slice(0, CONFIRM_PROMPT_PREVIEW_CHARS);
+  const tail = text.slice(-CONFIRM_PROMPT_TAIL_CHARS);
+  return (
+    `${head}\n\n`
+    + `[注意：完整内容共 ${text.length} 字符，以上仅展示前 ${CONFIRM_PROMPT_PREVIEW_CHARS} 字符，中间部分已省略，请谨慎确认]\n`
+    + `……（末尾 ${CONFIRM_PROMPT_TAIL_CHARS} 字符预览）……\n${tail}`
+  );
+}
+
+/** Build the desktop confirmation payload for `acp_delegate`, exposing all security-relevant parameters. */
+export function buildDelegateConfirmRequest(args = {}, { resolvedCwd = '', effectiveModel = '' } = {}) {
+  const agent = String(args?.agent ?? '?');
+  const cwd = String(resolvedCwd || '').trim();
+  const model = String(effectiveModel || args?.model || 'default');
+  const isolation = String(args?.isolation || 'shared');
+  const runtimeMode = String(args?.runtime_mode || 'inherit');
+  const interactionMode = String(args?.interaction_mode || 'default');
+  const metaLines = [
+    ...(cwd ? [`目标目录：${cwd}`] : []),
+    `模型：${model} | 隔离：${isolation} | 权限模式：${runtimeMode} | 交互模式：${interactionMode}`,
+  ];
+  return {
+    tool: 'acp_delegate',
+    action: 'delegate',
+    effect: 'code',
+    summary: `在已配置代理 ${agent} 上启动一个可以执行命令的子任务${cwd ? `（目录：${cwd}）` : ''}`,
+    details: `${metaLines.join('\n')}\n\n${formatConfirmPromptSection(args?.prompt ?? '')}`,
+  };
+}
+
 /** Convert an MCP JSON Schema property map into the dsh-tools ParameterSchemaSpec DSL. */
-function hostParameters(inputSchema) {
+export function hostParameters(inputSchema) {
   const convertPropertyMap = (properties, requiredList) => {
     const required = new Set(requiredList || []);
     return Object.fromEntries(Object.entries(properties || {}).map(([name, schema]) => {
@@ -142,8 +179,8 @@ function hostParameters(inputSchema) {
   return convertPropertyMap(inputSchema.properties, inputSchema.required);
 }
 
-export function registerDelegation(ctx, manager) {
-  const defineTool = loadDefineTool();
+export function registerDelegation(ctx, manager, options = {}) {
+  const defineTool = typeof options?.defineTool === 'function' ? options.defineTool : loadDefineTool();
   ctx.effect(() => ctx.subagents.registerProvider({
     name: DELEGATION_PROVIDER,
     capabilities: { agentOptions: true, agentPreset: false, outputSchema: false, depthLimit: true },
@@ -153,20 +190,27 @@ export function registerDelegation(ctx, manager) {
   const handlers = {
     acp_agents: () => ({ agents: manager.listDelegationAgents() }),
     async acp_delegate(args, exec) {
-      if (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 0 || args.timeout_ms > 20000)) {
-        throw new Error('timeout_ms must be an integer from 0 to 20000.');
+      let resolvedCwd = '';
+      let effectiveModel = String(args?.model || '');
+      let existingTask = null;
+      if (typeof manager?.preflightDelegate === 'function') {
+        const preflight = await manager.preflightDelegate(args, exec.agent, ctx.subagents);
+        resolvedCwd = preflight?.resolvedCwd ?? resolveDelegationCwd(args, exec.agent);
+        effectiveModel = preflight?.effectiveModel ?? effectiveModel;
+        existingTask = preflight?.existingTask ?? null;
+      } else {
+        if (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 0 || args.timeout_ms > 20000)) {
+          throw new Error('timeout_ms must be an integer from 0 to 20000.');
+        }
+        resolvedCwd = resolveDelegationCwd(args, exec.agent);
       }
-      const resolvedCwd = resolveDelegationCwd(args, exec.agent);
-      const hasExplicitCwd = typeof args.cwd === 'string' && args.cwd.trim() !== '';
-      const targetCwd = hasExplicitCwd ? resolvedCwd : '';
-      const confirmation = await confirmModelAction({
-        tool: 'acp_delegate',
-        action: 'delegate',
-        effect: 'code',
-        summary: `在已配置代理 ${String(args.agent ?? '?')} 上启动一个可以执行命令的子任务${targetCwd ? `（目录：${targetCwd}）` : ''}`,
-        details: `${targetCwd ? `目标目录：${targetCwd}\n\n` : ''}${String(args.prompt ?? '').slice(0, 2000)}`,
-      });
-      if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
+      if (!existingTask) {
+        const confirmation = await confirmModelAction(
+          buildDelegateConfirmRequest(args, { resolvedCwd, effectiveModel }),
+          { signal: exec.signal },
+        );
+        if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
+      }
       const child = await manager.delegate(args, exec.agent, exec.signal, 'parent', ctx.subagents);
       if (args.mode === 'wait') return manager.waitTask(exec.agent, child.taskId, args.timeout_ms ?? 15000, exec.signal);
       if (child.recovered || manager.tasks.get(exec.agent.id, child.taskId).endedAt) return manager.tasks.snapshot(exec.agent, child.taskId, true);

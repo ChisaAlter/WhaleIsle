@@ -11,10 +11,13 @@ function renderAccountIdentitySummary({ account, revealEmail, setRevealEmail, t 
     h(StateDot, { state: account?.authenticated ? 'done' : 'warning', size: 12 }),
     account?.email
       ? h(
-          'span',
+          'button',
           {
+            type: 'button',
             className: 'dsh-acp-account-email',
             title: t('account.reveal'),
+            'aria-label': t('account.reveal'),
+            'aria-pressed': revealEmail,
             onClick: () => setRevealEmail((v) => !v),
           },
           revealEmail ? account.email : maskEmail(account.email),
@@ -85,7 +88,8 @@ function renderTerminalAuthForm({ flowInteraction, terminalDraft, setTerminalDra
         value: terminalDraft,
         autoComplete: 'off',
         placeholder: t('login.terminalPh'),
-        onInput: (e) => setTerminalDraft(e.target.value),
+        'aria-label': t('login.terminalPh'),
+        onChange: (e) => setTerminalDraft(e.target.value),
       }),
       h(Button, { type: 'submit', variant: 'outline', size: 'sm', disabled: !terminalDraft }, t('action.continue')),
     ),
@@ -115,7 +119,7 @@ function renderCredentialsAuthForm({ flowInteraction, flowCredDraft, setFlowCred
           type: field.secret ? 'password' : 'text',
           value: flowCredDraft[field.name] ?? '',
           autoComplete: 'off',
-          onInput: (e) => setFlowCredDraft((cur) => ({ ...cur, [field.name]: e.target.value })),
+          onChange: (e) => setFlowCredDraft((cur) => ({ ...cur, [field.name]: e.target.value })),
         }),
       ),
     ),
@@ -130,6 +134,7 @@ function renderAuthFlowPanel({
   flowInteraction,
   flowUrl,
   copiedUrl,
+  busyAction,
   terminalDraft,
   setTerminalDraft,
   flowCredDraft,
@@ -162,7 +167,16 @@ function renderAuthFlowPanel({
       h('div', { className: 'dsh-acp-flow-status' }, h(StateDot, { state: dotState, size: 14 }), h('span', null, flowText)),
       activeFlow.interaction?.userCode ? h('span', { className: 'dsh-acp-flow-code' }, activeFlow.interaction.userCode) : null,
       flowActive
-        ? h(Button, { variant: 'outline', size: 'sm', onClick: () => void onCancelFlow() }, t('action.cancelLogin'))
+        ? h(
+            Button,
+            {
+              variant: 'outline',
+              size: 'sm',
+              loading: busyAction === 'cancel-flow',
+              onClick: () => void onCancelFlow(),
+            },
+            t('action.cancelLogin'),
+          )
         : null,
     ),
     flowUrl
@@ -199,16 +213,26 @@ function renderAuthFlowPanel({
               type: 'url',
               value: callbackDraft,
               autoComplete: 'off',
-              onInput: (e) => setCallbackDraft(e.target.value),
+              onChange: (e) => setCallbackDraft(e.target.value),
             }),
           ),
-          h(Button, { type: 'submit', variant: 'outline', size: 'sm', disabled: !callbackDraft.trim() }, t('action.continue')),
+          h(
+            Button,
+            {
+              type: 'submit',
+              variant: 'outline',
+              size: 'sm',
+              loading: busyAction === 'complete-flow',
+              disabled: !callbackDraft.trim(),
+            },
+            t('action.continue'),
+          ),
         )
       : null,
   );
 }
 
-function renderCredentialFieldsBox({ fields, credDraft, setCredDraft, savedFlash, busyAction, onSaveCredentials, t }) {
+function renderCredentialFieldsBox({ fields, credDraft, setCredDraft, savedFlash, busyAction, idPrefix, onSaveCredentials, t }) {
   if (!fields || fields.length === 0) return null;
   return h(
     'div',
@@ -216,20 +240,22 @@ function renderCredentialFieldsBox({ fields, credDraft, setCredDraft, savedFlash
     h(
       'div',
       { className: 'dsh-acp-grid-2' },
-      fields.map((field) =>
-        h(
+      fields.map((field) => {
+        const inputId = `${idPrefix}-cred-${field.key}`;
+        return h(
           'div',
           { key: field.key, className: 'dsh-acp-field' },
-          h('label', { className: 'dsh-acp-field-label' }, field.label),
+          h('label', { className: 'dsh-acp-field-label', htmlFor: inputId }, field.label),
           h(Input, {
+            id: inputId,
             variant: 'form',
             type: field.secret ? 'password' : 'text',
             value: credDraft[field.key] ?? '',
             placeholder: field.placeholder || '',
             onChange: (e) => setCredDraft({ ...credDraft, [field.key]: e.target.value }),
           }),
-        ),
-      ),
+        );
+      }),
     ),
     h(
       'div',

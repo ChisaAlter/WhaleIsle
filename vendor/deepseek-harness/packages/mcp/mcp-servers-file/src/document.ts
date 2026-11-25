@@ -147,6 +147,8 @@ export function toClientConfig(record: McpServerRecord): McpClientConfig {
       failOnStartupError: record.failOnStartupError ?? false,
       closeTimeoutMs: 5000,
       expandTemplates: false,
+      toolLoading: 'eager',
+      catalogDescriptionMaxLength: 160,
       ...record.reconnect === undefined ? {} : { reconnect: { ...record.reconnect } },
     }
   }
@@ -157,8 +159,10 @@ export function toClientConfig(record: McpServerRecord): McpClientConfig {
     headers: { ...(record.headers ?? {}) },
     toolCallTimeoutMs: record.toolCallTimeoutMs ?? 60_000,
     failOnStartupError: record.failOnStartupError ?? false,
-      closeTimeoutMs: 5000,
-      expandTemplates: false,
+    closeTimeoutMs: 5000,
+    expandTemplates: false,
+    toolLoading: 'eager',
+    catalogDescriptionMaxLength: 160,
     ...record.reconnect === undefined ? {} : { reconnect: { ...record.reconnect } },
   }
 }

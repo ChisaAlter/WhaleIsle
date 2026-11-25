@@ -30,6 +30,7 @@ const { default: Questions } = await import(pathToFileURL(path.join(process.env.
 const { default: SandboxPolicy, setSandboxMode } = await import(pathToFileURL(path.join(process.env.DSH_HARNESS_ROOT, 'packages/sandbox/sandbox-policy/lib/index.js')).href);
 const { default: LocalSubprocess } = await import(pathToFileURL(path.join(process.env.DSH_HARNESS_ROOT, 'packages/subprocess/subprocess-local/lib/index.js')).href);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-host-'));
+const previousHome = process.env.DSH_HOME;
 process.env.DSH_HOME = root;
 const ctx = new Context();
 const routes = [];
@@ -438,5 +439,7 @@ try {
   await ctx.fiber.dispose();
   await runtimeBundle().disposeAgentRuntime();
   await new Promise((resolve) => server.close(resolve));
-  console.log(`Integration artifacts: ${root}`);
+  if (previousHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previousHome;
+  if (process.env.KEEP_ARTIFACTS === '1') console.log(`Integration artifacts: ${root}`);
+  else fs.rmSync(root, { recursive: true, force: true });
 }

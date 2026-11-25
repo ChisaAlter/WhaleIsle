@@ -550,7 +550,7 @@ harnessTest('real SessionController exercises whale_session_queue, whale_read_se
     { id: 'mcp-servers-file', config: { path: path.join(home, 'mcp.yaml'), watch: false } },
     { id: 'spill-local', config: { root: path.join(home, 'spill'), cleanupPeriodDays: 0 } },
     { id: 'agent-default-model', config: { provider: 'scripted', model: 'fast' } },
-    ...['webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map((id) => ({ id, disabled: true })),
+    ...['webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'authentication-token', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map((id) => ({ id, disabled: true })),
     { insert: [{ id: 'directory-picker-test', name: '@deepseek-ai/dsh-host-directory-picker-browse' }] },
   ];
   const resolution = await createRuntimeResolution({ installAnchor: path.join(HARNESS_DIR, 'apps', 'cli', 'package.json'), home });

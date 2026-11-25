@@ -5,26 +5,43 @@ import { resolveStoreFile } from './presets.js';
 import { ensurePrivateDir } from './store-file.js';
 
 const require = createRequire(import.meta.url);
-// Required lazily: the 3.2MB vendor bundle's parse must not sit on the cordis
+// Required lazily: the 3.7MB vendor bundle's parse must not sit on the cordis
 // plugin-import path — it would widen other plugins' deferred route windows.
 let bundle = null;
 
 let initPromise = null;
 let initError = null;
 let hostContext = null;
-let owners = 0;
+const activeOwners = new Set();
+let lifecycleChain = Promise.resolve();
 
 export function configureRuntimeHost(ctx) {
+  const owner = { ctx };
+  activeOwners.add(owner);
   hostContext = ctx;
-  owners += 1;
   let released = false;
   return async () => {
     if (released) return;
     released = true;
-    if (--owners !== 0) return;
-    await initPromise?.catch(() => { /* A failed initialization still needs final runtime disposal. */ });
-    await bundle?.disposeAgentRuntime();
-    initPromise = null; initError = null; hostContext = null;
+    activeOwners.delete(owner);
+    if (activeOwners.size > 0) {
+      hostContext = [...activeOwners].at(-1).ctx;
+      return;
+    }
+    const disposal = lifecycleChain.then(async () => {
+      if (activeOwners.size > 0) return;
+      const pendingInit = initPromise;
+      await pendingInit?.catch(() => { /* A failed initialization still needs final runtime disposal. */ });
+      if (activeOwners.size > 0) return;
+      await bundle?.disposeAgentRuntime();
+      if (activeOwners.size === 0) {
+        initPromise = null;
+        initError = null;
+        hostContext = null;
+      }
+    });
+    lifecycleChain = disposal.catch(() => { /* Keep shared lifecycle chain settled even if a prior disposal failed. */ });
+    return disposal;
   };
 }
 
@@ -47,12 +64,13 @@ function hostPtyAdapter() {
     try: async () => {
       const terminal = await subprocess.spawnTerminal({ argv: [input.shell, ...(input.args || [])], cwd: input.cwd,
         env: input.env, cols: input.cols, rows: input.rows, terminalType: 'xterm-256color', graceMs: 5000 });
+      const safeTerminate = () => Promise.resolve().then(() => terminal.terminate()).catch(() => { /* Subprocess may already have exited; ignore best-effort terminate error. */ });
       return {
         pid: terminal.pid,
-        write: (data) => { void terminal.write(data).catch(() => terminal.terminate()); },
-        resize: (cols, rows) => { void terminal.resize(cols, rows).catch(() => terminal.terminate()); },
-        kill: () => { void terminal.terminate(); },
-        terminate: () => terminal.terminate(),
+        write: (data) => { void Promise.resolve().then(() => terminal.write(data)).catch(safeTerminate); },
+        resize: (cols, rows) => { void Promise.resolve().then(() => terminal.resize(cols, rows)).catch(safeTerminate); },
+        kill: () => { void safeTerminate(); },
+        terminate: safeTerminate,
         onData: (fn) => { terminal.output.setEncoding('utf8'); terminal.output.on('data', fn); return () => terminal.output.off('data', fn); },
         onExit: (fn) => { let active = true; terminal.done.then((outcome) => { if (active) fn({ exitCode: outcome.exitCode ?? 1, signal: null }); }, () => { if (active) fn({ exitCode: 1, signal: null }); }); return () => { active = false; }; },
       };
@@ -82,18 +100,22 @@ export function runtimeHomeDir() {
 export async function initAgentRuntime() {
   if (initError) throw initError;
   if (!initPromise) {
-    const base = runtimeHomeDir();
-    initPromise = runtimeBundle()
-      .initAgentRuntime({
-        cacheDir: path.join(base, 'provider-status-cache'),
-        toolsDir: path.join(base, 'tools'),
-        ptyAdapter: hostPtyAdapter(),
-        paths: {
-          cwd: process.cwd(),
-          baseDir: base,
-          stateDir: base,
-          attachmentsDir: path.join(base, 'attachments'),
-        },
+    const pendingCleanup = lifecycleChain;
+    initPromise = pendingCleanup
+      .then(() => {
+        if (initError) throw initError;
+        const base = runtimeHomeDir();
+        return runtimeBundle().initAgentRuntime({
+          cacheDir: path.join(base, 'provider-status-cache'),
+          toolsDir: path.join(base, 'tools'),
+          ptyAdapter: hostPtyAdapter(),
+          paths: {
+            cwd: process.cwd(),
+            baseDir: base,
+            stateDir: base,
+            attachmentsDir: path.join(base, 'attachments'),
+          },
+        });
       })
       .catch((err) => {
         initError = err instanceof Error ? err : new Error(String(err));

@@ -8,9 +8,9 @@ const vm = require('node:vm');
 
 const CLIENT = path.join(__dirname, '..', '..', 'vendor', 'dsh-pad', 'lib', 'client.js');
 const LAYOUT_KEY = 'dsh-pad:layout';
-// Revealed desktop viewport; the default ball sits on the right edge at 42% height.
+// Revealed desktop viewport; the default ball sits at the right edge at 42% height.
 const VIEWPORT = { width: 1441, height: 912 };
-const DEFAULT_BALL = { left: 1441 - 28 - 17, top: Math.round(912 * 0.42 - 14) };
+const DEFAULT_BALL = { left: 1441 - 28 - 1, top: Math.round(912 * 0.42 - 14) };
 
 // Just enough React for one render of the dock: effects never run, state keeps
 // its initial value, and elements stay plain objects that the test can walk.
@@ -21,6 +21,8 @@ function reactStub() {
     useRef: (current) => ({ current }),
     useMemo: (compute) => compute(),
     useEffect() {},
+    useLayoutEffect() {},
+    useCallback: (fn) => fn,
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
     createElement: element,
     Component: class { constructor(props) { this.props = props; } },
@@ -57,9 +59,13 @@ function startPad(storedLayout) {
   const overlays = [];
   pad.apply({
     locale: { register: () => () => {} },
-    effect() {},
+    effect(fn, label) {
+      if (label !== 'dsh-pad: stream' && label !== 'dsh-pad: styles') fn();
+    },
     slots: {
       inject: (_name, register) => register(),
+      entries: () => [],
+      onEntryError: () => () => {},
       register: (meta, render) => { overlays.push({ meta, render }); return () => {}; },
     },
   });
@@ -96,7 +102,7 @@ test('a fresh profile places the ball at its default edge once the desktop is re
 });
 
 test('a saved ball position survives the 0×0 boot view', () => {
-  assert.deepEqual(renderBall({ ball: { x: 17, y: 600 } }), { left: 17, top: 600 });
+  assert.deepEqual(renderBall({ ball: { x: 100, y: 600 }, ballEdge: null }), { left: 100, top: 600 });
 });
 
 test('the corner left behind by earlier boots falls back to the default position', () => {

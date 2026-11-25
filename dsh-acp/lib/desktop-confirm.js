@@ -16,29 +16,55 @@ const CONFIRM_TIMEOUT_MS = 240_000;
 export const DECLINED_TEXT = '用户拒绝了这次操作，不要重试，除非用户再次明确要求。';
 
 export function controlConfig() {
-  const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? '').trim();
+  const rawUrl = String(process.env.DSH_DESKTOP_INSTALL_URL ?? '').trim();
   const token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN').trim();
-  return url && token ? { url, token } : null;
+  if (!rawUrl || !token) return null;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1';
+  if (
+    parsed.protocol !== 'http:'
+    || !isLoopback
+    || parsed.username !== ''
+    || parsed.password !== ''
+    || parsed.search !== ''
+    || parsed.hash !== ''
+  ) {
+    return null;
+  }
+  const normalizedUrl = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+  return { url: normalizedUrl, token };
 }
 
-async function post(control, pathname, body) {
+async function post(control, pathname, body, { signal } = {}) {
+  if (signal?.aborted) return { ok: false };
+  const timeoutSignal = AbortSignal.timeout(CONFIRM_TIMEOUT_MS);
+  const requestSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
   let response;
   try {
     response = await fetch(`${control.url}${pathname}`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         authorization: `Bearer ${control.token}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
       // The dialog waits on a human, so this matches the install timeout.
-      signal: AbortSignal.timeout(CONFIRM_TIMEOUT_MS),
+      signal: requestSignal,
     });
   } catch {
     return { ok: false };
   }
+  if (!response.ok) return { ok: false };
   try {
-    return await response.json();
+    const parsed = await response.json();
+    return parsed && typeof parsed === 'object' ? parsed : { ok: false };
   } catch {
     return { ok: false };
   }
@@ -49,7 +75,7 @@ async function post(control, pathname, body) {
  * the user explicitly allowed it; anything else — declined, channel missing,
  * non-JSON, HTTP error — is a refusal.
  */
-export async function confirmModelAction(request) {
+export async function confirmModelAction(request, { signal } = {}) {
   const control = controlConfig();
   if (!control) return { ok: false };
   return post(control, '/desktop/confirm', {
@@ -58,7 +84,7 @@ export async function confirmModelAction(request) {
     effect: String(request?.effect ?? ''),
     summary: String(request?.summary ?? ''),
     details: String(request?.details ?? ''),
-  });
+  }, { signal });
 }
 
 /**
@@ -66,7 +92,7 @@ export async function confirmModelAction(request) {
  * model. `{ ok: true }` means it was displayed; otherwise the caller must not
  * put the secret into tool output.
  */
-export async function showDesktopSecret(request) {
+export async function showDesktopSecret(request, { signal } = {}) {
   const control = controlConfig();
   if (!control) return { ok: false };
   return post(control, '/desktop/show-secret', {
@@ -74,5 +100,5 @@ export async function showDesktopSecret(request) {
     label: String(request?.label ?? ''),
     secret: String(request?.secret ?? ''),
     hint: String(request?.hint ?? ''),
-  });
+  }, { signal });
 }

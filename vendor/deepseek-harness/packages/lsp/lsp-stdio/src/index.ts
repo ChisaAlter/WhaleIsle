@@ -13,7 +13,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { LspError, LspProviderId } from '@deepseek-ai/dsh-lsp'
+import { LspError, type LspProviderId } from '@deepseek-ai/dsh-lsp'
 import { HarnessError } from '@deepseek-ai/dsh-error'
 import type {
   LspProvider,
@@ -31,6 +31,7 @@ import {
 } from './instance.ts'
 import type { ConnectionSpawner } from './connection.ts'
 import type { InstanceSpec } from './instance.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 export { canonicalizeWorkspace, readHostSource } from './host.ts'
 export { encodeMessage, MessageDecoder } from './framing.ts'
@@ -302,7 +303,7 @@ class LocalLspProvider implements LspProvider {
     private readonly executable: string,
     private readonly spawner: ConnectionSpawner,
   ) {
-    this.id = LspProviderId(providerId)
+    this.id = brandString<LspProviderId>(providerId)
     this.extensionToLanguage = config.extensionToLanguage
   }
 

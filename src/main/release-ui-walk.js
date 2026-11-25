@@ -1673,16 +1673,13 @@ async function runReleaseUiWalk(wc, helpers) {
   rec('skills.heading', Boolean(skillsOpened && skills?.active && skills?.heading), skillsDetail);
   rec('skills.add', Boolean(skills?.active && skills?.add), skillsDetail);
 
-  const pluginsOpened = await openSettings('plugins');
-  const plugins = await waitUntil(() => pageEval(wc, () => {
-    const dialog = dshDialogNamed('^设置$|^settings$');
-    const nav = document.querySelector('[data-dsh-settings-section="plugins"]');
-    return {
-      nav: Boolean(nav && nav.getAttribute('aria-current') === 'true'),
-      heading: Boolean(dialog && dshHeading('^plugins$|^插件$', dialog)),
-    };
-  }), 10_000, 200, (state) => state?.nav || state?.heading);
-  rec('plugins.heading', Boolean(pluginsOpened && (plugins?.heading || plugins?.nav)), '');
+  await dismiss();
+  const pluginsOpened = await pageEval(wc, () => { const b = document.querySelector('[data-dsh-panel="plugins"]'); return b instanceof HTMLElement ? (b.click(), true) : false; });
+  const plugins = await waitUntil(() => pageEval(wc, () => ({
+    nav: document.querySelector('[data-dsh-panel="plugins"]')?.getAttribute('aria-current') === 'page',
+    heading: Boolean(dshHeading('^plugins$|^插件$')),
+  })), 10_000, 200, (/** @type {any} */ s) => Boolean(s?.nav && s?.heading));
+  rec('plugins.heading', Boolean(pluginsOpened && plugins?.heading && plugins?.nav), '');
 
   await dismiss();
   const { buildMarketplaceScript } = require('./marketplace-jump');

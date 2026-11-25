@@ -1,7 +1,7 @@
 /** Durable task receipts around the host's managed, continuable child sessions. */
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { listDirectChildren } from './host-contract.js';
+import { listDirectChildren, safeGetService } from './host-contract.js';
 import { readJsonStore, writeJsonStore } from './store-file.js';
 
 export const TASK_ADMISSION = 'configured-agent-task';
@@ -24,7 +24,7 @@ const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
 
 export function createTaskStore(ctx, storeFile) {
-  const service = (name) => typeof ctx.get === 'function' ? ctx.get(name) : ctx[name];
+  const service = (name) => safeGetService(ctx, name);
   const file = path.join(path.dirname(storeFile), 'acp-tasks.json');
   const stored = readJsonStore(file, {
     accept: (value) => Array.isArray(value?.tasks),
@@ -44,6 +44,18 @@ export function createTaskStore(ctx, storeFile) {
     parent.session.append(`acp-delegation/${kind}`, JSON.parse(JSON.stringify({ ...presentation, runId: task.taskId, preview: text(task.output).slice(0, 1200) })), { ignorable: true });
   };
   const latest = (parentId, childId) => [...tasks.values()].findLast((task) => task.parentId === parentId && task.childId === childId);
+  function removeTaskNotices(parent, task) {
+    if (!parent?.inbox?.remove) return;
+    const queued = [...(parent.inbox.nextTurn || []), ...(parent.inbox.nextStep || [])];
+    for (const message of queued) {
+      if (
+        message.id === task.deliveryMessageId
+        || (task.hostRunId && message.source?.kind === 'subagent-settled' && message.source.runId === task.hostRunId)
+      ) {
+        parent.inbox.remove(message.id);
+      }
+    }
+  }
   function activity(childId, update) {
     const task = [...tasks.values()].findLast(item => item.childId === childId && !terminal(item));
     if (!task) return;
@@ -53,25 +65,34 @@ export function createTaskStore(ctx, storeFile) {
   // Batch token/tool notifications without synchronous disk writes per chunk.
   // A quiet notice is informational, once per task, never a death verdict.
   async function checkActivity(now = Date.now()) {
+    const stateUpdates = [];
+    const quietCandidates = [];
     for (const task of tasks.values()) {
       if (terminal(task)) { dirty.delete(task.taskId); continue; }
       const quiet = !task.pendingInteraction && now - (task.lastActivityAt || task.startedAt) >= TASK_QUIET_MS;
       if (task.quiet !== quiet) { task.quiet = quiet; dirty.add(task.taskId); }
       const parent = service('agents')?.get(task.parentId);
-      if (parent && dirty.delete(task.taskId)) { save(); append(parent, 'state', task); }
+      if (parent && dirty.delete(task.taskId)) stateUpdates.push([parent, task]);
       if (quiet && parent && !task.quietNoticeAt && task.deliveryState !== 'disposed') {
-        const message = {
-          id: `acp-quiet-${task.taskId}`, role: 'user',
-          content: [{ type: 'text', text: `Child task ${task.taskId} (${task.agentName}) has sent no native activity for at least five minutes. It is not confirmed dead. Last activity: ${new Date(task.lastActivityAt || task.startedAt).toISOString()}. Active tools: ${(task.activeTools || []).map(tool => tool.title).join(', ') || 'none reported'}. Inspect acp_result once and investigate or cancel if appropriate; do not launch a duplicate or repeatedly poll.` }],
-          source: { kind: 'agent-message', senderSessionId: task.childId },
-        };
-        if (!delivered(parent, { deliveryMessageId: message.id })) {
-          if (parent.status === 'idle') parent.followup(message); else parent.steer(message);
-          await flush();
-        }
-        task.quietNoticeAt = now; save();
+        quietCandidates.push([parent, task]);
       }
     }
+    let needsSave = stateUpdates.length > 0;
+    for (const [parent, task] of quietCandidates) {
+      const message = {
+        id: `acp-quiet-${task.taskId}`, role: 'user',
+        content: [{ type: 'text', text: `Child task ${task.taskId} (${task.agentName}) has sent no native activity for at least five minutes. It is not confirmed dead. Last activity: ${new Date(task.lastActivityAt || task.startedAt).toISOString()}. Active tools: ${(task.activeTools || []).map(tool => tool.title).join(', ') || 'none reported'}. Inspect acp_result once and investigate or cancel if appropriate; do not launch a duplicate or repeatedly poll.` }],
+        source: { kind: 'agent-message', senderSessionId: task.childId },
+      };
+      if (!delivered(parent, { deliveryMessageId: message.id })) {
+        if (parent.status === 'idle') parent.followup(message); else parent.steer(message);
+        await flush();
+      }
+      task.quietNoticeAt = now;
+      needsSave = true;
+    }
+    if (needsSave) save();
+    for (const [parent, task] of stateUpdates) append(parent, 'state', task);
   }
   const get = (parentId, id) => {
     const task = tasks.get(id) || latest(parentId, id);
@@ -106,6 +127,10 @@ export function createTaskStore(ctx, storeFile) {
     // message identity, not by replaying the child's prompt or model request.
     if (parent.status === 'idle') parent.followup(message); else parent.steer(message);
     await flush();
+    if (task.deliveryState === 'disposed') {
+      removeTaskNotices(parent, task);
+      return;
+    }
     task.deliveryState = 'delivered'; save();
   }
   function finish(parent, task, outcome) {
@@ -139,6 +164,25 @@ export function createTaskStore(ctx, storeFile) {
       startedAt: Date.now(), lastActivityAt: Date.now(), usagePending: true, quiet: false, quietNoticeAt: undefined, activeTools: [], startSeq: service('agents')?.get(identity.childId)?.session.seq ?? 0, status: 'running', deliveryState: 'pending', deliveryMessageId: `acp-result-${taskId}`, output: [] };
     tasks.set(taskId, task); save(); append(parent, 'start', task); return task;
   }
+  function lookupIdempotent(parentId, requestId, args) {
+    if (requestId === undefined) return null;
+    if (typeof requestId !== 'string' || !requestId.trim() || requestId.length > 256) {
+      throw new Error('client_request_id must contain 1 to 256 characters.');
+    }
+    const key = `${parentId}\0${requestId}`;
+    const fingerprint = JSON.stringify(canonical(args));
+    const prior = [...tasks.values()].find((task) => task.requestKey === key);
+    if (prior) {
+      if (prior.requestArguments !== fingerprint) throw new Error('client_request_id was already used for different task arguments.');
+      return prior;
+    }
+    const pending = receipts.get(key);
+    if (pending) {
+      if (pending.fingerprint !== fingerprint) throw new Error('client_request_id was already used for different task arguments.');
+      return { pending: true, operation: pending.operation };
+    }
+    return null;
+  }
   async function once(parent, requestId, args, start) {
     if (requestId !== undefined && (typeof requestId !== 'string' || !requestId.trim() || requestId.length > 256)) throw new Error('client_request_id must contain 1 to 256 characters.');
     const key = requestId === undefined ? undefined : `${parent.id}\0${requestId}`;
@@ -159,7 +203,15 @@ export function createTaskStore(ctx, storeFile) {
     if (key) {
       const receipt = { fingerprint, operation };
       receipts.set(key, receipt);
-      operation.catch(() => { if (receipts.get(key) === receipt) receipts.delete(key); });
+      const releaseReceipt = () => { if (receipts.get(key) === receipt) receipts.delete(key); };
+      operation.then((value) => {
+        if (![...tasks.values()].some((task) => task.requestKey === key)) return;
+        if (value?.result && typeof value.result.finally === 'function') {
+          value.result.finally(releaseReceipt).catch(() => { /* Task outcome is observed via result/snapshot; suppress duplicate unhandled rejection. */ });
+        } else {
+          releaseReceipt();
+        }
+      }, releaseReceipt);
     }
     return operation;
   }
@@ -182,9 +234,15 @@ export function createTaskStore(ctx, storeFile) {
       inbox[splice.target]?.splice(splice.start, splice.removedCount || 0, ...(splice.inserted || []));
     }
     let children = [];
-    const child = service('agents').get(task.childId);
-    if (child && ctx.get?.('subagents')) children = await listDirectChildren(service('subagents'), child.id);
-    const pendingChildren = children.some((item) => service('agents').get(item.id)?.status !== undefined);
+    const child = service('agents')?.get(task.childId);
+    if (child && ctx.get?.('subagents')) {
+      try {
+        children = await listDirectChildren(service('subagents'), child.id);
+      } catch (error) {
+        ctx.logger?.warn?.('Could not read direct children for %s: %s', child.id, error?.message || String(error));
+      }
+    }
+    const pendingChildren = children.some((item) => service('agents')?.get(item.id)?.status === 'running');
     const pendingInput = inbox['next-turn'].length + inbox['next-step'].length > 0;
     const running = !terminal(task);
     const pending = task.pendingInteraction || null;
@@ -200,15 +258,16 @@ export function createTaskStore(ctx, storeFile) {
   async function cancel(parent, id) {
     const task = get(parent.id, id);
     task.deliveryState = 'disposed'; save();
-    if (terminal(task)) return snapshot(parent, task.taskId);
-    const child = service('agents').get(task.childId);
+    if (terminal(task)) {
+      removeTaskNotices(parent, task);
+      return snapshot(parent, task.taskId);
+    }
+    const child = service('agents')?.get(task.childId);
     child?.cancel({ kind: 'parent' }); // Clear pending input, unlike interrupt.
     const activation = active.get(task.childId);
     if (activation) await activation.dispose();
     else await service('subagents').drainChildren(parent, [task.childId]);
-    for (const message of [...parent.inbox.nextTurn, ...parent.inbox.nextStep]) {
-      if (message.source?.kind === 'subagent-settled' && message.source.runId === task.hostRunId) parent.inbox.remove(message.id);
-    }
+    removeTaskNotices(parent, task);
     if (!terminal(task)) await finish(parent, task, { output: [], stopReason: 'aborted', diagnostic: 'Task cancelled by its parent.' });
     return snapshot(parent, task.taskId);
   }
@@ -254,44 +313,51 @@ export function createTaskStore(ctx, storeFile) {
     }));
     scope.on('subagent/start', (info) => {
       if (info.provider !== 'configured-acp') return;
-      const child = service('agents').get(info.id);
-      const parent = child && service('agents').get(child.session.header.parentSession);
+      const child = service('agents')?.get(info.id);
+      const parent = child && service('agents')?.get(child.session?.header?.parentSession);
       if (!parent) return;
       let task = latest(parent.id, info.id);
       if (task?.hostRunId === info.runId) return;
-      if (!task || terminal(task)) task = begin(parent, { ...task, childId: info.id }, { delivery: 'host', requestKey: undefined, requestArguments: undefined, endedAt: undefined, stopReason: undefined, diagnostic: undefined, pendingInteraction: undefined,
-        task: text(child.inbox.nextStep.at(-1)?.content || child.inbox.nextTurn.at(-1)?.content) || task?.task });
-      task.hostRunId = info.runId; save();
+      if (!task || terminal(task)) {
+        const promptText = text(child?.inbox?.nextStep?.at(-1)?.content || child?.inbox?.nextTurn?.at(-1)?.content);
+        task = begin(parent, { ...task, childId: info.id }, { delivery: 'host', requestKey: undefined, requestArguments: undefined, endedAt: undefined, stopReason: undefined, diagnostic: undefined, pendingInteraction: undefined,
+          task: promptText || task?.task });
+        task.hostRunId = info.runId; save();
+      } else if (!task.hostRunId) {
+        task.hostRunId = info.runId; save();
+      }
     }, { global: true });
     scope.on('subagent/end', (info) => {
       const task = [...tasks.values()].findLast((item) => item.hostRunId === info.runId);
       if (!task || task.delivery !== 'host' || terminal(task)) return;
-      const parent = service('agents').get(task.parentId);
+      const parent = service('agents')?.get(task.parentId);
       if (parent) void finish(parent, task, { stopReason: info.stopReason, output: info.lastAssistantMessage || [] }).catch((error) => ctx.logger.warn(error.message));
     }, { global: true });
-    scope.on('agent/created', async ({ agent }) => {
-      if (tasks.size && [...tasks.values()].some((task) => task.parentId === agent.id)) await recover(agent);
+    scope.on('agent/created', ({ agent }) => {
+      if (tasks.size && [...tasks.values()].some((task) => task.parentId === agent.id)) {
+        void recover(agent).catch((error) => ctx.logger?.warn?.('Configured task recovery failed: %s', error?.message || String(error)));
+      }
     }, { global: true });
     scope.on('session/event', (session, event) => {
       if (event.type !== 'agent/inbox/spliced') return;
-      const parent = service('agents').get(session.id);
+      const parent = service('agents')?.get(session.id);
       if (!parent) return;
       for (const message of event.data.inserted || []) {
         if (message.source?.kind !== 'subagent-settled') continue;
         const task = [...tasks.values()].find((item) => item.parentId === parent.id && item.hostRunId === message.source.runId);
-        if (task?.deliveryState === 'disposed') parent.inbox.remove(message.id);
+        if (task?.deliveryState === 'disposed') parent.inbox?.remove?.(message.id);
       }
     }, { global: true });
   }
-  return { begin, attach, once, snapshot, cancel, recover, get, latest, install, save, finish, tasks, activity, checkActivity,
+  return { begin, attach, once, lookupIdempotent, snapshot, cancel, recover, get, latest, install, save, finish, tasks, activity, checkActivity,
     setInteraction(childId, interaction) {
       const task = [...tasks.values()].findLast((item) => item.childId === childId && !terminal(item));
-      if (task) { task.pendingInteraction = interaction; task.lastActivityAt = Date.now(); task.quiet = false; save(); const parent = service('agents').get(task.parentId); if (parent) append(parent, 'state', task); }
+      if (task) { task.pendingInteraction = interaction; task.lastActivityAt = Date.now(); task.quiet = false; save(); const parent = service('agents')?.get(task.parentId); if (parent) append(parent, 'state', task); }
     },
     async followup(parent, childId, message, signal) {
       const previous = latest(parent.id, childId);
       let task = previous;
-      if (previous && terminal(previous)) task = begin(parent, { childId, agentId: previous.agentId, agentName: previous.agentName, model: previous.model, modelName: previous.modelName, task: message, cwd: previous.cwd, options: previous.options, interactionMode: previous.interactionMode, runtimeMode: previous.runtimeMode }, { delivery: 'host' });
+      if (previous && terminal(previous)) task = begin(parent, { childId, agentId: previous.agentId, agentName: previous.agentName, model: previous.model, modelName: previous.modelName, task: message, cwd: previous.cwd, options: previous.options, interactionMode: previous.interactionMode, runtimeMode: previous.runtimeMode, ...(previous.repositoryRoot ? { repositoryRoot: previous.repositoryRoot, baseCommit: previous.baseCommit } : {}) }, { delivery: 'host' });
       try { return await service('subagents').sendMessage(parent, childId, [{ type: 'text', text: message }], { signal }); }
       catch (error) { if (task !== previous) await finish(parent, task, { output: [], stopReason: 'error', diagnostic: error.message }); throw error; }
     },

@@ -1,8 +1,6 @@
 import { test } from 'node:test';
-import './client-options.test.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -12,38 +10,13 @@ import { runtimeBundle } from '../lib/agent-runtime.js';
 import { registerDelegation, DELEGATION_PROVIDER } from '../lib/delegation.js';
 import { AcpTurnExecution, AcpSessionConnection } from '../lib/acp-session.js';
 import { ADD_PROVIDER_CARDS } from '../client-src/utils.js';
-import { constantTimeEqual } from '../../vendor/dsh-shared/lib/secret.mjs';
-import { storeInternalSecrets, INTERNAL_SECRETS_KEY } from '../../vendor/dsh-shared/lib/internal-secret.mjs';
+import { allowDesktopConfirm } from './confirm-stub.mjs';
+import { defineToolStub } from './define-tool-stub.mjs';
 
 function mockPreparedConnection(t) {
   t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
     this.api = { getConfigOptions: async () => [], setSessionModel: async () => {} };
   });
-}
-
-// acp_delegate passes a main-process desktop confirm before delegating; this
-// stub answers the loopback endpoint with an explicit allow.
-async function allowDesktopConfirm(t) {
-  const token = 'acp-test-token';
-  const server = http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/desktop/confirm' && constantTimeEqual(req.headers.authorization || '', `Bearer ${token}`)) {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end('{"ok":true}');
-      return;
-    }
-    res.writeHead(404).end();
-  });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
-  const prevStore = globalThis[INTERNAL_SECRETS_KEY];
-  process.env.DSH_DESKTOP_INSTALL_URL = `http://127.0.0.1:${server.address().port}`;
-  // The confirm token reaches the plugin through the in-process store (#427).
-  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', token]]);
-  t.after(() => new Promise((resolve) => {
-    if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL; else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
-    globalThis[INTERNAL_SECRETS_KEY] = prevStore;
-    server.close(resolve);
-  }));
 }
 
 const message = (id, role, text, kind) => ({ id, role, content: [{ type: 'text', text }], ...(kind ? { source: { kind } } : {}) });
@@ -335,7 +308,7 @@ test('configured agents share one discovery/delegation catalog and preserve pare
   const ctx = { agents: new Map(), subagents, effect: (fn) => fn(), tools: { register: (definition) => { tools.set(definition.name, definition); return () => {}; } } };
   const manager = createAcpAgentsManager(ctx, { storeFile });
   try {
-    registerDelegation(ctx, manager);
+    registerDelegation(ctx, manager, { defineTool: defineToolStub });
     const events = [];
     const parent = { id: 'parent', status: 'idle', followup: () => {}, session: { header: { cwd: dir }, snapshotEvents: () => events, append: (type, data) => events.push({ type, data }) }, options: { provider: 'native', model: 'main' } };
     const signal = new AbortController().signal;

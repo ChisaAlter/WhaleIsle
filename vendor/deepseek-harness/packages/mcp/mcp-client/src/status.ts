@@ -1,4 +1,4 @@
-import type { Context, Fiber } from '@deepseek-ai/cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import type { McpCloseResult, McpConnectionStatus } from './types.ts'
 
 /**
@@ -186,5 +186,5 @@ export function reportMcpClientStatus(root: Context, serverName: string, status:
  *   that server is mounted.
  */
 export function mcpClientStatus(ctx: Context, serverName: string): McpClientStatus | undefined {
-  return statuses.get(ctx.root)?.get(serverName)
+  return statuses.get(ctx[Context.root])?.get(serverName)
 }

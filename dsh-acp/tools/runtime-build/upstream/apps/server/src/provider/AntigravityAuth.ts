@@ -71,7 +71,9 @@ interface OwnedProcess {
 }
 
 export interface AntigravityAuth {
-  readonly controller: ProviderAuthController;
+  readonly controller: ProviderAuthController & {
+    readonly isChangingCredentials: Effect.Effect<boolean>;
+  };
   readonly withProcess: <A, E, R>(
     stop: Effect.Effect<void>,
     task: Effect.Effect<A, E, R>,
@@ -383,7 +385,7 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
     return flow;
   });
 
-  const controller: ProviderAuthController = {
+  const controller: AntigravityAuth["controller"] = {
     start: (ownerSessionId, stopSessions = Effect.void) =>
       lock.withPermits(1)(
         Effect.uninterruptible(
@@ -582,6 +584,7 @@ export const makeAntigravityAuth = Effect.fn("makeAntigravityAuth")(function* <
         Stream.interruptWhen(Deferred.await(closed)),
       ),
     isLogoutPrompt: (text, hasAttachments) => !hasAttachments && text.trim() === "/logout",
+    isChangingCredentials: Effect.sync(() => operation !== "idle" && operation !== "closed"),
   };
 
   yield* Effect.addFinalizer(() =>

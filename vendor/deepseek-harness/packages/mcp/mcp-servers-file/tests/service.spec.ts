@@ -53,11 +53,11 @@ describe('McpServersFile', () => {
     expect(service.connectionStatus('github')).toBeUndefined()
     expect(service.childHealth('missing-id')).toBeUndefined()
 
-    reportMcpClientStatus(ctx.root, 'github', { health: 'reconnecting', lastError: 'Error: spawn failed' })
+    reportMcpClientStatus(ctx[Context.root], 'github', { health: 'reconnecting', lastError: 'Error: spawn failed' })
     expect(service.childHealth('github')).toMatchObject({ health: 'reconnecting', lastError: 'Error: spawn failed' })
     expect(service.connectionStatus('github')).toMatchObject({ health: 'reconnecting' })
 
-    reportMcpClientStatus(ctx.root, 'github', undefined)
+    reportMcpClientStatus(ctx[Context.root], 'github', undefined)
     expect(service.childHealth('github')).toBeUndefined()
     stop()
   })
@@ -233,6 +233,7 @@ servers:
       cwd: '',
       toolCallTimeoutMs: 1,
       failOnStartupError: false, closeTimeoutMs: 5000, expandTemplates: false,
+      toolLoading: 'eager', catalogDescriptionMaxLength: 160,
     })
     expect(handle.phase()).toBe('active')
     void handle.dispose()
@@ -257,6 +258,7 @@ servers:
       cwd: '',
       toolCallTimeoutMs: 1,
       failOnStartupError: false, closeTimeoutMs: 5000, expandTemplates: false,
+      toolLoading: 'eager', catalogDescriptionMaxLength: 160,
     })
     await Promise.resolve()
     await Promise.resolve()

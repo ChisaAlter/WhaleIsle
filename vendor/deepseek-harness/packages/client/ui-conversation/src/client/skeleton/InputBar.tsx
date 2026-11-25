@@ -29,7 +29,7 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // wire types: apiproxy's sessions contract declares it, and client-runtime's
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ComposerBarProps } from '../contract/slots.ts'
+import type { ComposerBarProps, inputBarChildren } from '../contract/slots.ts'
 import type { NextPromptResult } from '../../next-prompt-contract.ts'
 import { ComposerBeam } from '../ComposerBeam.tsx'
 import { TypingFxLayer } from '../TypingFxLayer.tsx'
@@ -49,13 +49,13 @@ import css from './InputBar.module.css'
 /** File-tree drag payload; kept local so this plugin does not import ui-files. */
 const COMPOSER_MENTION_DRAG_TYPE = 'application/x-dshd-composer-mention'
 
-export type InputBarProps = ComposerBarProps
+export type InputBarProps = ComposerBarProps<keyof typeof inputBarChildren | 'conversation.composer.dock'>
 
 export const InputBar = memo(function InputBar({
   useSession, useSessions, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments,
   retryFileUpload, registerFileIntake,
   toggleCommandMenu, stop, retry, t,
-  renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
+  renderSlot, renderSlotChain, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
   useComposerBeam, useComposerBeamStyle, useComposerResize, useComposerResizeHeight, useComposerResizeWidth,
   useTypingFx, useTypingFxStyle, useNextPrompt, requestNextPrompt,
   setComposerResizeSize,
@@ -736,6 +736,8 @@ export const InputBar = memo(function InputBar({
             editorDisabled={editorDisabled}
             phase={input?.phase ?? 'inert'}
             placeholderText={placeholderText}
+            placeholderSessionId={editable && !canSteerQueue ? sessionId : undefined}
+            renderSlotChain={renderSlotChain}
             ariaLabel={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
             workspaceTrigger={workspaceTrigger}
             workspacePickerOpen={workspacePickerOpen}

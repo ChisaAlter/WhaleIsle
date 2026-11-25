@@ -211,7 +211,10 @@ export function acpMcpToolApprovalElicitationDisposition(
   ) {
     return undefined;
   }
-  // T3's authenticated MCP endpoint enforces scope; only explicit approval mode needs a user prompt.
+  if (unknownRecord(runtimePolicy.sandboxPolicy)?.type === "readOnly") {
+    return "deny";
+  }
+  // Authenticated MCP endpoint enforces scope; only explicit approval mode needs a user prompt.
   return acpPolicyRequiresApproval(runtimePolicy) ? "ask" : "allow";
 }
 
@@ -222,29 +225,52 @@ export function acpClientExecuteDisposition(
 }
 
 export interface AcpApprovalGrantInput {
-  readonly kind: ProviderRequestKind;
+  /** The approved request's ACP tool kind, after ID-only requests take their tracked call's kind. */
+  readonly toolKind?: string;
+  /** Legacy host kind; accepted only when toolKind is omitted. */
+  readonly kind?: ProviderRequestKind;
   readonly scope: "session" | "turn";
-  readonly turnKey: string;
+  readonly turnKey: string | null;
 }
 
 export interface AcpClientPolicyGrants {
   readonly recordApproval: (input: AcpApprovalGrantInput) => void;
   readonly allowsExecute: (turnKey: string | null) => boolean;
+  readonly consumeExecute: (turnKey: string | null) => boolean;
 }
 
-/** ACP cannot link commands to terminals; command approvals grant execution for the turn or accepted session. */
+/**
+ * ACP cannot link commands to terminals; approved execute requests grant
+ * one-shot execution credits for the turn (or unlimited for an accepted session).
+ */
 export function makeAcpClientPolicyGrants(): AcpClientPolicyGrants {
   let sessionExecute = false;
-  let turnExecute: string | null = null;
+  const turnCredits = new Map<string, number>();
   return {
     recordApproval: (input) => {
-      if (input.kind !== "command") return;
+      // Other kinds also show as command cards, but approving them must not open terminals.
+      const approvedExecute =
+        input.toolKind !== undefined ? input.toolKind === "execute" : input.kind === "command";
+      if (!approvedExecute) return;
       if (input.scope === "session") {
         sessionExecute = true;
-      } else {
-        turnExecute = input.turnKey;
+      } else if (typeof input.turnKey === "string" && input.turnKey.length > 0) {
+        turnCredits.set(input.turnKey, (turnCredits.get(input.turnKey) ?? 0) + 1);
       }
     },
-    allowsExecute: (turnKey) => sessionExecute || (turnKey !== null && turnExecute === turnKey),
+    allowsExecute: (turnKey) =>
+      sessionExecute || (turnKey !== null && (turnCredits.get(turnKey) ?? 0) > 0),
+    consumeExecute: (turnKey) => {
+      if (sessionExecute) return true;
+      if (turnKey === null) return false;
+      const remaining = turnCredits.get(turnKey) ?? 0;
+      if (remaining <= 0) return false;
+      if (remaining === 1) {
+        turnCredits.delete(turnKey);
+      } else {
+        turnCredits.set(turnKey, remaining - 1);
+      }
+      return true;
+    },
   };
 }

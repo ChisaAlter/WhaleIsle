@@ -279,7 +279,7 @@ export async function runWinAclOfflineCheck(workDir) {
  * @returns {Promise<{ threshold: number, eagerTools: number, deferredTools: number, compressionRatio: number }>}
  */
 export async function runMcpDeferredOfflineCheck() {
-  const deferred = await importVendor('packages/mcp/mcp-client/src/deferred-tools.ts');
+  const deferred = await importVendor('packages/mcp/mcp-client/lib/types/deferred-tools.js');
   assert.equal(deferred.DEFAULT_INLINE_TOOL_THRESHOLD, 16, 'threshold expected to be 16');
   assert.equal(deferred.resolveToolDiscoveryStrategy(16, 'auto'), 'eager');
   assert.equal(deferred.resolveToolDiscoveryStrategy(24, 'auto'), 'deferred');

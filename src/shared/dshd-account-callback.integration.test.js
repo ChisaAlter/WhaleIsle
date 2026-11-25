@@ -17,12 +17,12 @@ const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/tes
 // A prepared checkout may be supplied for a local probe; CI uses its own built vendor artifacts.
 const harnessRoot = path.resolve(process.env.DSH_ACCOUNT_INTEGRATION_ROOT || path.join(__dirname, '../../vendor/deepseek-harness'));
 const VENDOR_RUNNABLE = [
-  'packages/credentials/deepseek-account/lib/index.js',
+  'packages/account/deepseek-account/lib/index.js',
   'packages/credentials/credentials-local/lib/index.js',
   'packages/credentials/authorization/lib/index.js',
   'packages/credentials/credentials/lib/index.js',
   'packages/host/webserver/lib/index.js',
-  'packages/credentials/deepseek-account/node_modules',
+  'packages/account/deepseek-account/node_modules',
 ].every(relative => existsSync(path.join(harnessRoot, relative)));
 const VENDOR_HINT = 'Harness account dist/dependencies missing (prepare vendor artifacts before this integration check)';
 const VENDOR = { ok: VENDOR_RUNNABLE, reason: VENDOR_HINT };
@@ -31,10 +31,10 @@ const options = { skip: prerequisiteSkip(VENDOR), timeout: 30_000, concurrency: 
 
 async function fixture(t, attemptTimeoutMs = 5_000) {
   const load = (relative) => import(pathToFileURL(path.join(harnessRoot, relative)).href);
-  const resolver = createRequire(path.join(harnessRoot, 'packages/credentials/deepseek-account/package.json'));
+  const resolver = createRequire(path.join(harnessRoot, 'packages/account/deepseek-account/package.json'));
   const [cordis, accountModule, credentialsModule, authorizationModule, webModule, keys] = await Promise.all([
     import(pathToFileURL(resolver.resolve('@deepseek-ai/cordis')).href),
-    load('packages/credentials/deepseek-account/lib/index.js'),
+    load('packages/account/deepseek-account/lib/index.js'),
     load('packages/credentials/credentials-local/lib/index.js'),
     load('packages/credentials/authorization/lib/index.js'),
     load('packages/host/webserver/lib/index.js'),

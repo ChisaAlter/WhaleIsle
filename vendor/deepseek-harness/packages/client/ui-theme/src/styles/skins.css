@@ -196,7 +196,13 @@ html[data-dsh-skin='codex'] [data-dsh-chat] {
   border-radius: 0;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: none;
-  --dsh-chat-content-width: 720px;
+}
+
+/* ConversationRoot `.body` (`[data-conversation-content]`) derives
+ * `--dsh-chat-content-width` from `--dsh-chat-user-width`, overriding any
+ * ancestor declaration. */
+html[data-dsh-skin='codex'] [data-dsh-chat] [data-conversation-content] {
+  --dsh-chat-user-width: 720px;
 }
 
 html[data-dsh-skin='codex'] [data-dsh-header] {
@@ -327,7 +333,10 @@ html[data-dsh-skin='claude'] [data-dsh-chat] {
   border-radius: 0;
   background: var(--dsh-claude-paper);
   box-shadow: none;
-  --dsh-chat-content-width: 720px;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-chat] [data-conversation-content] {
+  --dsh-chat-user-width: 720px;
 }
 
 html[data-dsh-skin='claude'] [data-dsh-header] {

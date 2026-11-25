@@ -14,8 +14,7 @@ import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { validateStoredEvents } from '@deepseek-ai/dsh-session-persistence'
-import { HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-client-connection'
-import type { BrowserAuth } from '../../connection/src/browser-auth.ts'
+import { ConnectionAuthentication, HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-client-connection'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { applyNextPrompt } from '../src/next-prompt.ts'
 import { NEXT_PROMPT_ENDPOINT } from '../src/next-prompt-contract.ts'
@@ -68,10 +67,15 @@ async function mounted(seed?: readonly SessionEvent[]) {
   const projectionsFiber = ctx.plugin(SessionProjectionRegistry)
   await projectionsFiber.await()
   const adapter = new SuggestionAdapter()
-  const connectionFiber = ctx.plugin((child) => {
-    // The public shared Fetch handler is the subject here; HTTP authentication is Connection-owned.
-    new HostConnectionService(child, [], {} as BrowserAuth)
-    child.inject(['llm'], (ready) => { ready.llm.registerAdapter(['session-provider'], adapter) })
+  const authFiber = ctx.plugin(ConnectionAuthentication)
+  await authFiber.await()
+  const connectionFiber = ctx.plugin({
+    inject: ['connection.authentication'],
+    apply(child) {
+      // The public shared Fetch handler is the subject here; HTTP authentication is Connection-owned.
+      new HostConnectionService(child, [])
+      child.inject(['llm'], (ready) => { ready.llm.registerAdapter(['session-provider'], adapter) })
+    },
   })
   await connectionFiber.await()
   let enabled = true
@@ -101,6 +105,7 @@ async function mounted(seed?: readonly SessionEvent[]) {
   cleanups.push(async () => {
     await featureFiber.dispose()
     await connectionFiber.dispose()
+    await authFiber.dispose()
     await llmFiber.dispose()
     await projectionsFiber.dispose()
     await sessionsFiber.dispose()
@@ -388,11 +393,15 @@ describe('next-message suggestions through the Connection Fetch route', () => {
     const writer = await ctx.sessionPersistence.create({ ...previous.session.header, cwd: root })
     await writer.append(previous.session.snapshotEvents())
     await writer.close()
-    createSessionTestController(ctx, {
+    await createSessionTestController(ctx, {
       cwd: root,
       defaultModelSelection: () => ({ provider: 'session-provider', model: 'session-model' }),
     })
-    new HostConnectionService(ctx, [], {} as BrowserAuth)
+    await ctx.plugin(ConnectionAuthentication).await()
+    await ctx.plugin({
+      inject: ['connection.authentication'],
+      apply(child) { new HostConnectionService(child, []) },
+    }).await()
     applyNextPrompt(ctx, () => true)
     expect(ctx.sessions.get(previous.session.id)).toBeUndefined()
     const shared = ctx.connection.createSharedFetchHandler('/api')

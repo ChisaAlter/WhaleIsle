@@ -120,7 +120,7 @@ async function createDesktopClientBench(
   };
 
   const hostCtx = {
-    connection: { admit: () => ({ ok: true }) },
+    connection: { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
     sessionController,
     workspaceRegistry,
     agents: new Map(),

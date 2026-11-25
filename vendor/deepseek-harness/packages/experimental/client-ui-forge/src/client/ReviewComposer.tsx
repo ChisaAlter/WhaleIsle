@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Button, IconChevronDownOutlineRegular, Menu, MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ReviewQueue } from './review-queue.ts'
-import { reviewRange, type ReviewSelection, type ReviewSource } from './review.ts'
+import type { RemovedRecord, ReviewQueue } from './review-queue.ts'
+import { INPUT_QUOTE_COPY, reviewRange, settleQuote, type QuoteCopy, type ReviewSelection, type ReviewSource } from './review.ts'
 import type { NS } from './locales.ts'
+import type { ForgeCommentActionsProps } from './slots.ts'
 import css from './ReviewComposer.module.css'
 
 /** Actions supplied by the owning changes tab. */
@@ -21,14 +22,20 @@ export interface ReviewActions {
   readonly openLink?: (url: string) => void
   /** A write is running or its outcome still needs confirmation. */
   readonly publishingBlocked?: boolean
-  /** Append an atomic quote without sending the Agent a message. */
-  readonly addToInput: (selection: ReviewSelection) => boolean
+  /** Append an atomic quote without sending the Agent a message; resolves to whether it was accepted. */
+  readonly addToInput: (selection: ReviewSelection) => boolean | Promise<boolean>
+  /** Copy of the quote button, the quoted tag, and the refusal; the input's copy by default. */
+  readonly quoteCopy?: QuoteCopy | undefined
   /** Retain a new comment after its quote was accepted. */
   readonly onQuoted?: (selection: ReviewSelection) => void
+  /** Report a reference or publication receipt the reader removed from the view, so the report can offer to put it back. */
+  readonly onRemoved?: (removed: RemovedRecord) => void
   /** Publish one comment; an error string preserves the editor. */
   readonly publish?: (selection: ReviewSelection) => Promise<string | undefined>
   /** Add one comment to the pending review on the code host, starting one when needed; an error string preserves the editor. */
   readonly queue?: (selection: ReviewSelection) => Promise<string | undefined>
+  /** Draw the buttons plugins add to the form through `forge.diff.comment.actions`. */
+  readonly renderActions?: (owner: Omit<ForgeCommentActionsProps, 'target'>) => ReactNode
 }
 
 /**
@@ -73,6 +80,7 @@ export function ReviewComposer({ selection, actions, close, visible = true, t }:
   const [empty, setEmpty] = useState(body.current.trim() === '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const copy = actions.quoteCopy ?? INPUT_QUOTE_COPY
   const running = useRef(false)
   const input = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { input.current?.focus() }, [])
@@ -112,12 +120,23 @@ export function ReviewComposer({ selection, actions, close, visible = true, t }:
         <Button size="sm" className={clsx(css.cancel)} disabled={busy} onClick={close}>{t('review.cancel')}</Button>
         <Button size="sm" variant={actions.queue === undefined ? 'primary' : 'outline'} disabled={busy || empty} onClick={() => {
           const selected = comment()
-          if (actions.addToInput(selected)) { actions.onQuoted?.(selected); close() }
-          else setError(t('review.inputFailed'))
-        }}>{t('review.addToInput')}</Button>
+          settleQuote(actions.addToInput(selected), (accepted) => {
+            if (accepted) { actions.onQuoted?.(selected); close() }
+            else setError(t(copy.failed))
+          })
+        }}>{t(copy.add)}</Button>
+        {actions.renderActions?.({
+          selection: {
+            path: selection.comment.path, side: selection.comment.side,
+            startLine: selection.comment.startLine, endLine: selection.comment.endLine,
+          },
+          empty,
+          busy,
+          send: (deliver) => { void send(async () => await deliver(body.current)) },
+        })}
         {visible && actions.queue !== undefined && <SplitAction disabled={busy || actions.publishingBlocked === true || empty}
           label={t(busy ? 'review.publishing' : actions.reviewStarted === true ? 'review.queue' : 'review.startReview')}
-          run={() => { void send(actions.queue) }} menuLabel={t('review.githubActions')}
+          run={() => { void send(actions.queue) }} menuLabel={t('review.hostActions')}
           other={actions.publish === undefined ? undefined : t('review.publish')} menu={() => { void send(actions.publish) }} />}
         {actions.queue === undefined && actions.publish !== undefined && <Button size="sm" variant="primary"
           disabled={busy || actions.publishingBlocked === true || empty} onClick={() => { void send(actions.publish) }}>{t('review.publish')}</Button>}

@@ -15,7 +15,7 @@ import type { ToolFileInjected } from '../tool/file-menu.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Keyed Tool call view: register with `key: '<tool name>'`. Claimed keys replace their view, typos never render, and unclaimed calls use the generic row. Receives call identity and the stage's current block. */
+    /** Key by wire tool name (`key: '<tool name>'`); unclaimed keys use the generic row. */
     'tool.call.toolview': {
       kind: 'keyed'
       scope: 'session'
@@ -53,23 +53,16 @@ export type RenderToolImages = (owner: Omit<ToolImagesOwnerProps, 'loadImage'>) 
 
 /** Standard owner currency supplied to every atomic Tool view. */
 export interface ToolCallCommonProps {
-  /** Stable Hook; each invocation owns its open state and subscribes to enclosing-Turn resets. */
+  /** Stable hook owning open state and enclosing-turn resets. */
   useDisclosure: UseDisclosure
-  /** Call identity, stable across all stages. */
   callId: string
-  /** Wire Tool name and keyed dispatch value. */
   toolName: string
-  /** Session workspace root for relative summaries. */
   cwd?: string | undefined
-  /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
-  /** Open an argument path at its optional requested line. */
   openFile: (path: string, options?: OpenFileOptions) => void
-  /** Chat-supplied, Gateway-authorized loader for durable images; Tool views do not manage attachment URLs. */
+  /** Gateway-authorized loader for durable images. */
   loadImage: MessageImageLoader
-  /** Renders one durable image group; absent only in a bare unit-test owner. */
   renderToolImages?: RenderToolImages | undefined
-  /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
 }
 

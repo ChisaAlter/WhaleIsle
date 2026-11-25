@@ -17,12 +17,13 @@ import type { ContextFormed, MessageId } from '@deepseek-ai/dsh-llm'
 import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { defineTool, ToolArgsError } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
-import { JobId } from '@deepseek-ai/dsh-jobs'
+import type { JobId } from '@deepseek-ai/dsh-jobs'
 import type { JobEvent, JobView, JobRead } from '@deepseek-ai/dsh-jobs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent'
 import { publicJob, renderModelDelta, statusLine } from './render.ts'
 import type { PublicJobSnapshot } from './render.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'tool-jobs': { kind: 'tool-jobs' } & ContextFormed
@@ -212,7 +213,7 @@ function validateJobId(value: string): JobId {
   if (value.length === 0) {
     throw new ToolArgsError([`invalid job_id: expected a non-empty string, got ${JSON.stringify(value)}`])
   }
-  return JobId(value)
+  return brandString<JobId>(value)
 }
 
 /** Pending presentation shared by the three generic job controls. */
@@ -319,6 +320,7 @@ export function apply(ctx: Context, config: Config): void {
     name: 'tool:jobs',
     order: ctx.systemPrompt.getSectionOrder('TOOL_JOBS'),
     text: 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
+    retirement: 'The background-job tools are no longer available. Their guidance no longer applies.',
   })
 
   // Live jobs whose kill the model itself requested through `job_kill`: that

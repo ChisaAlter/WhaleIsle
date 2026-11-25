@@ -47,11 +47,11 @@
     },
     "dsh-pad": {
       "kind": "artifacts",
-      "origin": "https://github.com/ChisaAlter/dsh-pad v0.3.1 @ b4a9b05a4e4ace822a629f4f0ba9c364b9422a95 + desktop client extensions (README.md)",
+      "origin": "https://github.com/ChisaAlter/dsh-pad v0.4.6 @ 88897619e5e621b47687871949b5713ba96c46b5 (README.md)",
       "source": {
         "repo": "https://github.com/ChisaAlter/dsh-pad",
-        "ref": "v0.3.1",
-        "commit": "b4a9b05a4e4ace822a629f4f0ba9c364b9422a95"
+        "ref": "v0.4.6",
+        "commit": "88897619e5e621b47687871949b5713ba96c46b5"
       },
       "artifacts": {
         "paths": [
@@ -61,7 +61,7 @@
           "README.md",
           "LICENSE"
         ],
-        "artifactHash": "77833de5043048d5f95327c259ff3fa5ee455b4c3e995b45dcf7d19796679ffa"
+        "artifactHash": "59c82286fdf384bd936a8fe6b31b7561765f5644b20eca9555572b7293ff5007"
       }
     },
     "dsh-platform-session": {

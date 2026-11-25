@@ -12,9 +12,21 @@
  * token scoped to the issuing agent connection.
  */
 import crypto from 'node:crypto';
-import { resolveDelegationCwd } from './delegate-cwd.js';
+import {
+  resolveDelegationCwd,
+  assertWorkspaceContainment,
+  checkForbiddenDelegateRoot,
+  isPathInsideRoot,
+  isWindowsUncOrDevicePath,
+} from './delegate-cwd.js';
 import { executionProvider, listDirectChildren } from './host-contract.js';
-import { AGENT_TOOLS, CONTROL_TOOLS, resultRequest } from './delegation.js';
+import {
+  AGENT_TOOLS,
+  CONTROL_TOOLS,
+  resultRequest,
+  buildDelegateConfirmRequest,
+  formatConfirmPromptSection,
+} from './delegation.js';
 import { acpErrorMessage } from './errors.js';
 import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 import { TEAM_TOOLS, executeTeamTool, isTeamTool, listTeamMembers, teamAvailable, teamEnabled } from './team.js';
@@ -22,6 +34,17 @@ import { TEAM_TOOLS, executeTeamTool, isTeamTool, listTeamMembers, teamAvailable
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 const SERVER_INFO = { name: 'whaleisle', title: 'WhaleIsle', version: '0.1.0' };
 const RUNNING_TASK_NEXT = 'Completion wakes this conversation and delivers the result, so end your turn. Do not wait on it or poll it.';
+const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1000;
+const LOOKUP_MISS_WINDOW_MS = 60_000;
+const LOOKUP_MISS_MAX_PER_WINDOW = 10;
+const WRITE_CONTROL_TOOLS = new Set([
+  'acp_delegate',
+  'acp_cancel',
+  'send_message',
+  'interrupt_agent',
+  'team_task_create',
+  'team_task_update',
+]);
 
 const TOOL_DEFINITIONS = [
   ...AGENT_TOOLS,
@@ -120,46 +143,93 @@ let MCP_INSTANCE_SEQ = 0;
  * @param {(tag: string, extra: object) => void} [options.diag] - safe diagnostic sink.
  * @returns token lifecycle + JSON-RPC dispatch.
  */
-export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, waitTask }) {
+export function createWhaleIsleMcp({
+  ctx,
+  diag,
+  listAgents,
+  delegate,
+  preflightDelegate,
+  tasks,
+  waitTask,
+  livenessWindowMs = DEFAULT_LIVENESS_WINDOW_MS,
+  now = () => Date.now(),
+}) {
   const instanceId = `mcp-${++MCP_INSTANCE_SEQ}-pid${process.pid}`;
-  /** @type {Map<string, { cwd: string, agentName: string, dshSession?: object, presented: Set<string> }>} */
+  /** @type {Map<string, { cwd: string, agentName: string, dshSession?: object, presented: Set<string>, lastAliveAt: number, signal?: AbortSignal, providerId?: string }>} */
   const sessions = new Map();
-  const fp = (t) => crypto.createHash('sha256').update(String(t || '')).digest('hex').slice(0, 8);
+  const hashToken = (t) => crypto.createHash('sha256').update(String(t || '')).digest('hex');
+  const fp = (t) => hashToken(t).slice(0, 8);
+  let missWindowStart = 0;
+  let missCount = 0;
   const log = (tag, extra) => {
     try { diag?.(tag, { instance: instanceId, ...extra }); } catch { /* never break */ }
   };
+  const logLookupMiss = (token, reason) => {
+    const ts = now();
+    if (ts - missWindowStart >= LOOKUP_MISS_WINDOW_MS) {
+      missWindowStart = ts;
+      missCount = 0;
+    }
+    missCount += 1;
+    if (missCount <= LOOKUP_MISS_MAX_PER_WINDOW) {
+      log('lookup-miss', { fp: fp(token), size: sessions.size, ...(reason ? { reason } : {}) });
+    }
+  };
 
   function issueToken(session) {
-    const token = crypto.randomBytes(24).toString('hex');
-    sessions.set(token, {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = hashToken(token);
+    sessions.set(tokenHash, {
       cwd: String(session?.cwd || process.cwd()),
       agentName: String(session?.agentName || 'ACP agent'),
       dshSession: session?.dshSession,
       presented: new Set(),
+      lastAliveAt: now(),
     });
-    log('issue', { fp: fp(token), size: sessions.size, agent: session?.agentName });
+    log('issue', { fp: tokenHash.slice(0, 8), size: sessions.size, agent: session?.agentName });
     return token;
   }
 
   function revokeToken(token) {
-    const had = sessions.delete(token);
-    log('revoke', { fp: fp(token), had, size: sessions.size });
+    const raw = String(token || '');
+    const tokenHash = hashToken(raw);
+    const had = sessions.delete(tokenHash);
+    log('revoke', { fp: tokenHash.slice(0, 8), had, size: sessions.size });
   }
 
   function sessionFor(token) {
-    const found = sessions.get(String(token || '')) || null;
-    if (!found) log('lookup-miss', { fp: fp(token), size: sessions.size });
+    const raw = String(token || '');
+    if (!raw) {
+      logLookupMiss(raw, 'empty');
+      return null;
+    }
+    const tokenHash = hashToken(raw);
+    const found = sessions.get(tokenHash) || null;
+    if (!found) {
+      logLookupMiss(raw);
+      return null;
+    }
+    const ts = now();
+    if (ts - found.lastAliveAt > livenessWindowMs) {
+      logLookupMiss(raw, 'expired');
+      return null;
+    }
+    found.lastAliveAt = ts;
     return found;
   }
 
   // The active dsh session can attach after the token was issued (restored
-  // sessions resolve their agent per turn); rebind on every turn start.
+  // sessions resolve their agent per turn); rebind on every turn start and
+  // refresh the liveness window so active sessions stay valid across idle gaps.
   function bindSession(token, dshSession, signal, providerId) {
-    const rec = sessions.get(String(token || ''));
+    const raw = String(token || '');
+    if (!raw) return;
+    const rec = sessions.get(hashToken(raw));
     if (rec && dshSession) {
       rec.dshSession = dshSession;
       rec.signal = signal;
       rec.providerId = providerId;
+      rec.lastAliveAt = now();
     }
   }
 
@@ -265,6 +335,31 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
     return resultResponse(await readChildResult(args.agent_id, signal, waitMs));
   }
 
+  function checkOwnershipAndTurn(name, session) {
+    const current = safeGetService('agents')?.get?.(session.dshSession?.id);
+    const provider = executionProvider(current);
+    if (session.providerId && provider && provider !== session.providerId) {
+      return 'This MCP connection no longer owns the selected agent. Use the active agent connection.';
+    }
+    if (WRITE_CONTROL_TOOLS.has(name)) {
+      if (session.signal?.aborted) {
+        return 'This agent execution has ended; its MCP connection cannot start or change work.';
+      }
+      if (typeof current?.session?.snapshotEvents === 'function') {
+        const edge = current.session.snapshotEvents().findLast((event) => ['turn/start', 'turn/end'].includes(event.type));
+        if (session.providerId && edge?.type !== 'turn/start') {
+          return name === 'acp_delegate'
+            ? 'Delegation requires an open turn owned by this agent connection.'
+            : 'This tool requires an open turn owned by this agent connection.';
+        }
+        if (!session.providerId && edge?.type === 'turn/end') {
+          return 'This tool requires an open turn owned by this agent connection.';
+        }
+      }
+    }
+    return null;
+  }
+
   async function handleAgentControl(name, args, session) {
     const parent = safeGetService('agents')?.get?.(session.dshSession?.id);
     const subagents = safeGetService('subagents');
@@ -286,21 +381,37 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       return textResult(`Interrupted ${args.agent_id}.`);
     }
     if (typeof args.message !== 'string' || !args.message.trim()) return errorResult('message must be non-empty.');
-    const messageId = tasks?.latest(parent.id, targetId)
-      ? await tasks.followup(parent, targetId, args.message, session.signal)
-      : await subagents.sendMessage(parent, targetId, [{ type: 'text', text: args.message }], { signal: session.signal });
+    const previousTask = tasks?.latest?.(parent.id, targetId);
+    if (previousTask) {
+      if (previousTask.endedAt) {
+        const agentLabel = String(previousTask.agentName || previousTask.agentId || args.agent_id);
+        const taskCwd = String(previousTask.cwd || '').trim();
+        const metaLines = [
+          ...(taskCwd ? [`目标目录：${taskCwd}`] : []),
+          `目标代理：${agentLabel}（子会话：${targetId}）`,
+          ...(previousTask.model ? [`模型：${previousTask.model} | 权限模式：${previousTask.runtimeMode || 'inherit'} | 交互模式：${previousTask.interactionMode || 'default'}`] : []),
+        ];
+        const confirmation = await confirmModelAction({
+          tool: 'send_message',
+          action: 'followup',
+          effect: 'code',
+          summary: `在已结束的已配置代理 ${agentLabel} 上继续启动新一轮可执行命令的子任务${taskCwd ? `（目录：${taskCwd}）` : ''}`,
+          details: `${metaLines.join('\n')}\n\n${formatConfirmPromptSection(args.message)}`,
+        }, { signal: session.signal });
+        if (confirmation.ok !== true) return errorResult(DECLINED_TEXT);
+        const postRejection = checkOwnershipAndTurn('send_message', session);
+        if (postRejection) return errorResult(postRejection);
+      }
+      const messageId = await tasks.followup(parent, targetId, args.message, session.signal);
+      return textResult(JSON.stringify({ messageId }));
+    }
+    const messageId = await subagents.sendMessage(parent, targetId, [{ type: 'text', text: args.message }], { signal: session.signal });
     return textResult(JSON.stringify({ messageId }));
   }
 
   async function callTool(name, args, session) {
-    const current = safeGetService('agents')?.get?.(session.dshSession?.id);
-    const provider = executionProvider(current);
-    if (session.providerId && provider && provider !== session.providerId) return errorResult('This MCP connection no longer owns the selected agent. Use the active agent connection.');
-    if (name === 'acp_delegate' && session.providerId) {
-      const edge = current?.session.snapshotEvents().findLast((event) => ['turn/start', 'turn/end'].includes(event.type));
-      if (edge?.type !== 'turn/start') return errorResult('Delegation requires an open turn owned by this agent connection.');
-    }
-    if (['acp_delegate', 'acp_cancel', 'send_message', 'interrupt_agent', 'team_task_create', 'team_task_update'].includes(name) && session.signal?.aborted) return errorResult('This agent execution has ended; its MCP connection cannot start or change work.');
+    const preRejection = checkOwnershipAndTurn(name, session);
+    if (preRejection) return errorResult(preRejection);
     if (isTeamTool(name)) {
       const caller = safeGetService('agents')?.get?.(session.dshSession?.id);
       if (!caller || !session.signal) return errorResult('Agent Teams requires an active host session.');
@@ -318,21 +429,32 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       const parent = safeGetService('agents')?.get?.(session.dshSession?.id);
       if (!parent || !session.signal) return errorResult('Delegation requires an active parent conversation.');
       let resolvedCwd = '';
+      let effectiveModel = String(args?.model || '');
+      let existingTask = null;
       try {
-        resolvedCwd = resolveDelegationCwd(args, parent);
+        if (typeof preflightDelegate === 'function') {
+          const preflight = await preflightDelegate(args, parent, safeGetService('subagents'));
+          resolvedCwd = preflight?.resolvedCwd ?? resolveDelegationCwd(args, parent);
+          effectiveModel = preflight?.effectiveModel ?? effectiveModel;
+          existingTask = preflight?.existingTask ?? null;
+        } else {
+          if (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 0 || args.timeout_ms > 20000)) {
+            throw new Error('timeout_ms must be an integer from 0 to 20000.');
+          }
+          resolvedCwd = resolveDelegationCwd(args, parent);
+        }
       } catch (error) {
         return errorResult(String(error instanceof Error ? error.message : error));
       }
-      const hasExplicitCwd = typeof args?.cwd === 'string' && args.cwd.trim() !== '';
-      const targetCwd = hasExplicitCwd ? resolvedCwd : '';
-      const confirmation = await confirmModelAction({
-        tool: 'acp_delegate',
-        action: 'delegate',
-        effect: 'code',
-        summary: `在已配置代理 ${String(args?.agent ?? '?')} 上启动一个可以执行命令的子任务${targetCwd ? `（目录：${targetCwd}）` : ''}`,
-        details: `${targetCwd ? `目标目录：${targetCwd}\n\n` : ''}${String(args?.prompt ?? '').slice(0, 2000)}`,
-      });
-      if (confirmation.ok !== true) return errorResult(DECLINED_TEXT);
+      if (!existingTask) {
+        const confirmation = await confirmModelAction(
+          buildDelegateConfirmRequest(args, { resolvedCwd, effectiveModel }),
+          { signal: session.signal },
+        );
+        if (confirmation.ok !== true) return errorResult(DECLINED_TEXT);
+        const postRejection = checkOwnershipAndTurn('acp_delegate', session);
+        if (postRejection) return errorResult(postRejection);
+      }
       const signal = session.signal;
       const child = await delegate(args, parent, signal);
       if (args.mode === 'wait') return resultResponse(await waitTask(parent, child.taskId, args.timeout_ms ?? 15000, signal));
@@ -369,7 +491,7 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       const skillName = String(args?.name || '').trim();
       if (!skillName) return errorResult('whaleisle_skill_get requires a "name" argument.');
       const skill = await skills.get(skillName, { cwd: session.cwd });
-      if (!skill) {
+      if (!skill || skill?.invocation?.modelInvocable === false) {
         return errorResult(`No WhaleIsle skill named "${skillName}". Run whaleisle_skill_list for the catalog.`);
       }
       const base = skill.resourceBase?.kind === 'directory' ? skill.resourceBase.path : null;
@@ -382,6 +504,9 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       return textResult(text);
     }
     if (name === 'whaleisle_present') {
+      if (session.signal?.aborted) {
+        return errorResult('This agent execution has ended; its MCP connection cannot present files.');
+      }
       const dshSession = session.dshSession;
       if (!dshSession || typeof dshSession.append !== 'function') {
         return errorResult('No live WhaleIsle session is bound to this connection.');
@@ -403,16 +528,38 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       for (const file of files) {
         const filePath = String(file?.path || '').trim();
         if (!filePath) return errorResult('whaleisle_present requires a non-empty file path.');
+        const outsideWorkspaceMsg = `Cannot present ${filePath}: path must be inside the session workspace.`;
+        if (filePath.includes('\0') || isWindowsUncOrDevicePath(filePath)) {
+          return errorResult(outsideWorkspaceMsg);
+        }
+        let contained;
+        try {
+          contained = assertWorkspaceContainment(session.cwd, filePath, {
+            label: filePath,
+            rejectLeafSymlink: true,
+          });
+        } catch {
+          return errorResult(outsideWorkspaceMsg);
+        }
+        if (checkForbiddenDelegateRoot(contained)) {
+          return errorResult(outsideWorkspaceMsg);
+        }
         const entry = await fs.lstat(filePath, { cwd: session.cwd });
         if (entry !== undefined && entry.type !== 'file') {
           return errorResult(`Cannot present ${filePath}: not a regular file.`);
         }
         const target = await fs.resolve(filePath, { cwd: session.cwd });
+        const canonical = fs.processPath(target);
+        if (
+          !isPathInsideRoot(session.cwd, canonical, { rejectLeafSymlink: true })
+          || checkForbiddenDelegateRoot(canonical)
+        ) {
+          return errorResult(outsideWorkspaceMsg);
+        }
         const info = await fs.stat(target);
         if (info === undefined || info.type !== 'file') {
           return errorResult(`Cannot present ${filePath}: file not found. Check the path, create the file if needed, and retry.`);
         }
-        const canonical = fs.processPath(target);
         session.presented.add(canonical);
         presented.push({ path: canonical, ...(file?.description ? { description: String(file.description) } : {}) });
       }
@@ -481,8 +628,19 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       };
     }
     if (method === 'tools/call') {
+      const rawArgs = message.params?.arguments;
+      if (rawArgs !== undefined && (rawArgs === null || typeof rawArgs !== 'object' || Array.isArray(rawArgs))) {
+        return {
+          status: 200,
+          body: {
+            jsonrpc: '2.0',
+            id: message.id ?? null,
+            error: { code: -32602, message: 'Invalid params: arguments must be a JSON object.' },
+          },
+        };
+      }
       try {
-        const result = await callTool(message.params?.name, message.params?.arguments ?? {}, session);
+        const result = await callTool(message.params?.name, rawArgs ?? {}, session);
         return { status: 200, body: { jsonrpc: '2.0', id: message.id ?? null, result } };
       } catch (err) {
         return toolCallErrorResponse(message.id, err);

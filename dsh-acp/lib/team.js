@@ -7,7 +7,10 @@
  * lead-only reassignment and revision checks remain host decisions.
  */
 
+import { safeGetService } from './host-contract.js';
+
 const TEAM_TOOL_NAMES = new Set(['team_task_create', 'team_task_list', 'team_task_get', 'team_task_update']);
+const TEAM_TASK_STATUSES = new Set(['pending', 'in_progress', 'completed']);
 
 /** Model-facing schemas matching the host's native Team tools. */
 export const TEAM_TOOLS = [
@@ -85,18 +88,9 @@ export function isTeamTool(name) {
   return TEAM_TOOL_NAMES.has(name);
 }
 
-function service(ctx, name) {
-  try {
-    const value = typeof ctx?.get === 'function' ? ctx.get(name) : undefined;
-    return value ?? ctx?.[name];
-  } catch {
-    return undefined;
-  }
-}
-
 /** Whether the host mounts the Team domain at all. */
 export function teamAvailable(ctx) {
-  return typeof service(ctx, 'agentTeams')?.isEnabled === 'function';
+  return typeof safeGetService(ctx, 'agentTeams')?.isEnabled === 'function';
 }
 
 /**
@@ -104,7 +98,7 @@ export function teamAvailable(ctx) {
  * resumed child without a live root has no Team mode, matching the host tools.
  */
 export function teamEnabled(ctx, agent) {
-  const teams = service(ctx, 'agentTeams');
+  const teams = safeGetService(ctx, 'agentTeams');
   if (!agent || typeof teams?.isEnabled !== 'function') return false;
   try {
     return teams.isEnabled(agent) === true;
@@ -141,6 +135,15 @@ async function listTeamTasks(teams, resolve, args, caller) {
   const limit = args.limit ?? 50;
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('cursor must be a non-negative safe integer');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be an integer from 1 through 100');
+  if (args.status !== undefined && (typeof args.status !== 'string' || !TEAM_TASK_STATUSES.has(args.status))) {
+    throw new Error('status must be pending, in_progress, or completed');
+  }
+  if (args.unowned !== undefined && typeof args.unowned !== 'boolean') {
+    throw new Error('unowned must be a boolean');
+  }
+  if (args.ready !== undefined && typeof args.ready !== 'boolean') {
+    throw new Error('ready must be a boolean');
+  }
   if (args.owner !== undefined && args.unowned !== undefined) throw new Error('owner and unowned filters cannot be combined');
   const owner = args.owner === undefined ? undefined : await resolve(args.owner);
   const filtered = teams.listTasks(caller).filter((task) =>
@@ -177,8 +180,8 @@ async function updateTeamTask(teams, resolve, args, caller, signal) {
  * @returns the same value the host's native tool returns.
  */
 export async function executeTeamTool(ctx, name, args, caller, signal) {
-  const teams = service(ctx, 'agentTeams');
-  const subagents = service(ctx, 'subagents');
+  const teams = safeGetService(ctx, 'agentTeams');
+  const subagents = safeGetService(ctx, 'subagents');
   if (!teamAvailable(ctx)) throw new Error('Agent Teams is not available in this host.');
   if (!teamEnabled(ctx, caller)) throw new Error('Agent Teams is turned off for this conversation. The user can enable "Use Agent Teams" in the root conversation\'s model menu.');
   const resolve = (agentName) => subagents.resolveName(caller, agentName, signal);
@@ -197,9 +200,10 @@ export async function executeTeamTool(ctx, name, args, caller, signal) {
  * root as "lead" and every continuable descendant by its path name.
  */
 export async function listTeamMembers(ctx, caller, signal) {
-  const subagents = service(ctx, 'subagents');
-  const agents = service(ctx, 'agents');
-  const root = subagents.rootOf(caller);
+  const subagents = safeGetService(ctx, 'subagents');
+  const agents = safeGetService(ctx, 'agents');
+  const root = subagents?.rootOf?.(caller);
+  if (!root?.id) throw new Error('Unable to resolve team root session.');
   const statusOf = (id) => agents?.get(id)?.status === 'running' ? 'running' : 'inactive';
   const rows = await subagents.listDescendants(root.id, signal);
   return [

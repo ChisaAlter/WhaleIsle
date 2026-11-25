@@ -79,7 +79,7 @@ async function marketRuntime(fixture: ReturnType<typeof installation>) {
     const profile: ProfileContext = {
       name: 'web', dir: loaded.dir, patchPath: loaded.patchPath, installAnchor: fixture.installAnchor,
       home: fixture.home, cwd: fixture.home, startedBundles: loaded.layers.map(layer => layer.packageName),
-      overlays: [], telemetryDisabledEnv: undefined,
+      overlayPaths: [], telemetryDisabledEnv: undefined,
     }
     const configPath = join(loaded.dir, 'cordis.yml')
     writeFileSync(configPath, '[]\n')

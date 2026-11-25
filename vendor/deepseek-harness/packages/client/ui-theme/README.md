@@ -61,6 +61,8 @@ Shared menus use `--dsw-menu-surface-fill` and blur through `MenuSurface`; platf
 <details>
 <summary>Implementation internals — click to expand</summary>
 
+Font-size controls align their actual content to the row’s right edge. Code and terminal rows end at the px unit without reserving space for the text row’s disclosure button.
+
 The service owns theme, font-size, and font-family state and publishes snapshots. The ui-layout presenter applies those snapshots, and the token sheets own the color and conversation text scales.
 
 ### Stylesheets
@@ -107,7 +109,7 @@ The `--dsw-alias-turn-trigger-*` tokens provide separate resting and hover backg
 
 Light-palette thumbs use the primary neutral scale at 18% opacity, increasing to 30% on hover, over the transparent track so they remain visible on translucent surfaces. Dark-palette elevation colors retain their neutral scale.
 
-`scrollbar.css` binds `--dsh-scrollbar-thumb` and `--dsh-scrollbar-thumb-hover` on `body` to the l1 base-surface tokens; an elevated surface (menu, popover, dialog) rebinds them to the l2 tokens on its own container, and the pair's other legal target is `transparent` (ui-sidebar rebinds its column that way while the pointer is elsewhere). WebKit-based browsers use a 5px default `--dsh-scrollbar-width` and also read `--dsh-scrollbar-thumb-border` and `--dsh-scrollbar-track-margin`; a scroll surface may rebind them to keep a wide draggable rail around a narrower visible thumb or to inset the track from rounded ends. The two rendering paths are mutually exclusive by construction: Firefox takes the standard thin scrollbar inside `@supports not selector(::-webkit-scrollbar)`, and WebKit-based engines take the pseudo-elements, so geometry and hover customization apply only through the pseudo-element path.
+`scrollbar.css` binds `--dsh-scrollbar-thumb` and `--dsh-scrollbar-thumb-hover` on `body` to the l1 base-surface tokens; an elevated surface (menu, popover, dialog) rebinds them to the l2 tokens on its own container, and the pair's other legal target is `transparent` (ui-sidebar rebinds its column that way while the pointer is elsewhere). Both are registered with `@property` as inherited `<color>` properties whose initial value is `transparent`, so a surface can transition a rebinding; ui-sidebar fades its thumb out that way. WebKit-based browsers use a 5px default `--dsh-scrollbar-width` and also read `--dsh-scrollbar-thumb-border` and `--dsh-scrollbar-track-margin`; a scroll surface may rebind them to keep a wide draggable rail around a narrower visible thumb or to inset the track from rounded ends. The two rendering paths are mutually exclusive by construction: Firefox takes the standard thin scrollbar inside `@supports not selector(::-webkit-scrollbar)`, and WebKit-based engines take the pseudo-elements, so geometry and hover customization apply only through the pseudo-element path.
 
 ### Preference persistence
 

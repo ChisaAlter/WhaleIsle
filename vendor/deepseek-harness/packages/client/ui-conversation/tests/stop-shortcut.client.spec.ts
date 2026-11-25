@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { Shortcuts, ShortcutContext, ShortcutGesture } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -33,7 +34,7 @@ async function bench() {
   const fiber = runtime.ctx.plugin(ConversationController, {
     input: hub, blocks: new ComposerBlockRegistry(),
     modelFacts: new ComposerModelFactRegistry(), modelCatalog: new ComposerModelCatalogRegistry(),
-    maxConcurrentFileUploads: 2,
+    maxConcurrentFileUploads: createSnapshotStore(2),
   })
   await fiber.await()
   const conversation = new UiConversation(runtime.ctx, runtime.sessions)
@@ -138,6 +139,17 @@ describe('fixed stop routing', () => {
     expect(b.cancel).not.toHaveBeenCalled()
     b.press()
     expect(b.cancel).toHaveBeenCalledOnce()
+  })
+
+  it("keeps this Session's double-Escape sequence when another Session gains a pending interaction", async () => {
+    const b = await bench()
+    const publish = b.runtime.ctx.uiSession.registerPendingInteraction<SessionPendingInteractionBase>(() => 0)
+    b.press()
+    const remove = publish({ kind: 'approval', key: 'request-other', sessionId: 's2' as SessionId }, async () => {})
+    b.press()
+    await Promise.resolve()
+    expect(b.cancel).toHaveBeenCalledOnce()
+    remove()
   })
 
   it('excludes terminal, iframe, approval and inert descendants even inside Conversation', async () => {

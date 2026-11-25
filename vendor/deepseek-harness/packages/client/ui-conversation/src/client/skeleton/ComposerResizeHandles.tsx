@@ -7,31 +7,25 @@ import type { ComposerResizeWidthEdge } from './composer-resize.ts'
 import css from './ComposerResizeHandles.module.css'
 
 const HEIGHT_VAR = '--dsh-composer-resized-height'
+/** Standalone fallback width when no `[data-conversation-content]` width axis exists. */
 const WIDTH_VAR = '--dsh-composer-resized-width'
-/** Non-inheriting width for the transcript column and Hero row (ChatView.module.css). */
-const FLOW_VAR = '--dsh-composer-flow-width'
-const FLOW_SELECTOR = '[data-chat-flow], [data-composer-flow]'
+/** Unified `#8858` non-inheriting width axis on `[data-conversation-content]` (ConversationRoot.module.css). */
+const USER_WIDTH_VAR = '--dsh-chat-user-width'
+/** localStorage key shared with ConversationWidthControls; cleared when the user commits a composer drag. */
+const WIDTH_PREF_KEY = 'dsh.conversation.contentWidth'
+/** `--dsh-composer-card-max-width` is `calc(var(--dsh-chat-content-width) + 32px)`. */
+const CARD_CONTENT_DELTA = 32
 
 const SEAT_SELECTOR = '[data-composer-seat]'
-const SCROLL_SELECTOR = '[data-conversation-scroll]'
+const CONTENT_SELECTOR = '[data-conversation-content]'
 
 function seatOf(node: HTMLElement | null): HTMLElement | null {
   return node?.closest(SEAT_SELECTOR) ?? null
 }
 
-/** The conversation column that owns both the transcript and the composer seat. */
-function scrollOf(node: HTMLElement | null): HTMLElement | null {
-  return node?.closest(SCROLL_SELECTOR) ?? null
-}
-
-/**
- * Width publishes on the conversation root (the common ancestor of the
- * composer card and the message column), so the transcript column reads the
- * same `--dsh-composer-resized-width` the dock rows do; the composer seat
- * remains the fallback when no root ancestor exists (standalone bars).
- */
-function widthSeatOf(node: HTMLElement | null): HTMLElement | null {
-  return node?.closest('[data-conversation-root]') ?? seatOf(node)
+/** The Conversation body that owns the unified `--dsh-chat-user-width` width axis. */
+function contentOf(node: HTMLElement | null): HTMLElement | null {
+  return node?.closest(CONTENT_SELECTOR) ?? null
 }
 
 function applyHeight(scroll: HTMLElement, height: number): void {
@@ -52,48 +46,55 @@ function applyHeight(scroll: HTMLElement, height: number): void {
 }
 
 /**
- * Drag frames restyle only what changes width: the inherited width goes on the
- * composer seat (a small subtree) and the non-inheriting flow width on the
- * transcript column and Hero row. An inherited custom property written on an
- * ancestor of the transcript restyles every message, so the conversation root
- * and the column host receive it only when the size settles (drag end, restore),
- * for columns and Hero rows that mount later.
+ * Bridge horizontal composer width drags onto the Conversation body's unified
+ * `--dsh-chat-user-width` axis (`@property { inherits: false }`), so the
+ * transcript column, composer card, dock cards, Hero row, width handles, and
+ * `ui-session-panel` end-reserve all compute from one source without dual-track
+ * drift. Standalone bars without a `[data-conversation-content]` ancestor fall
+ * back to `--dsh-composer-resized-width` on the seat and card.
  */
 function applyWidth(card: HTMLElement, width: number, settle: boolean): void {
-  const value = `${width}px`
-  const root = widthSeatOf(card)
   const seat = seatOf(card)
-  const host = scrollOf(seat ?? root)
-  const targets = new Set<HTMLElement>([card])
-  if (root !== null) {
-    for (const el of root.querySelectorAll<HTMLElement>('[data-composer-card]')) {
+  const content = contentOf(card) ?? contentOf(seat)
+  if (content !== null) {
+    const contentWidth = Math.max(0, width - CARD_CONTENT_DELTA)
+    content.style.setProperty(USER_WIDTH_VAR, `${contentWidth}px`)
+    content.dataset.composerUserWidth = `${contentWidth}`
+    if (settle) {
+      try { localStorage.removeItem(WIDTH_PREF_KEY) } catch { /* private storage */ }
+    }
+    const targets = new Set<HTMLElement>([card])
+    for (const el of (seat ?? content).querySelectorAll<HTMLElement>('[data-composer-card]')) {
       targets.add(el)
     }
+    if (seat !== null) {
+      seat.style.removeProperty(WIDTH_VAR)
+      delete seat.dataset.composerResizedWidth
+    }
+    for (const el of targets) {
+      el.style.width = ''
+      el.dataset.composerResizedWidth = `${width}`
+    }
+    return
   }
-  for (const el of (host ?? root)?.querySelectorAll<HTMLElement>(FLOW_SELECTOR) ?? []) {
-    el.style.setProperty(FLOW_VAR, value)
-  }
+  const value = `${width}px`
+  const targets = new Set<HTMLElement>([card])
   if (seat !== null) {
+    for (const el of seat.querySelectorAll<HTMLElement>('[data-composer-card]')) {
+      targets.add(el)
+    }
     seat.style.setProperty(WIDTH_VAR, value)
-    seat.dataset.composerResizedWidth = ''
-  }
-  if (settle && root !== null) {
-    root.style.setProperty(WIDTH_VAR, value)
-    root.dataset.composerResizedWidth = ''
-    // The transcript column (ChatView .column) is a sibling of the seat under
-    // [data-conversation-scroll]; a column mounted later reads the host value.
-    host?.style.setProperty(WIDTH_VAR, value)
+    seat.dataset.composerResizedWidth = `${width}`
   }
   for (const el of targets) {
     el.style.width = value
-    el.dataset.composerResizedWidth = ''
+    el.dataset.composerResizedWidth = `${width}`
   }
 }
 
 function clearSize(scroll: HTMLElement | null, card: HTMLElement | null): void {
   const seat = seatOf(scroll) ?? seatOf(card)
-  const widthSeat = widthSeatOf(card) ?? seat
-  const host = scrollOf(seat) ?? scrollOf(scroll) ?? scrollOf(card)
+  const content = contentOf(card) ?? contentOf(seat) ?? contentOf(scroll)
   const scrolls = seat === null
     ? (scroll === null ? [] : [scroll])
     : [...seat.querySelectorAll<HTMLElement>('[data-input-scroll], [data-approval-scroll]')]
@@ -110,32 +111,35 @@ function clearSize(scroll: HTMLElement | null, card: HTMLElement | null): void {
   }
   if (seat !== null) {
     seat.style.removeProperty(HEIGHT_VAR)
+    seat.style.removeProperty(WIDTH_VAR)
     delete seat.dataset.composerResized
+    delete seat.dataset.composerResizedWidth
   }
-  for (const owner of new Set([seat, widthSeat])) {
-    if (owner === null) continue
-    owner.style.removeProperty(WIDTH_VAR)
-    delete owner.dataset.composerResizedWidth
+  if (content !== null && content.dataset.composerUserWidth !== undefined) {
+    delete content.dataset.composerUserWidth
+    content.style.removeProperty(USER_WIDTH_VAR)
   }
-  for (const el of (host ?? widthSeat)?.querySelectorAll<HTMLElement>(FLOW_SELECTOR) ?? []) {
-    el.style.removeProperty(FLOW_VAR)
-  }
-  host?.style.removeProperty(WIDTH_VAR)
 }
 
 function adoptFromSeat(scroll: HTMLElement, card: HTMLElement): void {
   const seat = seatOf(scroll) ?? seatOf(card)
-  const widthSeat = widthSeatOf(card)
-  if (seat === null && widthSeat === null) return
+  const content = contentOf(card) ?? contentOf(seat)
   const height = seat?.style.getPropertyValue(HEIGHT_VAR) ?? ''
-  const width = widthSeat?.style.getPropertyValue(WIDTH_VAR) ?? ''
   if (height !== '') {
     scroll.style.height = height
     scroll.dataset.composerResized = ''
   }
+  if (content !== null) {
+    const contentWidth = Number.parseFloat(content.dataset.composerUserWidth ?? '')
+    if (Number.isFinite(contentWidth)) {
+      card.dataset.composerResizedWidth = `${contentWidth + CARD_CONTENT_DELTA}`
+    }
+    return
+  }
+  const width = seat?.style.getPropertyValue(WIDTH_VAR) ?? ''
   if (width !== '') {
     card.style.width = width
-    card.dataset.composerResizedWidth = ''
+    card.dataset.composerResizedWidth = `${Number.parseFloat(width)}`
   }
 }
 
@@ -171,6 +175,7 @@ export function useComposerResizeDrag(
     originWidth: number
     originHeight: number
     maxWidth: number
+    lastWidth?: number
   } | null>(null)
   const onCommitRef = useRef(onCommit)
   onCommitRef.current = onCommit
@@ -236,13 +241,16 @@ export function useComposerResizeDrag(
       ))
       return
     }
-    applyWidth(card, composerResizeWidth(
+    const nextWidth = composerResizeWidth(
       drag.originWidth, drag.originX, e.clientX, drag.edge, drag.maxWidth,
-    ), false)
+    )
+    drag.lastWidth = nextWidth
+    applyWidth(card, nextWidth, false)
   }, [cardRef, scrollRef])
 
   const onResizePointerUp = useCallback((e: PointerEvent<HTMLDivElement>) => {
-    if (resizeDrag.current?.pointerId !== e.pointerId) return
+    const drag = resizeDrag.current
+    if (drag?.pointerId !== e.pointerId) return
     resizeDrag.current = null
     /* v8 ignore next -- Pointer Capture is missing in jsdom; browsers have it */
     e.currentTarget.releasePointerCapture?.(e.pointerId)
@@ -252,9 +260,9 @@ export function useComposerResizeDrag(
     const height = scroll?.dataset.composerResized !== undefined
       ? Number.parseFloat(scroll.style.height)
       : Number.NaN
-    const width = card?.dataset.composerResizedWidth !== undefined
-      ? Number.parseFloat(card.style.width)
-      : Number.NaN
+    const width = drag.lastWidth ?? (card?.dataset.composerResizedWidth !== undefined
+      ? Number.parseFloat(card.dataset.composerResizedWidth || card.style.width)
+      : Number.NaN)
     if (Number.isFinite(height)) patch.height = height
     if (Number.isFinite(width)) {
       patch.width = width

@@ -17,7 +17,8 @@ export const Config = Schema.object({
 
 const textOutput = {
   schema: /** @type {const} */ ({ type: 'json' }),
-  render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+  /** @param {any} _args @param {any} value */
+  render: (_args, value) => [{ type: /** @type {const} */ ('text'), text: JSON.stringify(value) }],
 };
 
 export function apply(ctx, config) {

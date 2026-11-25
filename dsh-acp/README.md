@@ -132,9 +132,10 @@ Claude Code、Codex 和 Antigravity 支持使用 ACP Registry 托管发行版；
 
 ### 可选参数
 
+- `cwd`：可选的绝对目标工作目录（从 `whale-girl` 会话委派时为**必填**，禁止隐式落入 `data/whale/`）。必须为已存在的普通目录，禁止符号链接/目录联接、Windows UNC/设备路径、`$DSH_HOME`（默认 `~/.dsh`）、`data/whale`、应用/系统配置与凭据目录（如 `%APPDATA%`、`%LOCALAPPDATA%`、`~/.config`、`~/.ssh`、`~/.aws` 等）、用户主目录及磁盘根目录。
 - `model`、`reasoning_effort`：使用发现结果中的实际 ID；省略模型时使用首个可见配置模型。
 - `options: [{ "id": "…", "value": "…" }]`：传入模型实际声明的非权限选项，值支持字符串或布尔值。
-- `isolation: "worktree"`：从已提交的 `HEAD` 创建独立工作树，放在 `.agent-worktrees/`，结果中返回保留路径。不会复制未提交改动，也不会移动或清理父工作区；该目录加入仓库的 `.git/info/exclude`。
+- `isolation: "worktree"`：从已提交的 `HEAD` 创建独立工作树，放在 `.agent-worktrees/`，结果中返回保留路径。不会复制未提交改动，也不会移动或清理父工作区；该目录加入仓库的 `.git/info/exclude`。若准备阶段失败，会自动清理刚创建的未运行孤儿工作树。
 - `interaction_mode: "plan"`：限制为只读调查和规划。
 - `runtime_mode`：`inherit`、`read-only` 或 `approval-required`，只能继承或收紧宿主权限。
 - `mode: "wait"`、`timeout_ms`：有界等待；默认异步返回，等待时默认 15000 ms，最大 20000 ms。
@@ -173,6 +174,8 @@ Team 开启时，`list_agents` 返回整队，根代理名为 `lead`，成员使
 
 只有宿主为 `danger-full-access` 且审批为 `never` 时，才启用 Agent 自身的免提示模式，例如 Antigravity `yolo`；`workspace-write` 下仍通过沙箱检查。认证、网络或模型错误应按原错误处理，不能靠降低权限要求重试。
 
+模型触发的外部委派（`acp_delegate`，以及向已结束的外部子代理追加新轮次执行的 `send_message`）默认经过主进程桌面确认门禁（通过回环地址 `DSH_DESKTOP_INSTALL_URL` 与进程内密钥 `DSH_DESKTOP_INSTALL_TOKEN` 验证）。通道未配置、不可达或用户拒绝时均按 fail-closed 拦截，不会绕过确认启动外部 Agent。
+
 ### 本地保存位置
 
 数据位于 `$DSH_HOME`，未设置时使用 `~/.dsh`：
@@ -183,6 +186,7 @@ Team 开启时，`list_agents` 返回整队，根代理名为 `lead`，成员使
 | `acp-agent-sessions.json` | 宿主会话与外部 ACP 会话的映射。 |
 | `acp-tasks.json` | 持久任务回执，包含提示词、输出和安全重试身份。 |
 | `acp-profiles/` | 默认账号目录；显式 `profileDir` 优先。 |
+| `acp-runtime/`（兼容旧版 `t3/`） | 托管下载的 Agent 运行时二进制（`tools/`）与认证状态缓存（`provider-status-cache/`）。 |
 | `acp-error.log` | 脱敏诊断日志，达到 1 MiB 后轮换至 `.1`。 |
 
 这些文件应与会话日志一样妥善保护。凭据保存在本地配置中，目录接口会遮蔽密钥形态的值，并在未修改时保留原值。支持 POSIX 权限的平台将文件限制为 `0600`、插件自有账号和缓存目录限制为 `0700`；用户指定的已有 `profileDir` 不改权限。Windows 访问控制由本机目录权限决定。
@@ -199,7 +203,7 @@ Team 开启时，`list_agents` 返回整队，根代理名为 `lead`，成员使
 
 - Node.js `^22.19.0 || >=24.0.0`。
 - DeepSeek Harness / 鲸屿宿主，提供 Cordis 4、LLM 适配器注册、连接和 Web 服务。
-- 子代理委派还需要宿主的 `subagents`、`tools` 与受管理本地子会话接口；缺少这些服务时，仍可使用会话 Agent 切换。
+- 子代理委派还需要宿主的 `subagents`、`tools`（含 `@deepseek-ai/dsh-tools`）、受管理本地子会话接口，以及主进程桌面确认通道（`DSH_DESKTOP_INSTALL_URL` + 进程内密钥 `DSH_DESKTOP_INSTALL_TOKEN`）；无桌面确认通道的纯 CLI/Web 宿主上 `acp_delegate` 会默认 fail-closed 拒绝，但单会话 Agent 切换不受影响。
 - Agent Teams 需要宿主挂载 Team 服务。Windows 终端登录需要宿主正确释放 ConPTY，单独安装插件不会更新宿主 PTY 模块。
 
 **标准 DSH 0.2.2-rc.2**：已验证原生设置入口和能力驱动的推理选项。带历史的模型切换需要配套的[服务端上下文归属修正](tools/host-compat/README.md)；插件包不会自动修改宿主模块。
@@ -210,6 +214,18 @@ Team 开启时，`list_agents` 返回整队，根代理名为 `lead`，成员使
 
 ## 开发与验证
 
+### 重建客户端界面
+
+前端模块化源码位于 `client-src/`，构建产物输出至 `client/client.js`（打包发布时仅包含编译后的 `client/client.js` 与运行时文件，不包含 `client-src/`、`tests/` 或上游构建源码）。修改前端源码后运行：
+
+```sh
+npm ci --prefix tools/runtime-build
+npm run build:client
+npm run check:client
+```
+
+`check:client` 会在内存中比对 `client-src/` 与 `client/client.js` 是否一致，不写入磁盘。
+
 ### 重建内置运行时
 
 只有修改运行时源码时才需要重建：
@@ -217,9 +233,10 @@ Team 开启时，`list_agents` 返回整队，根代理名为 `lead`，成员使
 ```sh
 npm ci --prefix tools/runtime-build
 npm run build:runtime
+npm run check:runtime
 ```
 
-运行时源快照和选定的上游覆盖记录在 `tools/runtime-build/upstream/SOURCE.json`；构建不依赖其他项目检出或 T3 Code 安装。插件负责账号管理、会话路由、宿主协作及界面，第三方改编代码隔离在运行时目录，来源与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+`check:runtime` 会在内存中校验 `lib/vendor/agent-runtime.cjs`、`lib/vendor/mcp-bridge.cjs` 与 `tools/runtime-build/` 是否字节一致，并自动检查 `THIRD_PARTY_NOTICES.md` 是否完整涵盖全部静态打包的第三方依赖及其许可证。运行时源快照、cherry-pick 覆盖和本地补丁记录在 `tools/runtime-build/upstream/SOURCE.json`；构建不依赖其他项目检出或 T3 Code 安装。插件负责账号管理、会话路由、宿主协作及界面，第三方改编代码隔离在运行时目录，来源与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ### 按改动范围验证
 

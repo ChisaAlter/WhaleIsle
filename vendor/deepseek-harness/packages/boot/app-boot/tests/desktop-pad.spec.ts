@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { ProfileContext } from '../src/index.ts'
 
@@ -74,7 +73,7 @@ async function desktopRuntime() {
     }),
     apply() {},
   }
-  const start = async (options: { name?: string; recovery?: boolean; overlays?: PatchOptions[] } = {}) => {
+  const start = async (options: { name?: string; recovery?: boolean; overlayPaths?: string[] } = {}) => {
     const name = options.name ?? 'web'
     const loaded = app.loadProfile('dsh', name, installAnchor, home,
       options.recovery === true ? { userLayer: false, bundles: 'template' } : {})
@@ -82,7 +81,7 @@ async function desktopRuntime() {
     const profile: ProfileContext = {
       name, dir: loaded.dir, patchPath: loaded.patchPath, installAnchor,
       home, cwd: home, startedBundles: loaded.layers.map(layer => layer.packageName),
-      overlays: options.overlays ?? [], telemetryDisabledEnv: undefined,
+      overlayPaths: options.overlayPaths ?? [], telemetryDisabledEnv: undefined,
       ...(options.recovery === true ? { skipUserPlugins: true } : {}),
     }
     const configPath = join(loaded.dir, 'cordis.yml')
@@ -213,7 +212,9 @@ describe('desktop pad profile defaults', { timeout: 15_000 }, () => {
     const fixture = await desktopRuntime()
     writeFileSync(fixture.patchPath, JSON.stringify([{ id: PAD_ID, config: { updateCheck: false, minIntervalSec: 5 } }]) + '\n')
     writeFileSync(fixture.homePatchPath, JSON.stringify([{ id: PAD_ID, config: { updateCheck: true, minIntervalSec: 7 } }]) + '\n')
-    const { ctx, profile } = await fixture.start({ overlays: [{ id: PAD_ID, config: { updateCheck: true, minIntervalSec: 11 } }] })
+    const overlayPath = join(fixture.home, 'launch.overlay.yml')
+    writeFileSync(overlayPath, JSON.stringify([{ id: PAD_ID, config: { updateCheck: true, minIntervalSec: 11 } }]) + '\n')
+    const { ctx, profile } = await fixture.start({ overlayPaths: [overlayPath] })
     expect(padEntry(ctx).fiber?.config).toMatchObject({ updateCheck: true, minIntervalSec: 11 })
     const persisted = readFileSync(profile.patchPath)
     await expect(ctx.configEditor.edit(padEntry(ctx), current => ({ ...current, minIntervalSec: 13 })))

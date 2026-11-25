@@ -6,10 +6,11 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import LlmRuntime, { createUserMessage, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { LlmFailure, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionLogOffset, type SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 async function harness(adapter: MockAdapter): Promise<Context> {
   const ctx = new Context()
@@ -35,7 +36,7 @@ describe('agent/request-error', () => {
   it('retries malformed completed tool calls before persisting an assistant message', async () => {
     const adapter = new MockAdapter([toolCallResponse('', '', {}), textResponse('recovered')])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('malformed-retry'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('malformed-retry'), { provider: 'mock', model: 'mock' })
     const failures: string[] = []
     ctx.on('agent/request-error', async ({ failure }) => {
       failures.push(failure.code)
@@ -53,7 +54,7 @@ describe('agent/request-error', () => {
   it('does not offer middleware failures to request recovery', async () => {
     const adapter = new MockAdapter([textResponse('unused')])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('request-error-narrow'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('request-error-narrow'), { provider: 'mock', model: 'mock' })
     let recoveries = 0
     ctx.on('agent/request', () => {
       throw LlmError.fromFailure({ message: 'middleware failed', code: 'MIDDLEWARE' })
@@ -76,7 +77,7 @@ describe('agent/request-error', () => {
       textResponse('ok'),
     ])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('request-error-retry'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('request-error-retry'), { provider: 'mock', model: 'mock' })
     const seen: {
       turn: number
       step: number
@@ -125,7 +126,7 @@ describe('agent/request-error', () => {
   it('lets cancellation win over a retry action', async () => {
     const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('unused')])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('request-error-cancel'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('request-error-cancel'), { provider: 'mock', model: 'mock' })
     ctx.on('agent/request-error', async ({ agent: subject }) => {
       subject.cancel({ kind: 'user' })
       return { kind: 'retry' }
@@ -145,7 +146,7 @@ describe('agent/request-error', () => {
   it('does not retry when the recovery listener fails before returning its action', async () => {
     const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('unused')])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('request-error-recovery-failed'), {
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('request-error-recovery-failed'), {
       provider: 'mock',
       model: 'mock',
     })
@@ -171,7 +172,7 @@ describe('agent/request-error', () => {
     ]
     const adapter = new MockAdapter([partialThenThrow, textResponse('recovered full reply')])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('mid-stream-retry'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('mid-stream-retry'), { provider: 'mock', model: 'mock' })
     let failFirst = true
     ctx.on('llm/stream', async function* (_options, next) {
       for await (const chunk of next()) yield chunk
@@ -226,7 +227,7 @@ describe('agent/request-error', () => {
       ],
     ])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('mid-stream-partial-preserve'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('mid-stream-partial-preserve'), { provider: 'mock', model: 'mock' })
     ctx.on('llm/stream', async function* (_options, next) {
       for await (const chunk of next()) yield chunk
       throw new LlmError('upstream timed out mid-stream', 'TIMEOUT')
@@ -273,7 +274,7 @@ describe('agent/request-error', () => {
       { type: 'tool-call-delta', index: 0, id: ToolCallId('call_only'), name: 'read', argumentsDelta: '{' },
     ]])
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('mid-stream-no-visible'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('mid-stream-no-visible'), { provider: 'mock', model: 'mock' })
     ctx.on('llm/stream', async function* (_options, next) {
       for await (const chunk of next()) yield chunk
       throw new LlmError('connection dropped', 'TRANSPORT')

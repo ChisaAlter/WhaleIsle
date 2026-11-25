@@ -30,7 +30,7 @@ import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import { UserQuestionError, type AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions'
 import type { CommandDefinitionId, CommandId } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
@@ -38,12 +38,14 @@ import type { ProjectionDefinition, ProjectionHandle } from '@deepseek-ai/dsh-se
 import { evaluatePlanModeToolGate } from './execution-gate.ts'
 import type { PlanProjection, PlanUnitState } from './types.ts'
 export { evaluatePlanModeToolGate, isReadOnlyShellCommand, type ShellGateCheck } from './execution-gate.ts'
+import { PlanModeError } from './error.ts'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'plan-mode': { kind: 'plan-mode' } & ContextFormed
   }
 }
 export type * from './types.ts'
+export { PlanModeError, type PlanModeErrorCode } from './error.ts'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -123,7 +125,6 @@ const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
     commandId: zod.string() as unknown as ZodType<CommandId>,
     wanted: zod.boolean(),
   }).strict().nullable(),
-  activeAtLastHeader: zod.boolean().nullable(),
   entered: zod.boolean(),
 }).strict()
 
@@ -136,9 +137,9 @@ const planProjectionSchema: ZodType<PlanProjection> = zod.object({
 /** Projection of logged plan selections and committed mode. */
 export const planProjectionDefinition = {
   key: 'plan',
-  stateVersion: 4,
+  stateVersion: 5,
   stateSchema: planUnitStateSchema,
-  init: () => ({ active: false, wanted: null, running: null, activeAtLastHeader: null, entered: false }),
+  init: () => ({ active: false, wanted: null, running: null, entered: false }),
   apply: (state, event) => {
     if (event.type === 'command/run' && event.data.name === 'plan') {
       if (event.data.args === undefined) return state
@@ -153,9 +154,6 @@ export const planProjectionDefinition = {
     }
     if (event.type === 'plan/mode') {
       return { ...state, active: event.data.active, wanted: null, entered: state.entered || event.data.active }
-    }
-    if (event.type === 'request/header') {
-      return { ...state, activeAtLastHeader: state.active }
     }
     return state
   },
@@ -196,18 +194,32 @@ export class PlanModeController extends Service {
 
   protected async [Service.init](): Promise<void> {
     const ctx = this.ctx
-    // Keep plan policy in append-only runtime context rather than node-0 static
-    // system sections so entering/exiting plan mode never invalidates KV prefix cache.
-    ctx.systemPrompt.context({
+    ctx.systemPrompt.section({
       name: 'plan:policy',
+      retirement: 'Plan mode is no longer available. Its instructions no longer apply.',
       order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY'),
-      required: true,
       text: (context) => {
         if (context.agent === undefined) return ''
-        const active = this.hasOpenStep(context.agent.session)
-          ? this.loggedActive(context.agent.session)
-          : this.selectedActive(context.agent.session)
-        return active ? this.section : ''
+        const pending = this.pendingIntents.get(context.agent.session)
+        const state = this.planState(context.agent.session)
+        return state.entered || pending?.active === true
+          ? `The following instructions apply only while plan mode is active.\n\n${this.section}`
+          : ''
+      },
+    })
+    ctx.systemPrompt.section({
+      name: 'plan:status',
+      retirement: 'Plan mode is inactive.',
+      order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY') + 1,
+      replacement: '',
+      text: (context) => {
+        if (context.agent === undefined) return ''
+        const state = this.planState(context.agent.session)
+        const active = this.pendingIntents.get(context.agent.session)?.active ?? state.active
+        if (!state.entered && !active) return ''
+        return active
+          ? 'Plan mode is active. Follow the plan-mode instructions.'
+          : 'Plan mode is inactive. The plan-mode instructions no longer apply.'
       },
     })
     this.planProjectionHandle = await ctx.sessionProjections.register(planProjectionDefinition)
@@ -235,16 +247,15 @@ export class PlanModeController extends Service {
       next,
     ): Promise<PreStepDecision> => {
       const decision = await next()
-      const pending = this.pendingIntents.get(agent.session)
-      if (decision.kind === 'reject' || signal.aborted || pending === undefined) return decision
-      const narration = this.narration(agent.session, pending.active)
+      if (decision.kind === 'reject' || signal.aborted) return decision
+      let narration: UserMessage | undefined
       try {
-        this.onBoundary(agent.session)
+        narration = this.onBoundary(agent.session)
       } catch (error) {
         ctx.logger.warn('dsh-plan-mode: failed to append selected plan mode at step start: %o', error)
         return decision
       }
-      return !pending.narrate || narration === undefined
+      return narration === undefined
         ? decision
         : { ...decision, messages: [...decision.messages, narration] }
     })
@@ -323,15 +334,20 @@ export class PlanModeController extends Service {
       execute: async (args, exec) => {
         const agent = exec.agent
         // Admission outlives plan mode and follows the selected state, so check the committed state.
-        if (agent === undefined || !this.loggedActive(agent.session)) {
-          throw new Error(`${EXIT_PLAN_MODE} is only available in plan mode`)
+        if (agent === undefined) {
+          throw new ToolContextUnavailableError(`${EXIT_PLAN_MODE} requires a calling agent`)
+        }
+        if (!this.loggedActive(agent.session)) {
+          throw new PlanModeError(`${EXIT_PLAN_MODE} is only available in plan mode`, 'PLAN_NOT_ACTIVE')
         }
         if (!/^#\s+\S/.test(args.plan.trim())) {
-          throw new Error(`${EXIT_PLAN_MODE} requires a non-empty markdown plan starting with a # heading`)
+          throw new ToolArgsError([`${EXIT_PLAN_MODE} requires a non-empty markdown plan starting with a # heading`])
         }
         const interaction = ctx.get('userQuestions')
         if (interaction === undefined) {
-          throw new Error('no user-questions channel is available to review the plan; ask the user to switch the session mode instead')
+          throw new ToolContextUnavailableError(
+            'no user-questions channel is available to review the plan; ask the user to switch the session mode instead',
+          )
         }
         let answer: AskUserQuestionAnswer
         try {
@@ -367,15 +383,18 @@ export class PlanModeController extends Service {
         // A review may outlive this plugin fiber. Without its pre-step listener,
         // an approved selection could never be appended, so fail and keep planning.
         if (disposed) {
-          throw new Error('the plan-mode service was reloaded while the plan was under review; present the plan again')
+          throw new PlanModeError(
+            'the plan-mode service was reloaded while the plan was under review; present the plan again',
+            'PLAN_REVIEW_INTERRUPTED',
+          )
         }
         const reviewItems = answer.answers.filter(entry => entry.id === REVIEW_ID)
         const item = reviewItems.length === 1 ? reviewItems[0] : undefined
         if (item?.selected.length !== 1 || item.selected[0] !== APPROVE_LABEL || item.custom !== undefined) {
           const feedback = item?.custom ?? ''
-          throw new Error(feedback === ''
+          throw new PlanModeError(feedback === ''
             ? 'The user chose to keep planning; revise the plan and present it again.'
-            : `The user chose to keep planning; their feedback: ${feedback}`)
+            : `The user chose to keep planning; their feedback: ${feedback}`, 'PLAN_REVISION_REQUESTED')
         }
         // Keep plan guidance for the rest of this assistant tool batch. The
         // silent selection is appended at the next accepted in-turn pre-step,
@@ -394,7 +413,7 @@ export class PlanModeController extends Service {
         title: 'Plan review',
         content: result.content,
       }),
-    }))
+    }), { when: ({ agent }) => this.selectedActive(agent.session) || this.planState(agent.session).entered })
   }
 
   private loggedActive(session: Session): boolean {
@@ -410,17 +429,9 @@ export class PlanModeController extends Service {
     return this.ctx.agents.turnBoundaryOf(session).openTurnStartSeq !== null
   }
 
-  private hasOpenStep(session: Session): boolean {
-    return this.ctx.agents.turnBoundaryOf(session).lastStepBoundary?.kind === 'start'
-  }
-
-  private loggedActiveAtLastHeader(session: Session): boolean | undefined {
-    return this.planState(session).activeAtLastHeader ?? undefined
-  }
-
   private planState(session: Session): PlanUnitState {
     if (this.planProjectionHandle === undefined) {
-      throw new Error('plan mode is not ready; await plugin activation before running an agent')
+      throw new PlanModeError('plan mode is not ready; await plugin activation before running an agent', 'PLAN_STATE_UNAVAILABLE')
     }
     return this.planProjectionHandle.stateOf(session)
   }
@@ -446,6 +457,7 @@ export class PlanModeController extends Service {
    * further in-turn pre-step runs. During an open turn the selection remains
    * pending until the next accepted in-turn pre-step. Repeated selection of
    * the current or already-pending state is a no-op.
+   * Each committed user selection contributes a user-switch notice.
    *
    * @param agent The agent to switch.
    * @param active Whether plan mode should be active.
@@ -471,13 +483,12 @@ export class PlanModeController extends Service {
     }
     session.append('plan/mode', { active })
     this.pendingIntents.delete(session)
-    const narration = this.narration(session, active)
-    if (narration !== undefined) agent.inject(narration)
+    agent.inject(this.narration(active))
     return 'committed'
   }
 
-  /** Append one pending selection before the next request assembly. */
-  private onBoundary(session: Session): void {
+  /** Commit a pending transition and return its notice for user selections. */
+  private onBoundary(session: Session): UserMessage | undefined {
     const pending = this.pendingIntents.get(session)
     if (pending === undefined) return
     const target = pending.active
@@ -489,12 +500,11 @@ export class PlanModeController extends Service {
     // Delete only after append succeeds so a later accepted in-turn pre-step
     // can retry a failed durable write.
     this.pendingIntents.delete(session)
+    if (pending.narrate) return this.narration(target)
   }
 
-  /** Build a user-switch notice when the last logged header described the other mode. */
-  private narration(session: Session, target: boolean): UserMessage | undefined {
-    const told = this.loggedActiveAtLastHeader(session)
-    if (told === undefined || told === target) return
+  /** Build the notice accompanying a committed user-selected transition. */
+  private narration(target: boolean): UserMessage {
     const text = target
       ? 'The user switched this session to plan mode.'
       : 'The user switched this session back to the default mode.'

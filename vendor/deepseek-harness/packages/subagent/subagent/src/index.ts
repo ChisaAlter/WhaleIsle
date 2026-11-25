@@ -58,6 +58,7 @@ import type {
 import type {
   ContinuationAdmission,
   SubagentCapabilities,
+  SubagentCapacity,
   SubagentActivation,
   SubagentActivationSpec,
   SubagentInterruptAuthority,
@@ -92,6 +93,7 @@ export type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
   SubagentCapabilities,
+  SubagentCapacity,
   SubagentActivation,
   SubagentActivationSpec,
   SubagentInterruptAuthority,
@@ -128,7 +130,7 @@ export type {
   SubagentDescriptorData,
 } from './descriptor.ts'
 export { STRUCTURED_OUTPUT_TOOL } from './structured.ts'
-export { SubagentError } from './error.ts'
+export { SubagentError, type SubagentErrorCode } from './error.ts'
 export { assertSubagentMaxDepth, delegationDepthOf } from './depth.ts'
 export {
   appendDelegatedPolicyOverrides,
@@ -247,7 +249,7 @@ export class SubagentRuntime extends TypertRemoteService {
         identityOf: session => identityProjection.stateOf(session).identity,
         catalogOf: session => subagentCatalogProjectionDefinition.wire.view(catalogProjection.stateOf(session)),
         emitLifecycle: this.emitLifecycle,
-      }, () => this.config.maxActiveSubagents.get())
+      }, () => this.maxActiveSubagents)
       this.manager = manager
       childCtx.effect(() => () => {
         /* v8 ignore else -- one injected binding owns the slot until its fiber disposes. */
@@ -265,6 +267,11 @@ export class SubagentRuntime extends TypertRemoteService {
     if (!key.trim() || this.continuationPolicies.has(key)) throw new Error(`duplicate or empty continuation policy "${key}"`)
     this.continuationPolicies.set(key, policy)
     return () => { if (this.continuationPolicies.get(key) === policy) this.continuationPolicies.delete(key) }
+  }
+
+  /** Current concurrency limit shared by all descendants in each subagent tree. */
+  get maxActiveSubagents(): number {
+    return this.config.maxActiveSubagents.get()
   }
 
   /**
@@ -357,6 +364,15 @@ export class SubagentRuntime extends TypertRemoteService {
       throw new SubagentError('cannot resolve child working directory without a base directory', 'WORKTREE_UNAVAILABLE')
     }
     return resolve(base, cwd ?? '.')
+  }
+
+  /**
+   * Observe the shared concurrency capacity of the caller's subagent tree.
+   * @param caller - exact live root or resident tree member.
+   * @returns occupied slots and the current limit; this observation reserves no capacity.
+   */
+  capacityOf(caller: Agent): SubagentCapacity {
+    return this.requireManager().capacityOf(caller)
   }
 
   /**

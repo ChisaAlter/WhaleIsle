@@ -26,7 +26,7 @@ __export(index_exports, {
   inject: () => inject
 });
 module.exports = __toCommonJS(index_exports);
-var import_react4 = require("react");
+var import_react6 = require("react");
 
 // src/client/composer.ts
 var mounted = [];
@@ -81,7 +81,15 @@ var composer = {
     }
     const editor = findEditor();
     if (editor === void 0) return "unavailable";
-    focusEditor(editor);
+    const selection = window.getSelection();
+    const range = selection !== null && selection.rangeCount > 0 && editor.contains(selection.getRangeAt(0).commonAncestorContainer) ? selection.getRangeAt(0).cloneRange() : void 0;
+    editor.focus();
+    if (selection !== null && range !== void 0) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      focusEditor(editor);
+    }
     document.execCommand("insertText", false, text);
     return "filled";
   }
@@ -101,7 +109,7 @@ function focusEditor(editor) {
 }
 
 // src/client/Dock.tsx
-var import_react3 = require("react");
+var import_react4 = require("react");
 
 // src/shared/types.ts
 var ROUTES = {
@@ -350,12 +358,59 @@ function dropZoneFor(rect, x, y, edge = 0.3) {
   const nearest = candidates[0];
   return nearest[1] <= edge ? nearest[0] : "center";
 }
-function totalWeight(split) {
-  return split.weights.reduce((sum, weight) => sum + clampWeight(weight), 0) || 1;
+function normalizedWeights(split) {
+  const weights = split.children.map((_, index) => clampWeight(split.weights[index]));
+  const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  return weights.map((weight) => weight / total * weights.length);
+}
+function rowTemplate(split, gap) {
+  return normalizedWeights(split).flatMap((weight, index) => [
+    ...index > 0 ? [`${gap}px`] : [],
+    `minmax(0, ${weight}fr)`
+  ]).join(" ");
+}
+
+// src/client/panel-state.ts
+var STATE_PREFIX = "dsh-pad:state:";
+var MAX_STATE_CHARS = 64 * 1024;
+var UNSAFE_STATE_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
+function isSafeStateKey(key) {
+  return !UNSAFE_STATE_KEYS.has(key);
+}
+function parsePanelState(raw) {
+  if (raw === null) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const state = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!isSafeStateKey(key)) continue;
+    state[key] = value;
+  }
+  return state;
+}
+function encodePanelState(state) {
+  try {
+    const text = JSON.stringify(state);
+    return typeof text === "string" && text.length <= MAX_STATE_CHARS ? text : void 0;
+  } catch {
+    return void 0;
+  }
 }
 
 // src/client/pad-client.ts
 var HISTORY_LIMIT = 120;
+function isPanelData(raw) {
+  if (typeof raw !== "object" || raw === null) return false;
+  const { sources, agent } = raw;
+  if (typeof sources !== "object" || sources === null || Array.isArray(sources)) return false;
+  if (!Object.values(sources).every((reading) => typeof reading === "object" && reading !== null && typeof reading.ok === "boolean" && typeof reading.at === "string")) return false;
+  return agent === null || typeof agent === "object" && agent !== null && typeof agent["at"] === "string";
+}
 var LAYOUT_KEY = "dsh-pad:layout";
 var DEFAULT_WIDTH = 352;
 var MIN_WIDTH = 288;
@@ -372,16 +427,16 @@ function viewportSize() {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 function defaultBall(width, height) {
+  const size = width !== void 0 && height !== void 0 ? { width, height } : viewportSize();
   return {
-    x: Math.max(BALL_MARGIN, Math.round(width - BALL_SIZE - BALL_SNAP_INSET)),
-    y: Math.max(BALL_MARGIN, Math.round(height * 0.42 - BALL_SIZE / 2))
+    x: Math.max(BALL_MARGIN, Math.round(size.width - BALL_SIZE - BALL_SNAP_INSET)),
+    y: Math.max(BALL_MARGIN, Math.round(size.height * 0.42 - BALL_SIZE / 2))
   };
 }
 var DEFAULT_LAYOUT = {
   expanded: false,
   width: DEFAULT_WIDTH,
   tree: null,
-  // DSHD: null keeps the default edge position, resolved against the live viewport.
   ball: null,
   dock: null,
   heights: {}
@@ -401,20 +456,44 @@ function clampPanelHeight(height) {
   return Math.round(Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, height)));
 }
 function awaitingFirstData(definition, data) {
-  return definition.sources.some((source) => data.sources[source.id] === void 0);
+  return definition.sources.some((source) => !Object.hasOwn(data.sources, source.id) || data.sources[source.id] === void 0);
+}
+function sourceKey(source) {
+  return JSON.stringify(source.kind === "command" ? ["command", source.id, source.command, source.parse, source.intervalSec, source.timeoutMs ?? null] : [
+    "http",
+    source.id,
+    source.method ?? "GET",
+    source.url,
+    Object.entries(source.headers ?? {}).sort(),
+    source.body ?? null,
+    source.parse,
+    source.intervalSec,
+    source.timeoutMs ?? null
+  ]);
+}
+function mergeHistory(points, minimum = -Infinity) {
+  const byTime = /* @__PURE__ */ new Map();
+  for (const point of points) {
+    const time = typeof point?.at === "string" ? Date.parse(point.at) : NaN;
+    if (!Number.isFinite(time) || time < minimum) continue;
+    byTime.set(time, { value: point.value, at: point.at });
+  }
+  return [...byTime].sort(([a], [b]) => a - b).slice(-HISTORY_LIMIT).map(([, point]) => point);
 }
 function seedPanelHistory(store, panel) {
   if (panel.history === void 0 || panel.history === null) return;
-  for (const [sourceId, points] of Object.entries(panel.history)) {
+  for (const { id: sourceId } of panel.definition.sources) {
+    const points = panel.history[sourceId];
     if (!Array.isArray(points) || points.length === 0) continue;
     let panelHistory = store.get(panel.id);
+    const local = panelHistory?.get(sourceId) ?? [];
+    const clean = mergeHistory([...points, ...local], local.length > 0 ? Date.parse(local[0].at) : -Infinity);
+    if (clean.length === 0) continue;
     if (panelHistory === void 0) {
       panelHistory = /* @__PURE__ */ new Map();
       store.set(panel.id, panelHistory);
     }
-    if (panelHistory.has(sourceId)) continue;
-    const clean = points.filter((point) => typeof point?.at === "string" && Number.isFinite(Date.parse(point.at))).map((point) => ({ value: point.value, at: point.at }));
-    if (clean.length > 0) panelHistory.set(sourceId, clean.slice(-HISTORY_LIMIT));
+    panelHistory.set(sourceId, clean);
   }
 }
 function readPoint(raw) {
@@ -426,20 +505,26 @@ function readPoint(raw) {
   if (typeof y !== "number" || !Number.isFinite(y)) return null;
   return { x, y };
 }
-// DSHD: the desktop starts Harness in a 0x0 view, so the viewport is unknown
-// while the layout loads. Keep the stored point; the dock clamps it when it
-// renders. Clamping against that view left balls at the margin corner, which
-// a drag always snaps away from, so that corner counts as never placed.
-function readBall(raw, legacy) {
-  const point = readPoint(raw);
-  if (point !== null) return point.x === BALL_MARGIN && point.y === BALL_MARGIN ? null : point;
-  const fraction = legacy["capsuleY"];
+function readBall(raw, legacy, rawEdge) {
   const { width, height } = viewportSize();
-  if (typeof fraction === "number" && Number.isFinite(fraction) && width > 0 && height > 0) {
+  const hasViewport = width > 0 && height > 0;
+  const point = readPoint(raw);
+  if (point !== null) {
+    if (point.x === BALL_MARGIN && point.y === BALL_MARGIN && rawEdge === void 0) {
+      return hasViewport ? defaultBall(width, height) : null;
+    }
+    if (!hasViewport) return point;
+    return {
+      x: Math.round(Math.min(Math.max(BALL_MARGIN, point.x), Math.max(BALL_MARGIN, width - BALL_SIZE - BALL_MARGIN))),
+      y: Math.round(Math.min(Math.max(BALL_MARGIN, point.y), Math.max(BALL_MARGIN, height - BALL_SIZE - BALL_MARGIN)))
+    };
+  }
+  const fraction = legacy["capsuleY"];
+  if (typeof fraction === "number" && Number.isFinite(fraction) && hasViewport) {
     const y = Math.min(0.94, Math.max(0.06, fraction));
     return { x: width - BALL_SIZE - BALL_SNAP_INSET, y: Math.round(height * y - BALL_SIZE / 2) };
   }
-  return null;
+  return hasViewport ? defaultBall(width, height) : null;
 }
 function normalizeDockHeight(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
@@ -465,19 +550,23 @@ function readRows(raw) {
   return rows;
 }
 function normalizeDockLayout(raw) {
+  const { width: vw, height: vh } = viewportSize();
   if (typeof raw !== "object" || raw === null) {
-    return { ...DEFAULT_LAYOUT };
+    return { ...DEFAULT_LAYOUT, ball: vw > 0 && vh > 0 ? defaultBall(vw, vh) : null };
   }
   const record = raw;
   const rows = readRows(record["rows"]);
   const tree = parseTree(record["tree"]) ?? (rows.length > 0 ? legacyRowsToTree(rows) : null);
-  const width = typeof record["width"] === "number" && Number.isFinite(record["width"]) ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, record["width"])) : DEFAULT_LAYOUT.width;
   const dockHeight = normalizeDockHeight(record["dockHeight"]);
+  const width = typeof record["width"] === "number" && Number.isFinite(record["width"]) ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, record["width"])) : DEFAULT_LAYOUT.width;
+  const rawEdge = record["ballEdge"];
+  const ballEdge = rawEdge === null || rawEdge === "left" || rawEdge === "right" || rawEdge === "top" || rawEdge === "bottom" ? rawEdge : void 0;
   return {
     expanded: record["expanded"] === true,
     width,
     tree,
-    ball: readBall(record["ball"], record),
+    ball: readBall(record["ball"], record, rawEdge),
+    ...ballEdge === void 0 ? {} : { ballEdge },
     dock: readPoint(record["dock"]),
     heights: readHeights(record["heights"]),
     ...dockHeight === void 0 ? {} : { dockHeight }
@@ -487,27 +576,27 @@ function readLayout() {
   try {
     return normalizeDockLayout(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null"));
   } catch {
-    return { ...DEFAULT_LAYOUT };
+    return normalizeDockLayout(null);
   }
 }
 var PadClient = class {
   snapshot = { panels: [], connected: false, loaded: false, layout: readLayout(), fresh: void 0, embeddedMode: false };
   listeners = /* @__PURE__ */ new Set();
   history = /* @__PURE__ */ new Map();
+  sourceKeys = /* @__PURE__ */ new Map();
+  focusedPanels = /* @__PURE__ */ new Map();
+  embeddedPanels = /* @__PURE__ */ new Map();
   source;
   watchKey = "";
   known;
   freshTimer;
+  reconnectTimer;
   modelCatalog;
   started = false;
-  embeddedCount = 0;
-  setEmbeddedMode(enabled) {
-    this.embeddedCount = Math.max(0, this.embeddedCount + (enabled ? 1 : -1));
-    const next = this.embeddedCount > 0;
-    if (next === this.snapshot.embeddedMode) return;
-    this.update({ embeddedMode: next });
+  watchReconnectQueued = false;
+  onVisibilityChange = () => {
     this.reconnect();
-  }
+  };
   subscribe = (listener) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -516,14 +605,19 @@ var PadClient = class {
   start() {
     if (this.started) return;
     this.started = true;
+    if (typeof document !== "undefined") document.addEventListener?.("visibilitychange", this.onVisibilityChange);
     this.reconnect();
   }
   stop() {
     this.started = false;
-    this.source?.close();
+    if (typeof document !== "undefined") document.removeEventListener?.("visibilitychange", this.onVisibilityChange);
+    const source = this.source;
     this.source = void 0;
+    source?.close();
     this.watchKey = "";
     clearTimeout(this.freshTimer);
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = void 0;
   }
   /** Readings of one source collected while this page was open, oldest first. */
   historyOf(panelId, sourceId) {
@@ -537,9 +631,40 @@ var PadClient = class {
     this.persistLayout(patch);
     this.reconnect();
   }
-  /** Store the nested card tree (order, splits and widths). */
+  /** Commit against the current panel set, even when a gesture began before an SSE edit. */
   setTree(tree) {
-    this.setLayout({ tree });
+    const current = normalizeTree(tree, this.snapshot.panels.map((panel) => panel.id));
+    this.setLayout({ tree: current });
+    return this.snapshot.layout.tree;
+  }
+  setEmbeddedMode(active) {
+    if (this.snapshot.embeddedMode === active) return;
+    this.update({ embeddedMode: active });
+    this.scheduleWatchReconnect();
+  }
+  /** Keep a focused or embedded frame polling while its surface is visible. */
+  watchPanel(panelId, surface = "dock") {
+    const panels = surface === "embedded" ? this.embeddedPanels : this.focusedPanels;
+    panels.set(panelId, (panels.get(panelId) ?? 0) + 1);
+    this.scheduleWatchReconnect();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (panels.get(panelId) ?? 1) - 1;
+      if (remaining > 0) panels.set(panelId, remaining);
+      else panels.delete(panelId);
+      this.scheduleWatchReconnect();
+    };
+  }
+  scheduleWatchReconnect() {
+    if (!this.started || this.watchReconnectQueued) return;
+    this.watchReconnectQueued = true;
+    queueMicrotask(() => {
+      this.watchReconnectQueued = false;
+      if (!this.started) return;
+      this.reconnect();
+    });
   }
   /** Remember one panel's iframe height, or clear it with `undefined` (auto). */
   setPanelHeight(panelId, height) {
@@ -587,13 +712,14 @@ var PadClient = class {
     return this.modelCatalog;
   }
   /** One `dsh.run` call from this panel's frame. */
-  async run(panelId, prompt, system) {
+  async run(panelId, prompt, system, signal) {
     try {
       const response = await fetch(routeUrl(ROUTES.run), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ panelId, prompt, ...system === void 0 ? {} : { system } }),
-        credentials: "same-origin"
+        credentials: "same-origin",
+        ...signal === void 0 ? {} : { signal }
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok && typeof body.error !== "string") return { ok: false, error: `HTTP ${response.status}` };
@@ -631,11 +757,10 @@ var PadClient = class {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
-  /** Panels the Host should poll: everything visible in an expanded dock, or only embedded panels in embedded mode. */
+  /** Panels the Host should poll across the open dock and embedded views. */
   watchIds() {
-    if (this.snapshot.embeddedMode) return [...new Set(this.embeddedWatch ?? [])];
-    const dock = this.snapshot.layout.expanded ? this.snapshot.panels.filter((p) => !p.collapsed && !p.needsApproval).map((p) => p.id) : [];
-    return [...new Set([...dock, ...this.embeddedWatch ?? []])];
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return [];
+    return this.snapshot.panels.filter((p) => this.embeddedPanels.has(p.id) || !this.snapshot.embeddedMode && this.snapshot.layout.expanded && (!p.collapsed || this.focusedPanels.has(p.id))).map((p) => p.id);
   }
   /** (Re)open the stream when the watched set changed. */
   reconnect() {
@@ -643,16 +768,33 @@ var PadClient = class {
     const ids = this.watchIds();
     const key = ids.join(",");
     if (this.source !== void 0 && key === this.watchKey) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = void 0;
     this.watchKey = key;
-    this.source?.close();
+    const previous = this.source;
+    this.source = void 0;
+    previous?.close();
     const url = `${routeUrl(ROUTES.stream)}?watch=${encodeURIComponent(key)}`;
-    const source = new EventSource(url, { withCredentials: true });
+    let source;
+    try {
+      source = new EventSource(url, { withCredentials: true });
+    } catch (error) {
+      this.update({ connected: false, connectionError: error instanceof Error ? error.message : String(error) });
+      this.scheduleReconnect();
+      return;
+    }
     this.source = source;
     source.onopen = () => {
-      if (this.source === source) this.update({ connected: true });
+      if (this.source === source) this.update({ connected: true, connectionError: void 0 });
     };
     source.onerror = () => {
-      if (this.source === source) this.update({ connected: false });
+      if (this.source !== source) return;
+      if (source.readyState === 2) {
+        this.source = void 0;
+        source.close();
+        this.scheduleReconnect();
+      }
+      this.update({ connected: false });
     };
     source.onmessage = (message) => {
       if (this.source !== source) return;
@@ -662,21 +804,47 @@ var PadClient = class {
       }
     };
   }
+  scheduleReconnect() {
+    if (!this.started || this.reconnectTimer !== void 0) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = void 0;
+      this.reconnect();
+    }, 3e3);
+  }
   receive(event) {
     if (event.type === "panels") {
+      if (!event.panels.every((panel) => isPanelData(panel.data))) return;
       for (const panel of event.panels) {
+        const keys = new Map(panel.definition.sources.map((source) => [source.id, sourceKey(source)]));
+        const previous = this.sourceKeys.get(panel.id);
+        const history = this.history.get(panel.id);
+        if (history !== void 0) {
+          for (const id of history.keys()) if (!keys.has(id) || previous?.get(id) !== keys.get(id)) history.delete(id);
+        }
+        this.sourceKeys.set(panel.id, keys);
         seedPanelHistory(this.history, panel);
         this.record(panel.id, panel.data);
       }
       const ids = new Set(event.panels.map((p) => p.id));
-      for (const id of [...this.history.keys()]) if (!ids.has(id)) this.history.delete(id);
+      for (const id of this.history.keys()) if (!ids.has(id)) this.history.delete(id);
+      for (const id of this.sourceKeys.keys()) if (!ids.has(id)) this.sourceKeys.delete(id);
+      this.pruneOrphanState(ids);
+      const staleHeights = Object.keys(this.snapshot.layout.heights).filter((id) => !ids.has(id));
+      if (staleHeights.length > 0) {
+        const heights = {};
+        for (const [id, value] of Object.entries(this.snapshot.layout.heights)) {
+          if (ids.has(id)) heights[id] = value;
+        }
+        this.persistLayout({ heights });
+      }
       const created = this.known === void 0 ? void 0 : event.panels.find((p) => !this.known.has(p.id));
       this.known = ids;
-      this.update({ panels: event.panels, loaded: true, connected: true });
+      this.update({ panels: event.panels, loaded: true, connected: true, connectionError: void 0 });
       if (created !== void 0) this.announce(created.id);
       this.reconnect();
       return;
     }
+    if (event.type !== "data" || !isPanelData(event.data)) return;
     this.record(event.panelId, event.data);
     this.update({
       panels: this.snapshot.panels.map((p) => p.id === event.panelId ? { ...p, data: event.data } : p)
@@ -690,21 +858,32 @@ var PadClient = class {
     this.freshTimer = setTimeout(() => this.update({ fresh: void 0 }), 2400);
   }
   record(panelId, data) {
+    const keys = this.sourceKeys.get(panelId);
+    if (keys === void 0) return;
     let panelHistory = this.history.get(panelId);
     if (panelHistory === void 0) {
       panelHistory = /* @__PURE__ */ new Map();
       this.history.set(panelId, panelHistory);
     }
     for (const [sourceId, reading] of Object.entries(data.sources)) {
-      if (!reading.ok || reading.value === void 0) continue;
-      let points = panelHistory.get(sourceId);
-      if (points === void 0) {
-        points = [];
-        panelHistory.set(sourceId, points);
+      if (!keys.has(sourceId) || !reading.ok || reading.value === void 0) continue;
+      const points = panelHistory.get(sourceId) ?? [];
+      const clean = mergeHistory([...points, { value: reading.value, at: reading.at }], points.length > 0 ? Date.parse(points[0].at) : -Infinity);
+      if (clean.length > 0) panelHistory.set(sourceId, clean);
+    }
+  }
+  pruneOrphanState(activeIds) {
+    try {
+      if (typeof localStorage === "undefined" || typeof localStorage.key !== "function" || typeof localStorage.removeItem !== "function") return;
+      const staleKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key !== null && key.startsWith(STATE_PREFIX) && !activeIds.has(key.slice(STATE_PREFIX.length))) {
+          staleKeys.push(key);
+        }
       }
-      if (points.length > 0 && points[points.length - 1].at === reading.at) continue;
-      points.push({ value: reading.value, at: reading.at });
-      if (points.length > HISTORY_LIMIT) points.splice(0, points.length - HISTORY_LIMIT);
+      for (const key of staleKeys) localStorage.removeItem(key);
+    } catch {
     }
   }
   update(patch) {
@@ -713,11 +892,157 @@ var PadClient = class {
   }
 };
 
+// src/client/window-controls.ts
+var WINDOW_CONTROL_GAP = 8;
+var CONTROLS_ID = "dshd-shell-controls";
+function readViewport() {
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  if (typeof document === "undefined" || typeof document.getElementById !== "function" || typeof getComputedStyle !== "function") {
+    return viewport;
+  }
+  const controls = document.getElementById(CONTROLS_ID);
+  if (controls !== null) {
+    const rect = controls.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || getComputedStyle(controls).visibility === "hidden") return viewport;
+    return { ...viewport, controls: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } };
+  }
+  if (document.documentElement.dataset.platform === "darwin") return viewport;
+  const style = getComputedStyle(document.documentElement);
+  const width = Number.parseFloat(style.getPropertyValue("--dshd-wco-controls"));
+  const height = Number.parseFloat(style.getPropertyValue("--dshd-wco-caption"));
+  return width > 0 && height > 0 ? { ...viewport, controls: { left: viewport.width - width, top: 0, right: viewport.width, bottom: height } } : viewport;
+}
+function watchViewport(update) {
+  let controls = null;
+  const attributes = new MutationObserver(update);
+  const resize = new ResizeObserver(update);
+  const attach = () => {
+    const next = document.getElementById(CONTROLS_ID);
+    if (next === controls) return;
+    controls = next;
+    attributes.disconnect();
+    resize.disconnect();
+    attributes.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class", "data-platform"] });
+    if (controls !== null) {
+      attributes.observe(controls, { attributes: true, attributeFilter: ["style", "class", "hidden"] });
+      resize.observe(controls);
+    }
+    update();
+  };
+  attributes.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class", "data-platform"] });
+  const insertion = new MutationObserver((records) => {
+    if (records.some((record) => [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element && (node.id === CONTROLS_ID || node.querySelector(`#${CONTROLS_ID}`) !== null)))) attach();
+  });
+  insertion.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("resize", update);
+  attach();
+  update();
+  return () => {
+    attributes.disconnect();
+    resize.disconnect();
+    insertion.disconnect();
+    window.removeEventListener("resize", update);
+  };
+}
+function overlapsWindowControls(point, width, height, controls) {
+  return controls !== void 0 && point.x < controls.right + WINDOW_CONTROL_GAP && point.x + width > controls.left - WINDOW_CONTROL_GAP && point.y < controls.bottom + WINDOW_CONTROL_GAP && point.y + height > controls.top - WINDOW_CONTROL_GAP;
+}
+function dockSafeTop(x, width, viewport, margin) {
+  const controls = viewport.controls;
+  return controls !== void 0 && x < controls.right + WINDOW_CONTROL_GAP && x + width > controls.left - WINDOW_CONTROL_GAP ? Math.max(margin, Math.ceil(controls.bottom + WINDOW_CONTROL_GAP)) : margin;
+}
+function avoidWindowControls(point, size, viewport, margin, along) {
+  const controls = viewport.controls;
+  if (controls === void 0 || !overlapsWindowControls(point, size, size, controls)) return point;
+  const left = Math.floor(controls.left - WINDOW_CONTROL_GAP - size);
+  const below = Math.ceil(controls.bottom + WINDOW_CONTROL_GAP);
+  const canMoveLeft = left >= margin;
+  const canMoveDown = below + size <= viewport.height - margin;
+  if (canMoveLeft && (along === "horizontal" || !canMoveDown || along !== "vertical" && point.x - left < below - point.y)) {
+    return { x: left, y: point.y };
+  }
+  if (canMoveDown) return { x: point.x, y: below };
+  return point;
+}
+
+// src/client/ball-position.ts
+var SNAP_DISTANCE = 26;
+function clampBall(point, width, height, controls) {
+  const ball = {
+    x: Math.round(Math.max(BALL_MARGIN, Math.min(point.x, Math.max(BALL_MARGIN, width - BALL_SIZE - BALL_MARGIN)))),
+    y: Math.round(Math.max(BALL_MARGIN, Math.min(point.y, Math.max(BALL_MARGIN, height - BALL_SIZE - BALL_MARGIN))))
+  };
+  return avoidWindowControls(ball, BALL_SIZE, { width, height, controls }, BALL_MARGIN);
+}
+function nearestBallEdge(point, width, height, controls) {
+  const ball = clampBall(point, width, height, controls);
+  const distances = [
+    ["left", ball.x - BALL_MARGIN],
+    ["right", Math.max(0, width - BALL_SIZE - BALL_MARGIN - ball.x)],
+    ["top", ball.y - BALL_MARGIN],
+    ["bottom", Math.max(0, height - BALL_SIZE - BALL_MARGIN - ball.y)]
+  ];
+  let edge = null;
+  let nearest = SNAP_DISTANCE;
+  for (const [candidate, distance] of distances) {
+    if (distance < nearest) {
+      edge = candidate;
+      nearest = distance;
+    }
+  }
+  return edge;
+}
+function positionAtBallEdge(point, edge, width, height, controls) {
+  let ball = clampBall(point, width, height);
+  if (edge === "left") ball = { ...ball, x: BALL_MARGIN };
+  if (edge === "right") ball = { ...ball, x: Math.max(BALL_MARGIN, width - BALL_SIZE - BALL_MARGIN) };
+  if (edge === "top") ball = { ...ball, y: BALL_MARGIN };
+  if (edge === "bottom") ball = { ...ball, y: Math.max(BALL_MARGIN, height - BALL_SIZE - BALL_MARGIN) };
+  const along = edge === "top" || edge === "bottom" ? "horizontal" : edge === "left" || edge === "right" ? "vertical" : void 0;
+  return avoidWindowControls(ball, BALL_SIZE, { width, height, controls }, BALL_MARGIN, along);
+}
+
 // src/client/PanelCard.tsx
 var import_react2 = require("react");
 
 // src/client/PanelFrame.tsx
 var import_react = require("react");
+
+// src/client/frame-lifecycle.ts
+var MAX_FRAME_RECOVERIES = 3;
+function classifyFrameLoad(loadsSoFar) {
+  return loadsSoFar <= 0 ? "initial" : "navigated";
+}
+function shouldRecoverFrame(recoveries) {
+  return recoveries < MAX_FRAME_RECOVERIES;
+}
+
+// src/client/history-sync.ts
+var HistorySync = class {
+  sent = /* @__PURE__ */ new Map();
+  /** Mark a complete snapshot already embedded/sent with the frame document. */
+  reset(histories) {
+    this.sent.clear();
+    for (const [id, points] of Object.entries(histories)) {
+      this.sent.set(id, new Map(points.map((point) => [point.at, point])));
+    }
+  }
+  /** Only new points cross the frame boundary after its initial snapshot. */
+  delta(histories) {
+    const delta = {};
+    for (const id of this.sent.keys()) if (!(id in histories)) this.sent.delete(id);
+    for (const [id, points] of Object.entries(histories)) {
+      const previous = this.sent.get(id);
+      const changed = points.filter((point) => {
+        const sent = previous?.get(point.at);
+        return sent === void 0 || sent !== point && JSON.stringify(sent.value) !== JSON.stringify(point.value);
+      });
+      if (changed.length > 0) delta[id] = changed;
+      this.sent.set(id, new Map(points.map((point) => [point.at, point])));
+    }
+    return delta;
+  }
+};
 
 // src/client/frame-runtime.ts
 var FRAME_RUNTIME = String.raw`
@@ -725,6 +1050,7 @@ var FRAME_RUNTIME = String.raw`
   'use strict';
   var root = document.documentElement;
   var token = root.getAttribute('data-token');
+  if (typeof root.removeAttribute === 'function') root.removeAttribute('data-token');
   var parentWin = window.parent;
   var init = JSON.parse(document.getElementById('pad-init').textContent || '{}');
   var current = init.data || null;
@@ -761,7 +1087,22 @@ var FRAME_RUNTIME = String.raw`
     if (e.source !== parentWin) return;
     var m = e.data || {};
     if (m.token !== token) return;
-    if (m.kind === 'data') { current = m.data; histories = m.histories || histories; emit(); }
+    if (m.kind === 'data') {
+      current = m.data;
+      if (m.histories) histories = m.histories;
+      if (m.historyDelta) Object.keys(m.historyDelta).forEach(function (id) {
+        var points = Array.isArray(histories[id]) ? histories[id] : [];
+        m.historyDelta[id].forEach(function (point) {
+          var index = points.findIndex(function (old) { return old.at === point.at; });
+          if (index >= 0) points[index] = point;
+          else points.push(point);
+        });
+        points.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+        if (points.length > 120) points.splice(0, points.length - 120);
+        histories[id] = points;
+      });
+      emit();
+    }
     else if (m.kind === 'theme') {
       document.getElementById('pad-theme').textContent = m.css;
       root.setAttribute('data-mode', m.mode);
@@ -769,6 +1110,7 @@ var FRAME_RUNTIME = String.raw`
     else if (m.kind === 'height') {
       // A panel the user sized must scroll its own overflow; auto panels fit it.
       root.setAttribute('data-height', m.auto ? 'auto' : 'fixed');
+      watchSize();
     }
     else if (m.kind === 'run-result') {
       var runCb = pendingRuns[m.id];
@@ -782,20 +1124,40 @@ var FRAME_RUNTIME = String.raw`
     e.preventDefault();
     post({ kind: 'open', url: a.href });
   });
+  window.addEventListener('keydown', function (e) {
+    if (e && e.key === 'Escape' && !e.defaultPrevented) {
+      post({ kind: 'escape' });
+    }
+  });
 
   var lastHeight = -1;
+  var ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+  var watchingSize = false;
   function measure() {
+    if (root.getAttribute('data-height') !== 'auto') return;
     // Measure the content, not the viewport: this frame's own height is set by
     // the parent, and root.scrollHeight can never shrink below it again.
     var body = document.body;
     var h = Math.ceil(body ? body.scrollHeight : root.scrollHeight);
     if (h !== lastHeight) { lastHeight = h; post({ kind: 'resize', height: h }); }
   }
-  if (typeof ResizeObserver === 'function') {
-    var ro = new ResizeObserver(measure);
-    ro.observe(root);
-    document.addEventListener('DOMContentLoaded', function () { ro.observe(document.body); measure(); });
+  function watchSize() {
+    var auto = root.getAttribute('data-height') === 'auto';
+    if (ro && auto !== watchingSize) {
+      ro.disconnect();
+      watchingSize = auto;
+      if (auto) {
+        ro.observe(root);
+        if (document.body) ro.observe(document.body);
+      }
+    }
+    if (auto) measure();
   }
+  watchSize();
+  document.addEventListener('DOMContentLoaded', function () {
+    if (ro && watchingSize && document.body) ro.observe(document.body);
+    measure();
+  });
   window.addEventListener('load', measure);
 
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
@@ -849,15 +1211,41 @@ var FRAME_RUNTIME = String.raw`
     });
   }
   function clamp01(x) { x = Number(x); return isFinite(x) ? Math.max(0, Math.min(1, x)) : 0; }
+  function clampNum(v, fallback, min, max) {
+    if (v == null || v === '') return fallback;
+    var n = Number(v);
+    if (!isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+  var SAFE_CSS_VAR = /^var\(--[a-zA-Z0-9_-]+\)$/;
+  var SAFE_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+  var SAFE_RGB = /^rgba?\(\s*\d{1,3}(?:\.\d+)?%?(?:\s*,\s*|\s+)\d{1,3}(?:\.\d+)?%?(?:\s*,\s*|\s+)\d{1,3}(?:\.\d+)?%?(?:\s*(?:,|\/)\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)$/;
+  var SAFE_HSL = /^hsla?\(\s*-?\d+(?:\.\d+)?(?:deg|rad|grad|turn)?(?:\s*,\s*|\s+)\d{1,3}(?:\.\d+)?%(?:\s*,\s*|\s+)\d{1,3}(?:\.\d+)?%(?:\s*(?:,|\/)\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)$/;
+  var SAFE_NAMED = /^[a-zA-Z]{3,24}$/;
+  function safeColor(value, fallback) {
+    if (typeof value === 'string') {
+      var trimmed = value.trim();
+      var tone = toneColor(trimmed);
+      if (tone) return esc(tone);
+      if (SAFE_CSS_VAR.test(trimmed) || SAFE_HEX.test(trimmed) || SAFE_RGB.test(trimmed) || SAFE_HSL.test(trimmed) || SAFE_NAMED.test(trimmed)) {
+        return esc(trimmed);
+      }
+    }
+    return esc(fallback);
+  }
   var gradientSeq = 0;
   var chart = {
     sparkline: function (values, opt) {
       opt = opt || {};
-      var w = opt.width || 120, h = opt.height || 28, color = opt.color || 'var(--pad-accent)';
+      var w = clampNum(opt.width, 120, 1, 2000);
+      var h = clampNum(opt.height, 28, 4, 1000);
+      var color = safeColor(opt.color, 'var(--pad-accent)');
       var nums = (values || []).map(Number).filter(function (v) { return isFinite(v); });
       if (nums.length < 2) return '<svg width="' + w + '" height="' + h + '"></svg>';
-      var min = opt.min != null ? opt.min : Math.min.apply(null, nums);
-      var max = opt.max != null ? opt.max : Math.max.apply(null, nums);
+      var optMin = opt.min != null && opt.min !== '' ? Number(opt.min) : NaN;
+      var optMax = opt.max != null && opt.max !== '' ? Number(opt.max) : NaN;
+      var min = isFinite(optMin) ? optMin : Math.min.apply(null, nums);
+      var max = isFinite(optMax) ? optMax : Math.max.apply(null, nums);
       if (max === min) { max = min + 1; }
       var step = w / (nums.length - 1);
       var pts = nums.map(function (v, i) {
@@ -874,13 +1262,16 @@ var FRAME_RUNTIME = String.raw`
     },
     bar: function (fraction, opt) {
       opt = opt || {};
-      var f = clamp01(fraction), color = opt.color || dsh.tone(f), h = opt.height || 6;
+      var f = clamp01(fraction), color = safeColor(opt.color, dsh.tone(f)), h = clampNum(opt.height, 6, 1, 200);
       return '<div style="height:' + h + 'px;border-radius:' + h + 'px;background:var(--pad-bg-2);overflow:hidden">' +
         '<div style="height:100%;width:' + (f * 100).toFixed(1) + '%;border-radius:inherit;background:' + color + ';transition:width .3s ease"></div></div>';
     },
     ring: function (fraction, opt) {
       opt = opt || {};
-      var f = clamp01(fraction), size = opt.size || 44, sw = opt.stroke || 5, color = opt.color || dsh.tone(f);
+      var f = clamp01(fraction);
+      var size = clampNum(opt.size, 44, 12, 512);
+      var sw = clampNum(opt.stroke, 5, 1, Math.max(1, size / 2));
+      var color = safeColor(opt.color, dsh.tone(f));
       var r = (size - sw) / 2, c = 2 * Math.PI * r;
       var label = opt.label != null ? opt.label : Math.round(f * 100) + '%';
       return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" style="display:block">' +
@@ -891,6 +1282,64 @@ var FRAME_RUNTIME = String.raw`
     }
   };
 
+  /** is-ok / is-warn / … from a short tone word, for the kit's classes. */
+  function toneClass(tone) {
+    return tone === 'ok' || tone === 'warn' || tone === 'danger' || tone === 'live' ? ' is-' + tone : '';
+  }
+  /** Only semantic tones and the exact token values returned by dsh.tone. */
+  function toneColor(tone) {
+    if (tone === 'ok' || tone === 'var(--pad-ok)') return 'var(--pad-ok)';
+    if (tone === 'warn' || tone === 'var(--pad-warn)') return 'var(--pad-warn)';
+    if (tone === 'danger' || tone === 'var(--pad-danger)') return 'var(--pad-danger)';
+    if (tone === 'accent' || tone === 'var(--pad-accent)') return 'var(--pad-accent)';
+    return '';
+  }
+  // Markup builders for the panel kit (see shared/kit.ts). They exist so the
+  // common card shapes are written once, escaped correctly, and stay in step
+  // with the CSS instead of being hand-assembled per panel.
+  var ui = {
+    metric: function (opt) {
+      opt = opt || {};
+      var tone = toneColor(opt.tone);
+      var color = tone ? ' style="color:' + esc(tone) + '"' : '';
+      return '<div class="pad-metric">' +
+        (opt.label != null ? '<span class="pad-label">' + esc(opt.label) + '</span>' : '') +
+        '<span class="pad-metric-value"' + color + '>' + esc(opt.value == null ? '—' : opt.value) +
+          (opt.unit != null ? '<span class="pad-unit">' + esc(opt.unit) + '</span>' : '') +
+        '</span>' +
+        (opt.foot != null ? '<span class="pad-foot">' + esc(opt.foot) + '</span>' : '') +
+        '</div>';
+    },
+    item: function (row) {
+      row = row || {};
+      var f = Number(row.meter);
+      var meter = isFinite(f)
+        ? '<span class="pad-meter' + toneClass(row.tone) + '"><i style="width:' + (clamp01(f) * 100).toFixed(1) + '%"></i></span>'
+        : '';
+      return '<div class="pad-item">' +
+        '<span class="pad-item-name">' + esc(row.name) + '</span>' +
+        '<span class="pad-item-value">' + esc(row.value == null ? '—' : row.value) + '</span>' +
+        (row.foot != null ? '<span class="pad-foot pad-item-foot">' + esc(row.foot) + '</span>' : '') +
+        meter +
+        '</div>';
+    },
+    list: function (items) {
+      return '<div class="pad-list">' + (items || []).map(ui.item).join('') + '</div>';
+    },
+    status: function (label, tone) {
+      return '<span class="pad-status' + toneClass(tone) + '">' + esc(label) + '</span>';
+    },
+    chip: function (text, tone) {
+      return '<span class="pad-chip' + toneClass(tone) + '">' + esc(text) + '</span>';
+    },
+    empty: function (text) {
+      return '<p class="pad-empty">' + esc(text == null ? '等待数据' : text) + '</p>';
+    },
+    alert: function (text) {
+      return '<p class="pad-alert">' + esc(text) + '</p>';
+    }
+  };
+
   var dsh = {
     get data() { return current; },
     onData: function (fn) {
@@ -898,7 +1347,7 @@ var FRAME_RUNTIME = String.raw`
       if (current) { try { fn(current); } catch (e) { report(e); } }
       return function () { listeners = listeners.filter(function (l) { return l !== fn; }); };
     },
-    history: function (sourceId) { return (histories[sourceId] || []).slice(); },
+    history: function (sourceId) { return Array.isArray(histories[sourceId]) ? histories[sourceId].slice() : []; },
     refresh: function () { post({ kind: 'refresh' }); },
     openUrl: function (url) { post({ kind: 'open', url: String(url) }); },
     ask: function (text) { post({ kind: 'ask', text: String(text) }); },
@@ -926,7 +1375,12 @@ var FRAME_RUNTIME = String.raw`
     },
     state: {
       get: function (key) { return stateStore[key]; },
-      set: function (key, value) { stateStore[key] = value; post({ kind: 'state', key: String(key), value: value }); }
+      set: function (key, value) {
+        var name = String(key);
+        if (name === '__proto__' || name === 'constructor' || name === 'prototype') return;
+        stateStore[name] = value;
+        post({ kind: 'state', key: name, value: value });
+      }
     },
     tone: function (fraction, warnAt, dangerAt) {
       var f = Number(fraction);
@@ -936,60 +1390,120 @@ var FRAME_RUNTIME = String.raw`
     },
     escape: esc,
     fmt: fmt,
-    chart: chart
+    chart: chart,
+    ui: ui
   };
   window.dsh = dsh;
   post({ kind: 'ready' });
 })();
 `;
 
-// src/client/PanelFrame.tsx
-var import_jsx_runtime = require("react/jsx-runtime");
+// src/shared/kit.ts
+var PANEL_KIT_CSS = `
+/* \u2500\u2500 panel kit \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Composition, type and data primitives. Colour comes only from --pad-*
+   tokens; nothing here assumes a background, so it works in both modes. */
+.pad-stack{display:flex;flex-direction:column;gap:14px;min-width:0}
+.pad-stack.is-tight{gap:7px}
+.pad-split{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.pad-grid{display:grid;gap:12px 14px;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));min-width:0}
+.pad-sep{height:1px;background:var(--pad-border);border:0;margin:0}
+.pad-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+.pad-label{display:block;font-size:11px;line-height:1.45;font-weight:500;color:var(--pad-fg-3)}
+.pad-title{display:block;font-size:12px;line-height:1.5;font-weight:600;color:var(--pad-fg-2)}
+.pad-text{font-size:12.5px;line-height:1.6;color:var(--pad-fg-2);text-wrap:pretty;margin:0}
+.pad-muted{color:var(--pad-fg-3)}
+.pad-figure{font-size:15px;line-height:1.25;font-weight:600;color:var(--pad-fg);font-variant-numeric:tabular-nums}
+
+/* one number, set large */
+.pad-hero{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:0}
+.pad-hero .pad-metric-value{font-size:2.6em}
+.pad-metric{display:flex;flex-direction:column;gap:3px;min-width:0}
+.pad-metric-value{font-size:max(24px,1.85em);line-height:1;font-weight:600;letter-spacing:-.025em;color:var(--pad-fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pad-metric-value.is-sm{font-size:1.45em}
+.pad-metric-value.is-lg{font-size:2.25em}
+.pad-unit{font-size:12px;line-height:1;font-weight:500;color:var(--pad-fg-3);margin-left:4px;letter-spacing:0}
+.pad-foot{font-size:11px;line-height:1.5;color:var(--pad-fg-3);font-variant-numeric:tabular-nums}
+.pad-delta{font-size:11px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums}
+.pad-delta.is-up{color:var(--pad-ok)}
+.pad-delta.is-down{color:var(--pad-danger)}
+.pad-delta.is-flat{color:var(--pad-fg-3)}
+
+/* rows: name left, figure right, meter underneath */
+.pad-list{display:flex;flex-direction:column;min-width:0}
+.pad-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:10px;row-gap:5px;padding:8px 0;border-top:1px solid var(--pad-border);min-width:0}
+.pad-item:first-child{border-top:0;padding-top:0}
+.pad-item:last-child{padding-bottom:0}
+.pad-item-name{font-size:12.5px;line-height:1.4;color:var(--pad-fg-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pad-item-value{font-size:12.5px;line-height:1.4;font-weight:600;color:var(--pad-fg);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.pad-item-foot,.pad-item>.pad-meter,.pad-item>.pad-bar{grid-column:1/-1}
+
+/* completion, level, share */
+.pad-meter{display:block;height:3px;border-radius:2px;background:var(--pad-bg-2);overflow:hidden}
+.pad-meter>i{display:block;height:100%;border-radius:inherit;background:var(--pad-accent);transition:width .35s ease}
+.pad-bar{display:block;height:7px;border-radius:4px;background:var(--pad-bg-2);overflow:hidden}
+.pad-bar>i{display:block;height:100%;border-radius:inherit;background:var(--pad-accent);transition:width .35s ease}
+.pad-meter.is-ok>i,.pad-bar.is-ok>i{background:var(--pad-ok)}
+.pad-meter.is-warn>i,.pad-bar.is-warn>i{background:var(--pad-warn)}
+.pad-meter.is-danger>i,.pad-bar.is-danger>i{background:var(--pad-danger)}
+
+/* trend line and any inline svg */
+.pad-spark{display:block;line-height:0;min-width:0}
+.pad-chart{display:block;width:100%;min-width:0}
+.pad-spark>svg,.pad-chart>svg{display:block;width:100%;height:auto;overflow:visible}
+
+/* state: a dot and a word, never an emoji */
+.pad-status{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;line-height:1.5;color:var(--pad-fg-2);white-space:nowrap}
+.pad-status::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pad-fg-3)}
+.pad-status.is-ok::before{background:var(--pad-ok)}
+.pad-status.is-warn::before{background:var(--pad-warn)}
+.pad-status.is-danger::before{background:var(--pad-danger)}
+.pad-status.is-live::before{animation:pad-pulse 1.9s ease-in-out infinite}
+@keyframes pad-pulse{50%{opacity:.3}}
+
+.pad-chip{display:inline-flex;align-items:center;gap:4px;padding:0 6px;border-radius:999px;background:var(--pad-bg-2);font-size:11px;line-height:18px;color:var(--pad-fg-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pad-chip.is-ok{color:var(--pad-ok)}
+.pad-chip.is-warn{color:var(--pad-warn)}
+.pad-chip.is-danger{color:var(--pad-danger)}
+
+.pad-action{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 9px;border:1px solid var(--pad-border);border-radius:999px;background:transparent;color:var(--pad-fg-2);font:inherit;font-size:11.5px;cursor:pointer}
+.pad-action:hover{background:var(--pad-bg-2);color:var(--pad-fg)}
+.pad-action:focus-visible{outline:2px solid var(--pad-accent);outline-offset:2px}
+.pad-action[disabled]{opacity:.45;cursor:progress}
+
+.pad-empty{padding:10px 0;font-size:12px;line-height:1.6;color:var(--pad-fg-3)}
+.pad-alert{position:relative;padding-left:9px;font-size:11.5px;line-height:1.55;color:var(--pad-danger)}
+.pad-alert::before{content:"";position:absolute;left:0;top:2px;bottom:2px;width:2px;border-radius:1px;background:currentColor;opacity:.75}
+
+@media (prefers-reduced-motion:reduce){
+  .pad-meter>i,.pad-bar>i{transition:none}
+  .pad-status.is-live::before{animation:none}
+}
+`;
+
+// src/client/panel-document.ts
 var CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:";
 var BASE_CSS = `*,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;padding:0;background:transparent;color:var(--pad-fg);font:13px/1.45 var(--pad-font);-webkit-font-smoothing:antialiased}
-html[data-height=auto]{overflow:hidden}
+html[data-height=auto]{overflow-x:hidden;overflow-y:auto}
 body{padding:2px 0 4px}
 a{color:var(--pad-accent);text-decoration:none}
 a:hover{text-decoration:underline dotted;text-underline-offset:3px}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:var(--pad-border);border-radius:3px}`;
-var MIN_AUTO_HEIGHT = 32;
-var MAX_AUTO_HEIGHT = 640;
-var STATE_PREFIX = "dsh-pad:state:";
-var MAX_STATE_CHARS = 64 * 1024;
-function readState(panelId) {
-  try {
-    return JSON.parse(localStorage.getItem(STATE_PREFIX + panelId) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-function writeState(panelId, key, value) {
-  const state = { ...readState(panelId), [key]: value };
-  const text = JSON.stringify(state);
-  if (text.length > MAX_STATE_CHARS) return;
-  try {
-    localStorage.setItem(STATE_PREFIX + panelId, text);
-  } catch {
-  }
-}
-function randomToken() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-function frameDocument({ view, token, theme, data, histories, lang }) {
+function frameDocument({ view, token, theme, data, histories, state, lang, viewHeight }) {
   const { definition } = view;
-  const init = JSON.stringify({ data, histories, state: readState(view.id), lang }).replace(/</g, "\\u003c");
+  const init = JSON.stringify({ data, histories, state, lang }).replace(/</g, "\\u003c");
   const css = definition.css.replace(/<\/style/gi, "<\\/style");
   const script = definition.script.replace(/<\/script/gi, "<\\/script");
   return `<!doctype html>
-<html data-token="${token}" data-mode="${theme.mode}" data-height="${definition.height === "auto" ? "auto" : "fixed"}" lang="${lang}">
+<html data-token="${token}" data-mode="${theme.mode}" data-height="${definition.height === "auto" && viewHeight === void 0 ? "auto" : "fixed"}" lang="${lang}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <style id="pad-theme">${theme.css}</style>
 <style>${BASE_CSS}</style>
+<style id="pad-kit">${PANEL_KIT_CSS}</style>
 <style>${css}</style>
 <script type="application/json" id="pad-init">${init}<\/script>
 </head>
@@ -1001,28 +1515,168 @@ ${definition.html}
 </body>
 </html>`;
 }
-function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onScriptError, height, onHeightChange, resizeLabel, resizable = true }) {
+
+// src/client/gesture.ts
+var PointerGestures = class {
+  active;
+  /** End any previous gesture before acquiring this pointer and its listeners. */
+  start(event, handlers) {
+    this.cancel();
+    const target = event.currentTarget;
+    const doc = target.ownerDocument ?? document;
+    const win = doc.defaultView;
+    if (doc.visibilityState === "hidden") {
+      handlers.cancel();
+      return;
+    }
+    const pointerId = event.pointerId;
+    let live = true;
+    const finish = (pointer) => {
+      if (!live) return;
+      live = false;
+      if (this.active === cancel) this.active = void 0;
+      doc.removeEventListener("pointermove", move);
+      doc.removeEventListener("pointerup", up);
+      doc.removeEventListener("pointercancel", cancelled);
+      doc.removeEventListener("lostpointercapture", lostCapture);
+      doc.removeEventListener("visibilitychange", visibility);
+      target.removeEventListener("lostpointercapture", cancelled);
+      win?.removeEventListener("blur", cancel);
+      try {
+        if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
+      } catch {
+      }
+      if (pointer === void 0) handlers.cancel();
+      else handlers.end(pointer);
+    };
+    const cancel = () => finish();
+    const move = (pointer) => {
+      if (pointer.pointerId === pointerId) handlers.move?.(pointer);
+    };
+    const up = (pointer) => {
+      if (pointer.pointerId === pointerId) finish(pointer);
+    };
+    const cancelled = (pointer) => {
+      if (pointer.pointerId === pointerId) cancel();
+    };
+    const lostCapture = (pointer) => {
+      if (pointer.target === doc || pointer.target === target) cancelled(pointer);
+    };
+    const visibility = () => {
+      if (doc.visibilityState === "hidden") cancel();
+    };
+    this.active = cancel;
+    doc.addEventListener("pointermove", move);
+    doc.addEventListener("pointerup", up);
+    doc.addEventListener("pointercancel", cancelled);
+    doc.addEventListener("lostpointercapture", lostCapture);
+    doc.addEventListener("visibilitychange", visibility);
+    target.addEventListener("lostpointercapture", cancelled);
+    win?.addEventListener("blur", cancel);
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+    }
+  }
+  /** Idempotent; called when the owner hides, unmounts or starts another gesture. */
+  cancel() {
+    this.active?.();
+  }
+};
+
+// src/client/PanelFrame.tsx
+var import_jsx_runtime = require("react/jsx-runtime");
+var MIN_AUTO_HEIGHT = 32;
+var MAX_AUTO_HEIGHT = 640;
+var REFRESH_THROTTLE_MS = 1e3;
+var ACTION_THROTTLE_MS = 500;
+function readState(panelId) {
+  try {
+    return parsePanelState(localStorage.getItem(STATE_PREFIX + panelId));
+  } catch {
+    return {};
+  }
+}
+function writeState(panelId, key, value) {
+  if (!isSafeStateKey(key)) return;
+  const state = { ...readState(panelId), [key]: value };
+  const text = encodePanelState(state);
+  if (text === void 0) return;
+  try {
+    localStorage.setItem(STATE_PREFIX + panelId, text);
+  } catch {
+  }
+}
+function randomToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onScriptError, onEscape, height, onHeightChange, resizeLabel, resizable = true }) {
   const frameRef = (0, import_react.useRef)(null);
   const readyRef = (0, import_react.useRef)(false);
-  const latest = (0, import_react.useRef)({ data: view.data, theme, onRefresh, onAsk, onRun, onScriptError, histories, height });
+  const loadsRef = (0, import_react.useRef)(0);
+  const recoveredRef = (0, import_react.useRef)(false);
+  const recoveriesRef = (0, import_react.useRef)(0);
+  const stoppedRef = (0, import_react.useRef)(false);
+  const [stopped, setStopped] = (0, import_react.useState)(false);
+  const tokenRef = (0, import_react.useRef)("");
+  const abortControllersRef = (0, import_react.useRef)(/* @__PURE__ */ new Set());
+  const lastRefreshRef = (0, import_react.useRef)(-Infinity);
+  const lastAskRef = (0, import_react.useRef)(-Infinity);
+  const lastOpenRef = (0, import_react.useRef)(-Infinity);
+  const [epoch, setEpoch] = (0, import_react.useState)(0);
+  const latest = (0, import_react.useRef)({ data: view.data, theme, onRefresh, onAsk, onRun, onScriptError, onEscape, histories, height });
   const [dragHeight, setDragHeight] = (0, import_react.useState)();
+  const gestures = (0, import_react.useRef)(new PointerGestures()).current;
+  (0, import_react.useLayoutEffect)(() => {
+    if (!resizable || stopped) gestures.cancel();
+    return () => gestures.cancel();
+  }, [gestures, resizable, stopped, view.id, view.version]);
   const fixedHeight = view.definition.height === "auto" ? void 0 : view.definition.height;
-  latest.current = { data: view.data, theme, onRefresh, onAsk, onRun, onScriptError, histories, height };
+  latest.current = { data: view.data, theme, onRefresh, onAsk, onRun, onScriptError, onEscape, histories, height };
   const [autoHeight, setAutoHeight] = (0, import_react.useState)(MIN_AUTO_HEIGHT * 2);
   const renderedHeight = dragHeight ?? height ?? fixedHeight ?? autoHeight;
   const resizing = dragHeight !== void 0;
-  const { token, doc } = (0, import_react.useMemo)(() => {
+  const stoppedMessage = lang.startsWith("zh") ? "\u9762\u677F\u9875\u9762\u88AB\u811A\u672C\u5BFC\u822A\u79BB\u5F00\u4E86\u6C99\u7BB1\u6587\u6863\uFF0C\u5DF2\u505C\u6B62\u81EA\u52A8\u6062\u590D\uFF1B\u4FEE\u6539\u9762\u677F\u5B9A\u4E49\u540E\u4F1A\u91CD\u65B0\u52A0\u8F7D\u3002" : "The panel navigated away from its sandbox document; automatic recovery stopped. Editing the panel reloads it.";
+  const abortPendingRuns = () => {
+    for (const controller of abortControllersRef.current) controller.abort();
+    abortControllersRef.current.clear();
+  };
+  const { token, doc, initialData, historySync } = (0, import_react.useMemo)(() => {
     const token2 = randomToken();
-    readyRef.current = false;
     const { data, theme: currentTheme, histories: readHistories } = latest.current;
-    return { token: token2, doc: frameDocument({ view, token: token2, theme: currentTheme, data, histories: readHistories(), lang }) };
+    const histories2 = readHistories();
+    const historySync2 = new HistorySync();
+    historySync2.reset(histories2);
+    return { token: token2, initialData: data, historySync: historySync2, doc: frameDocument({ view, token: token2, theme: currentTheme, data, histories: histories2, state: readState(view.id), lang, viewHeight: latest.current.height }) };
+  }, [view.id, view.version, lang, epoch]);
+  (0, import_react.useLayoutEffect)(() => {
+    readyRef.current = false;
+    loadsRef.current = 0;
+    recoveredRef.current = false;
+    tokenRef.current = token;
+    return () => {
+      readyRef.current = false;
+      abortPendingRuns();
+    };
+  }, [token, epoch]);
+  (0, import_react.useLayoutEffect)(() => {
+    recoveriesRef.current = 0;
+    stoppedRef.current = false;
+    setStopped(false);
   }, [view.id, view.version, lang]);
   const post = (message) => {
+    if (recoveredRef.current || stoppedRef.current || tokenRef.current !== token) return;
     frameRef.current?.contentWindow?.postMessage({ ...message, token }, "*");
   };
   (0, import_react.useEffect)(() => {
-    onScriptError(void 0);
+    latest.current.onScriptError(void 0);
+  }, [token, view.id]);
+  (0, import_react.useEffect)(() => {
+    if (stopped) return;
     const onMessage = (event) => {
+      if (recoveredRef.current || stoppedRef.current) return;
       const frame = frameRef.current;
       if (frame === null || event.source !== frame.contentWindow) return;
       const message = event.data;
@@ -1031,7 +1685,9 @@ function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onS
         case "ready":
           readyRef.current = true;
           post({ kind: "theme", css: latest.current.theme.css, mode: latest.current.theme.mode });
-          post({ kind: "data", data: latest.current.data, histories: latest.current.histories() });
+          if (latest.current.data !== initialData) {
+            post({ kind: "data", data: latest.current.data, historyDelta: historySync.delta(latest.current.histories()) });
+          }
           post({ kind: "height", auto: latest.current.height === void 0 && view.definition.height === "auto" });
           break;
         case "resize":
@@ -1039,32 +1695,64 @@ function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onS
             setAutoHeight(Math.min(MAX_AUTO_HEIGHT, Math.max(MIN_AUTO_HEIGHT, Math.ceil(message.height))));
           }
           break;
-        case "refresh":
+        case "refresh": {
+          const now2 = Date.now();
+          if (now2 - lastRefreshRef.current < REFRESH_THROTTLE_MS) break;
+          lastRefreshRef.current = now2;
           latest.current.onRefresh();
           break;
+        }
         case "open":
           if (typeof message.url === "string" && /^https?:\/\//i.test(message.url)) {
+            const now2 = Date.now();
+            if (now2 - lastOpenRef.current < ACTION_THROTTLE_MS) break;
+            lastOpenRef.current = now2;
             window.open(message.url, "_blank", "noopener,noreferrer");
           }
           break;
         case "ask":
-          if (typeof message.text === "string" && message.text.trim() !== "") latest.current.onAsk(message.text.slice(0, 4e3));
+          if (typeof message.text === "string" && message.text.trim() !== "") {
+            const now2 = Date.now();
+            if (now2 - lastAskRef.current < ACTION_THROTTLE_MS) break;
+            lastAskRef.current = now2;
+            latest.current.onAsk(message.text.slice(0, 4e3));
+          }
+          break;
+        case "escape":
+          latest.current.onEscape?.();
           break;
         case "run":
           if (typeof message.id === "string" && typeof message.prompt === "string" && message.prompt.trim() !== "") {
             const id = message.id;
-            const prompt = message.prompt.slice(0, 24e3);
-            const system = typeof message.system === "string" ? message.system.slice(0, 8e3) : void 0;
-            void latest.current.onRun(prompt, system).then((result) => post({ kind: "run-result", id, ...result })).catch((error) => post({
-              kind: "run-result",
-              id,
-              ok: false,
-              error: error instanceof Error ? error.message : String(error)
-            }));
+            const prompt = message.prompt;
+            const system = typeof message.system === "string" ? message.system : void 0;
+            if (prompt.length > 24e3 || (system?.length ?? 0) > 8e3) {
+              post({ kind: "run-result", id, ok: false, error: "Prompt must be at most 24000 characters and system text at most 8000 characters." });
+              break;
+            }
+            const activeToken = token;
+            const controller = new AbortController();
+            abortControllersRef.current.add(controller);
+            void latest.current.onRun(prompt, system, controller.signal).then((result) => {
+              abortControllersRef.current.delete(controller);
+              if (controller.signal.aborted || !readyRef.current || recoveredRef.current || stoppedRef.current || tokenRef.current !== activeToken) return;
+              post({ kind: "run-result", id, ...result });
+            }).catch((error) => {
+              abortControllersRef.current.delete(controller);
+              if (controller.signal.aborted || !readyRef.current || recoveredRef.current || stoppedRef.current || tokenRef.current !== activeToken) return;
+              post({
+                kind: "run-result",
+                id,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error)
+              });
+            });
           }
           break;
         case "state":
-          if (typeof message.key === "string") writeState(view.id, message.key, message.value);
+          if (typeof message.key === "string" && isSafeStateKey(message.key)) {
+            writeState(view.id, message.key, message.value);
+          }
           break;
         case "ok":
           latest.current.onScriptError(void 0);
@@ -1076,38 +1764,52 @@ function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onS
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [token, view.id]);
+  }, [token, view.id, stopped]);
   (0, import_react.useEffect)(() => {
-    if (readyRef.current) post({ kind: "data", data: view.data, histories: histories() });
+    if (readyRef.current && !stopped) post({ kind: "data", data: view.data, historyDelta: historySync.delta(histories()) });
   }, [view.data]);
   (0, import_react.useEffect)(() => {
-    if (readyRef.current) post({ kind: "theme", css: theme.css, mode: theme.mode });
+    if (readyRef.current && !stopped) post({ kind: "theme", css: theme.css, mode: theme.mode });
   }, [theme.css]);
   (0, import_react.useEffect)(() => {
-    if (readyRef.current) post({ kind: "height", auto: height === void 0 && fixedHeight === void 0 });
+    if (readyRef.current && !stopped) post({ kind: "height", auto: height === void 0 && fixedHeight === void 0 });
   }, [height, fixedHeight]);
+  const handleLoad = () => {
+    const loadsSoFar = loadsRef.current;
+    loadsRef.current = loadsSoFar + 1;
+    if (classifyFrameLoad(loadsSoFar) !== "navigated") return;
+    readyRef.current = false;
+    abortPendingRuns();
+    if (recoveredRef.current) return;
+    if (!shouldRecoverFrame(recoveriesRef.current)) {
+      if (!stoppedRef.current) {
+        stoppedRef.current = true;
+        setStopped(true);
+        latest.current.onScriptError(stoppedMessage);
+      }
+      return;
+    }
+    recoveredRef.current = true;
+    recoveriesRef.current += 1;
+    setEpoch((current) => current + 1);
+  };
   const startResize = (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = frameRef.current?.getBoundingClientRect().height ?? renderedHeight;
-    const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
     const heightAt = (y) => clampPanelHeight(startHeight + (y - startY));
-    const move = (e) => setDragHeight(heightAt(e.clientY));
-    const up = (e) => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      setDragHeight(void 0);
-      onHeightChange?.(heightAt(e.clientY));
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
+    gestures.start(event, {
+      move: (pointer) => setDragHeight(heightAt(pointer.clientY)),
+      end: (pointer) => {
+        setDragHeight(void 0);
+        onHeightChange?.(heightAt(pointer.clientY));
+      },
+      cancel: () => setDragHeight(void 0)
+    });
   };
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshpad-frame-wrap", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    stopped ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshpad-frame-stopped", role: "alert", children: stoppedMessage }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       "iframe",
       {
         ref: frameRef,
@@ -1116,10 +1818,12 @@ function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onS
         sandbox: "allow-scripts",
         referrerPolicy: "no-referrer",
         srcDoc: doc,
+        onLoad: handleLoad,
         style: { height: renderedHeight, colorScheme: theme.mode }
-      }
+      },
+      `${view.id}:${view.version}:${lang}:${epoch}`
     ),
-    resizable ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    resizable && !stopped ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       "div",
       {
         className: "dshpad-frame-handle",
@@ -1134,11 +1838,42 @@ function PanelFrame({ view, histories, theme, lang, onRefresh, onAsk, onRun, onS
   ] });
 }
 
+// src/client/status-clock.ts
+var listeners = /* @__PURE__ */ new Set();
+var timer;
+var now = Date.now();
+function statusTime() {
+  return now;
+}
+function subscribeStatusTime(listener) {
+  listeners.add(listener);
+  if (timer === void 0) {
+    now = Date.now();
+    timer = setInterval(() => {
+      now = Date.now();
+      for (const notify of listeners) notify();
+    }, 1e4);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      clearInterval(timer);
+      timer = void 0;
+    }
+  };
+}
+function subscribeNoStatusTime() {
+  return () => {
+  };
+}
+
 // src/client/PanelCard.tsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
-function relativeTime(t, iso, now) {
+function relativeTime(t, iso, now2) {
   if (iso === void 0) return "\u2014";
-  const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1e3));
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed) || !Number.isFinite(now2)) return "\u2014";
+  const seconds = Math.max(0, Math.round((now2 - parsed) / 1e3));
   if (seconds < 5) return t("time.justNow");
   if (seconds < 60) return t("time.seconds", { n: seconds });
   if (seconds < 3600) return t("time.minutes", { n: Math.floor(seconds / 60) });
@@ -1152,16 +1887,20 @@ function every(t, minutes) {
 }
 function clock(iso) {
   if (iso === void 0) return "\u2014";
-  const d = new Date(iso);
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return "\u2014";
+  const d = new Date(parsed);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 function lastUpdate(view) {
-  const times = Object.values(view.data.sources).map((r) => r.at);
-  if (view.data.agent !== null) times.push(view.data.agent.at);
-  return times.sort().at(-1);
+  let latest = view.data.agent?.at;
+  for (const reading of Object.values(view.data.sources)) {
+    if (latest === void 0 || reading.at > latest) latest = reading.at;
+  }
+  return latest;
 }
 function needsAttention(view) {
-  return view.needsApproval || view.agentRun?.status === "failed" || Object.values(view.data.sources).some((r) => !r.ok);
+  return view.agentRun?.status === "failed" || Object.values(view.data.sources).some((r) => r?.ok === false);
 }
 var Icon = {
   refresh: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" }) }),
@@ -1201,7 +1940,12 @@ var MenuIcon = {
   ] }),
   trash: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M3 4.6h10M6.4 4.6V2.9h3.2v1.7M4.9 4.6l.5 8.5h5.2l.5-8.5" }) })
 };
-function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTarget, dropZone, onAsk, onExpand, onDragStart, sidebarActions, onRemove, height, onHeightChange }) {
+function CardStatus({ t, updated, refreshing, attention, active }) {
+  const now2 = (0, import_react2.useSyncExternalStore)(active && updated !== void 0 && !refreshing ? subscribeStatusTime : subscribeNoStatusTime, statusTime);
+  const meta = refreshing ? t("card.agentRunning") : updated === void 0 ? t("card.waiting") : t("card.updated", { ago: relativeTime(t, updated, active ? now2 : Date.now()) });
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `dshpad-card-meta${attention ? " is-alert" : ""}`, children: meta });
+}
+function PanelCard({ view, client, theme, lang, t, clockActive, fresh, dragging, dropTarget, dropZone, onAsk, onExpand, onDragStart, height, onHeightChange, sidebarActions }) {
   const [menuOpen, setMenuOpen] = (0, import_react2.useState)(false);
   const [confirmDelete, setConfirmDelete] = (0, import_react2.useState)(false);
   const [modelOpen, setModelOpen] = (0, import_react2.useState)(false);
@@ -1211,6 +1955,10 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
   const [scriptError, setScriptError] = (0, import_react2.useState)();
   const [actionError, setActionError] = (0, import_react2.useState)();
   const [folded, setFolded] = (0, import_react2.useState)(view.collapsed);
+  const [foldBusy, setFoldBusy] = (0, import_react2.useState)(false);
+  const foldPending = (0, import_react2.useRef)(false);
+  const serverFolded = (0, import_react2.useRef)(view.collapsed);
+  serverFolded.current = view.collapsed;
   const menuRef = (0, import_react2.useRef)(null);
   const { definition } = view;
   (0, import_react2.useEffect)(() => {
@@ -1220,33 +1968,30 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
     if (!confirmDelete && !modelOpen) return;
     const onKey = (event) => {
       if (event.key === "Escape") {
-        event.preventDefault();
         event.stopPropagation();
         setConfirmDelete(false);
         setModelOpen(false);
       }
     };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
+    document.addEventListener("keydown", onKey, { capture: true });
+    return () => document.removeEventListener("keydown", onKey, { capture: true });
   }, [confirmDelete, modelOpen]);
   (0, import_react2.useEffect)(() => {
     if (!menuOpen) return;
-    const close = (event) => {
-      if (event instanceof KeyboardEvent) {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          setMenuOpen(false);
-        }
-        return;
-      }
+    const onPointerDown = (event) => {
       if (!menuRef.current?.contains(event.target)) setMenuOpen(false);
     };
-    document.addEventListener("pointerdown", close, true);
-    document.addEventListener("keydown", close, true);
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, { capture: true });
+    document.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
-      document.removeEventListener("pointerdown", close, true);
-      document.removeEventListener("keydown", close, true);
+      document.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
     };
   }, [menuOpen]);
   const act = async (action) => {
@@ -1256,7 +2001,7 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
   };
   const sourceErrors = definition.sources.map((source) => [source.id, view.data.sources[source.id]]).filter(([, reading]) => reading !== void 0 && !reading.ok).map(([id, reading]) => t("card.sourceError", { id, error: reading.error ?? "" }));
   const awaiting = awaitingFirstData(definition, view.data);
-  const updated = lastUpdate(view);
+  const updated = (0, import_react2.useMemo)(() => lastUpdate(view), [view.data]);
   const agent = definition.agent;
   const run = view.agentRun;
   const refreshing = run?.status === "running";
@@ -1287,27 +2032,29 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
     else setModelError(result.error ?? t("card.modelSwitchFailed"));
   };
   const toggleFold = () => {
+    if (foldPending.current) return;
+    foldPending.current = true;
+    setFoldBusy(true);
     const next = !folded;
     setFolded(next);
     setActionError(void 0);
     void client.act({ op: "collapse", panelId: view.id, collapsed: next }).then((result) => {
       if (!result.ok) {
-        setFolded(!next);
+        setFolded(serverFolded.current);
         setActionError(result.error);
       }
+    }).finally(() => {
+      foldPending.current = false;
+      setFoldBusy(false);
     });
   };
-  let meta;
-  if (refreshing) meta = t("card.agentRunning");
-  else if (updated !== void 0) meta = t("card.updated", { ago: relativeTime(t, updated, now) });
-  else meta = t("card.waiting");
   const startHeaderDrag = (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest("button") !== null) return;
     if (target.closest(".dshpad-card-actions") !== null) return;
     if (target.closest(".dshpad-expand") !== null) return;
-    onDragStart(event);
+    onDragStart?.(event);
   };
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
     "article",
@@ -1317,7 +2064,7 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
       "data-panel-id": view.id,
       children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("header", { className: "dshpad-card-head", onPointerDown: startHeaderDrag, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-card-grip", title: t("card.drag"), "aria-label": t("card.drag"), role: "button", tabIndex: -1, children: Icon.grip }),
+          onDragStart && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-card-grip", title: t("card.drag"), "aria-label": t("card.drag"), role: "button", tabIndex: -1, children: Icon.grip }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshpad-card-actions", ref: menuRef, children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
               "button",
@@ -1348,7 +2095,7 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
                 {
                   type: "button",
                   role: "menuitem",
-                  disabled: view.needsApproval && !agent,
+                  disabled: definition.sources.length === 0 && !agent,
                   onClick: () => void act({ op: "refresh", panelId: view.id }),
                   children: [
                     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: MenuIcon.refresh }),
@@ -1369,23 +2116,29 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("card.model") }),
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-menu-value", children: modelLabel })
               ] }),
-              ...(sidebarActions ?? []).map((action) => (0, import_jsx_runtime2.jsxs)("button", {
-                type: "button",
-                role: "menuitem",
-                disabled: action.disabled,
-                onClick: () => { setMenuOpen(false); action.run(); },
-                children: [
-                  action.icon ? (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: action.icon }) : null,
-                  action.label
-                ]
-              }, action.label)),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("hr", {}),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", role: "menuitem", className: onRemove ? void 0 : "is-danger", onClick: () => {
+              sidebarActions ? sidebarActions.map((action) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+                "button",
+                {
+                  type: "button",
+                  role: "menuitem",
+                  disabled: action.disabled,
+                  onClick: () => {
+                    setMenuOpen(false);
+                    action.run();
+                  },
+                  children: [
+                    action.icon === "up" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: MenuIcon.up }) : action.icon === "down" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: MenuIcon.down }) : action.icon === "trash" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: MenuIcon.trash }) : null,
+                    action.label
+                  ]
+                },
+                action.label
+              )) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", role: "menuitem", className: "is-danger", onClick: () => {
                 setMenuOpen(false);
-                if (onRemove) onRemove(); else setConfirmDelete(true);
+                setConfirmDelete(true);
               }, children: [
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: MenuIcon.trash }),
-                onRemove ? (lang === "zh-CN" ? "从侧栏移除" : "Remove from sidebar") : t("card.delete")
+                t("card.delete")
               ] })
             ] }) : null
           ] }),
@@ -1395,6 +2148,8 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
               type: "button",
               className: "dshpad-card-title",
               "aria-expanded": !folded,
+              "aria-busy": foldBusy,
+              disabled: foldBusy,
               title: folded ? t("card.unfold") : t("card.fold"),
               onClick: toggleFold,
               children: [
@@ -1404,7 +2159,7 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `dshpad-card-meta${needsAttention(view) ? " is-alert" : ""}`, children: meta }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CardStatus, { t, updated, refreshing, attention: needsAttention(view), active: clockActive }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "button",
             {
@@ -1489,14 +2244,6 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
           ] }) : null
         ] }) : null,
         folded ? null : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshpad-card-body", children: [
-          view.needsApproval ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshpad-approve", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { children: t("approve.title") }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("ul", { children: definition.sources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("code", { children: source.kind === "command" ? source.command : `${source.method ?? "GET"} ${source.url}` }) }, source.id)) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { type: "button", className: "dshpad-primary", onClick: async () => {
-              const result = await client.act({ op: "approve", panelId: view.id, fingerprint: view.fingerprint });
-              setActionError(result.ok ? void 0 : t("approve.changed"));
-            }, children: t("approve.allow") })
-          ] }) : null,
           awaiting ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "dshpad-card-note", children: t("card.firstData") }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             PanelFrame,
             {
@@ -1506,9 +2253,9 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
               lang,
               onRefresh: () => void client.act({ op: "refresh", panelId: view.id }),
               onAsk: (text) => onAsk(text, false),
-              onRun: (prompt, system) => client.run(view.id, prompt, system),
+              onRun: (prompt, system, signal) => client.run(view.id, prompt, system, signal),
               onScriptError: setScriptError,
-              height: onHeightChange !== void 0 ? height : client.panelHeight(view.id),
+              height: onHeightChange === void 0 ? client.panelHeight(view.id) : height,
               onHeightChange: onHeightChange ?? ((next) => client.setPanelHeight(view.id, next)),
               resizeLabel: t("card.resize")
             }
@@ -1520,6 +2267,37 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
     }
   );
 }
+
+// src/client/RenderBoundary.tsx
+var import_react3 = require("react");
+var import_jsx_runtime3 = require("react/jsx-runtime");
+var RenderBoundary = class extends import_react3.Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) {
+    return { error: error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown render error" };
+  }
+  componentDidCatch(error, info) {
+    console.error("[dsh-pad] render failed:", this.props.title ?? "dock", error, info.componentStack);
+  }
+  componentDidUpdate(previous) {
+    if (this.state.error !== null && previous.resetKey !== this.props.resetKey) this.setState({ error: null });
+  }
+  render() {
+    if (this.state.error === null) return this.props.children;
+    const fallback = /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("section", { className: "dshpad-recovery", role: "alert", children: [
+      this.props.title === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: this.props.title }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: this.props.t("render.failed") }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", onClick: () => {
+        this.setState({ error: null });
+      }, children: this.props.t("render.retry") }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("details", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("summary", { children: this.props.t("render.details") }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("pre", { children: this.state.error })
+      ] })
+    ] });
+    return this.props.dock ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-root dshpad-recovery-root", children: fallback }) : fallback;
+  }
+};
 
 // src/client/theme.ts
 var FALLBACK = {
@@ -1545,28 +2323,79 @@ var CUSTOM_FALLBACK = {
   "--pad-danger": ["#e5484d", "#ff6369"]
 };
 function luminance(color) {
-  const match = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(color);
+  const value = color.trim();
+  if (value === "") return void 0;
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value);
+  if (hex !== null) {
+    const raw = hex[1] ?? "";
+    const h = raw.length === 3 ? raw.replace(/./g, (c) => c + c) : raw;
+    const r2 = Number.parseInt(h.slice(0, 2), 16) / 255;
+    const g2 = Number.parseInt(h.slice(2, 4), 16) / 255;
+    const b2 = Number.parseInt(h.slice(4, 6), 16) / 255;
+    return 0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2;
+  }
+  const match = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(value);
   if (match === null) return void 0;
   const [r, g, b] = [match[1], match[2], match[3]].map((v) => Number(v) / 255);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
+function sheetLuminance(color) {
+  const alpha = /^rgba\([^)]*?[,/]\s*([\d.]+)\s*\)$/.exec(color.trim());
+  if (alpha !== null && Number(alpha[1]) < 0.5) return void 0;
+  return luminance(color);
+}
+function markerMode(text) {
+  const value = text.toLowerCase();
+  const dark = /\bdark\b/.test(value);
+  const light = /\blight\b/.test(value);
+  return dark === light ? void 0 : dark ? "dark" : "light";
+}
+function styleOf(element) {
+  if (element === null || element === void 0) return void 0;
+  try {
+    return getComputedStyle(element);
+  } catch {
+    return void 0;
+  }
+}
+function detectMode(element) {
+  const doc = element.ownerDocument;
+  const roots = [doc?.documentElement, doc?.body];
+  for (const root of roots) {
+    if (root === null || root === void 0) continue;
+    const marker = `${root.getAttribute("data-color-scheme") ?? ""} ${root.getAttribute("data-theme") ?? ""} ${root.getAttribute("data-ds-dark-theme") ?? ""} ${typeof root.className === "string" ? root.className : ""}`;
+    const named = markerMode(marker);
+    if (named !== void 0) return named;
+  }
+  const scheme = markerMode(styleOf(doc?.documentElement)?.colorScheme ?? "");
+  if (scheme !== void 0) return scheme;
+  for (const root of roots) {
+    const painted = sheetLuminance(styleOf(root)?.backgroundColor ?? "");
+    if (painted !== void 0) return painted > 0.5 ? "light" : "dark";
+  }
+  const text = luminance(styleOf(doc?.body ?? element)?.color ?? "");
+  if (text !== void 0) return text > 0.5 ? "dark" : "light";
+  if (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  return "light";
+}
 function readTheme(element) {
   const style = getComputedStyle(element);
-  const fg = luminance(style.color);
-  const mode = fg !== void 0 && fg > 0.5 ? "dark" : "light";
+  const ink = style.getPropertyValue("--dsw-alias-label-primary").trim();
+  const inkLuminance = luminance(ink);
+  const mode = inkLuminance === void 0 ? detectMode(element) : inkLuminance > 0.5 ? "dark" : "light";
   const fallback = FALLBACK[mode];
   const lines = [];
   for (const [name, token, key] of TOKENS) {
     const custom = CUSTOM_FALLBACK[name];
-    const missing = custom === void 0 ? fallback[key] : mode === "dark" ? custom[1] : custom[0];
-    const value = style.getPropertyValue(token).trim() || missing;
-    lines.push(`${name}:${value};`);
+    const modeValue = custom === void 0 ? fallback[key] : mode === "dark" ? custom[1] : custom[0];
+    const followsHost = name !== "--pad-bg" && name !== "--pad-bg-2" && name !== "--pad-border";
+    const hostValue = followsHost ? style.getPropertyValue(token).trim() : "";
+    lines.push(`${name}:${hostValue === "" ? modeValue : hostValue};`);
   }
   lines.push(`--pad-font:${style.fontFamily || "system-ui, sans-serif"};`);
   lines.push('--pad-mono:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;');
   lines.push("--pad-radius:8px;");
-  lines.push(`color-scheme:${mode};`);
-  return { mode, css: `:root{${lines.join("")}}` };
+  return { mode, css: `:root{${lines.join("")}}body{color-scheme:${mode}}` };
 }
 function watchTheme(onChange) {
   let frame = 0;
@@ -1584,15 +2413,14 @@ function watchTheme(onChange) {
   return () => {
     observer.disconnect();
     media.removeEventListener("change", schedule);
-    for (const timer of timers) clearTimeout(timer);
+    for (const timer2 of timers) clearTimeout(timer2);
     cancelAnimationFrame(frame);
   };
 }
 
 // src/client/Dock.tsx
-var import_jsx_runtime3 = require("react/jsx-runtime");
+var import_jsx_runtime4 = require("react/jsx-runtime");
 var DRAG_THRESHOLD = 4;
-var SNAP_DISTANCE = 26;
 var EDGE_GAP = 8;
 var SPLITTER_W = 6;
 var MIN_PANE = 80;
@@ -1602,71 +2430,46 @@ var COLLAPSE_SIZE = 28;
 var COLLAPSE_CENTER_FROM_RIGHT = COLLAPSE_RIGHT + COLLAPSE_SIZE / 2;
 var COLLAPSE_CENTER_Y = COLLAPSE_TOP + COLLAPSE_SIZE / 2;
 var Icon2 = {
-  plus: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: "M8 3v10M3 8h10" }) }),
-  refresh: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: "M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" }) }),
-  download: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: "M8 2.5v7.2M5 7l3 3 3-3M3 13.5h10" }) }),
-  close: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: "M4 4l8 8M12 4l-8 8" }) })
+  plus: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: "M8 3v10M3 8h10" }) }),
+  refresh: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: "M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" }) }),
+  download: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: "M8 2.5v7.2M5 7l3 3 3-3M3 13.5h10" }) }),
+  close: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: "M4 4l8 8M12 4l-8 8" }) })
 };
 var STAR_PATH = "M14 6.3C14.8 10.8 17.2 13.2 21.7 14C17.2 14.8 14.8 17.2 14 21.7C13.2 17.2 10.8 14.8 6.3 14C10.8 13.2 13.2 10.8 14 6.3Z";
-function BallDisc() {
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("svg", { className: "dshpad-ball-disc", viewBox: "0 0 28 28", width: "28", height: "28", "aria-hidden": "true", focusable: "false", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("defs", { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("linearGradient", { id: "dshpad-ball-surface", x1: "3", y1: "2", x2: "25", y2: "27", gradientUnits: "userSpaceOnUse", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("stop", { offset: "0", className: "dshpad-ball-stop-a" }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("stop", { offset: "1", className: "dshpad-ball-stop-b" })
+function BallDisc({ edge }) {
+  const tab = edge === "left" || edge === "right" ? "M0 0H14A14 14 0 0 1 14 28H0Z" : "M0 0H28V14A14 14 0 0 1 0 14Z";
+  const transform = edge === "right" || edge === "bottom" ? "rotate(180 14 14)" : void 0;
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("svg", { className: "dshpad-ball-disc", viewBox: "0 0 28 28", width: "28", height: "28", "aria-hidden": "true", focusable: "false", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("defs", { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("linearGradient", { id: "dshpad-ball-surface", x1: "3", y1: "2", x2: "25", y2: "27", gradientUnits: "userSpaceOnUse", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("stop", { offset: "0", className: "dshpad-ball-stop-a" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("stop", { offset: "1", className: "dshpad-ball-stop-b" })
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("circle", { className: "dshpad-ball-fill", cx: "14", cy: "14", r: "13.5" })
+    edge == null ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("circle", { className: "dshpad-ball-fill", cx: "14", cy: "14", r: "13.5" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { className: "dshpad-ball-fill", d: tab, transform })
   ] });
 }
-function useNow(intervalMs) {
-  const [now, setNow] = (0, import_react3.useState)(() => Date.now());
-  (0, import_react3.useEffect)(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMs]);
-  return now;
+function usePageVisible() {
+  const [visible, setVisible] = (0, import_react4.useState)(() => typeof document === "undefined" ? true : document.visibilityState !== "hidden");
+  (0, import_react4.useEffect)(() => {
+    if (typeof document === "undefined") return;
+    const update = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  return visible;
 }
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
-function clampBall(point, width, height) {
-  return {
-    x: Math.round(clamp(point.x, BALL_MARGIN, Math.max(BALL_MARGIN, width - BALL_SIZE - BALL_MARGIN))),
-    y: Math.round(clamp(point.y, BALL_MARGIN, Math.max(BALL_MARGIN, height - BALL_SIZE - BALL_MARGIN)))
-  };
-}
-function snapBall(point, width, height) {
-  const right = Math.max(BALL_SNAP_INSET, width - BALL_SIZE - BALL_SNAP_INSET);
-  const bottom = Math.max(BALL_SNAP_INSET, height - BALL_SIZE - BALL_SNAP_INSET);
-  let { x, y } = clampBall(point, width, height);
-  if (x - BALL_SNAP_INSET < SNAP_DISTANCE) x = BALL_SNAP_INSET;
-  else if (right - x < SNAP_DISTANCE) x = right;
-  if (y - BALL_SNAP_INSET < SNAP_DISTANCE) y = BALL_SNAP_INSET;
-  else if (bottom - y < SNAP_DISTANCE) y = bottom;
-  return { x, y };
-}
 function defaultDockPoint(ball, width, viewport, heightHint) {
-  const height = clamp(heightHint, MIN_DOCK_HEIGHT, Math.max(MIN_DOCK_HEIGHT, viewport.height - EDGE_GAP * 2));
   const x = ball.x + BALL_SIZE / 2 - (width - COLLAPSE_CENTER_FROM_RIGHT);
   const y = ball.y + BALL_SIZE / 2 - COLLAPSE_CENTER_Y;
-  return {
-    x: Math.round(clamp(x, EDGE_GAP, Math.max(EDGE_GAP, viewport.width - width - EDGE_GAP))),
-    y: Math.round(clamp(y, EDGE_GAP, Math.max(EDGE_GAP, viewport.height - height - EDGE_GAP)))
-  };
+  return clampDock({ x, y }, width, viewport, heightHint);
 }
-function clampDock(point, width, viewport, heightHint) {
-  const height = clamp(heightHint, MIN_DOCK_HEIGHT, Math.max(MIN_DOCK_HEIGHT, viewport.height - EDGE_GAP * 2));
-  return {
-    x: Math.round(clamp(point.x, EDGE_GAP, Math.max(EDGE_GAP, viewport.width - width - EDGE_GAP))),
-    y: Math.round(clamp(point.y, EDGE_GAP, Math.max(EDGE_GAP, viewport.height - height - EDGE_GAP)))
-  };
-}
-function rowTemplate(split) {
-  const parts = [];
-  split.children.forEach((_, index) => {
-    if (index > 0) parts.push(`${SPLITTER_W}px`);
-    parts.push(`${split.weights[index] ?? 1}fr`);
-  });
-  return parts.join(" ");
+function clampDock(point, width, viewport, heightHint, margin = EDGE_GAP) {
+  const x = Math.round(clamp(point.x, margin, Math.max(margin, viewport.width - width - margin)));
+  const top = dockSafeTop(x, width, viewport, margin);
+  const height = Math.min(Math.max(BALL_SIZE, heightHint), Math.max(BALL_SIZE, viewport.height - top - margin));
+  return { x, y: Math.round(clamp(point.y, top, Math.max(top, viewport.height - height - margin))) };
 }
 var DROP_LABEL = {
   left: "drop.left",
@@ -1679,75 +2482,98 @@ var DROP_LABEL = {
 };
 function createDock(client) {
   return function Dock({ t }) {
-    const snap = (0, import_react3.useSyncExternalStore)(client.subscribe, client.getSnapshot);
-    const rootRef = (0, import_react3.useRef)(null);
-    const asideRef = (0, import_react3.useRef)(null);
-    const shieldRef = (0, import_react3.useRef)(null);
-    const [theme, setTheme] = (0, import_react3.useState)({ mode: "light", css: ":root{}" });
-    const [notice, setNotice] = (0, import_react3.useState)();
-    const [viewport, setViewport] = (0, import_react3.useState)(() => ({ width: window.innerWidth, height: window.innerHeight }));
-    const [ballDrag, setBallDrag] = (0, import_react3.useState)();
-    const [dockDrag, setDockDrag] = (0, import_react3.useState)();
-    const [dragHeight, setDragHeight] = (0, import_react3.useState)();
-    const [dragWidth, setDragWidth] = (0, import_react3.useState)();
-    const [drag, setDrag] = (0, import_react3.useState)();
-    const [focusedId, setFocusedId] = (0, import_react3.useState)();
-    const [closing, setClosing] = (0, import_react3.useState)(false);
-    const [ballTransition, setBallTransition] = (0, import_react3.useState)();
-    const [update, setUpdate] = (0, import_react3.useState)();
-    const [updateOpen, setUpdateOpen] = (0, import_react3.useState)(false);
-    const [updateBusy, setUpdateBusy] = (0, import_react3.useState)(false);
-    const [updateError, setUpdateError] = (0, import_react3.useState)();
-    const closeTimer = (0, import_react3.useRef)();
-    const transitionTimer = (0, import_react3.useRef)();
-    const holdTimer = (0, import_react3.useRef)();
-    const suppressCollapseClick = (0, import_react3.useRef)(false);
-    const collapsePressToken = (0, import_react3.useRef)(0);
-    const focusedView = focusedId === void 0 ? void 0 : snap.panels.find((panel) => panel.id === focusedId);
-    const now = useNow(1e4);
+    const snap = (0, import_react4.useSyncExternalStore)(client.subscribe, client.getSnapshot);
+    const rootRef = (0, import_react4.useRef)(null);
+    const asideRef = (0, import_react4.useRef)(null);
+    const shieldRef = (0, import_react4.useRef)(null);
+    const focusPanelRef = (0, import_react4.useRef)(null);
+    const [theme, setTheme] = (0, import_react4.useState)({ mode: "light", css: ":root{}" });
+    const [notice, setNotice] = (0, import_react4.useState)();
+    const [viewport, setViewport] = (0, import_react4.useState)(readViewport);
+    const [ballDrag, setBallDrag] = (0, import_react4.useState)();
+    const [dockDrag, setDockDrag] = (0, import_react4.useState)();
+    const [dragHeight, setDragHeight] = (0, import_react4.useState)();
+    const [dragWidth, setDragWidth] = (0, import_react4.useState)();
+    const [splitDragging, setSplitDragging] = (0, import_react4.useState)(false);
+    const [drag, setDrag] = (0, import_react4.useState)();
+    const [focusedId, setFocusedId] = (0, import_react4.useState)();
+    const [focusedScriptError, setFocusedScriptError] = (0, import_react4.useState)();
+    const [closing, setClosing] = (0, import_react4.useState)(false);
+    const [ballTransition, setBallTransition] = (0, import_react4.useState)();
+    const [update, setUpdate] = (0, import_react4.useState)();
+    const [updateOpen, setUpdateOpen] = (0, import_react4.useState)(false);
+    const [updateBusy, setUpdateBusy] = (0, import_react4.useState)(false);
+    const [updateError, setUpdateError] = (0, import_react4.useState)();
+    const closeTimer = (0, import_react4.useRef)();
+    const transitionTimer = (0, import_react4.useRef)();
+    const clickTimer = (0, import_react4.useRef)();
+    const clickCleanup = (0, import_react4.useRef)();
+    const gestures = (0, import_react4.useRef)(new PointerGestures()).current;
+    const suppressCollapseClick = (0, import_react4.useRef)(false);
+    const panelsById = (0, import_react4.useMemo)(() => new Map(snap.panels.map((panel) => [panel.id, panel])), [snap.panels]);
+    const focusedView = focusedId === void 0 ? void 0 : panelsById.get(focusedId);
+    const pageVisible = usePageVisible();
     const lang = t("dock.title") === "\u9762\u677F" ? "zh-CN" : "en";
-    const panelIdsKey = snap.panels.map((panel) => panel.id).join("\0");
-    const snapshotTree = (0, import_react3.useMemo)(
+    const panelIdsKey = (0, import_react4.useMemo)(() => snap.panels.map((panel) => panel.id).join("\0"), [snap.panels]);
+    const snapshotTree = (0, import_react4.useMemo)(
       () => normalizeTree(snap.layout.tree, snap.panels.map((panel) => panel.id)),
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [snap.layout.tree, panelIdsKey]
     );
-    const treeSignature = JSON.stringify(snapshotTree);
-    const [tree, setTree] = (0, import_react3.useState)(snapshotTree);
-    (0, import_react3.useEffect)(() => {
+    const treeSignature = (0, import_react4.useMemo)(() => JSON.stringify(snapshotTree), [snapshotTree]);
+    const [tree, setTree] = (0, import_react4.useState)(snapshotTree);
+    (0, import_react4.useEffect)(() => {
       setTree(snapshotTree);
     }, [treeSignature]);
-    (0, import_react3.useEffect)(() => {
-      const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-      window.addEventListener("resize", onResize);
-      return () => window.removeEventListener("resize", onResize);
-    }, []);
-    (0, import_react3.useEffect)(() => () => {
+    (0, import_react4.useEffect)(() => watchViewport(() => {
+      const next = readViewport();
+      setViewport((previous) => previous.width === next.width && previous.height === next.height && previous.controls?.left === next.controls?.left && previous.controls?.right === next.controls?.right && previous.controls?.top === next.controls?.top && previous.controls?.bottom === next.controls?.bottom ? previous : next);
+    }), []);
+    const clearSuppressedClick = () => {
+      if (clickTimer.current !== void 0) clearTimeout(clickTimer.current);
+      clickTimer.current = void 0;
+      clickCleanup.current?.();
+      clickCleanup.current = void 0;
+      suppressCollapseClick.current = false;
+    };
+    (0, import_react4.useLayoutEffect)(() => () => {
+      gestures.cancel();
+      clearSuppressedClick();
       if (closeTimer.current !== void 0) clearTimeout(closeTimer.current);
       if (transitionTimer.current !== void 0) clearTimeout(transitionTimer.current);
-      if (holdTimer.current !== void 0) clearTimeout(holdTimer.current);
-    }, []);
-    (0, import_react3.useEffect)(() => {
-      if (snap.layout.expanded) return;
-      collapsePressToken.current += 1;
-      if (holdTimer.current !== void 0) {
-        clearTimeout(holdTimer.current);
-        holdTimer.current = void 0;
-      }
-      suppressCollapseClick.current = false;
-    }, [snap.layout.expanded]);
-    (0, import_react3.useEffect)(() => {
+    }, [gestures]);
+    (0, import_react4.useLayoutEffect)(() => {
+      gestures.cancel();
+      clearSuppressedClick();
+    }, [gestures, snap.layout.expanded, pageVisible]);
+    (0, import_react4.useEffect)(() => {
+      setFocusedScriptError(void 0);
       if (focusedId === void 0) return;
+      focusPanelRef.current?.focus();
       const onKey = (event) => {
         if (event.key === "Escape") setFocusedId(void 0);
       };
       document.addEventListener("keydown", onKey);
       return () => document.removeEventListener("keydown", onKey);
     }, [focusedId]);
-    (0, import_react3.useEffect)(() => {
+    (0, import_react4.useEffect)(() => {
+      if (!updateOpen || focusedId !== void 0) return;
+      const onKey = (event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          setUpdateOpen(false);
+        }
+      };
+      document.addEventListener("keydown", onKey, { capture: true });
+      return () => document.removeEventListener("keydown", onKey, { capture: true });
+    }, [updateOpen, focusedId]);
+    (0, import_react4.useEffect)(() => {
       if (focusedId !== void 0 && focusedView === void 0) setFocusedId(void 0);
     }, [focusedId, focusedView]);
-    (0, import_react3.useEffect)(() => {
+    (0, import_react4.useEffect)(() => {
+      if (snap.layout.expanded && focusedId !== void 0) return client.watchPanel(focusedId);
+    }, [snap.layout.expanded, focusedId]);
+    (0, import_react4.useEffect)(() => {
       const updateTheme = () => {
         if (rootRef.current === null) return;
         const next = readTheme(rootRef.current);
@@ -1755,13 +2581,13 @@ function createDock(client) {
       };
       updateTheme();
       return watchTheme(updateTheme);
-    }, [snap.layout.expanded]);
-    (0, import_react3.useEffect)(() => {
+    }, []);
+    (0, import_react4.useEffect)(() => {
       if (notice === void 0) return;
-      const timer = setTimeout(() => setNotice(void 0), 4e3);
-      return () => clearTimeout(timer);
+      const timer2 = setTimeout(() => setNotice(void 0), 4e3);
+      return () => clearTimeout(timer2);
     }, [notice]);
-    (0, import_react3.useEffect)(() => {
+    (0, import_react4.useEffect)(() => {
       let alive = true;
       const load = async (force) => {
         try {
@@ -1771,10 +2597,10 @@ function createDock(client) {
         }
       };
       void load(false);
-      const timer = setInterval(() => void load(false), 30 * 60 * 1e3);
+      const timer2 = setInterval(() => void load(false), 30 * 60 * 1e3);
       return () => {
         alive = false;
-        clearInterval(timer);
+        clearInterval(timer2);
       };
     }, [client]);
     const checkUpdate = async (force) => {
@@ -1808,29 +2634,49 @@ function createDock(client) {
       return true;
     };
     const attention = snap.panels.some(needsAttention);
-    const ballPoint = clampBall(ballDrag ?? snap.layout.ball ?? defaultBall(viewport.width, viewport.height), viewport.width, viewport.height);
+    const viewportReady = viewport.width > 0 && viewport.height > 0;
+    const rawBall = snap.layout.ball ?? (viewportReady ? defaultBall(viewport.width, viewport.height) : { x: BALL_MARGIN, y: BALL_MARGIN });
+    const resolvedBallEdge = snap.layout.ballEdge !== void 0 ? snap.layout.ballEdge : !viewportReady ? null : nearestBallEdge(rawBall, viewport.width, viewport.height, viewport.controls);
+    (0, import_react4.useEffect)(() => {
+      if (!viewportReady) return;
+      if (snap.layout.ballEdge === void 0) client.setLayout({ ballEdge: resolvedBallEdge });
+    }, [viewportReady, snap.layout.ballEdge, resolvedBallEdge]);
+    const ballEdge = ballDrag === void 0 ? resolvedBallEdge : nearestBallEdge(ballDrag, viewport.width, viewport.height, viewport.controls);
+    const ballPoint = viewportReady ? positionAtBallEdge(ballDrag ?? rawBall, ballEdge, viewport.width, viewport.height, viewport.controls) : ballDrag ?? rawBall;
     const widthLimit = Math.max(120, viewport.width - EDGE_GAP * 2);
-    const dockWidth = Math.min(dragWidth ?? snap.layout.width, widthLimit);
+    const requestedDockWidth = Math.min(dragWidth ?? snap.layout.width, widthLimit);
     const openHeight = snap.layout.dockHeight ?? Math.min(560, Math.max(MIN_DOCK_HEIGHT, viewport.height - EDGE_GAP * 2));
     const ballAnchorTop = ballPoint.y + BALL_SIZE / 2 - COLLAPSE_CENTER_Y;
     const belowBall = viewport.height - EDGE_GAP - ballAnchorTop;
     const defaultOpenHeight = belowBall >= MIN_DOCK_HEIGHT ? Math.max(MIN_DOCK_HEIGHT, Math.min(openHeight, belowBall)) : openHeight;
-    const baseDock = snap.layout.dock ?? defaultDockPoint(ballPoint, dockWidth, viewport, defaultOpenHeight);
     const savedHeight = dragHeight ?? snap.layout.dockHeight;
-    const dockPoint = dockDrag ?? clampDock(
-      baseDock,
+    const dockWidth = requestedDockWidth;
+    const dockMargin = EDGE_GAP;
+    const baseDock = snap.layout.dock ?? defaultDockPoint(ballPoint, dockWidth, viewport, defaultOpenHeight);
+    const dockPoint = clampDock(
+      dockDrag ?? baseDock,
       dockWidth,
       viewport,
-      snap.layout.dock === null ? defaultOpenHeight : savedHeight ?? MIN_DOCK_HEIGHT
+      dockDrag === void 0 && snap.layout.dock === null ? defaultOpenHeight : savedHeight ?? MIN_DOCK_HEIGHT,
+      dockMargin
     );
-    const starPoint = snap.layout.expanded ? {
-      x: dockPoint.x + dockWidth - COLLAPSE_RIGHT - COLLAPSE_SIZE,
-      y: dockPoint.y + COLLAPSE_TOP
-    } : ballPoint;
-    const starAnchor = /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-star-anchor", style: { left: starPoint.x, top: starPoint.y }, "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { viewBox: "0 0 28 28", width: "28", height: "28", focusable: "false", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: STAR_PATH }) }) });
-    const availableHeight = Math.max(MIN_DOCK_HEIGHT, viewport.height - dockPoint.y - EDGE_GAP);
+    const availableHeight = Math.max(BALL_SIZE, viewport.height - dockPoint.y - dockMargin);
     const renderedHeight = savedHeight === void 0 ? void 0 : Math.min(savedHeight, availableHeight);
     const maxHeight = renderedHeight ?? availableHeight;
+    (0, import_react4.useEffect)(() => {
+      if (!viewportReady || ballDrag !== void 0 || dockDrag !== void 0 || closing) return;
+      const patch = {};
+      if (snap.layout.ball === null || snap.layout.ball.x !== ballPoint.x || snap.layout.ball.y !== ballPoint.y) patch.ball = ballPoint;
+      if (snap.layout.expanded && snap.layout.dock !== null && (snap.layout.dock.x !== dockPoint.x || snap.layout.dock.y !== dockPoint.y)) patch.dock = dockPoint;
+      if (Object.keys(patch).length > 0) client.setLayout(patch);
+    }, [viewportReady, ballDrag, dockDrag, closing, snap.layout.ball, snap.layout.dock, snap.layout.expanded, ballPoint.x, ballPoint.y, dockPoint.x, dockPoint.y]);
+    const starPoint = !snap.layout.expanded ? ballPoint : {
+      x: dockPoint.x + dockWidth - COLLAPSE_RIGHT - COLLAPSE_SIZE,
+      y: dockPoint.y + COLLAPSE_TOP
+    };
+    const arrowEdge = snap.layout.expanded ? null : ballEdge;
+    const arrowRotation = arrowEdge === "right" ? 180 : arrowEdge === "top" ? 90 : arrowEdge === "bottom" ? -90 : 0;
+    const starAnchor = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: `dshpad-star-anchor${arrowEdge === null ? "" : " is-arrow"}`, style: { left: starPoint.x, top: starPoint.y }, "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { viewBox: "0 0 28 28", width: "28", height: "28", focusable: "false", children: arrowEdge === null ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: STAR_PATH }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: "M10.5 8.5L16 14L10.5 19.5", transform: `rotate(${arrowRotation} 14 14)` }) }) });
     const dockStyle = {
       left: dockPoint.x,
       top: dockPoint.y,
@@ -1839,20 +2685,21 @@ function createDock(client) {
       maxHeight
     };
     const reserve = !snap.embeddedMode && snap.layout.expanded && dockPoint.x + dockWidth >= viewport.width - EDGE_GAP - 2 ? Math.round(dockWidth) + 12 : 0;
-    (0, import_react3.useEffect)(() => {
+    (0, import_react4.useEffect)(() => {
       const root = document.documentElement;
       root.classList.toggle("dshpad-reserve", reserve > 0);
       root.style.setProperty("--dshpad-reserve", `${reserve}px`);
     }, [reserve]);
-    (0, import_react3.useEffect)(() => () => {
+    (0, import_react4.useEffect)(() => () => {
       document.documentElement.classList.remove("dshpad-reserve");
       document.documentElement.style.removeProperty("--dshpad-reserve");
     }, []);
     const commitTree = (next) => {
-      const normalized = normalizeTree(next, snap.panels.map((panel) => panel.id));
-      if (normalized === null) return;
-      setTree(normalized);
-      client.setTree(normalized);
+      setTree(client.setTree(next));
+    };
+    const currentTree = () => {
+      const latest = client.getSnapshot();
+      return normalizeTree(latest.layout.tree, latest.panels.map((panel) => panel.id));
     };
     const cardAt = (x, y) => {
       const shield = shieldRef.current;
@@ -1869,18 +2716,10 @@ function createDock(client) {
       if (event.button !== 0) return;
       const startX = event.clientX;
       const startY = event.clientY;
-      const pointerId = event.pointerId;
-      const capture = event.currentTarget;
       let moved = false;
       const move = (pointer) => {
         if (!moved && Math.hypot(pointer.clientX - startX, pointer.clientY - startY) <= DRAG_THRESHOLD) return;
-        if (!moved) {
-          try {
-            capture.setPointerCapture(pointerId);
-          } catch {
-          }
-          pointer.preventDefault();
-        }
+        if (!moved) pointer.preventDefault();
         moved = true;
         const under = cardAt(pointer.clientX, pointer.clientY);
         const target = under !== void 0 && under.id !== sourceId ? under.id : void 0;
@@ -1901,39 +2740,26 @@ function createDock(client) {
       };
       const finish = (pointer) => {
         const under = cardAt(pointer.clientX, pointer.clientY);
-        cleanup();
         setDrag(void 0);
         if (!moved) return;
+        clearSuppressedClick();
         document.addEventListener("click", suppressClick, { capture: true, once: true });
-        setTimeout(() => document.removeEventListener("click", suppressClick, true), 160);
-        if (tree === null) return;
+        clickCleanup.current = () => document.removeEventListener("click", suppressClick, true);
+        clickTimer.current = setTimeout(clearSuppressedClick, 160);
+        const latestTree = currentTree();
+        if (latestTree === null) return;
         if (under === void 0) {
-          commitTree(moveToRoot(tree, sourceId));
+          commitTree(moveToRoot(latestTree, sourceId));
         } else if (under.id !== sourceId) {
-          commitTree(dropOnLeaf(tree, sourceId, under.id, dropZoneFor(under.rect, pointer.clientX, pointer.clientY)));
+          commitTree(dropOnLeaf(latestTree, sourceId, under.id, dropZoneFor(under.rect, pointer.clientX, pointer.clientY)));
         }
       };
-      const cancel = () => {
-        cleanup();
-        setDrag(void 0);
-      };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", finish);
-        document.removeEventListener("pointercancel", cancel);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", finish);
-      document.addEventListener("pointercancel", cancel);
+      gestures.start(event, { move, end: finish, cancel: () => setDrag(void 0) });
     };
     const startSplit = (path, boundary, event) => {
       if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
       if (tree === null) return;
       const baseTree = tree;
       const split = nodeAtPath(baseTree, path);
@@ -1943,60 +2769,67 @@ function createDock(client) {
       const rect = areaElement.getBoundingClientRect();
       const gaps = SPLITTER_W * (split.children.length - 1);
       const cardArea = Math.max(1, rect.width - gaps);
-      const total = totalWeight(split);
-      const pairWeight = (split.weights[boundary] ?? 1) + (split.weights[boundary + 1] ?? 1);
-      const startPx = (split.weights[boundary] ?? 1) / total * cardArea;
+      const baseWeights = normalizedWeights(split);
+      const total = baseWeights.reduce((sum, weight) => sum + weight, 0);
+      const pairWeight = (baseWeights[boundary] ?? 1) + (baseWeights[boundary + 1] ?? 1);
+      const startPx = (baseWeights[boundary] ?? 1) / total * cardArea;
       const pairPx = pairWeight / total * cardArea;
       const minLeft = Math.min(MIN_PANE, pairPx / 2);
       const maxLeft = Math.max(minLeft, pairPx - MIN_PANE);
       const startX = event.clientX;
       let final = baseTree;
+      gestures.cancel();
+      setSplitDragging(true);
       const move = (pointer) => {
         const leftPx = clamp(startPx + pointer.clientX - startX, minLeft, maxLeft);
         const leftWeight = leftPx / cardArea * total;
-        const weights = split.weights.map((weight, index) => index === boundary ? leftWeight : index === boundary + 1 ? pairWeight - leftWeight : weight);
+        const weights = baseWeights.map((weight, index) => index === boundary ? leftWeight : index === boundary + 1 ? pairWeight - leftWeight : weight);
         final = withWeightsAtPath(baseTree, path, weights);
-        setTree(final);
+        setTree(normalizeTree(final, client.getSnapshot().panels.map((panel) => panel.id)));
       };
-      const up = () => {
-        cleanup();
-        setTree(final);
-        client.setTree(final);
-      };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", up);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", up);
+      gestures.start(event, {
+        move,
+        end: () => {
+          setSplitDragging(false);
+          commitTree(final);
+        },
+        cancel: () => {
+          setSplitDragging(false);
+          setTree(currentTree());
+        }
+      });
     };
     const collapse = () => {
       if (closing) return;
-      const buttonRect = asideRef.current?.querySelector(".dshpad-collapse")?.getBoundingClientRect();
-      const center = buttonRect === void 0 ? { x: dockPoint.x + dockWidth - COLLAPSE_CENTER_FROM_RIGHT, y: dockPoint.y + COLLAPSE_CENTER_Y } : { x: buttonRect.left + buttonRect.width / 2, y: buttonRect.top + buttonRect.height / 2 };
-      const nextBall = clampBall(
-        { x: center.x - BALL_SIZE / 2, y: center.y - BALL_SIZE / 2 },
-        viewport.width,
-        viewport.height
-      );
+      gestures.cancel();
+      let nextEdge;
+      let nextBall;
+      if (snap.layout.dock === null) {
+        nextEdge = ballEdge;
+        nextBall = ballPoint;
+      } else {
+        const buttonRect = rootRef.current?.querySelector(".dshpad-collapse")?.getBoundingClientRect();
+        const center = buttonRect === void 0 ? { x: dockPoint.x + dockWidth - COLLAPSE_CENTER_FROM_RIGHT, y: dockPoint.y + COLLAPSE_CENTER_Y } : { x: buttonRect.left + buttonRect.width / 2, y: buttonRect.top + buttonRect.height / 2 };
+        const collapsePoint = { x: center.x - BALL_SIZE / 2, y: center.y - BALL_SIZE / 2 };
+        nextEdge = null;
+        nextBall = clampBall(collapsePoint, viewport.width, viewport.height, viewport.controls);
+      }
       if (transitionTimer.current !== void 0) {
         clearTimeout(transitionTimer.current);
         transitionTimer.current = void 0;
       }
-      setBallTransition({ point: nextBall, mode: "closing" });
+      setBallTransition({ point: nextBall, edge: nextEdge, mode: "closing" });
       setClosing(true);
       closeTimer.current = setTimeout(() => {
         setClosing(false);
         setBallTransition(void 0);
-        client.setLayout({ expanded: false, ball: nextBall });
+        client.setLayout({ expanded: false, ball: nextBall, ballEdge: nextEdge });
       }, 160);
     };
     const openFromBall = (point) => {
       if (transitionTimer.current !== void 0) clearTimeout(transitionTimer.current);
-      setBallTransition({ point, mode: "opening" });
-      client.setLayout({ expanded: true });
+      setBallTransition({ point, edge: ballEdge, mode: "opening" });
+      client.setLayout({ expanded: true, ...ballEdge === null ? {} : { dock: null } });
       transitionTimer.current = setTimeout(() => {
         setBallTransition(void 0);
         transitionTimer.current = void 0;
@@ -2005,10 +2838,6 @@ function createDock(client) {
     const onBallPointerDown = (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
       const startX = event.clientX;
       const startY = event.clientY;
       const start2 = ballPoint;
@@ -2017,32 +2846,21 @@ function createDock(client) {
       const move = (pointer) => {
         if (!moved && Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < DRAG_THRESHOLD) return;
         moved = true;
-        final = clampBall({ x: start2.x + pointer.clientX - startX, y: start2.y + pointer.clientY - startY }, viewport.width, viewport.height);
+        final = clampBall({ x: start2.x + pointer.clientX - startX, y: start2.y + pointer.clientY - startY }, viewport.width, viewport.height, viewport.controls);
         setBallDrag(final);
       };
       const up = () => {
-        cleanup();
         if (!moved) {
           setBallDrag(void 0);
           openFromBall(start2);
           return;
         }
-        const snapped = snapBall(final, viewport.width, viewport.height);
+        const edge = nearestBallEdge(final, viewport.width, viewport.height, viewport.controls);
+        const snapped = positionAtBallEdge(final, edge, viewport.width, viewport.height, viewport.controls);
         setBallDrag(void 0);
-        client.setLayout({ ball: snapped, dock: null });
+        client.setLayout({ ball: snapped, ballEdge: edge, dock: null });
       };
-      const cancel = () => {
-        cleanup();
-        setBallDrag(void 0);
-      };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", cancel);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", cancel);
+      gestures.start(event, { move, end: up, cancel: () => setBallDrag(void 0) });
     };
     const onBallKey = (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -2050,109 +2868,75 @@ function createDock(client) {
         openFromBall(ballPoint);
       }
     };
-    const startDockMove = (startX, startY, onFirstMove) => {
+    const dockMove = (startX, startY) => {
       const start2 = dockPoint;
       const width = dockWidth;
       const boxHeight = asideRef.current?.getBoundingClientRect().height ?? MIN_DOCK_HEIGHT;
-      const height = clamp(Math.round(boxHeight), MIN_DOCK_HEIGHT, Math.max(MIN_DOCK_HEIGHT, viewport.height - EDGE_GAP * 2));
-      const maxX = Math.max(EDGE_GAP, viewport.width - width - EDGE_GAP);
-      const maxY = Math.max(EDGE_GAP, viewport.height - height - EDGE_GAP);
+      const height = clamp(Math.round(boxHeight), BALL_SIZE, Math.max(BALL_SIZE, viewport.height - dockMargin * 2));
       let moved = false;
       let final = start2;
       const move = (pointer) => {
         if (!moved && Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < DRAG_THRESHOLD) return;
         if (!moved) {
           moved = true;
-          onFirstMove?.();
           setDragHeight(height);
+          setDragWidth(width);
         }
-        final = {
-          x: Math.round(clamp(start2.x + pointer.clientX - startX, EDGE_GAP, maxX)),
-          y: Math.round(clamp(start2.y + pointer.clientY - startY, EDGE_GAP, maxY))
-        };
+        final = clampDock({ x: start2.x + pointer.clientX - startX, y: start2.y + pointer.clientY - startY }, width, viewport, height, dockMargin);
         setDockDrag(final);
       };
-      const up = () => {
-        cleanup();
-        if (!moved) return;
+      const cancel = () => {
         setDockDrag(void 0);
         setDragHeight(void 0);
-        client.setLayout({ dock: final, dockHeight: height });
+        setDragWidth(void 0);
       };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", up);
+      const end = () => {
+        cancel();
+        if (!moved) return;
+        client.setLayout({ dock: final, dockHeight: height, width });
       };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", up);
+      return { move, end, cancel };
     };
     const onHeadPointerDown = (event) => {
       if (event.button !== 0) return;
       if (event.target.closest("button") !== null) return;
       event.preventDefault();
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
-      startDockMove(event.clientX, event.clientY);
+      gestures.start(event, dockMove(event.clientX, event.clientY));
     };
     const onCollapsePointerDown = (event) => {
       if (event.button !== 0) return;
       event.stopPropagation();
-      suppressCollapseClick.current = false;
-      const token = collapsePressToken.current + 1;
-      collapsePressToken.current = token;
-      if (holdTimer.current !== void 0) {
-        clearTimeout(holdTimer.current);
-        holdTimer.current = void 0;
-      }
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
+      gestures.cancel();
+      clearSuppressedClick();
       const startX = event.clientX;
       const startY = event.clientY;
+      const movement = dockMove(startX, startY);
+      let held = false;
       let moved = false;
-      let dragged = false;
-      let dragStarted = false;
-      const clearTimer = () => {
-        if (holdTimer.current !== void 0) {
-          clearTimeout(holdTimer.current);
-          holdTimer.current = void 0;
-        }
-      };
-      const beginDrag = () => {
-        if (dragStarted || token !== collapsePressToken.current) return;
-        dragStarted = true;
-        clearTimer();
-        startDockMove(startX, startY, () => {
-          dragged = true;
-        });
-      };
-      const onMove = (pointer) => {
-        if (Math.hypot(pointer.clientX - startX, pointer.clientY - startY) > 8) {
+      const holdTimer = setTimeout(() => {
+        held = true;
+      }, 260);
+      gestures.start(event, {
+        move: (pointer) => {
+          const distance = Math.hypot(pointer.clientX - startX, pointer.clientY - startY);
+          if (!moved && distance < (held ? DRAG_THRESHOLD : 8)) return;
           moved = true;
-          beginDrag();
+          movement.move(pointer);
+        },
+        end: () => {
+          clearTimeout(holdTimer);
+          movement.end();
+          if (!moved) return;
+          suppressCollapseClick.current = true;
+          clickTimer.current = setTimeout(clearSuppressedClick, 500);
+        },
+        cancel: () => {
+          clearTimeout(holdTimer);
+          movement.cancel();
+          suppressCollapseClick.current = true;
+          clickTimer.current = setTimeout(clearSuppressedClick, 500);
         }
-      };
-      const onUp = () => {
-        clearTimer();
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-        document.removeEventListener("pointercancel", onUp);
-        if (!dragStarted && !moved) return;
-        if (!dragged && !moved) return;
-        suppressCollapseClick.current = true;
-        setTimeout(() => {
-          suppressCollapseClick.current = false;
-        }, 500);
-      };
-      holdTimer.current = setTimeout(beginDrag, 260);
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
-      document.addEventListener("pointercancel", onUp);
+      });
     };
     const onCollapseClick = () => {
       if (suppressCollapseClick.current) {
@@ -2165,108 +2949,111 @@ function createDock(client) {
       if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
       const startX = event.clientX;
       const startWidth = dockWidth;
       const right = dockPoint.x + startWidth;
-      const minWidth = Math.min(MIN_WIDTH, Math.max(140, viewport.width - EDGE_GAP * 2));
-      const maxWidth = Math.max(minWidth, Math.min(MAX_WIDTH, right - EDGE_GAP));
+      const maxWidth = Math.max(BALL_SIZE, Math.min(MAX_WIDTH, right - dockMargin));
+      const minWidth = Math.min(MIN_WIDTH, maxWidth);
+      let moved = false;
       let finalWidth = startWidth;
       let finalPoint = dockPoint;
       const move = (pointer) => {
+        if (!moved && Math.abs(pointer.clientX - startX) < DRAG_THRESHOLD) return;
+        moved = true;
         finalWidth = Math.round(clamp(startWidth + (startX - pointer.clientX), minWidth, maxWidth));
-        finalPoint = { x: Math.round(right - finalWidth), y: dockPoint.y };
+        finalPoint = clampDock({ x: Math.round(right - finalWidth), y: dockPoint.y }, finalWidth, viewport, savedHeight ?? maxHeight, dockMargin);
         setDragWidth(finalWidth);
         setDockDrag(finalPoint);
       };
-      const up = () => {
-        cleanup();
+      const cancel = () => {
         setDragWidth(void 0);
         setDockDrag(void 0);
-        client.setLayout({ width: finalWidth, dock: finalPoint });
       };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", up);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", up);
+      gestures.start(event, {
+        move,
+        end: () => {
+          cancel();
+          if (!moved) return;
+          client.setLayout({ width: finalWidth, dock: finalPoint });
+        },
+        cancel
+      });
     };
     const onTopEdgePointerDown = (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
       const startY = event.clientY;
       const boxHeight = asideRef.current?.getBoundingClientRect().height ?? savedHeight ?? MIN_DOCK_HEIGHT;
-      const bottom = Math.min(dockPoint.y + boxHeight, viewport.height - EDGE_GAP);
+      const bottom = Math.min(dockPoint.y + boxHeight, viewport.height - dockMargin);
       const startTop = dockPoint.y;
-      const maxTop = Math.max(EDGE_GAP, bottom - MIN_DOCK_HEIGHT);
+      const minTop = dockSafeTop(dockPoint.x, dockWidth, viewport, dockMargin);
+      const maxTop = Math.max(minTop, bottom - Math.min(MIN_DOCK_HEIGHT, boxHeight));
+      let moved = false;
       let finalHeight = bottom - startTop;
       let finalPoint = dockPoint;
       const move = (pointer) => {
-        const nextTop = Math.round(clamp(startTop + pointer.clientY - startY, EDGE_GAP, maxTop));
+        if (!moved && Math.abs(pointer.clientY - startY) < DRAG_THRESHOLD) return;
+        moved = true;
+        const nextTop = Math.round(clamp(startTop + pointer.clientY - startY, minTop, maxTop));
         finalHeight = Math.round(bottom - nextTop);
         finalPoint = { x: dockPoint.x, y: nextTop };
+        setDragWidth(dockWidth);
         setDragHeight(finalHeight);
         setDockDrag(finalPoint);
       };
-      const up = () => {
-        cleanup();
+      const cancel = () => {
         setDragHeight(void 0);
+        setDragWidth(void 0);
         setDockDrag(void 0);
-        client.setLayout({ dockHeight: finalHeight, dock: finalPoint });
       };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", up);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", up);
+      gestures.start(event, {
+        move,
+        end: () => {
+          cancel();
+          if (!moved) return;
+          client.setLayout({ dockHeight: finalHeight, dock: finalPoint, width: dockWidth });
+        },
+        cancel
+      });
     };
     const onBottomEdgePointerDown = (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-      }
       const startY = event.clientY;
       const startHeight = asideRef.current?.getBoundingClientRect().height ?? savedHeight ?? MIN_DOCK_HEIGHT;
-      const maxHeight2 = Math.max(MIN_DOCK_HEIGHT, viewport.height - dockPoint.y - EDGE_GAP);
+      const maxHeight2 = Math.max(BALL_SIZE, viewport.height - dockPoint.y - dockMargin);
+      let moved = false;
       let finalHeight = startHeight;
+      let finalPoint = dockPoint;
       const move = (pointer) => {
-        finalHeight = Math.round(clamp(startHeight + pointer.clientY - startY, MIN_DOCK_HEIGHT, maxHeight2));
+        if (!moved && Math.abs(pointer.clientY - startY) < DRAG_THRESHOLD) return;
+        moved = true;
+        finalHeight = Math.round(clamp(startHeight + pointer.clientY - startY, Math.min(MIN_DOCK_HEIGHT, maxHeight2), maxHeight2));
+        finalPoint = clampDock(dockPoint, dockWidth, viewport, finalHeight, dockMargin);
+        setDragWidth(dockWidth);
         setDragHeight(finalHeight);
+        setDockDrag(finalPoint);
       };
-      const up = () => {
-        cleanup();
+      const cancel = () => {
         setDragHeight(void 0);
-        client.setLayout({ dockHeight: finalHeight, dock: dockPoint });
+        setDragWidth(void 0);
+        setDockDrag(void 0);
       };
-      const cleanup = () => {
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", up);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", up);
+      gestures.start(event, {
+        move,
+        end: () => {
+          cancel();
+          if (!moved) return;
+          client.setLayout({ dockHeight: finalHeight, dock: finalPoint, width: dockWidth });
+        },
+        cancel
+      });
     };
     const renderNode = (node, path) => {
       if (node.kind === "leaf") {
-        const view = snap.panels.find((panel) => panel.id === node.id);
+        const view = panelsById.get(node.id);
         if (view === void 0) return null;
-        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RenderBoundary, { resetKey: view.version, title: view.definition.title, t, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           PanelCard,
           {
             view,
@@ -2274,7 +3061,7 @@ function createDock(client) {
             theme,
             lang,
             t,
-            now,
+            clockActive: pageVisible,
             fresh: snap.fresh === view.id,
             dragging: drag?.id === view.id,
             dropTarget: drag?.target === view.id,
@@ -2284,16 +3071,15 @@ function createDock(client) {
             },
             onExpand: () => setFocusedId(view.id),
             onDragStart: (event) => startCardDrag(view.id, event)
-          },
-          node.id
-        );
+          }
+        ) }, node.id);
       }
       const pathKey = path.join(".") || "root";
       if (node.dir === "col") {
-        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-split is-col", children: node.children.map((child, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-pane", children: renderNode(child, [...path, index]) }, `${pathKey}.${index}`)) }, pathKey);
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-split is-col", children: node.children.map((child, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-pane", children: renderNode(child, [...path, index]) }, `${pathKey}.${index}`)) }, pathKey);
       }
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-split is-row", style: { gridTemplateColumns: rowTemplate(node) }, children: node.children.map((child, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_react3.Fragment, { children: [
-        index > 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-split is-row", style: { gridTemplateColumns: rowTemplate(node, SPLITTER_W) }, children: node.children.map((child, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_react4.Fragment, { children: [
+        index > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "div",
           {
             className: "dshpad-splitter",
@@ -2303,16 +3089,17 @@ function createDock(client) {
             onPointerDown: (event) => startSplit(path, index - 1, event)
           }
         ) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-pane", children: renderNode(child, [...path, index]) })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-pane", children: renderNode(child, [...path, index]) })
       ] }, `${pathKey}.${index}`)) }, pathKey);
     };
     if (!snap.layout.expanded) {
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-root", ref: rootRef, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-root", "data-mode": theme.mode, ref: rootRef, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "div",
           {
             id: "dshpad-ball",
-            className: `dshpad-ball${ballDrag !== void 0 ? " is-dragging" : ""}`,
+            className: `dshpad-ball${ballDrag !== void 0 ? " is-dragging" : ""}${ballEdge === null ? "" : ` is-edge is-${ballEdge}`}`,
+            "data-edge": ballEdge ?? void 0,
             style: { left: ballPoint.x, top: ballPoint.y },
             role: "button",
             tabIndex: 0,
@@ -2320,26 +3107,100 @@ function createDock(client) {
             "aria-label": t("dock.open"),
             onPointerDown: onBallPointerDown,
             onKeyDown: onBallKey,
-            children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(BallDisc, {})
+            children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(BallDisc, { edge: ballEdge })
           }
         ),
         starAnchor,
-        ballDrag !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-drag-shield", "aria-hidden": "true" }) : null
+        ballDrag !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-drag-shield", "aria-hidden": "true" }) : null
       ] });
     }
+    const collapseControl = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      "button",
+      {
+        type: "button",
+        className: "dshpad-collapse",
+        title: `${t("dock.collapse")} \xB7 ${t("dock.holdDrag")}`,
+        "aria-label": t("dock.collapse"),
+        disabled: closing,
+        onClick: onCollapseClick,
+        onPointerDown: onCollapsePointerDown,
+        onContextMenu: (event) => event.preventDefault(),
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { className: "dshpad-collapse-star", viewBox: "0 0 28 28", width: "28", height: "28", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("path", { d: STAR_PATH }) })
+      }
+    );
     const examples = ["empty.example1", "empty.example2", "empty.example3"];
-    const dragView = drag === void 0 ? void 0 : snap.panels.find((panel) => panel.id === drag.id);
+    const dragView = drag === void 0 ? void 0 : panelsById.get(drag.id);
     const dropHint = drag === void 0 ? void 0 : drag.target !== void 0 && drag.zone !== void 0 ? t(DROP_LABEL[drag.zone]) : drag.blank ? t(DROP_LABEL.root) : t(DROP_LABEL.hint);
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-root", ref: rootRef, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+    const focusOverlay = focusedView ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      "div",
+      {
+        className: "dshpad-focus",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": focusedView.definition.title,
+        onClick: (event) => {
+          if (event.target === event.currentTarget) setFocusedId(void 0);
+        },
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-focus-panel", ref: focusPanelRef, tabIndex: -1, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("header", { className: "dshpad-focus-head", children: [
+            focusedView.definition.icon ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshpad-card-icon", children: focusedView.definition.icon }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshpad-focus-title", children: focusedView.definition.title }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dshpad-icon-btn",
+                "aria-label": t("card.close"),
+                title: t("card.close"),
+                onClick: () => setFocusedId(void 0),
+                children: Icon2.close
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(RenderBoundary, { resetKey: focusedView.version, title: focusedView.definition.title, t, children: [
+            awaitingFirstData(focusedView.definition, focusedView.data) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-card-note", children: t("card.firstData") }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              PanelFrame,
+              {
+                view: focusedView,
+                histories: () => client.historiesOf(focusedView.id),
+                theme,
+                lang,
+                onRefresh: () => void client.act({ op: "refresh", panelId: focusedView.id }),
+                onAsk: (text) => {
+                  ask(text, false);
+                },
+                onRun: (prompt, system, signal) => client.run(focusedView.id, prompt, system, signal),
+                onScriptError: setFocusedScriptError,
+                onEscape: () => setFocusedId(void 0),
+                resizeLabel: t("card.resize"),
+                resizable: false
+              }
+            ),
+            focusedScriptError ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-card-note is-alert", children: focusedScriptError.split("\n")[0] }) : null
+          ] })
+        ] })
+      }
+    ) : null;
+    let portalFocus = focusOverlay;
+    if (focusOverlay && typeof document !== "undefined" && document.body) {
+      try {
+        const reactDom = require("react-dom");
+        if (typeof reactDom?.createPortal === "function") {
+          portalFocus = reactDom.createPortal(focusOverlay, document.body);
+        }
+      } catch {
+      }
+    }
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-root", "data-mode": theme.mode, ref: rootRef, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
         "aside",
         {
           ref: asideRef,
-          className: `dshpad-dock${dockDrag !== void 0 ? " is-moving" : ""}${closing ? " is-closing" : ""}`,
+          className: `dshpad-dock${dockWidth < 160 ? " is-narrow" : ""}${dockDrag !== void 0 ? " is-moving" : ""}${closing ? " is-closing" : ""}`,
           style: dockStyle,
           "aria-label": t("dock.title"),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "div",
               {
                 className: "dshpad-dock-edge is-top",
@@ -2353,11 +3214,11 @@ function createDock(client) {
                 }
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-resize", title: t("dock.resize"), onPointerDown: onResizePointerDown }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("header", { className: "dshpad-dock-head", title: t("dock.move"), onPointerDown: onHeadPointerDown, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshpad-grip", "aria-hidden": "true" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshpad-spacer" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-resize", title: t("dock.resize"), onPointerDown: onResizePointerDown }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("header", { className: "dshpad-dock-head", title: t("dock.move"), onPointerDown: onHeadPointerDown, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshpad-grip", "aria-hidden": "true" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshpad-spacer" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "button",
                 {
                   type: "button",
@@ -2370,7 +3231,7 @@ function createDock(client) {
                   children: Icon2.plus
                 }
               ),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "button",
                 {
                   type: "button",
@@ -2384,7 +3245,7 @@ function createDock(client) {
                   children: Icon2.refresh
                 }
               ),
-              update?.available === true ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+              update?.available === true ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "button",
                 {
                   type: "button",
@@ -2395,24 +3256,12 @@ function createDock(client) {
                   children: Icon2.download
                 }
               ) : null,
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-                "button",
-                {
-                  type: "button",
-                  className: "dshpad-collapse",
-                  title: `${t("dock.collapse")} \xB7 ${t("dock.holdDrag")}`,
-                  "aria-label": t("dock.collapse"),
-                  onClick: onCollapseClick,
-                  onPointerDown: onCollapsePointerDown,
-                  onContextMenu: (event) => event.preventDefault(),
-                  children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { className: "dshpad-collapse-star", viewBox: "0 0 28 28", width: "28", height: "28", "aria-hidden": "true", focusable: "false", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("path", { d: STAR_PATH }) })
-                }
-              )
+              collapseControl
             ] }),
-            updateOpen ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("section", { className: "dshpad-update", role: "dialog", "aria-label": t("update.title"), children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-update-head", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: update?.available ? t("update.available") : t("update.title") }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            updateOpen ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("section", { className: "dshpad-update", role: "dialog", "aria-label": t("update.title"), children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-update-head", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: update?.available ? t("update.available") : t("update.title") }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                   "button",
                   {
                     type: "button",
@@ -2424,31 +3273,31 @@ function createDock(client) {
                   }
                 )
               ] }),
-              update === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text", children: t("update.unavailable") }) : update.applied !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text is-ok", children: t("update.applied", { version: update.applied }) }) : update.reason === "disabled" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text", children: t("update.disabled") }) : update.reason === "error" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text is-error", children: t("update.failed", { error: update.error ?? "" }) }) : update.available ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { className: "dshpad-update-text", children: [
+              update === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text", children: t("update.unavailable") }) : update.applied !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text is-ok", children: t("update.applied", { version: update.applied }) }) : update.reason === "disabled" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text", children: t("update.disabled") }) : update.reason === "error" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text is-error", children: t("update.failed", { error: update.error ?? "" }) }) : update.available ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { className: "dshpad-update-text", children: [
                   t("update.current", { current: update.current }),
                   update.latest === void 0 ? "" : ` \u2192 ${t("update.latest", { latest: update.latest })}`
                 ] }),
-                update.reason === "source" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text", children: t("update.source") }) : null
-              ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text", children: t("update.upToDate", { version: update.current }) }),
-              updateError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-update-text is-error", children: updateError }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-update-actions", children: [
-                update?.available === true && update.canApply ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshpad-update-primary", disabled: updateBusy, onClick: () => void applyUpdate(), children: updateBusy ? t("update.applying") : t("update.apply") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshpad-update-secondary", disabled: updateBusy, onClick: () => void checkUpdate(true), children: updateBusy ? t("update.checking") : t("update.check") }),
-                update?.url === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("a", { className: "dshpad-update-link", href: update.url, target: "_blank", rel: "noreferrer", children: t("update.release") }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshpad-update-secondary", onClick: () => setUpdateOpen(false), children: t("update.later") })
+                update.reason === "source" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text", children: t("update.source") }) : null
+              ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text", children: t("update.upToDate", { version: update.current }) }),
+              updateError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-update-text is-error", children: updateError }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-update-actions", children: [
+                update?.available === true && update.canApply ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshpad-update-primary", disabled: updateBusy, onClick: () => void applyUpdate(), children: updateBusy ? t("update.applying") : t("update.apply") }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshpad-update-secondary", disabled: updateBusy, onClick: () => void checkUpdate(true), children: updateBusy ? t("update.checking") : t("update.check") }),
+                update?.url === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { className: "dshpad-update-link", href: update.url, target: "_blank", rel: "noreferrer", children: t("update.release") }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshpad-update-secondary", onClick: () => setUpdateOpen(false), children: t("update.later") })
               ] })
             ] }) : null,
-            snap.loaded && !snap.connected ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-banner", children: t("dock.offline") }) : null,
-            notice ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-banner", children: notice }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-list", children: snap.loaded && snap.panels.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-empty", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-empty-title", children: t("empty.title") }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { children: t("empty.body") }),
-              examples.map((key) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshpad-example", onClick: () => ask(t(key), false), children: t(key) }, key))
-            ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-rows", children: [
+            !snap.connected ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-banner", role: "status", children: snap.connectionError === void 0 ? t(snap.loaded ? "dock.offline" : "dock.connecting") : t("dock.connectionFailed", { error: snap.connectionError }) }) : null,
+            notice ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-banner", children: notice }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-list", children: snap.loaded && snap.panels.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-empty", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "dshpad-empty-title", children: t("empty.title") }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { children: t("empty.body") }),
+              examples.map((key) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshpad-example", onClick: () => ask(t(key), false), children: t(key) }, key))
+            ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-rows", children: [
               tree === null ? null : renderNode(tree, []),
-              drag?.blank ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-root-drop", children: t(DROP_LABEL.root) }) : null
+              drag?.blank ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-root-drop", children: t(DROP_LABEL.root) }) : null
             ] }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "div",
               {
                 className: "dshpad-dock-foot",
@@ -2465,71 +3314,26 @@ function createDock(client) {
           ]
         }
       ),
-      ballTransition === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      ballTransition === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         "div",
         {
           className: `dshpad-ball-transition is-${ballTransition.mode}`,
           style: { left: ballTransition.point.x, top: ballTransition.point.y },
           "aria-hidden": "true",
-          children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(BallDisc, {})
+          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(BallDisc, { edge: ballTransition.edge })
         }
       ),
       starAnchor,
-      dockDrag !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-drag-shield", "aria-hidden": "true" }) : null,
-      dragHeight !== void 0 && dockDrag === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-drag-shield", "aria-hidden": "true" }) : null,
-      drag !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshpad-drag-shield", ref: shieldRef, "aria-hidden": "true" }) : null,
-      drag !== void 0 && dragView !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-drag-ghost", style: { left: drag.x + 12, top: drag.y + 12 }, children: [
-        dragView.definition.icon ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: dragView.definition.icon }) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshpad-drag-name", children: dragView.definition.title }),
-        dropHint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshpad-drag-hint", children: dropHint })
+      dockDrag !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-drag-shield", "aria-hidden": "true" }) : null,
+      dragHeight !== void 0 && dockDrag === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-drag-shield", "aria-hidden": "true" }) : null,
+      splitDragging ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-drag-shield is-splitting", "aria-hidden": "true" }) : null,
+      drag !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshpad-drag-shield", ref: shieldRef, "aria-hidden": "true" }) : null,
+      drag !== void 0 && dragView !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshpad-drag-ghost", style: { left: drag.x + 12, top: drag.y + 12 }, children: [
+        dragView.definition.icon ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: dragView.definition.icon }) : null,
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshpad-drag-name", children: dragView.definition.title }),
+        dropHint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshpad-drag-hint", children: dropHint })
       ] }) : null,
-      focusedView ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-        "div",
-        {
-          className: "dshpad-focus",
-          role: "dialog",
-          "aria-modal": "true",
-          "aria-label": focusedView.definition.title,
-          onClick: (event) => {
-            if (event.target === event.currentTarget) setFocusedId(void 0);
-          },
-          children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshpad-focus-panel", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("header", { className: "dshpad-focus-head", children: [
-              focusedView.definition.icon ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshpad-card-icon", children: focusedView.definition.icon }) : null,
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshpad-focus-title", children: focusedView.definition.title }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-                "button",
-                {
-                  type: "button",
-                  className: "dshpad-icon-btn",
-                  "aria-label": t("card.close"),
-                  title: t("card.close"),
-                  onClick: () => setFocusedId(void 0),
-                  children: Icon2.close
-                }
-              )
-            ] }),
-            awaitingFirstData(focusedView.definition, focusedView.data) ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "dshpad-card-note", children: t("card.firstData") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-              PanelFrame,
-              {
-                view: focusedView,
-                histories: () => client.historiesOf(focusedView.id),
-                theme,
-                lang,
-                onRefresh: () => void client.act({ op: "refresh", panelId: focusedView.id }),
-                onAsk: (text) => {
-                  ask(text, false);
-                },
-                onRun: (prompt, system) => client.run(focusedView.id, prompt, system),
-                onScriptError: () => {
-                },
-                resizeLabel: t("card.resize"),
-                resizable: false
-              }
-            )
-          ] })
-        }
-      ) : null
+      portalFocus
     ] });
   };
 }
@@ -2544,6 +3348,11 @@ var zh = {
   "dock.new": "\u7528 AI \u65B0\u5EFA\u9762\u677F",
   "dock.refreshAll": "\u5168\u90E8\u5237\u65B0",
   "dock.offline": "\u548C dsh \u7684\u8FDE\u63A5\u65AD\u5F00\u4E86\uFF0C\u6B63\u5728\u91CD\u8FDE\u2026",
+  "dock.connecting": "\u6B63\u5728\u8FDE\u63A5\u9762\u677F\u6570\u636E\u2026",
+  "dock.connectionFailed": "\u9762\u677F\u8FDE\u63A5\u5931\u8D25\uFF0C\u6B63\u5728\u91CD\u8BD5\uFF1A{error}",
+  "render.failed": "\u9762\u677F\u663E\u793A\u6682\u65F6\u51FA\u9519",
+  "render.retry": "\u91CD\u65B0\u663E\u793A",
+  "render.details": "\u9519\u8BEF\u8BE6\u60C5",
   "dock.resize": "\u62D6\u52A8\u8C03\u6574\u5BBD\u5EA6",
   "dock.move": "\u62D6\u52A8\u7A97\u53E3\u5230\u4EFB\u610F\u4F4D\u7F6E",
   "dock.resizeHeight": "\u62D6\u52A8\u4E0A\u4E0B\u8FB9\u7F18\u8C03\u6574\u9AD8\u5EA6\uFF0C\u53CC\u51FB\u6062\u590D\u81EA\u52A8",
@@ -2561,9 +3370,18 @@ var zh = {
   "empty.example1": "\u505A\u4E00\u4E2A\u89C2\u5BDF\u8FD9\u53F0\u670D\u52A1\u5668\u6027\u80FD\u7684\u9762\u677F\uFF1ACPU\u3001\u5185\u5B58\u3001\u78C1\u76D8\u3001\u8D1F\u8F7D\uFF0C\u6BCF 3 \u79D2\u5237\u65B0",
   "empty.example2": "\u505A\u4E00\u4E2A\u9762\u677F\u663E\u793A\u6211\u7684 DeepSeek API \u8D26\u6237\u4F59\u989D",
   "empty.example3": "\u505A\u4E00\u4E2A\u9762\u677F\u76EF\u7740 deepseek-ai/deepseek-harness \u7684\u6700\u65B0 release \u548C star \u6570",
-  "new.prefix": "\u7528 dsh-pad \u7684 pad_create \u521B\u5EFA\u4E00\u5F20\u81EA\u5B9A\u4E49\u60AC\u6D6E\u9762\u677F\uFF0C\u6309\u5DE5\u5177\u63CF\u8FF0\u91CC\u7684\u9762\u677F\u7F16\u5199\u6307\u5357\u6765\u505A\u3002\u9700\u6C42\uFF1A",
+  "new.prefix": "\u7528 dsh-pad \u7684 pad_create \u521B\u5EFA\u4E00\u5F20\u81EA\u5B9A\u4E49\u60AC\u6D6E\u9762\u677F\uFF1A\u5148\u8C03 pad_guide \u9009\u7248\u5F0F\u548C\u914D\u65B9\uFF0C\u518D\u6309\u91CC\u9762\u7684\u786C\u89C4\u5219\u6765\u5199\u3002\u9700\u6C42\uFF1A",
   "new.unavailable": "\u6CA1\u627E\u5230\u5BF9\u8BDD\u8F93\u5165\u6846\uFF0C\u5185\u5BB9\u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F\u3002",
   "new.filled": "\u5DF2\u586B\u5165\u8F93\u5165\u6846\uFF0C\u6309\u56DE\u8F66\u53D1\u7ED9 AI\u3002",
+  "whale.add": "\u6DFB\u52A0\u9762\u677F",
+  "whale.addTitle": "\u6DFB\u52A0\u81EA\u5B9A\u4E49\u9762\u677F",
+  "whale.close": "\u5173\u95ED",
+  "whale.hide": "\u4ECE\u4FA7\u680F\u79FB\u9664",
+  "whale.restore": "\u6062\u590D\uFF1A{title}",
+  "whale.prompt": "\u60F3\u521B\u5EFA\u4EC0\u4E48\u9762\u677F\uFF1F",
+  "whale.draft": "\u653E\u5165\u5BF9\u8BDD",
+  "whale.unavailable": "\u8F93\u5165\u6846\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u56DE\u5230\u9CB8\u9C7C\u5A18\u5BF9\u8BDD\u91CD\u8BD5\u3002",
+  "whale.filled": "\u5DF2\u653E\u5165\u8F93\u5165\u6846\uFF0C\u68C0\u67E5\u540E\u53D1\u9001\u3002",
   "card.refresh": "\u5237\u65B0",
   "card.resize": "\u62D6\u52A8\u8C03\u6574\u9AD8\u5EA6\uFF0C\u53CC\u51FB\u6062\u590D\u81EA\u52A8",
   "card.fold": "\u6298\u53E0",
@@ -2605,9 +3423,6 @@ var zh = {
   "card.agentFailed": "AI \u5237\u65B0\u5931\u8D25\uFF1A{error}",
   "card.agentNext": "\u4E0B\u6B21 {time}",
   "card.sourceError": "{id}\uFF1A{error}",
-  "approve.title": "\u8FD9\u5F20\u9762\u677F\u8981\u5728\u672C\u673A\u8FD0\u884C\u4EE5\u4E0B\u6570\u636E\u6E90\uFF1A",
-  "approve.allow": "\u5141\u8BB8\u8FD0\u884C",
-  "approve.changed": "\u6570\u636E\u6E90\u5DF2\u7ECF\u53D8\u4E86\uFF0C\u8BF7\u91CD\u65B0\u786E\u8BA4",
   "update.title": "\u66F4\u65B0",
   "update.tooltip": "\u68C0\u67E5\u66F4\u65B0",
   "update.checking": "\u6B63\u5728\u68C0\u67E5\u2026",
@@ -2644,6 +3459,11 @@ var en = {
   "dock.new": "New panel with AI",
   "dock.refreshAll": "Refresh all",
   "dock.offline": "Lost connection to dsh, reconnecting\u2026",
+  "dock.connecting": "Connecting to panel data\u2026",
+  "dock.connectionFailed": "Panel connection failed, retrying: {error}",
+  "render.failed": "Panel display temporarily failed",
+  "render.retry": "Show again",
+  "render.details": "Error details",
   "dock.resize": "Drag to resize",
   "dock.move": "Drag the window anywhere",
   "dock.resizeHeight": "Drag the top or bottom edge to resize, double-click for auto",
@@ -2661,9 +3481,18 @@ var en = {
   "empty.example1": "Make a panel watching this server: CPU, memory, disk and load, refreshing every 3 seconds",
   "empty.example2": "Make a panel showing my DeepSeek API balance",
   "empty.example3": "Make a panel tracking the latest release and stars of deepseek-ai/deepseek-harness",
-  "new.prefix": "Create a custom floating panel with dsh-pad (pad_create; follow the panel authoring guide in its description). Requirements: ",
+  "new.prefix": "Create a custom floating panel with dsh-pad. Call pad_guide first to pick a layout and a recipe, then follow its hard rules. Requirements: ",
   "new.unavailable": "No composer found. The text was copied to the clipboard.",
   "new.filled": "Put into the composer. Press Enter to send it to the AI.",
+  "whale.add": "Add panel",
+  "whale.addTitle": "Add a custom panel",
+  "whale.close": "Close",
+  "whale.hide": "Remove from sidebar",
+  "whale.restore": "Restore: {title}",
+  "whale.prompt": "What should the new panel show?",
+  "whale.draft": "Add to draft",
+  "whale.unavailable": "Open the assistant conversation and try again.",
+  "whale.filled": "Added to your draft. Review and send.",
   "card.refresh": "Refresh",
   "card.resize": "Drag to resize, double-click for auto",
   "card.fold": "Fold",
@@ -2705,9 +3534,6 @@ var en = {
   "card.agentFailed": "AI refresh failed: {error}",
   "card.agentNext": "next {time}",
   "card.sourceError": "{id}: {error}",
-  "approve.title": "This panel wants to run these data sources on this machine:",
-  "approve.allow": "Allow",
-  "approve.changed": "The data sources changed, please review again",
   "update.title": "Update",
   "update.tooltip": "Check for updates",
   "update.checking": "Checking\u2026",
@@ -2749,13 +3575,36 @@ var DOCK_CSS = `
   --dshpad-danger:var(--dsw-alias-state-error-primary,#e5484d);
   --dshpad-warn:var(--dsw-alias-state-warn-primary,#d97706);
   --dshpad-ball-hi:color-mix(in srgb,var(--dshpad-surface) 90%,var(--dshpad-fg) 10%);
+  --dshpad-card-tint:color-mix(in srgb,var(--dsw-alias-settings-card-fill,transparent) 55%,transparent);
   --dshpad-ease:cubic-bezier(.22,.8,.24,1);
   color:var(--dshpad-fg)}
+/* When dsh's --dsw-* aliases do not resolve (or resolve to a light surface in
+   a dark theme), every var() above lands on the light fallback and the dock
+   turns white inside a dark app. The dock reports the mode it detected, and a
+   dark mode gets a dark palette outright: a missing token must never be able to
+   make a dark dock light. */
+.dshpad-root[data-mode=dark]{
+  --dshpad-fg:#e9e9ec;
+  --dshpad-fg-2:#b7b9bf;
+  --dshpad-fg-3:#8e9198;
+  --dshpad-surface:#232326;
+  --dshpad-hover:rgba(255,255,255,.08);
+  --dshpad-border:rgba(255,255,255,.14);
+  --dshpad-accent:#7c93ff;
+  --dshpad-danger:#ff6369;
+  --dshpad-warn:#f5a524;
+  --dshpad-card-tint:rgba(255,255,255,.035)}
 .dshpad-root svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .dshpad-root circle{fill:currentColor;stroke:none}
 .dshpad-root button{font:inherit;color:inherit}
+.dshpad-root.dshpad-recovery-root{width:min(340px,calc(100vw - 24px));height:auto;top:64px;right:12px}
+.dshpad-recovery{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px;border-radius:12px;background:var(--dshpad-surface);color:var(--dshpad-fg);box-shadow:inset 0 0 0 1px var(--dshpad-border);font:13px/18px system-ui,sans-serif;pointer-events:auto}
+.dshpad-recovery strong{flex-basis:100%;overflow-wrap:anywhere}
+.dshpad-recovery button{padding:4px 8px;border:1px solid var(--dshpad-border);border-radius:6px;background:var(--dshpad-hover);cursor:pointer}
+.dshpad-recovery details{width:100%;font-size:12px;color:var(--dshpad-fg-2)}
+.dshpad-recovery pre{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 
-.dshpad-root #dshpad-ball{position:fixed!important;display:grid;place-items:center;width:28px!important;height:28px!important;padding:0!important;border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important;clip-path:none!important;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;overflow:visible!important;
+.dshpad-root #dshpad-ball{position:fixed!important;display:grid;place-items:center;width:28px!important;height:28px!important;padding:0!important;border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important;clip-path:none!important;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-app-region:no-drag;overflow:visible!important;
   opacity:1!important;pointer-events:auto!important}
 .dshpad-root .dshpad-ball-disc{display:block;width:28px!important;height:28px!important;overflow:visible;filter:drop-shadow(0 5px 14px rgba(0,0,0,.24))}
 .dshpad-root .dshpad-ball-disc .dshpad-ball-fill{fill:url(#dshpad-ball-surface)!important;fill-opacity:1;stroke:var(--dsw-alias-border-l1,var(--dshpad-border))!important;stroke-width:1!important;transition:stroke .15s}
@@ -2771,21 +3620,28 @@ var DOCK_CSS = `
 .dshpad-root .dshpad-star-anchor *{pointer-events:none!important}
 .dshpad-root .dshpad-star-anchor svg{display:block;width:28px!important;height:28px!important;overflow:visible}
 .dshpad-root .dshpad-star-anchor path{fill:currentColor!important;stroke:none!important}
+.dshpad-root .dshpad-star-anchor.is-arrow path{fill:none!important;stroke:currentColor!important;stroke-width:1.8!important}
 .dshpad-root:has(#dshpad-ball:hover) .dshpad-star-anchor,
 .dshpad-root:has(.dshpad-collapse:hover) .dshpad-star-anchor{color:var(--dshpad-fg)}
 .dshpad-root .dshpad-ball-transition{position:fixed;display:grid;place-items:center;width:28px;height:28px;pointer-events:none;z-index:2}
 .dshpad-root .dshpad-ball-transition.is-opening{animation:dshpad-ball-out .2s var(--dshpad-ease) forwards}
 
-.dshpad-collapse{position:absolute!important;top:2px!important;right:9px!important;display:grid;place-items:center;width:28px!important;height:28px!important;min-width:0!important;min-height:0!important;padding:0!important;border:0!important;border-radius:9px!important;box-sizing:border-box!important;cursor:pointer;touch-action:none;user-select:none;pointer-events:auto!important;
+.dshpad-collapse{position:absolute!important;top:2px!important;right:9px!important;display:grid;place-items:center;width:28px!important;height:28px!important;min-width:0!important;min-height:0!important;padding:0!important;border:0!important;border-radius:9px!important;box-sizing:border-box!important;cursor:pointer;touch-action:none;user-select:none;pointer-events:auto!important;-webkit-app-region:no-drag;
   background:transparent!important;color:var(--dshpad-fg-2)!important;transition:background-color .18s}
+.dshpad-collapse:disabled{pointer-events:none!important}
 .dshpad-collapse:hover{background:var(--dshpad-hover)!important}
 .dshpad-collapse svg{display:block;width:28px!important;height:28px!important}
 .dshpad-collapse-star{visibility:hidden}
 
 .dshpad-dock{position:fixed;left:8px;top:52px;max-height:calc(100vh - 16px);max-width:calc(100vw - 16px);pointer-events:auto;display:flex;flex-direction:column;
-  background:color-mix(in srgb, var(--dshpad-surface) 70%, transparent);border:0;border-radius:var(--dsw-radius-xl,16px);box-shadow:var(--dsw-elevation-panel,0 8px 28px rgba(0,0,0,.14));
+  background:color-mix(in srgb, var(--dshpad-surface) 88%, transparent);border:0;border-radius:var(--dsw-radius-xl,16px);box-shadow:var(--dsw-elevation-panel,0 8px 28px rgba(0,0,0,.14));
   -webkit-backdrop-filter:blur(26px) saturate(1.45);backdrop-filter:blur(26px) saturate(1.45);
   font-size:13px;line-height:18px;animation:dshpad-dock-in .18s var(--dshpad-ease)}
+/* Corner-constrained docks can be narrower than a normal panel. Wrap their
+   actions inside the safe area rather than overflowing into window buttons. */
+.dshpad-dock.is-narrow{overflow:clip}
+.dshpad-dock.is-narrow .dshpad-dock-head{height:auto;min-height:32px;flex-wrap:wrap;justify-content:flex-end}
+.dshpad-dock.is-narrow .dshpad-grip,.dshpad-dock.is-narrow .dshpad-spacer{display:none}
 .dshpad-dock.is-closing{animation:dshpad-dock-out .16s var(--dshpad-ease) forwards;pointer-events:none}
 .dshpad-dock.is-closing .dshpad-collapse{pointer-events:none!important}
 .dshpad-resize{position:absolute;left:-3px;top:16px;bottom:16px;width:7px;cursor:ew-resize;touch-action:none;z-index:2}
@@ -2809,7 +3665,7 @@ var DOCK_CSS = `
 .dshpad-icon-btn{flex:none;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dshpad-fg-2)!important;cursor:pointer;transition:background-color .15s,color .15s}
 .dshpad-icon-btn:hover:not(:disabled),.dshpad-icon-btn.is-active{background:var(--dshpad-hover);color:var(--dshpad-fg)!important}
 .dshpad-icon-btn:disabled{opacity:.4;cursor:default}
-.dshpad-update{flex:none;margin:0 6px 5px;padding:8px 9px;border-radius:11px;background:color-mix(in srgb, var(--dshpad-surface) 55%, transparent);
+.dshpad-update{flex:none;margin:0 6px 5px;padding:8px 9px;border-radius:11px;background-color:var(--dshpad-surface);background-image:linear-gradient(var(--dshpad-card-tint),var(--dshpad-card-tint));
   box-shadow:inset 0 0 0 .5px var(--dshpad-border);font-size:12px}
 .dshpad-update-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .dshpad-update-close{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dshpad-fg-3);cursor:pointer}
@@ -2840,7 +3696,7 @@ var DOCK_CSS = `
 .dshpad-splitter::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;transform:translateX(-50%);border-radius:1px;background:var(--dshpad-fg-3);opacity:.42;transition:background-color .15s,opacity .15s}
 .dshpad-splitter:hover::before,.dshpad-splitter:active::before{background:var(--dshpad-fg-3);opacity:.68}
 
-.dshpad-card{position:relative;min-width:0;border-radius:12px;background:color-mix(in srgb, var(--dsw-alias-settings-card-fill, transparent) 55%, transparent);box-shadow:inset 0 0 0 .5px var(--dsw-alias-settings-card-stroke,var(--dshpad-border));animation:dshpad-fade .24s ease-out}
+.dshpad-card{position:relative;min-width:0;border-radius:12px;background-color:var(--dshpad-surface);background-image:linear-gradient(var(--dshpad-card-tint),var(--dshpad-card-tint));box-shadow:inset 0 0 0 .5px var(--dsw-alias-settings-card-stroke,var(--dshpad-border));animation:dshpad-fade .24s ease-out}
 .dshpad-card.is-dragging{opacity:.45}
 .dshpad-card.is-drop-target{box-shadow:inset 0 0 0 2px var(--dshpad-accent),0 8px 24px rgba(0,0,0,.12)}
 .dshpad-card.is-drop-left::after,.dshpad-card.is-drop-right::after,.dshpad-card.is-drop-top::after,.dshpad-card.is-drop-bottom::after,.dshpad-card.is-drop-center::after{content:"";position:absolute;z-index:3;pointer-events:none;border-radius:12px;background:color-mix(in srgb,var(--dshpad-accent) 14%, transparent)}
@@ -2871,6 +3727,7 @@ var DOCK_CSS = `
 .dshpad-more svg{width:14px;height:14px}
 .dshpad-card-body{padding:0 6px 5px}
 .dshpad-drag-shield{position:fixed;inset:0;z-index:99990;cursor:grabbing;background:transparent;touch-action:none;user-select:none}
+.dshpad-drag-shield.is-splitting{cursor:col-resize}
 .dshpad-drag-ghost{position:fixed;z-index:99999;display:flex;align-items:center;gap:6px;max-width:280px;padding:6px 9px;border-radius:9px;  background:color-mix(in srgb, var(--dsw-alias-button-floating-fill,var(--dshpad-surface)) 88%, transparent);
   -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
   box-shadow:var(--dsw-elevation-panel,0 6px 20px rgba(0,0,0,.16));color:var(--dshpad-fg);
@@ -2909,14 +3766,18 @@ var DOCK_CSS = `
 .dshpad-models-hint{margin:4px;color:var(--dshpad-fg-3);font-size:11px}
 .dshpad-models-error{margin:4px;color:var(--dshpad-danger);font-size:11px}
 
-.dshpad-frame{display:block;width:100%;border:0;background:transparent;transition:height .2s var(--dshpad-ease)}
+/* Opaque, not transparent, and its own compositing layer: inside the dock's
+   composited subtree Electron painted this frame's canvas but culled the
+   content layer, so the panel came up blank while its document had loaded. */
+.dshpad-frame{display:block;width:100%;border:0;background:var(--dshpad-surface);transform:translateZ(0);transition:height .2s var(--dshpad-ease)}
 .dshpad-frame.is-resizing{transition:none}
+.dshpad-frame-stopped{padding:10px;border-radius:8px;background:var(--dsw-alias-state-error-tertiary,rgba(229,72,77,.1));color:var(--dshpad-danger);font-size:12px;line-height:1.45;overflow-wrap:anywhere}
 .dshpad-frame-handle{height:10px;margin-top:2px;display:flex;align-items:center;justify-content:center;cursor:ns-resize;touch-action:none}
 .dshpad-frame-handle::after{content:"";width:28px;height:3px;border-radius:2px;background:var(--dshpad-border);opacity:.7;transition:opacity .15s,background-color .15s}
 .dshpad-frame-handle:hover::after{opacity:1;background:var(--dshpad-fg-3)}
 
 .dshpad-menu{position:absolute;left:0;top:28px;z-index:10;min-width:176px;padding:6px;display:flex;flex-direction:column;gap:1px;border-radius:12px;
-  background:color-mix(in srgb, var(--dsw-alias-settings-card-fill,var(--dshpad-surface)) 86%, transparent);-webkit-backdrop-filter:blur(18px) saturate(1.15);backdrop-filter:blur(18px) saturate(1.15);border:.5px solid var(--dshpad-border);
+  background-color:var(--dshpad-surface);background-image:linear-gradient(var(--dshpad-card-tint),var(--dshpad-card-tint));-webkit-backdrop-filter:blur(18px) saturate(1.15);backdrop-filter:blur(18px) saturate(1.15);border:.5px solid var(--dshpad-border);
   box-shadow:var(--dsw-elevation-prominent,0 10px 30px rgba(0,0,0,.18));animation:dshpad-pop .14s ease-out}
 .dshpad-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:none;text-align:left;font-size:13px;color:inherit;cursor:pointer}
 .dshpad-menu button:hover:not(:disabled){background:var(--dshpad-hover)}
@@ -2928,16 +3789,9 @@ var DOCK_CSS = `
 .dshpad-menu button.is-danger .dshpad-mi{color:inherit}
 
 .dshpad-focus{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.42);animation:dshpad-fade .18s ease-out}
-.dshpad-focus-panel{display:flex;flex-direction:column;width:min(640px,92vw);padding:8px 14px 12px;border-radius:16px;background:color-mix(in srgb, var(--dsw-alias-bg-layer-1,var(--dshpad-surface)) 82%, transparent);-webkit-backdrop-filter:blur(40px) saturate(1.2);backdrop-filter:blur(40px) saturate(1.2);border:.5px solid var(--dshpad-border);box-shadow:var(--dsw-elevation-prominent,0 24px 60px rgba(0,0,0,.35))}
+.dshpad-focus-panel{display:flex;flex-direction:column;width:min(640px,92vw);padding:8px 14px 12px;border-radius:16px;background-color:var(--dshpad-surface);background-image:linear-gradient(var(--dshpad-card-tint),var(--dshpad-card-tint));-webkit-backdrop-filter:blur(40px) saturate(1.2);backdrop-filter:blur(40px) saturate(1.2);border:.5px solid var(--dshpad-border);box-shadow:var(--dsw-elevation-prominent,0 24px 60px rgba(0,0,0,.35))}
 .dshpad-focus-head{display:flex;align-items:center;gap:8px;height:40px;flex:none}
 .dshpad-focus-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-
-.dshpad-approve{margin:0 0 5px;padding:5px 6px;border-radius:10px;background:var(--dsw-alias-state-warn-tertiary,rgba(217,119,6,.1));font-size:12px}
-.dshpad-approve p{margin:0 0 3px}
-.dshpad-approve ul{margin:0 0 5px;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
-.dshpad-approve code{display:block;max-height:76px;overflow:auto;padding:2px 4px;border-radius:6px;background:var(--dshpad-hover);font:11px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;white-space:pre-wrap}
-.dshpad-primary{height:28px;padding:0 12px;border:0;border-radius:8px;background:var(--dshpad-accent,#4d6bfe);color:var(--dsw-alias-label-primary-foreground,#fff)!important;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);font-size:12px;font-weight:500;cursor:pointer}
-.dshpad-primary:hover{filter:brightness(1.06)}
 
 .dshpad-empty{padding:14px 5px 4px;color:var(--dshpad-fg-2);font-size:12px;text-align:center}
 .dshpad-empty p{margin:0 0 6px}
@@ -2969,240 +3823,257 @@ var DOCK_CSS = `
 @keyframes dshpad-pop{from{opacity:0;scale:.96}to{opacity:1;scale:1}}
 @keyframes dshpad-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes dshpad-flash{0%,30%{box-shadow:inset 0 0 0 1.5px var(--dshpad-accent)}100%{box-shadow:inset 0 0 0 .5px var(--dsw-alias-settings-card-stroke,var(--dshpad-border))}}
+.dshpad-root.dshpad-whale-panels{position:static;top:auto;right:auto;width:100%;height:auto;z-index:auto;display:flex;flex-direction:column;gap:8px}
 .dshpad-whale-panels .dshpad-card-head{cursor:default}
+.dshpad-whale-notice{margin:0;padding:6px 8px;border-radius:8px;background:var(--dsw-alias-state-warn-tertiary,rgba(217,119,6,.1));color:var(--dsw-alias-state-warn-label,var(--dshpad-fg,var(--dsw-alias-label-primary,#1f2329)));font-size:12px;line-height:1.4}
+.dshpad-whale-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:18px 12px;border-radius:12px;background:var(--dshpad-surface);box-shadow:inset 0 0 0 .5px var(--dshpad-border);color:var(--dshpad-fg-2);font-size:12px;text-align:center}
+.dshpad-whale-add{display:flex;flex-direction:column;gap:10px;padding:4px 0}
+
 @media (prefers-reduced-motion:reduce){
   .dshpad-root *{animation-duration:1ms!important;transition-duration:1ms!important}
 }
 `;
 
+// src/client/recoverable-slot.ts
+var RETRY_MS = 3e3;
+var MAX_RETRY_MS = 6e4;
+function recoverableSlot(ctx, key, id, register) {
+  ctx.effect(() => {
+    let activated = false;
+    let stopped = false;
+    let declared = false;
+    let disposeEntry;
+    let entry;
+    let retry;
+    let failures = 0;
+    const cancelRetry = () => {
+      clearTimeout(retry);
+      retry = void 0;
+    };
+    const release = () => {
+      const dispose = disposeEntry;
+      disposeEntry = void 0;
+      entry = void 0;
+      dispose?.();
+    };
+    const schedule = (error) => {
+      if (stopped || !declared || retry !== void 0) return;
+      const delay = Math.min(MAX_RETRY_MS, RETRY_MS * 2 ** Math.min(failures++, 5));
+      console.error(`[dsh-pad] ${key} \u5165\u53E3\u6682\u65F6\u4E0D\u53EF\u7528\uFF0C${delay / 1e3} \u79D2\u540E\u91CD\u8BD5\uFF1A`, error);
+      retry = setTimeout(() => {
+        retry = void 0;
+        if (stopped || !declared) return;
+        release();
+        install();
+      }, delay);
+    };
+    const install = () => {
+      try {
+        disposeEntry = register();
+        entry = ctx.slots.entries(key).find((candidate) => candidate.options.id === id);
+      } catch (error) {
+        if (!activated) throw error;
+        schedule(error);
+      }
+    };
+    const disposeInjection = ctx.slots.inject(key, () => {
+      declared = true;
+      failures = 0;
+      install();
+      return () => {
+        declared = false;
+        cancelRetry();
+        release();
+      };
+    });
+    activated = true;
+    const unsubscribe = ctx.slots.onEntryError((slot, registration, error, info) => {
+      if (slot === key && registration === entry && info.abdicated) schedule(error);
+    });
+    return () => {
+      stopped = true;
+      cancelRetry();
+      unsubscribe();
+      disposeInjection();
+      release();
+    };
+  }, `dsh-pad: recover ${key}`);
+}
+
+// src/client/WhalePanels.tsx
+var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_react5 = require("react");
+var import_jsx_runtime5 = require("react/jsx-runtime");
+var DISPLAY_KEY = "dsh-whale:pad-display";
+function readDisplay() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? "{}");
+    return {
+      hidden: Array.isArray(saved?.hidden) ? saved.hidden : [],
+      order: Array.isArray(saved?.order) ? saved.order : []
+    };
+  } catch {
+    return { hidden: [], order: [] };
+  }
+}
+function SidebarCard(props) {
+  const { client, view, clockActive } = props;
+  (0, import_react5.useEffect)(() => {
+    if (clockActive && !view.collapsed) return client.watchPanel(view.id, "embedded");
+  }, [client, clockActive, view.id, view.collapsed]);
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(RenderBoundary, { t: props.t, resetKey: view.version, title: view.definition.title, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(PanelCard, { ...props }) });
+}
+function createWhalePanels(client) {
+  return function WhalePanels({ t, requestAdd = 0, active = true, onDraftInserted }) {
+    const snap = (0, import_react5.useSyncExternalStore)(client.subscribe, client.getSnapshot);
+    const [prefs, setPrefs] = (0, import_react5.useState)(readDisplay);
+    const [heights, setHeights] = (0, import_react5.useState)({});
+    const [add, setAdd] = (0, import_react5.useState)(false);
+    const [prompt, setPrompt] = (0, import_react5.useState)("");
+    const [notice, setNotice] = (0, import_react5.useState)();
+    const [theme, setTheme] = (0, import_react5.useState)({ mode: "light", css: ":root{}" });
+    const root = (0, import_react5.useRef)(null);
+    const lastRequestAdd = (0, import_react5.useRef)(requestAdd);
+    const lang = t("dock.title") === "\u9762\u677F" ? "zh-CN" : "en";
+    (0, import_react5.useEffect)(() => {
+      client.setEmbeddedMode(active);
+      return () => client.setEmbeddedMode(false);
+    }, [active]);
+    (0, import_react5.useEffect)(() => {
+      if (requestAdd === lastRequestAdd.current) return;
+      lastRequestAdd.current = requestAdd;
+      if (requestAdd > 0 && active) {
+        setNotice(void 0);
+        setAdd(true);
+      }
+    }, [requestAdd, active]);
+    (0, import_react5.useEffect)(() => {
+      if (!active) {
+        setAdd(false);
+        setNotice(void 0);
+      }
+    }, [active]);
+    (0, import_react5.useEffect)(() => {
+      if (notice === void 0) return;
+      const timer2 = setTimeout(() => setNotice(void 0), 4e3);
+      return () => clearTimeout(timer2);
+    }, [notice]);
+    (0, import_react5.useEffect)(() => {
+      if (!active) return;
+      const update = () => {
+        if (!root.current) return;
+        const next = readTheme(root.current);
+        setTheme((previous) => previous.css === next.css ? previous : next);
+      };
+      update();
+      return watchTheme(update);
+    }, [active]);
+    const orderIndex = new Map(prefs.order.map((id, index) => [id, index]));
+    const visible = snap.panels.filter((panel) => !prefs.hidden.includes(panel.id)).sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity));
+    const persist = (next) => {
+      try {
+        localStorage.setItem(DISPLAY_KEY, JSON.stringify(next));
+      } catch {
+      }
+      setPrefs(next);
+    };
+    const setLocalHeight = (panelId, next) => {
+      setHeights((previous) => {
+        if (next === void 0) {
+          if (!(panelId in previous)) return previous;
+          const copy = { ...previous };
+          delete copy[panelId];
+          return copy;
+        }
+        return { ...previous, [panelId]: next };
+      });
+    };
+    const move = (panel, index, delta) => {
+      const order = visible.map((view) => view.id);
+      const other = order[index + delta];
+      if (other === void 0) return;
+      order[index + delta] = panel.id;
+      order[index] = other;
+      persist({ ...prefs, order });
+    };
+    const ask = (text) => {
+      const inserted = composer.insert(text) !== "unavailable";
+      setNotice(inserted ? "whale.filled" : "whale.unavailable");
+      if (inserted) onDraftInserted?.();
+      return inserted;
+    };
+    const showAdd = () => {
+      setNotice(void 0);
+      setAdd(true);
+    };
+    const status = notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "dshpad-whale-notice", role: "status", children: t(notice) });
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dshpad-root dshpad-whale-panels", "data-mode": theme.mode, ref: root, children: [
+      !snap.connected && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "dshpad-whale-notice", role: "status", children: t(snap.loaded ? "dock.offline" : "dock.connecting") }),
+      !(add && active) && status,
+      visible.map((view, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        SidebarCard,
+        {
+          view,
+          client,
+          theme,
+          lang,
+          t,
+          clockActive: active,
+          fresh: snap.fresh === view.id,
+          dragging: false,
+          dropTarget: false,
+          height: heights[view.id],
+          onHeightChange: (next) => setLocalHeight(view.id, next),
+          onAsk: ask,
+          onExpand: () => setLocalHeight(view.id, heights[view.id] === void 0 ? 480 : void 0),
+          sidebarActions: [
+            { label: t("card.moveUp"), icon: "up", disabled: index === 0, run: () => move(view, index, -1) },
+            { label: t("card.moveDown"), icon: "down", disabled: index === visible.length - 1, run: () => move(view, index, 1) },
+            { label: t("whale.hide"), icon: "trash", run: () => persist({ ...prefs, hidden: [...prefs.hidden, view.id] }) }
+          ]
+        },
+        view.id
+      )),
+      snap.loaded && visible.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dshpad-whale-empty", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives.Button, { variant: "outline", onClick: showAdd, children: t("whale.add") }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives.Modal, { open: add && active, title: t("whale.addTitle"), closeLabel: t("whale.close"), onClose: () => setAdd(false), children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dshpad-whale-add", children: [
+        snap.panels.filter((view) => prefs.hidden.includes(view.id)).map((view) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          import_dsh_client_ui_primitives.Button,
+          {
+            variant: "outline",
+            onClick: () => {
+              persist({ ...prefs, hidden: prefs.hidden.filter((id) => id !== view.id) });
+              setAdd(false);
+            },
+            children: t("whale.restore", { title: view.definition.title })
+          },
+          view.id
+        )),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives.Input, { "aria-label": t("whale.prompt"), placeholder: t("whale.prompt"), value: prompt, onChange: (e) => setPrompt(e.target.value) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives.Button, { variant: "primary", disabled: !prompt.trim(), onClick: () => {
+          if (ask(t("new.prefix") + prompt.trim())) {
+            setAdd(false);
+            setPrompt("");
+          }
+        }, children: t("whale.draft") }),
+        add && active && status
+      ] }) })
+    ] });
+  };
+}
+
 // src/client/index.ts
 var NS = "dsh-pad";
 var inject = ["slots", "locale"];
-// DSHD: an additive, read-only view onto the SAME PadClient and PanelCard.
-// Separate display preferences never rewrite the floating dock's layout or delete panels.
-function createWhalePanels(client) {
-  const { createElement: h, useState, useEffect, useRef, useSyncExternalStore, Fragment } = import_react4;
-  return function WhalePanels({ t, requestAdd = 0, active = true, onDraftInserted }) {
-    const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-    const { Button, Input, Modal, Toast } = primitives;
-    const snap = useSyncExternalStore(client.subscribe, client.getSnapshot);
-    const root = useRef(null);
-    const [theme, setTheme] = useState({ mode: "light", css: ":root{}" });
-    const [add, setAdd] = useState(false), [prompt, setPrompt] = useState("");
-    const [focusedId, setFocusedId] = useState(void 0);
-    const [toast, setToast] = useState(null);
-    const toastSeq = useRef(0);
-    const [prefs, setPrefs] = useState(() => {
-      try {
-        const saved = JSON.parse(localStorage.getItem("dsh-whale:pad-display") || "{}");
-        const hidden = Array.isArray(saved.hidden) ? [...new Set(saved.hidden.filter(id => typeof id === "string"))] : [];
-        const order = Array.isArray(saved.order) ? saved.order.filter(id => typeof id === "string") : [];
-        const heights = {};
-        if (saved.heights && typeof saved.heights === "object") {
-          for (const [id, value] of Object.entries(saved.heights)) {
-            if (typeof value === "number" && Number.isFinite(value)) heights[id] = clampPanelHeight(value);
-          }
-        }
-        return { hidden, order, heights };
-      } catch {
-        return { hidden: [], order: [], heights: {} };
-      }
-    });
-    const now = useNow(10000), zh = t("dock.title") === "\u9762\u677F", lang = zh ? "zh-CN" : "en";
-    const label = (cn, en) => zh ? cn : en;
-    const visible = snap.panels.filter(p => !prefs.hidden.includes(p.id)).sort((a, b) => {
-      const ai = prefs.order.indexOf(a.id), bi = prefs.order.indexOf(b.id);
-      return (ai < 0 ? Number.MAX_SAFE_INTEGER : ai) - (bi < 0 ? Number.MAX_SAFE_INTEGER : bi);
-    });
-    const focusedView = focusedId === void 0 ? void 0 : snap.panels.find(p => p.id === focusedId);
-    const persist = next => {
-      const clean = {
-        hidden: [...new Set(Array.isArray(next.hidden) ? next.hidden : [])],
-        order: Array.isArray(next.order) ? next.order : [],
-        heights: next.heights && typeof next.heights === "object" ? next.heights : {},
-      };
-      try {
-        localStorage.setItem("dsh-whale:pad-display", JSON.stringify(clean));
-      } catch {
-      }
-      setPrefs(clean);
-    };
-    const pushToast = (text, { success = false, anchorToChat = false } = {}) => {
-      toastSeq.current += 1;
-      setToast({ seq: toastSeq.current, text, success, anchorToChat });
-    };
-    useEffect(() => {
-      client.setEmbeddedMode(true);
-      return () => client.setEmbeddedMode(false);
-    }, []);
-    useEffect(() => { if (requestAdd) setAdd(true); }, [requestAdd]);
-    useEffect(() => {
-      if (focusedId === void 0) return;
-      const onKey = event => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          setFocusedId(void 0);
-        }
-      };
-      document.addEventListener("keydown", onKey, true);
-      return () => document.removeEventListener("keydown", onKey, true);
-    }, [focusedId]);
-    useEffect(() => {
-      const update = () => { if (root.current) setTheme(readTheme(root.current)); };
-      update(); return watchTheme(update);
-    }, []);
-    useEffect(() => {
-      if (!active) return;
-      const ids = visible.filter(p => !p.collapsed && !p.needsApproval).map(p => p.id);
-      client.embeddedWatch = ids; client.reconnect();
-      return () => { client.embeddedWatch = []; client.reconnect(); };
-    }, [active, visible.map(p => `${p.id}:${p.collapsed}:${p.needsApproval}`).join(",")]);
-    const ask = text => {
-      const result = composer.insert(text);
-      if (result === "unavailable") {
-        pushToast(label("输入框尚未就绪，请回到鲸鱼娘对话重试。", "Open the assistant conversation and try again."), { success: false, anchorToChat: false });
-        return false;
-      }
-      pushToast(label("已放入主对话输入框；检查后发送。", "Added to the conversation draft. Review and send."), { success: true, anchorToChat: true });
-      onDraftInserted?.();
-      return true;
-    };
-    const submitAdd = () => {
-      const trimmed = prompt.trim();
-      if (!trimmed) return;
-      if (ask(t("new.prefix") + trimmed)) {
-        setAdd(false);
-        setPrompt("");
-      }
-    };
-    const setEmbeddedHeight = (panelId, nextHeight) => {
-      const heights = { ...prefs.heights };
-      if (nextHeight === void 0) delete heights[panelId];
-      else heights[panelId] = clampPanelHeight(nextHeight);
-      persist({ ...prefs, heights });
-    };
-    const move = (id, delta) => {
-      const order = visible.map(p => p.id), i = order.indexOf(id), to = i + delta;
-      if (to >= 0 && to < order.length) { [order[i], order[to]] = [order[to], order[i]]; persist({ ...prefs, order }); }
-    };
-    const chatAnchor = toast?.anchorToChat && typeof document !== "undefined"
-      ? (document.querySelector('[data-dsh-frame-region="center"]') || document.querySelector("[data-conversation-content]") || null)
-      : null;
-    const focusOverlay = focusedView ? h("div", {
-      className: "dshpad-focus",
-      role: "dialog",
-      "aria-modal": "true",
-      "aria-label": focusedView.definition.title,
-      onClick: event => { if (event.target === event.currentTarget) setFocusedId(void 0); },
-    }, h("div", { className: "dshpad-focus-panel" },
-      h("header", { className: "dshpad-focus-head" },
-        focusedView.definition.icon ? h("span", { className: "dshpad-card-icon" }, focusedView.definition.icon) : null,
-        h("span", { className: "dshpad-focus-title" }, focusedView.definition.title),
-        h("button", { type: "button", className: "dshpad-icon-btn", "aria-label": t("card.close"), title: t("card.close"), onClick: () => setFocusedId(void 0) }, Icon2.close),
-      ),
-      awaitingFirstData(focusedView.definition, focusedView.data)
-        ? h("p", { className: "dshpad-card-note" }, t("card.firstData"))
-        : h(PanelFrame, {
-          view: focusedView,
-          histories: () => client.historiesOf(focusedView.id),
-          theme,
-          lang,
-          onRefresh: () => void client.act({ op: "refresh", panelId: focusedView.id }),
-          onAsk: text => { ask(text); },
-          onRun: (runPrompt, system) => client.run(focusedView.id, runPrompt, system),
-          onScriptError: () => {},
-          resizeLabel: t("card.resize"),
-          resizable: false,
-        }),
-    )) : null;
-    let portalFocus = focusOverlay;
-    if (focusOverlay && typeof document !== "undefined" && document.body) {
-      try {
-        const reactDom = require("react-dom");
-        if (typeof reactDom?.createPortal === "function") {
-          portalFocus = reactDom.createPortal(focusOverlay, document.body);
-        }
-      } catch {
-      }
-    }
-    return h("div", { className: "dshpad-root dshpad-whale-panels", ref: root },
-      !snap.connected ? h("p", { role: "status", className: "dshpad-whale-notice" }, label("面板连接中；保留上次读数。", "Connecting; keeping the last readings.")) : null,
-      toast && typeof Toast === "function" ? h(Toast, {
-        key: `${toast.seq}:${toast.text}`,
-        text: toast.text,
-        tone: toast.success ? "success" : void 0,
-        anchor: chatAnchor,
-        onDone: () => setToast(current => (current?.seq === toast.seq ? null : current)),
-      }) : null,
-      visible.length ? visible.map((view, index) => h(PanelCard, { key: view.id, view, client, theme, lang, t, now, fresh: snap.fresh === view.id,
-        height: prefs.heights[view.id],
-        onHeightChange: nextHeight => setEmbeddedHeight(view.id, nextHeight),
-        onAsk: ask, onExpand: () => setFocusedId(view.id), onDragStart: () => {},
-        onRemove: () => persist({ ...prefs, hidden: [...new Set([...prefs.hidden, view.id])] }),
-        sidebarActions: [
-          { label: label("上移", "Move up"), icon: MenuIcon.up, disabled: index === 0, run: () => move(view.id, -1) },
-          { label: label("下移", "Move down"), icon: MenuIcon.down, disabled: index === visible.length - 1, run: () => move(view.id, 1) },
-        ],
-      })) : h("div", { className: "dshpad-whale-empty" }, h("p", null, label("把想看的内容放在这里", "Keep useful panels here")), h(Button, { variant: "outline", onClick: () => setAdd(true) }, label("添加面板", "Add panel"))),
-      h(Modal, { open: add, title: label("添加自定义面板", "Add a custom panel"), closeLabel: label("关闭", "Close"), onClose: () => setAdd(false), footer: h(Fragment, null,
-        h(Button, { variant: "outline", onClick: () => setAdd(false) }, label("取消", "Cancel")),
-        h(Button, { variant: "primary", disabled: !prompt.trim(), onClick: submitAdd }, label("放入对话", "Add to draft"))) },
-        h("div", { className: "dshpad-whale-add" },
-          snap.panels.filter(p => prefs.hidden.includes(p.id)).map(view => h(Button, { key: view.id, variant: "outline", onClick: () => { persist({ ...prefs, hidden: prefs.hidden.filter(id => id !== view.id) }); setAdd(false); } }, label("添加已有：", "Restore: ") + view.definition.title)),
-          h("label", null, label("想创建什么面板？", "What should the new panel show?"), h(Input, {
-            value: prompt,
-            "data-modal-autofocus": "",
-            onChange: e => setPrompt(e.target.value),
-            onKeyDown: e => {
-              if (e.key === "Enter" && !e.nativeEvent?.isComposing) {
-                e.preventDefault();
-                submitAdd();
-              }
-            },
-            placeholder: label("例如：服务器性能、今日备忘", "For example: server health or notes"),
-          })),
-          h("p", null, label("需求会追加到当前草稿，发送后由鲸鱼娘创建；数据源仍需原有授权。", "Append a request to your draft, then send it. Existing data-source approvals still apply.")),
-        )),
-      portalFocus,
-    );
-  };
-}
 function ComposerBridge({ inputActions }) {
-  (0, import_react4.useEffect)(() => composer.attach(inputActions), [inputActions]);
+  (0, import_react6.useEffect)(() => composer.attach(inputActions), [inputActions]);
   return null;
 }
-var DockBoundary = class extends import_react4.Component {
-  state = {};
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-  render() {
-    const error = this.state.error;
-    if (error === void 0) return this.props.children;
-    return (0, import_react4.createElement)("div", {
-      style: {
-        position: "fixed",
-        right: "12px",
-        top: "64px",
-        zIndex: 99999,
-        maxWidth: "min(420px,80vw)",
-        padding: "10px 12px",
-        borderRadius: "12px",
-        background: "#b00020",
-        color: "#fff",
-        font: "12px/18px ui-monospace,Consolas,monospace",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word"
-      }
-    }, `\u9762\u677F\u575E\u6E32\u67D3\u5931\u8D25\uFF1A${error.message}`);
-  }
-};
 function apply(ctx) {
   try {
     start(ctx);
   } catch (error) {
-    console.error("[dsh-pad] \u9762\u677F\u575E\u542F\u52A8\u5931\u8D25\uFF0C\u5DF2\u7981\u7528\u3002\u5728\u63D2\u4EF6\u76EE\u5F55\u8FD0\u884C `node scripts/doctor.mjs` \u81EA\u68C0\uFF1A", error);
+    console.error("[dsh-pad] \u9762\u677F\u575E\u542F\u52A8\u5931\u8D25\uFF0C\u53EF\u5728\u5BA2\u6237\u7AEF\u63D2\u4EF6\u8BCA\u65AD\u4E2D\u91CD\u8BD5\uFF1A", error);
+    throw error;
   }
 }
 function start(ctx) {
@@ -3215,24 +4086,39 @@ function start(ctx) {
     return () => style.remove();
   }, "dsh-pad: styles");
   const client = new PadClient();
-  ctx.effect(() => {
-    client.start();
-    return () => client.stop();
-  }, "dsh-pad: stream");
   const Dock = createDock(client);
-  const WhalePanels = createWhalePanels(client);
-  ctx.slots.inject("whale.panels", () => ctx.slots.register({ name: "whale.panels", id: "dsh-pad.whale", locale: NS }, WhalePanels));
-  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+  function DockEntrance(props) {
+    const snapshot = (0, import_react6.useSyncExternalStore)(client.subscribe, client.getSnapshot);
+    const resetKey = JSON.stringify([snapshot.layout, snapshot.panels.map((panel) => [panel.id, panel.version])]);
+    return (0, import_react6.createElement)(RenderBoundary, { t: props.t, resetKey, dock: true }, (0, import_react6.createElement)(Dock, { t: props.t }));
+  }
+  recoverableSlot(ctx, "shell.overlay", "dsh-pad", () => ctx.slots.register({
     name: "shell.overlay",
     id: "dsh-pad",
     order: 50,
     locale: NS
-  }, (props) => (0, import_react4.createElement)(DockBoundary, null, (0, import_react4.createElement)(Dock, { t: props.t }))));
-  ctx.slots.inject("conversation.input.overlay", () => ctx.slots.register({
+  }, DockEntrance));
+  const WhalePanels = createWhalePanels(client);
+  function WhalePanelsEntrance(props) {
+    const snapshot = (0, import_react6.useSyncExternalStore)(client.subscribe, client.getSnapshot);
+    const resetKey = JSON.stringify(snapshot.panels.map((panel) => [panel.id, panel.version]));
+    return (0, import_react6.createElement)(RenderBoundary, { t: props.t, resetKey }, (0, import_react6.createElement)(WhalePanels, props));
+  }
+  ctx.slots.inject("whale.panels", () => ctx.slots.register({
+    name: "whale.panels",
+    id: "dsh-pad.whale",
+    registrant: "dsh-pad.whale",
+    locale: NS
+  }, WhalePanelsEntrance));
+  recoverableSlot(ctx, "conversation.input.overlay", "dsh-pad.composer-bridge", () => ctx.slots.register({
     name: "conversation.input.overlay",
     id: "dsh-pad.composer-bridge",
     order: 1e3
-  }, (props) => (0, import_react4.createElement)(ComposerBridge, { inputActions: props.inputActions })));
+  }, (props) => (0, import_react6.createElement)(ComposerBridge, { inputActions: props.inputActions })));
+  ctx.effect(() => {
+    client.start();
+    return () => client.stop();
+  }, "dsh-pad: stream");
 }
 return module.exports; } });
 //# sourceMappingURL=client.js.map

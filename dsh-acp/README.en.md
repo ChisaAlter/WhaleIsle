@@ -132,9 +132,10 @@ Both `acp_result.wait_ms` and delegation with `mode: "wait"` support event-drive
 
 ### Optional parameters
 
+- `cwd`: optional absolute target working directory (**required** when delegating from a `whale-girl` session to prevent landing in `data/whale/`). Must point to an existing regular directory; symlinks/junctions, Windows UNC/device paths, `$DSH_HOME` (default `~/.dsh`), `data/whale`, system/application credential directories (such as `%APPDATA%`, `%LOCALAPPDATA%`, `~/.config`, `~/.ssh`, `~/.aws`), user home directories, and filesystem roots are rejected.
 - `model`, `reasoning_effort`: use actual IDs from discovery. If the model is omitted, the first visible configured model is used.
 - `options: [{ "id": "…", "value": "…" }]`: supply advertised non-permission options, with string or boolean values.
-- `isolation: "worktree"`: create an independent worktree from committed `HEAD` under `.agent-worktrees/` and return its retained path. This does not copy uncommitted changes, move files, or clean the parent workspace. The directory is added to the repository's `.git/info/exclude`.
+- `isolation: "worktree"`: create an independent worktree from committed `HEAD` under `.agent-worktrees/` and return its retained path. This does not copy uncommitted changes, move files, or clean the parent workspace. The directory is added to the repository's `.git/info/exclude`. If pre-admission preparation fails, the unused orphan worktree is automatically cleaned up.
 - `interaction_mode: "plan"`: restrict work to read-only investigation and planning.
 - `runtime_mode`: `inherit`, `read-only`, or `approval-required`. Permissions can only be inherited or tightened relative to the host.
 - `mode: "wait"`, `timeout_ms`: bounded waiting; asynchronous by default. The default wait is 15000 ms, with a maximum of 20000 ms.
@@ -173,6 +174,8 @@ Configuring an Agent grants no extra permissions. Tool receipt projection and AC
 
 The Agent's own no-prompt mode, such as Antigravity `yolo`, is enabled only when the host uses both `danger-full-access` and approval `never`. Under `workspace-write`, sandbox checks still apply. Authentication, network, and model errors retain their actual cause; the plugin does not retry with weaker permissions.
 
+Model-initiated external delegation (`acp_delegate`, as well as `send_message` when restarting a finished external child for a new execution turn) passes a main-process desktop confirmation gate over the loopback control channel (`DSH_DESKTOP_INSTALL_URL` and in-process secret `DSH_DESKTOP_INSTALL_TOKEN`). If the channel is absent, unreachable, or declined, the call fails closed and does not start the external Agent.
+
 ### Local storage
 
 Data is stored under `$DSH_HOME`, or `~/.dsh` when it is unset:
@@ -183,6 +186,7 @@ Data is stored under `$DSH_HOME`, or `~/.dsh` when it is unset:
 | `acp-agent-sessions.json` | Mappings between host sessions and external ACP sessions. |
 | `acp-tasks.json` | Durable task receipts, including prompts, output, and retry identity. |
 | `acp-profiles/` | Default account directories; explicit `profileDir` takes precedence. |
+| `acp-runtime/` (or legacy `t3/`) | Managed downloaded Agent runtime binaries (`tools/`) and authentication status cache (`provider-status-cache/`). |
 | `acp-error.log` | Redacted diagnostic log, rotated to `.1` at 1 MiB. |
 
 Protect these files like conversation logs. Credentials are stored in local configuration; catalog responses mask secret-shaped values and retain unchanged values on save. On platforms supporting POSIX permissions, files are restricted to `0600` and plugin-owned account/cache directories to `0700`. Existing user-specified `profileDir` directories are not changed. Windows access control follows local directory permissions.
@@ -199,7 +203,7 @@ Stop the host and back up the current file before repairing a preserved file and
 
 - Node.js `^22.19.0 || >=24.0.0`.
 - A DeepSeek Harness / Whale Isle host providing Cordis 4, LLM adapter registration, connection, and Web services.
-- Delegation additionally requires the host's `subagents`, `tools`, and managed local child-session interfaces. Conversation Agent switching remains available without them.
+- Delegation additionally requires the host's `subagents`, `tools` (including `@deepseek-ai/dsh-tools`), managed local child-session interfaces, and the main-process desktop confirmation channel (`DSH_DESKTOP_INSTALL_URL` + in-process secret `DSH_DESKTOP_INSTALL_TOKEN`). On headless CLI/Web hosts without a desktop confirmation channel, `acp_delegate` fails closed while single-conversation Agent switching remains available.
 - Agent Teams requires a host Team service. Windows terminal sign-in requires correct ConPTY disposal in the host; installing this plugin does not update the host PTY module.
 
 **Standard DSH 0.2.2-rc.2:** the native settings entry and capability-driven reasoning options have been verified. Switching models with conversation history requires the paired [server context-ownership correction](tools/host-compat/README.md). The plugin package does not modify host modules automatically.
@@ -210,6 +214,18 @@ Managed delegation supports the nested request shape from host subagent 0.2.1 an
 
 ## Development and verification
 
+### Rebuild the client UI
+
+Modular client sources live under `client-src/` and compile to `client/client.js` (published packages ship only runtime files and the built `client/client.js`, excluding `client-src/`, `tests/`, and upstream build sources). After editing client code, run:
+
+```sh
+npm ci --prefix tools/runtime-build
+npm run build:client
+npm run check:client
+```
+
+`check:client` verifies in memory that `client/client.js` matches `client-src/` without writing to disk.
+
 ### Rebuild the bundled runtime
 
 Rebuild only when runtime source changes:
@@ -217,9 +233,10 @@ Rebuild only when runtime source changes:
 ```sh
 npm ci --prefix tools/runtime-build
 npm run build:runtime
+npm run check:runtime
 ```
 
-The runtime source snapshot and selected upstream overrides are recorded in `tools/runtime-build/upstream/SOURCE.json`. Builds do not depend on another project checkout or a T3 Code installation. The plugin owns account management, session routing, host collaboration, and UI. Adapted third-party code is isolated in the runtime directory; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for sources and licenses.
+`check:runtime` verifies in memory that `lib/vendor/agent-runtime.cjs` and `lib/vendor/mcp-bridge.cjs` match `tools/runtime-build/` byte-for-byte, and checks that `THIRD_PARTY_NOTICES.md` covers every statically bundled third-party package and its license. The runtime source snapshot, cherry-picked overlays, and local patches are recorded in `tools/runtime-build/upstream/SOURCE.json`. Builds do not depend on another project checkout or a T3 Code installation. The plugin owns account management, session routing, host collaboration, and UI. Adapted third-party code is isolated in the runtime directory; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for sources and licenses.
 
 ### Verify the affected paths
 

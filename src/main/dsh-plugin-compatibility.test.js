@@ -33,23 +33,23 @@ const ssh = {
   name: pathToFileURL(join(root, 'vendor', 'dsh-remote', 'lib/index.js')).href,
 };
 
-test('SSH declares rc.2 support while retaining verified earlier runtimes', async () => {
+test('SSH declares 0.2.3-alpha.2 support while retaining verified earlier runtimes', async () => {
   const { evaluatePluginCompatibility, getDshRuntimeVersion } = await moduleOf('@deepseek-ai/dsh-app-boot');
-  assert.equal(getDshRuntimeVersion(), '0.2.2-rc.2');
+  assert.equal(getDshRuntimeVersion(), '0.2.3-alpha.2');
   const manifest = JSON.parse(readFileSync(join(root, 'vendor', ssh.id, 'package.json'), 'utf8'));
   assert.equal(evaluatePluginCompatibility(manifest), undefined, 'SSH is admitted without exemptions');
-  for (const version of ['0.2.1-alpha.1', '0.2.1-alpha.3', '0.2.1-rc.2', '0.2.1-rc.4', '0.2.2-rc.1']) {
+  for (const version of ['0.2.1-alpha.1', '0.2.1-alpha.3', '0.2.1-rc.2', '0.2.1-rc.4', '0.2.2-rc.1', '0.2.2-rc.2']) {
     assert.equal(evaluatePluginCompatibility(manifest, {}, version), undefined, `SSH keeps support for ${version}`);
   }
-  for (const version of ['0.2.1-alpha.4', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.1', '0.2.2-rc.3', '0.2.2']) {
+  for (const version of ['0.2.1-alpha.4', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.1', '0.2.2-rc.3', '0.2.2', '0.2.3-alpha.1', '0.2.3-alpha.3', '0.2.3']) {
     assert.ok(evaluatePluginCompatibility(manifest, {}, version), `SSH does not assume compatibility with ${version}`);
   }
   const old = structuredClone(manifest);
-  for (const [peer, range] of Object.entries(old.peerDependencies)) if (peer.startsWith('@deepseek-ai/dsh-')) old.peerDependencies[peer] = range.replace(' || 0.2.2-rc.2', '');
-  assert.ok(evaluatePluginCompatibility(old), 'previous SSH metadata reproduces the rc.2 rejection');
+  for (const [peer, range] of Object.entries(old.peerDependencies)) if (peer.startsWith('@deepseek-ai/dsh-')) old.peerDependencies[peer] = range.replace(' || 0.2.3-alpha.2', '');
+  assert.ok(evaluatePluginCompatibility(old), 'previous SSH metadata reproduces the 0.2.3-alpha.2 rejection');
 });
 
-test('real rc.2 profile preflight and Loader expose SSH tools to native Sessions', { timeout: 60000 }, async () => {
+test('real 0.2.3-alpha.2 profile preflight and Loader expose SSH tools to native Sessions', { timeout: 60000 }, async () => {
   const { boot, loadOverlayPatches, bundlePatchPaths, prepareProfileEntries, PluginPackages, createRuntimeResolution } = await moduleOf('@deepseek-ai/dsh-app-boot');
   const { provideCmdline } = await moduleOf('@deepseek-ai/dsh-cmdline');
   const { ToolCallId } = await moduleOf('@deepseek-ai/dsh-llm');
@@ -61,7 +61,7 @@ test('real rc.2 profile preflight and Loader expose SSH tools to native Sessions
   await fs.writeFile(join(home, 'cordis.yml'), '[]\n');
   const web = dirname(cli.resolve('@deepseek-ai/dsh-web-app/package.json'));
   const webManifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
-  const profileContext = { name: 'plugin-rc2', dir: home, patchPath: join(home, 'cordis.patch.yml'), installAnchor: join(home, 'package.json'), cwd: directory, home, startedBundles: [], overlays: [], telemetryDisabledEnv: '1' };
+  const profileContext = { name: 'plugin-rc2', dir: home, patchPath: join(home, 'cordis.patch.yml'), installAnchor: join(home, 'package.json'), cwd: directory, home, startedBundles: [], overlayPaths: [], telemetryDisabledEnv: '1' };
   const patches = [
     ...loadOverlayPatches('plugin-rc2', join(harness, 'packages/bundle/base/cordis.patch.yml')),
     ...bundlePatchPaths(web, webManifest.dsh.bundle).flatMap(file => loadOverlayPatches('plugin-rc2', file)),

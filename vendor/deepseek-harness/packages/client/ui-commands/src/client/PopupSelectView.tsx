@@ -52,8 +52,8 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
   const view = state.open ? state : lastOpen.current
   const { mounted, state: motionState } = usePresence(state.open)
   const viewportRef = useRef<HTMLDivElement>(null)
-  const rows = useMemo(() => filterOptions(view.options, view.search, state.searchMode),
-    [state.options, state.search, state.searchMode])
+  const rows = useMemo(() => filterOptions(view.options, view.search),
+    [view.options, view.search])
   const groups = useMemo(() => groupOptions(rows), [rows])
   useEffect(() => {
     const viewport = viewportRef.current

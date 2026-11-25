@@ -109,7 +109,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-sidebar/src/client/SidebarRoot.module.css': ".sectionsBefore {}\n.sectionsAfter {}\n:global(html[data-sidebar-projects-first='true']) .regionArea > .workspacesSlot { order: -1; }\n",
       'packages/client/ui-sidebar/src/client/scroll-handoff.ts': "node.hasAttribute('data-sidebar-nested-scroller')\n",
       'packages/client/ui-settings-general/src/client/WhaleAssistantRow.tsx': 'setEnabled(config?.whaleAssistantEnabled !== false)\n',
-      'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css': '@container (max-width: 560px) {\n  .trigger .compactIcon { display: block; }\n  .trigger .activitySlot { position: static; width: 15px; height: 15px; }\n}\n',
+      'packages/client/ui-subagent/src/client/SubagentCatalog.module.css': '.root { -webkit-app-region: no-drag; }\n.switcherTrigger {}\n.menu { -webkit-app-region: no-drag; }\n',
       'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx': 'data-plugin-back\n',
       'packages/client/ui-settings-general/src/client/SettingsRoot.tsx': 'data-dsh-settings-close\n',
       'packages/client/ui-primitives/src/markdown/MarkdownText.tsx': 'renderCodeFence MarkdownCodeFenceRenderer\n',
@@ -184,8 +184,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-chat/tests/chat-cold-rows-styles.client.spec.ts': "describe('ChatView.module.css cold rows')\n",
       'packages/client/ui-primitives/src/StateDot.module.css': '.spinner { transform-origin: center; animation: dsh-state-dot-spin 1.5s linear infinite; }\n',
       'packages/client/ui-primitives/tests/state-dot-styles.client.spec.ts': "it('rotates the svg itself: an animated inner group would re-run SVG layout every frame')\n",
-      'packages/client/ui-chat/src/client/chat/ChatView.module.css': '@property --dsh-chat-cold-height { syntax: "<length>"; inherits: false; }\n[data-chat-cold] { content-visibility: auto; }\n@property --dsh-composer-flow-width { syntax: "*"; inherits: false; }\n@property --dsh-chat-composer-reserve { syntax: "<length>"; inherits: false; }\n.column { max-width: calc(var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, 100%)) - 32px); }\n.column > .older + :global([data-slot="conversation.chat.flow"]) > x {}\na ~ :is([data-chat-flow-key], [data-chat-running], [data-slot]) {}\n:global([data-conversation-scroll]) .toBottomSlot { bottom: calc(var(--dsh-to-bottom-offset, 0px) + 16px); }\n',
-      'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx': 'export const host = () => el?.closest("[data-conversation-scroll]")\nconst FLOW_VAR = 1\nconst settle = true\n',
+      'packages/client/ui-chat/src/client/chat/ChatView.module.css': '@property --dsh-chat-cold-height { syntax: "<length>"; inherits: false; }\n[data-chat-cold] { content-visibility: auto; }\n@property --dsh-chat-composer-reserve { syntax: "<length>"; inherits: false; }\n.column { max-width: var(--dsh-chat-content-width); }\n.column > .older + :global([data-slot="conversation.chat.flow"]) > x {}\na ~ :is([data-chat-flow-key], [data-chat-running], [data-slot]) {}\n:global([data-conversation-scroll]) .toBottomSlot { bottom: calc(var(--dsh-to-bottom-offset, 0px) + 16px); }\n',
+      'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx': 'export const host = () => el?.closest("[data-conversation-content]")\nconst USER_WIDTH_VAR = "--dsh-chat-user-width"\nconst key = "composerUserWidth"\nconst settle = true\n',
       'packages/client/ui-conversation/src/client/queue/QueueDock.module.css': '.dock { max-width: calc(var(--dsh-composer-resized-width, 100%) - 16px); }\n.clip { overflow: clip; }\n.closed { transform: translateY(100%); }\n.surface[data-state] .panelBody {}\n.dropBefore::after {}\n',
       'packages/client/ui-primitives/src/TaskDock.module.css': '.root { max-width: calc(var(--dsh-composer-resized-width, 100%) - 32px); }\n.closed { grid-template-rows: 0fr; margin-bottom: calc(-1 * var(--dsh-composer-stack-gap, 6px)); transition: none; }\n.slot { overflow: clip; }\n.closedSlide { transform: translateY(100%); }\n',
       'packages/client/ui-primitives/src/TaskDock.tsx': "import css from './TaskDock.module.css'\nusePresence(open)\nusePresence(expanded)\nexport const TaskDock = () => <section className={css.root} />\n<div className={css.slot}><div className={css.slide} /></div>\n",
@@ -216,7 +216,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-input-trigger/src/client/MenuView.tsx': "const lastOpen = useRef(state)\nconst lastOpenCrumbs = useRef(crumbs)\nif (state.open) {\n  lastOpen.current = state\n  lastOpenCrumbs.current = crumbs\n}\nconst view = state.open ? state : lastOpen.current\nconst { mounted, state: motionState } = usePresence(state.open)\ndata-dsh-motion=\"popover\"\ndata-state={motionState}\n",
       'packages/client/ui-primitives/src/HoverCard.tsx': "const compactMotion = variant === 'compact' && !inline\nconst { mounted: cardMounted, state: cardState } = usePresence(compactMotion && open)\ndata-dsh-motion={compactMotion ? 'popover' : undefined}\ndata-state={compactMotion ? cardState : closing ? 'closed' : 'open'}\n",
       'packages/client/ui-primitives/src/Tooltip.tsx': 'data-dsh-motion="fade"\ndata-state={state}\nusePresence(requestedVisible && !disabled)\n',
-      'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css': ':global(html[data-dsh-wallpaper]:not([data-dsh-transparent])) .composerSeat {}\n.heroWorkspaceRow { max-width: var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))); align-self: center; }\n@keyframes conversation-enter-swap {}\n@property --dsh-composer-reserve {}\n.scrollBody:not(:has([data-chat-flow])) { padding-bottom: var(--dsh-composer-reserve); }\n.composerSeat { background: transparent; }\n.composerSeat[data-composer-collapsed] {}\n.composerStack { --dsh-composer-dock-overhang: 320px; }\n.root:has([data-composer-entering]) .header > :is(.titleRow, .tabs) {}\n',
+      'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css': ':global(html[data-dsh-wallpaper]:not([data-dsh-transparent])) .composerSeat { padding-inline-end: var(--dsh-chat-end-inset); }\n.heroWorkspaceRow { max-width: var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)); align-self: center; }\n@keyframes conversation-enter-swap {}\n@property --dsh-composer-reserve {}\n.scrollBody:not(:has([data-chat-flow])) { padding-bottom: var(--dsh-composer-reserve); }\n.composerSeat { background: transparent; }\n.composerSeat[data-composer-collapsed] {}\n.composerStack { --dsh-composer-dock-overhang: 320px; }\n.root:has([data-composer-entering]) .header > :is(.titleRow, .tabs) {}\n',
       'packages/client/ui-conversation/src/client/skeleton/composer-scroll-collapse.ts': 'export function reduceComposerScroll() {}\nexport function isComposerCollapsed() {}\nexport function pinComposerExpanded() {}\n',
       'packages/client/ui-conversation/src/client/ComposerBeam.tsx': '<div data-composer-beam="" data-beam-breathing="off" style={{ "--dsh-composer-beam-period": "1.96s", "--dsh-composer-beam-bloom-opacity": 0.36, "--dsh-composer-beam-track-width": "2px" }} />\n',
       'packages/client/ui-conversation/src/client/ComposerBeam.module.css': '.beamLayer { inset: -4px; corner-shape: round; }\n.beamStroke { padding: var(--dsh-composer-beam-track-width, 2px); mask: conic-gradient(transparent 30%); -webkit-mask-composite: source-in, xor; mask-composite: intersect, exclude; }\n.beamInner { mask-composite: add; }\n.beamBloom { filter: blur(var(--dsh-composer-beam-glow-blur, 8px)); }\n.beamBloom::before {}\n',
@@ -300,7 +300,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'apps/web/tsconfig.json': '{\n  "exclude": ["tests/composer-resize-dock.e2e.ts", "tests/caption-drag-dead-zones.e2e.ts"]\n}\n',
       'packages/client/ui-layout/tests/caption-drag-regions.client.spec.ts': "it('leaves Session header seats and the titlebar cluster to the band')\n",
       'apps/web/tests/caption-drag-dead-zones.e2e.ts': "const kinds = ['dead no-drag', 'swallowed control']\n",
-      'packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx': "expect('--dsh-composer-flow-width')\n",
+      'packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx': "expect('--dsh-chat-user-width'); expect('composerUserWidth')\n",
       'packages/client/ui-approval/src/client/ApprovalCard.tsx': "root.style.setProperty('--dsh-approval-card-inset-top', '0px')\n",
       'packages/client/ui-approval/src/client/ApprovalPanel.module.css': '.root { padding: var(--dsh-approval-card-inset-top, 8px) 0; }\n',
       'apps/web/tests/approval-resize-geometry.e2e.ts': "it('places the approval card on the input card rect')\n",
@@ -573,11 +573,11 @@ test('assertDesktopForks throws when copy-ghostty-assets drops out of package.js
   assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /copy-ghostty-assets/);
 });
 
-test('assertDesktopForks throws when SubagentHeaderLineage.module.css regresses to stale .catalogIcon or 460px rules', (t) => {
+test('assertDesktopForks throws when SubagentCatalog.module.css loses caption no-drag hole', (t) => {
   const root = makeFixture(t);
-  const cssPath = path.join(root, ...'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css'.split('/'));
-  fs.writeFileSync(cssPath, '@container (max-width: 560px) { .catalogIcon { display: inline-flex; } .trigger .activitySlot { position: absolute; top: 0; right: 0; } }\n');
-  assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /SubagentHeaderLineage\.module\.css/);
+  const cssPath = path.join(root, ...'packages/client/ui-subagent/src/client/SubagentCatalog.module.css'.split('/'));
+  fs.writeFileSync(cssPath, '.switcherTrigger {}\n.menu {}\n');
+  assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /SubagentCatalog\.module\.css/);
 });
 
 test('assertDesktopForks accepts the current pinned vendor tree', () => {

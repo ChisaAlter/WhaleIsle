@@ -102,7 +102,7 @@ test('vendored pad runtime and license are included in desktop resources', () =>
   const root = path.join(__dirname, '..', '..');
   const sourceDir = path.join(root, 'vendor', 'dsh-pad');
   const manifest = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
-  assert.equal(manifest.version, '0.3.1');
+  assert.equal(manifest.version, '0.4.6');
   assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-tools']);
   assert.ok(manifest.peerDependencies['@deepseek-ai/dsh-llm']);
   assert.equal(fs.existsSync(path.join(sourceDir, 'LICENSE')), true);
@@ -191,7 +191,7 @@ test('Audit regression [P2]: dsh-pad HTTP source with {{env:...}} interpolation 
   const testSourceTool = tools.get('pad_test_source');
   assert.ok(testSourceTool);
   const baseUrl = `http://127.0.0.1:${targetServer.address().port}`;
-  const resWithSecret = await testSourceTool.execute({
+  const blockedRes = await testSourceTool.execute({
     source: {
       id: 's1',
       kind: 'http',
@@ -202,6 +202,34 @@ test('Audit regression [P2]: dsh-pad HTTP source with {{env:...}} interpolation 
       timeoutMs: 5000,
     },
   }, { signal: new AbortController().signal });
-  assert.match(resWithSecret, /HTTP 302/);
+  assert.match(blockedRes, /不允许访问本机或内网地址/);
+  assert.equal(leakedRequests, 0, 'HTTP source must block loopback/private targets by default');
+
+  const privateTools = new Map();
+  registerTools({
+    ctx: {
+      effect(fn) { fn(); },
+      tools: { register(def) { privateTools.set(def.name, def); return () => privateTools.delete(def.name); } },
+    },
+    store: { list: () => [] },
+    hub: {},
+    refresher: null,
+    limits: { minIntervalSec: 5, minAgentMinutes: 5 },
+    autoApprove: true,
+    allowPrivateHttp: true,
+    resolveSecret: async (name) => process.env[name],
+  });
+  const resWithSecret = await privateTools.get('pad_test_source').execute({
+    source: {
+      id: 's1',
+      kind: 'http',
+      url: `${baseUrl}/start`,
+      headers: { authorization: 'Bearer {{env:PAD_TEST_SECRET}}' },
+      parse: 'text',
+      intervalSec: 10,
+      timeoutMs: 5000,
+    },
+  }, { signal: new AbortController().signal });
+  assert.match(resWithSecret, /不允许重定向/);
   assert.equal(leakedRequests, 0, 'HTTP source with {{env:...}} must NOT follow 3xx redirects');
 });

@@ -171,6 +171,16 @@ def main():
             secondary_params = {**owner, "windowId": secondary["windowId"], "maxElements": 300, "maxDepth": 20}
             if args.selection_only:
                 call("click", {**owner, "windowId": primary["windowId"], "x": 20, "y": 20}, "STALE_SNAPSHOT")
+                original_size = actual["secondaryWindowSize"]
+                for zoomed in (True, False):
+                    current = call("getState", secondary_params)
+                    zoom = next(e for e in current["elements"] if "AXZoomWindow" in e["actions"])
+                    reply = call("performAction", {**owner, "windowId": secondary["windowId"],
+                                 "snapshotId": current["snapshotId"], "elementId": zoom["elementId"], "action": "AXZoomWindow"})
+                    assert reply["dispatched"], reply
+                    state = wait_state(lambda s: (s["secondaryWindowSize"] != original_size) == zoomed,
+                                       "Secondary window did not zoom or restore")
+                    assert state["primaryWindowSize"] == actual["primaryWindowSize"], state
                 observed = call("getState", {**owner, "maxElements": 300, "maxDepth": 20})
                 button = next(e for e in observed["elements"] if e["role"] == "AXButton" and e["title"] == "Increment primary")
                 field = next(e for e in observed["elements"] if e["role"] == "AXTextField")
@@ -198,7 +208,7 @@ def main():
                         call(method, {**target, "windowId": window_id, **extra}, "WINDOW_UNAVAILABLE")
                 assert json.loads(state_path.read_text())["count"] == 1
                 helper.eof()
-                print("PASS: coordinate observation, application snapshot, and selected-window rejection")
+                print("PASS: coordinate observation, window zoom and restore, application snapshot, and selected-window rejection")
                 return
             limited = call("getState", {**primary_params, "maxElements": 1})
             assert limited["truncated"] and "maxElements=1" in limited["tree"], limited
@@ -271,7 +281,7 @@ def main():
                     assert (after["cursorChanges"], after["hoverVisible"]) == (before["cursorChanges"], before["hoverVisible"]), after
 
                 def mouse_move(target):
-                    result = call("mouseMove", target if args.alternate_hover else {**target, "useSystemPointer": True})
+                    result = call("mouseMove", target if args.alternate_hover else {**target, "useSystemInput": True})
                     if not args.alternate_hover:
                         assert result["hoverRoute"] == "system-pointer" and result["systemPointerMoved"] is True, result
                     if args.alternate_hover:
@@ -306,7 +316,7 @@ def main():
                     mouse_move(target)
                     wait_state(lambda actual: actual["hoverVisible"], "Input-transparent overlay blocked hover")
                     before = cycle_overlay(2)
-                    call("mouseMove", {**target, "useSystemPointer": True}, "FOREGROUND_REQUIRED")
+                    call("mouseMove", {**target, "useSystemInput": True}, "FOREGROUND_REQUIRED")
                     after = wait_state(lambda actual: actual["cursorSamples"] >= before["cursorSamples"] + 2,
                                        "Pointer observation did not advance")
                     assert after["cursorChanges"] == before["cursorChanges"], "Rejected hover moved the system pointer"
@@ -317,7 +327,7 @@ def main():
                     if args.alternate_hover:
                         state = call("getState", primary_params)
                         child = button_target(state, "Use native hover details")
-                        result = call("mouseMove", {**child, "windowId": primary["windowId"], "useSystemPointer": True})
+                        result = call("mouseMove", {**child, "windowId": primary["windowId"], "useSystemInput": True})
                         assert result["hoverRoute"] == "system-pointer" and result["systemPointerMoved"], result
                         current = json.loads(state_path.read_text())
                         assert current["hoverVisible"] and current["defaultUIRequests"] == before["defaultUIRequests"], current

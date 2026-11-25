@@ -7,8 +7,10 @@
   "license": "MIT",
   "scripts": {
     "build:client": "node tools/build-client.mjs",
+    "check:client": "node tools/build-client.mjs --check",
     "build:runtime": "npm --prefix tools/runtime-build run build",
-    "test": "node --test tests/plugin.test.mjs tests/tasks.test.mjs tests/auth.test.mjs tests/reliability.test.mjs tests/client-options.test.mjs tests/hardening.test.mjs tests/team.test.mjs",
+    "check:runtime": "npm --prefix tools/runtime-build run check",
+    "test": "node --test tests/plugin.test.mjs tests/tasks.test.mjs tests/auth.test.mjs tests/reliability.test.mjs tests/client-options.test.mjs tests/hardening.test.mjs tests/team.test.mjs tests/notices-compliance.test.mjs tests/client-build-sync.test.mjs tests/security-sandbox.test.mjs tests/desktop-confirm.test.mjs tests/http-mcp.test.mjs tests/runtime-lifecycle.test.mjs tests/client-unit.test.mjs",
     "test:client": "node --test tests/client-compat.test.mjs",
     "test:host-compat": "node --test tests/host-compat.test.mjs",
     "test:host": "node tests/host-integration.mjs",
@@ -35,8 +37,17 @@
     "antigravity",
     "devin"
   ],
+  "devDependencies": {
+    "esbuild": "0.25.11"
+  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
   },
   "dsh": {
     "bundle": {
@@ -66,19 +77,10 @@
   "files": [
     "lib",
     "client",
+    "cordis.patch.yml",
     "README.md",
     "README.en.md",
-    "docs/screenshots/agent-picker.png",
-    "docs/screenshots/agent-account.png",
     "THIRD_PARTY_NOTICES.md",
-    "tests",
-    "tools/runtime-build/build.mjs",
-    "tools/runtime-build/entry.ts",
-    "tools/runtime-build/bridge-entry.ts",
-    "tools/runtime-build/package.json",
-    "tools/runtime-build/package-lock.json",
-    "tools/runtime-build/upstream",
-    "tools/host-compat",
-    "cordis.patch.yml"
+    "tools/host-compat"
   ]
 }

@@ -3,7 +3,7 @@ import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-sess
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { projectSessionNavigation } from '../src/client/navigation-projection.ts'
-import { currentGroupKey, deriveFlat, deriveGroups, deriveSearchResults, sessionMemberIds } from '../src/client/tree.ts'
+import { currentGroupKey, deriveFlat, deriveGroups, deriveSearchResults, sessionMemberIds, sessionSearchIndex } from '../src/client/tree.ts'
 
 const sid = (id: string) => id as SessionId
 const directory = 'C:\\work\\WhaleIsle-MyGo'
@@ -39,8 +39,9 @@ describe('owner Session directory navigation', () => {
     expect(currentGroupKey(navigation.list, navigation.workspaces, undefined)).toBe(workspace.workspaceId)
     expect(deriveFlat(navigation.list, sessionMemberIds(navigation.list, navigation.workspaces), rowState, new Map())
       .map(row => row.id)).toEqual([lead.id, ordinary.id])
+    const searchIndex = sessionSearchIndex(navigation.list, navigation.workspaces, [], 'default', undefined)
     expect(deriveSearchResults(navigation.list, navigation.workspaces, 'MyGo', [], 'default', new Map(),
-      { items: [], hasMore: false }, 20, undefined).items.map(row => row.id)).toEqual([lead.id, ordinary.id])
+      { items: [], hasMore: false }, 20, undefined, searchIndex).items.map(row => row.id)).toEqual([lead.id, ordinary.id])
     expect(navigation.list.byId[lead.id]?.cwd).toBe(materials)
     expect(workspace.sessionIds).toEqual([ordinary.id])
     expect(list.byId[lead.id]?.blank).toBe(true)

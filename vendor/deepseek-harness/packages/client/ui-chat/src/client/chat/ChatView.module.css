@@ -82,20 +82,9 @@
   padding-bottom: calc(16px + var(--dsh-chat-composer-reserve));
 }
 
-/* Message column: shared chat width (ConversationRoot --dsh-chat-content-width),
-   centered on the same axis as the input box (which caps at chat + 16px); the
-   scroller itself stays full-bleed. When the input card is drag-resized the
-   column host publishes --dsh-composer-resized-width and the transcript
-   follows (card minus both side clearances) so the shared width axis holds;
-   the fallback keeps the resting width. */
-/* A width drag writes the flow width on the column element itself. The property
-   does not inherit, so a drag frame restyles this one box instead of every
-   message under it (the inherited --dsh-composer-resized-width on the column
-   host is published once, when the drag ends). */
-@property --dsh-composer-flow-width {
-  syntax: '*';
-  inherits: false;
-}
+/* Message column: shared chat width (ConversationRoot --dsh-chat-content-width,
+   driven by the unified #8858 --dsh-chat-user-width axis for both gutter handles
+   and composer edge drags), centered on the same axis as the input box. */
 
 /* Rows far from the reader (chat-cold-rows.ts marks them) skip style, layout and
    paint of their contents. The intrinsic size is the row's last measured height, so
@@ -114,11 +103,7 @@
 
 .column {
   position: relative;
-  max-width: calc(
-    var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))) -
-    var(--dsh-composer-side-clearance) -
-    var(--dsh-composer-side-clearance)
-  );
+  max-width: var(--dsh-chat-content-width);
   width: 100%;
   margin: 0 auto;
   display: flex;
@@ -413,6 +398,40 @@
 
 /* Floating controls sit outside the clipped transcript. A standalone Chat
    anchors them to its frame; the shared host supplies the sticky scrollport. */
+/* The aside layer: zero height at the frame's top, sticky in a shared
+   scrollport so its occupant stays put while the transcript scrolls and
+   inherits the scrollport's --dsh-composer-height and
+   --dsh-conversation-viewport-height. Above the turn rail (7) and the
+   back-to-bottom control (8). It publishes the end gutter, the inline space
+   between the transcript column and the frame's end edge, for the
+   occupant's inline sizes: the percentage resolves against the layer in an
+   element whose containing block is the layer, as it does in the
+   back-to-bottom control's padding below. The Conversation body's end
+   reserve narrows the frame by --dsh-chat-end-inset; the layer reaches back
+   across it to the scrollport's end edge, and the gutter counts it. The
+   margin follows the body's --dsh-chat-end-reserve-transition, as the
+   scrollport's padding does, so the layer's end edge stays put while the
+   inset animates. */
+.asideSlot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 9;
+  height: 0;
+  margin-inline-end: calc(-1 * var(--dsh-chat-end-inset, 0px));
+  transition: margin-inline-end var(--dsh-chat-end-reserve-transition, 0s);
+  pointer-events: none;
+  --dsh-chat-aside-gutter: calc(
+    var(--dsh-chat-end-inset, 0px)
+    + max(0px, (100% - var(--dsh-chat-end-inset, 0px) - var(--dsh-chat-content-width, 100%)) / 2)
+  );
+}
+
+:global([data-conversation-scroll]) .asideSlot {
+  position: sticky;
+}
+
 .toBottomSlot {
   position: absolute;
   right: 0;

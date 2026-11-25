@@ -35,7 +35,7 @@ import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
   currentGroupKey, deriveArchived, deriveFlat, deriveGroups, derivePinned, deriveSearchResults, orderByRecency, owningGroupKey,
-  owningParentFolder, pinCurrentBlank, PINNED_SECTION_KEY, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
+  owningParentFolder, pinCurrentBlank, PINNED_SECTION_KEY, reconcileManualOrder, sessionMemberIds, sessionSearchIndex, UNGROUPED_KEY,
 } from '../tree.ts'
 import {
   ArchivedSectionHeader, ArchivedSessionNodeItem, GroupSessionRun, PinnedSectionHeader, ProjectRowItem,
@@ -708,8 +708,8 @@ function SessionTree({
               if (drag === null) return
               commitSessionDrag(drag, { id: node.id, half: normalizeHalf(half) })
             },
-            end: () => {
-              if (drag?.over !== null && drag?.over !== undefined) commitSessionDrag(drag, drag.over)
+            end: (claimed: boolean) => {
+              if (!claimed && drag?.over !== null && drag?.over !== undefined) commitSessionDrag(drag, drag.over)
               else setDrag(null)
               sessionDropCommitted.current = false
             },
@@ -972,8 +972,8 @@ function FlatList({
                 drop: (half) => {
                   if (drag !== null) commitDrag(drag, { id: node.id, half })
                 },
-                end: () => {
-                  if (drag?.over !== null && drag?.over !== undefined) commitDrag(drag, drag.over)
+                end: (claimed) => {
+                  if (!claimed && drag?.over !== null && drag?.over !== undefined) commitDrag(drag, drag.over)
                   else setDrag(null)
                   dropCommitted.current = false
                 },
@@ -1051,6 +1051,19 @@ function SearchResults({
   const currentRemote = remote.query === query
     ? remote
     : { query, status: 'loading' as const, items: [], hasMore: false }
+  // The Session list republishes while replies run; each republish updates the
+  // previous index so unchanged titles, labels, and ids keep their preparation.
+  const [built, setBuilt] = useState(() => ({
+    list, workspaces, archivedSessionIds, archivedFilter, scratchCwd,
+    index: sessionSearchIndex(list, workspaces, archivedSessionIds, archivedFilter, scratchCwd),
+  }))
+  let index = built.index
+  if (built.list !== list || built.workspaces !== workspaces
+    || built.archivedSessionIds !== archivedSessionIds || built.archivedFilter !== archivedFilter
+    || built.scratchCwd !== scratchCwd) {
+    index = sessionSearchIndex(list, workspaces, archivedSessionIds, archivedFilter, scratchCwd, built.index)
+    setBuilt({ list, workspaces, archivedSessionIds, archivedFilter, scratchCwd, index })
+  }
   const results = useMemo(
     () => deriveSearchResults(
       list,
@@ -1062,8 +1075,9 @@ function SearchResults({
       currentRemote,
       resultLimit,
       scratchCwd,
+      index,
     ),
-    [list, workspaces, query, archivedSessionIds, archivedFilter, statuses, currentRemote, resultLimit],
+    [list, workspaces, query, archivedSessionIds, archivedFilter, statuses, currentRemote, resultLimit, scratchCwd, index],
   )
   const pending = currentRemote.status === 'loading'
   const currentId = panelActive

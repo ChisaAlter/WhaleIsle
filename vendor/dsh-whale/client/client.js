@@ -23617,6 +23617,39 @@ var LEGACY_WHALE_PANEL_ID = "whale";
 var PREFILL_CHAT_DRAFT_EVENT = "dsh-bots:prefill-chat-draft";
 var FLASH_CHAT_PANE_EVENT2 = "dsh-bots:flash-chat-pane";
 var HAND_TO_BOT_EVENT = "dsh-bots:hand-to-bot";
+var WHALE_STYLE_SELECTOR = "style[data-dsh-whale-style]";
+var cachedWhaleStyles = null;
+function mountWhaleStyles() {
+  if (typeof document === "undefined" || !document.head) {
+    return () => {
+    };
+  }
+  const head = document.head;
+  if (cachedWhaleStyles === null && typeof head.querySelectorAll === "function") {
+    const nodes = [...head.querySelectorAll(WHALE_STYLE_SELECTOR)];
+    cachedWhaleStyles = nodes.map((node) => ({
+      id: node.getAttribute?.("data-dsh-whale-style") ?? "",
+      css: node.textContent ?? ""
+    })).filter((entry) => entry.id.length > 0);
+  }
+  if (cachedWhaleStyles) {
+    for (const entry of cachedWhaleStyles) {
+      const existing = typeof head.querySelector === "function" ? head.querySelector(`style[data-dsh-whale-style=${JSON.stringify(entry.id)}]`) : null;
+      if (!existing && typeof document.createElement === "function") {
+        const style = document.createElement("style");
+        style.setAttribute?.("data-dsh-whale-style", entry.id);
+        style.textContent = entry.css;
+        head.appendChild?.(style);
+      }
+    }
+  }
+  return () => {
+    if (typeof head.querySelectorAll !== "function") return;
+    for (const node of [...head.querySelectorAll(WHALE_STYLE_SELECTOR)]) {
+      node.remove?.();
+    }
+  };
+}
 var name = "dsh-whale";
 var inject = [
   "slots",
@@ -23980,6 +24013,7 @@ function apply(ctx) {
     zh: LOCALES["zh-CN"],
     en: LOCALES["en-US"]
   }), "dsh-whale: locale dictionaries");
+  ctx.effect(mountWhaleStyles, "dsh-whale: styles");
   const openDefaultBot = async () => {
     if (!botsStore.getState().loaded) {
       await botsStore.refresh();

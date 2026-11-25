@@ -227,10 +227,10 @@ const FORK_FILE_MARKERS = [
   // rc.1 renamed the stats row to StatsPills (stat-dialog pair); the follow
   // contract moved with it.
   { file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css', includes: ['dsh-composer-resized-width'] },
-  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['dsh-composer-resized-width', '@property --dsh-composer-flow-width'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx', includes: ['data-conversation-scroll', 'FLOW_VAR', 'settle'] },
+  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['max-width: var(--dsh-chat-content-width);'], excludes: ['--dsh-composer-flow-width'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx', includes: ['[data-conversation-content]', '--dsh-chat-user-width', 'composerUserWidth', 'settle'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['data-composer-flow=""'] },
-  { file: 'packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx', includes: ['--dsh-composer-flow-width'] },
+  { file: 'packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx', includes: ['--dsh-chat-user-width', 'composerUserWidth'] },
   // Approval takeover: the card covers the drag-resized composer card's rect.
   { file: 'packages/client/ui-approval/src/client/ApprovalCard.tsx', includes: ['--dsh-approval-card-inset-top'] },
   { file: 'packages/client/ui-approval/src/client/ApprovalPanel.module.css', includes: ['var(--dsh-approval-card-inset-top'] },
@@ -324,7 +324,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-input-trigger/src/client/MenuView.tsx', includes: ['const lastOpen = useRef(state)', 'lastOpenCrumbs', 'lastOpen.current = state', 'const view = state.open ? state : lastOpen.current', 'const { mounted, state: motionState } = usePresence(state.open)', 'data-dsh-motion="popover"', 'data-state={motionState}'] },
   { file: 'packages/client/ui-primitives/src/HoverCard.tsx', includes: ["const compactMotion = variant === 'compact' && !inline", 'usePresence(compactMotion && open)', "data-dsh-motion={compactMotion ? 'popover' : undefined}", "data-state={compactMotion ? cardState : closing ? 'closed' : 'open'}"] },
   { file: 'packages/client/ui-primitives/src/Tooltip.tsx', includes: ["data-dsh-motion=\"fade\"", 'data-state={state}', 'usePresence(requestedVisible && !disabled)'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: [':not([data-dsh-transparent])', '.heroWorkspaceRow', 'max-width: var(--dsh-composer-flow-width, var(--dsh-composer-resized-width', 'align-self: center'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: [':not([data-dsh-transparent])', '.heroWorkspaceRow', 'max-width: var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))', 'padding-inline-end: var(--dsh-chat-end-inset);', 'align-self: center'] },
   { file: 'packages/client/ui-conversation/src/client/ComposerBeam.tsx', includes: ['data-composer-beam', '--dsh-composer-beam-period', '--dsh-composer-beam-bloom-opacity', '--dsh-composer-beam-track-width', 'data-beam-breathing'] },
   { file: 'packages/client/ui-conversation/src/client/ComposerBeam.module.css', includes: ['.beamBloom::before', 'inset: -4px', 'blur(var(--dsh-composer-beam-glow-blur', '.beamStroke {', 'padding: var(--dsh-composer-beam-track-width', 'transparent 30%', '-webkit-mask-composite: source-in, xor', 'mask-composite: intersect, exclude', 'mask-composite: add', 'corner-shape: round'] },
   { file: 'packages/client/ui-chat/src/client/chat/StatsPills.tsx', includes: ['data-stats-line'] },
@@ -597,13 +597,11 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar/src/client/SidebarRoot.module.css', includes: ['.sectionsBefore', '.sectionsAfter', "data-sidebar-projects-first='true'"] },
   { file: 'packages/client/ui-sidebar/src/client/scroll-handoff.ts', includes: ['data-sidebar-nested-scroller'] },
   { file: 'packages/client/ui-settings-general/src/client/WhaleAssistantRow.tsx', includes: ['whaleAssistantEnabled !== false'] },
-  // Narrow conversation header (<= 560px): subagent trigger collapses to a centered
-  // 28x28 icon button with normal-flow .activitySlot (never pinned top-right by
-  // stale .catalogIcon absolute-positioning rules or duplicated at 460px).
+  // Subagent catalog renders inside the AppFrame caption band and fixed popover:
+  // keep -webkit-app-region: no-drag holes on both .root and .menu.
   {
-    file: 'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css',
-    includes: ['@container (max-width: 560px)', 'position: static;', '.trigger .compactIcon'],
-    excludes: ['.catalogIcon', '.catalogChevron', '@container (max-width: 460px)'],
+    file: 'packages/client/ui-subagent/src/client/SubagentCatalog.module.css',
+    includes: ['-webkit-app-region: no-drag;', '.switcherTrigger', '.menu'],
   },
   ...WAVE1_FORK_FILE_MARKERS,
   ...WAVE2_FORK_FILE_MARKERS,

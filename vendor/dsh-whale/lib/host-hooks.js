@@ -345,6 +345,32 @@ async function resolveResidentLiveAgent(host, sessionId) {
   return resolved && !resolved.error ? resolved.agent : null;
 }
 
+/**
+ * Resolve HTTP auth rejection for an owner-only `/dsh-whale` route handler.
+ * Prefers WebServer's admitted `peer`, falling back to `ctx.connection.admit(req)`
+ * when invoked without a third argument; fails closed with 401/403.
+ * @param {any} ctx
+ * @param {any} req
+ * @param {any} [peer]
+ * @returns {number | undefined}
+ */
+export function resolveOwnerPeerRejection(ctx, req, peer) {
+  let admittedPeer = peer;
+  if (admittedPeer === undefined) {
+    const connection = ctx?.get?.('connection') ?? ctx?.connection;
+    if (connection && typeof connection.admit === 'function') {
+      const admission = connection.admit(req);
+      if (admission && typeof admission === 'object' && 'rejection' in admission) {
+        return admission.rejection;
+      }
+      admittedPeer = admission?.peer;
+    }
+  }
+  if (!admittedPeer) return 401;
+  if (admittedPeer.principal?.kind !== 'owner') return 403;
+  return undefined;
+}
+
 export function createWhalePulseWake(ctx, host, scope, ensureAssistantSession) {
   return async (text) => {
     const ensured = await ensureAssistantSession(ctx, scope, host.sessionController);

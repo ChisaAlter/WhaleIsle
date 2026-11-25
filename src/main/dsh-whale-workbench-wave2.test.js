@@ -132,7 +132,9 @@ nodeTest('/dsh-whale/events SSE enforces auth, streams authoritative snapshots &
     agentPresets: { register: () => () => {} },
     systemPrompt: { section: () => () => {} },
     connection: {
-      requestRejection: (req) => (req.headers.authorization === 'Bearer ok-token' ? undefined : 401),
+      admit: (req) => (req.headers.authorization === 'Bearer ok-token'
+        ? { peer: { principal: { kind: 'owner' } } }
+        : { rejection: 401 }),
     },
     webServer: {
       register: (route) => {

@@ -8,6 +8,7 @@ const { withOwnedTempDir } = require('../../shared/fs-safe');
 const {
   detachWhaleBridgeDshChannel,
   detachMagpieDshChannels,
+  ensureMagpieCredentialRef,
   readDshDefaultModel,
   remapDshDefaultModel,
   syncDshToMagpieGateway,
@@ -47,6 +48,8 @@ test('syncDshToMagpieGateway upserts magpie channels while preserving user provi
     assert.match(yaml, /magpie-anthropic:/);
     assert.match(yaml, /apiKeyEnv: MAGPIE_GATEWAY_KEY/);
     const creds = fs.readFileSync(path.join(dshHome, '.credentials.yaml'), 'utf8');
+    assert.match(creds, /^version:\s*1$/m);
+    assert.match(creds, /^refs:$/m);
     assert.match(creds, /MAGPIE_GATEWAY_KEY:\s*"?magpie"?/);
 
     // Detaching removes only owned Magpie channels, keeping custom-openai intact
@@ -127,5 +130,45 @@ test('syncDshToMagpieGateway throws on non-ok /v1/models and preserves existing 
       }),
       /非回环/,
     );
+  });
+});
+
+test('ensureMagpieCredentialRef writes version: 1 and losslessly migrates legacy unversioned credentials files', async () => {
+  // 1. Fresh file includes version: 1 and refs.MAGPIE_GATEWAY_KEY
+  await withOwnedTempDir('magpie-creds-new-', async (dshHome) => {
+    assert.equal(ensureMagpieCredentialRef(dshHome), true);
+    const text = fs.readFileSync(path.join(dshHome, '.credentials.yaml'), 'utf8');
+    assert.equal(text, 'version: 1\nrefs:\n  MAGPIE_GATEWAY_KEY: magpie\n');
+  });
+
+  // 2. Unversioned refs-only file (from older dsh-sync) gets version: 1 prepended without losing values
+  await withOwnedTempDir('magpie-creds-unversioned-refs-', async (dshHome) => {
+    const file = path.join(dshHome, '.credentials.yaml');
+    fs.writeFileSync(file, 'refs:\n  MAGPIE_GATEWAY_KEY: magpie\n  USER_KEY: "keep-secret"\n');
+    assert.equal(ensureMagpieCredentialRef(dshHome), true);
+    const text = fs.readFileSync(file, 'utf8');
+    assert.equal(text, 'version: 1\nrefs:\n  MAGPIE_GATEWAY_KEY: magpie\n  USER_KEY: "keep-secret"\n');
+  });
+
+  // 3. Pre-release flat layout is nested under version: 1 + refs: while preserving all existing entries
+  await withOwnedTempDir('magpie-creds-flat-', async (dshHome) => {
+    const file = path.join(dshHome, '.credentials.yaml');
+    fs.writeFileSync(file, '# user comment\nOPENAI_API_KEY: "sk-test-1"\nDEEPSEEK_API_KEY: sk-test-2\n');
+    assert.equal(ensureMagpieCredentialRef(dshHome), true);
+    const text = fs.readFileSync(file, 'utf8');
+    assert.match(text, /^version: 1\nrefs:\n/);
+    assert.match(text, /  MAGPIE_GATEWAY_KEY: magpie\n/);
+    assert.match(text, /  # user comment\n/);
+    assert.match(text, /  OPENAI_API_KEY: "sk-test-1"\n/);
+    assert.match(text, /  DEEPSEEK_API_KEY: sk-test-2\n/);
+  });
+
+  // 4. Flat layout with custom MAGPIE_GATEWAY_KEY migrates to version: 1 without clobbering user value
+  await withOwnedTempDir('magpie-creds-custom-', async (dshHome) => {
+    const file = path.join(dshHome, '.credentials.yaml');
+    fs.writeFileSync(file, 'MAGPIE_GATEWAY_KEY: "custom-val"\nOTHER_KEY: keep\n');
+    assert.equal(ensureMagpieCredentialRef(dshHome), false);
+    const text = fs.readFileSync(file, 'utf8');
+    assert.equal(text, 'version: 1\nrefs:\n  MAGPIE_GATEWAY_KEY: "custom-val"\n  OTHER_KEY: keep\n');
   });
 });

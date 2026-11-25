@@ -1,9 +1,9 @@
 /** Host registration for conversation preferences and next-message suggestions. */
 import type {} from '@deepseek-ai/dsh-settings'
 
-import type { Volatile, Context } from '@deepseek-ai/cordis'
-import type { ConversationSettings } from './submission-settings.ts'
+import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { ConversationConfig } from './types.ts'
 
 import { ConversationSettingsFields } from './submission-settings.ts'
 import { applyNextPrompt } from './next-prompt.ts'
@@ -33,8 +33,8 @@ export {
   type TypingFxPresets, type TypingFxStyle,
 } from './submission-settings.ts'
 
-/** Every browser-editable preference is a live Host configuration field. */
-export type Config = { [K in keyof ConversationSettings]: Volatile<ConversationSettings[K]> }
+/** Every browser-editable preference is a live Host configuration field synced to the browser. */
+export type Config = ConversationConfig
 
 /** Live preferences projected to the browser. */
 export const Config = z.object({
@@ -55,6 +55,7 @@ export const Config = z.object({
   typingFxStyle: ConversationSettingsFields.typingFxStyle.volatile(),
   typingFxPresets: ConversationSettingsFields.typingFxPresets.volatile(),
   customInstructions: ConversationSettingsFields.customInstructions.volatile(),
+  maxConcurrentFileUploads: z.natural().min(1).default(2).volatile(),
 })
 
 /** Register browser conversation preferences.

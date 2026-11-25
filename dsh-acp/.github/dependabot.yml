@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /tools/runtime-build
+    schedule:
+      interval: weekly
+    ignore:
+      # Keep pinned Effect 4.0.5 API compatibility with the vendored snapshot unless explicitly upgraded.
+      - dependency-name: "effect"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@effect/platform-node"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@effect/platform-node-shared"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

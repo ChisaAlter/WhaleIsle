@@ -79,7 +79,7 @@ describe('session presentation host commands', () => {
     expect(session.snapshotEvents().map(event => event.type)).toEqual(['session/presentation'])
     expect(session.snapshotEvents()[0]).toMatchObject({ seq: 0, data: presentation })
     expect(metadataOf(ctx, session)).toEqual({ blank: true, lastPromptAt: null, presentation })
-    expect(ctx.sessionProjections.checkpoint(session).sessionListMetadata).toMatchObject({ ver: 3 })
+    expect(ctx.sessionProjections.checkpoint(session).sessionListMetadata).toMatchObject({ ver: 1 })
 
     await expect(listedItem(remote, id)).resolves.toMatchObject({
       blank: true,

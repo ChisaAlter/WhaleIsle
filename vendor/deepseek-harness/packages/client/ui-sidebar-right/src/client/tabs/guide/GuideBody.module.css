@@ -1,22 +1,28 @@
 /* The guide body's own sheet: its domain owns these rules, so the shell's
    stylesheet does not carry them. Tokens only. */
 
-/* The guide centres its heading and card grid in the pane; the minimum height
-   lets a short guide sit centred while a tall one grows into the scroller. */
+/* The guide centres its heading and card grid in the pane; the guide fills
+   the tab body, which clips, and scrolls itself; `safe` centring starts a
+   guide taller than the pane at its top so every capsule stays reachable. */
 .guide {
   --dsl-guide-entry-radius: var(--dsw-radius-md);
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   box-sizing: border-box;
-  min-height: 100%;
-  flex: none;
   padding: 16px;
+  overflow-y: auto;
 }
 
-/* The lift, as a share of the pane's height: the centred column rises 5% of
-   the pane, and a short pane gives it up before the capsules clip. */
+/* The lift, as a share of the pane's height (a column flex basis resolves
+   against it): the centred column rises 5% of the pane, and a short pane
+   gives it up before the column overflows. */
+.guide::after {
+  content: '';
+  flex: 0 1 10%;
+}
 
 
 /* The heading above the grid, matching the surfaces empty-state intro: the
@@ -69,6 +75,8 @@
   font: inherit;
   text-align: center;
   background: var(--dsw-alias-bg-layer-2);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   border: none;
   border-radius: var(--dsl-guide-entry-radius);
   cursor: pointer;
