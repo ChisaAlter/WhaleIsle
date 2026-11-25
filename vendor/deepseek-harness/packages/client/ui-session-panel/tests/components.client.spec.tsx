@@ -64,7 +64,7 @@ describe('SessionPanelToggle', () => {
       id: SessionId
       blank?: boolean
       running?: boolean
-      presentation?: { composer?: string }
+      presentation?: { owner?: string; composer?: string }
     } | null
   }
 
