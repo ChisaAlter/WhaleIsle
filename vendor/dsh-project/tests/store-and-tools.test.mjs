@@ -490,8 +490,12 @@ test('auto-dispatch on approveTask, autonomy=auto, paused=false, and schedule() 
   const { task: t4 } = await service.addTask(project.id, { title: 'Waiting for admission' });
   admissionOpen = true;
   service.schedule();
-  await new Promise((r) => setTimeout(r, 40));
-  const afterSchedule = await service.readProject(project.id);
+  const scheduleDeadline = Date.now() + 2000;
+  let afterSchedule = await service.readProject(project.id);
+  while (afterSchedule.tasks.find((item) => item.id === t4.id).status !== 'running' && Date.now() < scheduleDeadline) {
+    await new Promise((r) => setTimeout(r, 25));
+    afterSchedule = await service.readProject(project.id);
+  }
   assert.equal(afterSchedule.tasks.find((item) => item.id === t4.id).status, 'running');
 });
 

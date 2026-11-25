@@ -965,7 +965,10 @@ test('3-tab context drawer: action-first threads order, Library add/preview/remo
   const memSearchInput = panel.querySelector('input[aria-label="搜索共享记忆"]');
   assert.ok(memSearchInput);
   await act(async () => { setControlValue(b.dom, memSearchInput, 'CSRF'); });
-  await flushUi(240);
+  await waitFor(() =>
+    b.requestLog.some((r) => r.method === 'GET' && r.url.includes(`/projects/${project.id}/memory?q=CSRF`))
+    && panel.querySelectorAll('[data-memory-topic]').length === 1,
+  );
   assert.ok(
     b.requestLog.some((r) => r.method === 'GET' && r.url.includes(`/projects/${project.id}/memory?q=CSRF`)),
     'Memory search must query backend /memory?q= endpoint',
