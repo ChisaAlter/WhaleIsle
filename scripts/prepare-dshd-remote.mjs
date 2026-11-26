@@ -97,7 +97,7 @@ function pruneSqliteBuildArtifacts(sqlitePackage) {
   fs.rmSync(path.join(sqlitePackage, 'build'), { recursive: true, force: true });
   fs.mkdirSync(path.dirname(nativeFile), { recursive: true });
   fs.writeFileSync(nativeFile, native);
-  for (const entry of ['bin', 'deps', 'src', 'binding.gyp']) {
+  for (const entry of ['bin', 'deps', 'prebuilds', 'src', 'binding.gyp']) {
     fs.rmSync(path.join(sqlitePackage, entry), { recursive: true, force: true });
   }
 }
@@ -108,6 +108,9 @@ function prepareElectronSqliteRuntime(targetRoot = runtimeRoot) {
     throw new Error('[dshd-remote] Electron or @electron/rebuild is missing; run npm ci first');
   }
   const electronVersion = JSON.parse(fs.readFileSync(electronPackage, 'utf8')).version;
+  const sqlitePackage = path.join(targetNodeModules, 'better-sqlite3');
+  // better-sqlite3@13+ skips native compilation in binding.gyp when a host prebuild exists; remove prebuilds before @electron/rebuild so it compiles against Electron's ABI.
+  fs.rmSync(path.join(sqlitePackage, 'prebuilds'), { recursive: true, force: true });
   console.log(`[dshd-remote] rebuilding better-sqlite3 for Electron ${electronVersion}`);
   run(
     process.execPath,
@@ -123,7 +126,6 @@ function prepareElectronSqliteRuntime(targetRoot = runtimeRoot) {
     { shell: false },
   );
 
-  const sqlitePackage = path.join(targetNodeModules, 'better-sqlite3');
   probeElectronSqliteRuntime(sqlitePackage);
   pruneSqliteBuildArtifacts(sqlitePackage);
   probeElectronSqliteRuntime(sqlitePackage);
