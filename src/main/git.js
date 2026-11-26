@@ -1,8 +1,9 @@
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { withOwnedTempDir } = require('../shared/fs-safe');
 const { generateCommitMessage, generatePrContent } = require('./git-generate');
 const { createTrace2Monitor } = require('./git-trace2');
+const { unquoteGitPath } = require('./git-diff');
 const {
   asCwd,
   fail,
@@ -120,23 +121,20 @@ function parseBranchAb(value) {
   return { ahead: Number(match[1]), behind: Number(match[2]) };
 }
 
+/** @param {string} line @param {number} count */
+function skipSpaceFields(line, count) {
+  let idx = 0;
+  for (let seen = 0; seen < count; seen += 1) { const next = line.indexOf(' ', idx); if (next < 0) return ''; idx = next + 1; }
+  return line.slice(idx);
+}
+/** @param {unknown} raw */
+function unquotePorcelainPath(raw) { const value = unquoteGitPath(raw); return value.length > 0 ? value : null; }
 function parsePorcelainV2Path(line) {
-  if (line.startsWith('? ') || line.startsWith('! ')) {
-    const simple = line.slice(2).trim();
-    return simple.length > 0 ? simple : null;
-  }
-  if (!(line.startsWith('1 ') || line.startsWith('2 ') || line.startsWith('u '))) {
-    return null;
-  }
-  const tabIndex = line.indexOf('\t');
-  if (tabIndex >= 0) {
-    const fromTab = line.slice(tabIndex + 1);
-    const [filePath] = fromTab.split('\t');
-    return filePath?.trim().length ? filePath.trim() : null;
-  }
-  const parts = line.trim().split(/\s+/g);
-  const filePath = parts.at(-1) ?? '';
-  return filePath.length > 0 ? filePath : null;
+  if (line.startsWith('? ') || line.startsWith('! ')) return unquotePorcelainPath(line.slice(2));
+  if (line.startsWith('1 ')) return unquotePorcelainPath(skipSpaceFields(line, 8));
+  if (line.startsWith('2 ')) return unquotePorcelainPath(skipSpaceFields(line, 9).split('\t')[0]);
+  if (line.startsWith('u ')) return unquotePorcelainPath(skipSpaceFields(line, 10));
+  return null;
 }
 
 function isUnbornHeadStderr(stderr) {
@@ -1004,24 +1002,14 @@ async function gitCreateChangeRequest(cwd, input, onProgress) {
   if (!targetRepository) return fail('Could not resolve the pull request target repository.');
 
   emit({ kind: 'phase', title: `Creating ${terms.singular}...` });
-  const bodyFile = path.join(os.tmpdir(), `dshd-pr-body-${process.pid}-${Date.now()}.md`);
-  fs.writeFileSync(bodyFile, body);
-  let created;
-  try {
-    const headSelector = headContext.preferredHeadSelector;
+  const headSelector = headContext.preferredHeadSelector;
+  const created = await withOwnedTempDir('dshd-pr-body-', async (dir) => {
+    const bodyFile = path.join(dir, 'pr-body.md');
+    fs.writeFileSync(bodyFile, body, 'utf8');
     const prArgs = ['pr', 'create', '--repo', targetRepository.url, '--title', title, '--body-file', bodyFile, '--head', headSelector];
-    // Always pass --base when resolved (never omit when base === head name).
     if (baseBranch) prArgs.push('--base', baseBranch);
-    created = await run('gh', prArgs, root, {
-      timeoutMs: COMMIT_TIMEOUT_MS,
-    });
-  } finally {
-    try {
-      fs.unlinkSync(bodyFile);
-    } catch {
-      // Temp PR body is best-effort cleanup after gh exits.
-    }
-  }
+    return run('gh', prArgs, root, { timeoutMs: COMMIT_TIMEOUT_MS });
+  });
   if (created.missing) return fail('gh is unavailable.');
   if (created.code !== 0) return fail(created.stderr.trim() || created.stdout.trim() || 'gh pr create failed.');
   const viewed = await readPullRequest(root, status.refName, targetRepository);
@@ -1137,12 +1125,20 @@ async function gitPublishRepository(cwd, input, onProgress) {
   });
 }
 
+const BLOCKED_OPEN_EXTS = new Set(['.exe', '.bat', '.cmd', '.com', '.msi', '.msp', '.scr', '.pif', '.lnk', '.url', '.ps1', '.psm1', '.psd1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.cpl', '.reg', '.inf', '.app', '.command', '.action', '.workflow', '.desktop']);
 async function openWorkspacePath(cwd, relativePath) {
   const target = resolveInsideWorkspace(cwd, relativePath);
   if (!target) return fail('Path is outside the workspace.');
+  let realTarget = target;
   try {
-    const { shell } = require('electron');
-    const error = await shell.openPath(target);
+    realTarget = fs.realpathSync.native(target);
+    if (!resolveInsideWorkspace(cwd, realTarget)) return fail('Path is outside the workspace.');
+    if (!fs.statSync(realTarget).isDirectory() && (BLOCKED_OPEN_EXTS.has(path.extname(target).toLowerCase()) || BLOCKED_OPEN_EXTS.has(path.extname(realTarget).toLowerCase()))) {
+      return fail('Refusing to open executable or script file with system default handler.');
+    }
+  } catch { /* Non-existent path falls through to shell.openPath error reporting. */ }
+  try {
+    const error = await require('electron').shell.openPath(realTarget);
     return error ? fail(error) : ok();
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'Unable to open file');

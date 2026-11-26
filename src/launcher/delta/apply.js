@@ -446,11 +446,11 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
     for (const op of ops) {
       if ((op.op === 'patch' || op.op === 'delete') && op.backup && fsx.existsSync(op.target)) {
         fsx.mkdirSync(path.dirname(op.backup), { recursive: true });
-        fsx.renameSync(op.target, op.backup);
+        renameSyncWithRetry(op.target, op.backup, fsx);
       }
       if ((op.op === 'add' || op.op === 'patch') && op.staged) {
         fsx.mkdirSync(path.dirname(op.target), { recursive: true });
-        fsx.renameSync(op.staged, op.target);
+        renameSyncWithRetry(op.staged, op.target, fsx);
       }
       applied[op.op === 'add' ? 'added' : op.op === 'patch' ? 'patched' : 'deleted'] += 1;
       step += 1;

@@ -252,7 +252,9 @@ export function listSchedules() {
 const DAILY_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
 function dailyNextRun(daily, from) {
-  const [, h, m] = DAILY_RE.exec(daily);
+  const match = DAILY_RE.exec(String(daily ?? ''));
+  if (!match) return 0;
+  const [, h, m] = match;
   const next = new Date(from);
   next.setHours(Number(h), Number(m), 0, 0);
   if (next.getTime() <= from) next.setDate(next.getDate() + 1);

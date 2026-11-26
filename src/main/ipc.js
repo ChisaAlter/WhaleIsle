@@ -68,15 +68,17 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
     return result;
   }
   sendPluginProgress(event, { phase: 'restart', line: '正在重启 Harness' });
+  let restarted;
   try {
-    if (clearPluginSkip && harness && typeof harness.retryFullPlugins === 'function') {
-      await harness.retryFullPlugins();
-    } else {
-      await startHarness();
-    }
+    restarted = clearPluginSkip
+      ? await startHarness(undefined, { fullPluginRetry: true })
+      : await startHarness();
   } catch {
     // startHarness threw after the profile write committed. Return ok so the UI does not retry the write.
     return { ...result, ok: true, harnessStarted: false, error: downError };
+  }
+  if (restarted && restarted.proceeded === false) {
+    return { ...result, harnessStarted: false, proceeded: false, code: restarted.code };
   }
   return { ...result, harnessStarted: true };
 }
@@ -193,7 +195,9 @@ function registerIpc({
         // Delegate the token we just acquired into the nested restart so it
         // is recognized as the same operation (startHarness is wired to
         // restartWithCleanup), not refused as a foreign caller.
-        () => (harness ? harness.retryFullPlugins() : startHarness(acquired)),
+        () => (harness
+          ? Promise.resolve(stopDesktopCleanup?.()).then(() => harness.retryFullPlugins())
+          : startHarness(acquired)),
         () => kernelLogTail(dsh),
         () => harness?.skippedBuiltins || [],
       );

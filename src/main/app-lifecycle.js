@@ -22,6 +22,7 @@ const { createTaskProtection, installTaskProtection } = require('./task-protecti
 const { createTaskControlPeer } = require('./task-control-peer');
 const { showClosingOverlay } = require('./closing-overlay');
 const { getLive2dPet } = require('./desktop-live2d');
+const { destroyTray } = require('./tray');
 const { stopDesktopInstallControl } = require('./desktop-install-control');
 const { invalidateWorkspaceAuthorities } = require('./workspace-authority');
 const { flushBootLogs } = require('../shared/launcher-bridges');
@@ -201,10 +202,14 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
     if (result.canceled || !result.filePaths[0]) {
       return null;
     }
-    saveConfig({ workspace: result.filePaths[0] });
-    invalidateWorkspaceAuthorities?.();
-    await restartWithCleanup();
-    return result.filePaths[0];
+    const chosen = result.filePaths[0];
+    const outcome = await restartWithCleanup(undefined, {
+      beforeStart: () => {
+        saveConfig({ workspace: chosen });
+        invalidateWorkspaceAuthorities?.();
+      },
+    });
+    return outcome && outcome.proceeded === false ? null : chosen;
   }
 
   /**
@@ -250,7 +255,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
    * @param {any} [delegatedToken]
    * @param {Record<string, any>} [rest]
    */
-  function restartWithCleanup(delegatedToken, { preConfirmed = false, ...options } = {}) {
+  function restartWithCleanup(delegatedToken, { preConfirmed = false, fullPluginRetry = false, beforeStart, ...options } = {}) {
     // The shared maintenance slot admits only one mutating operation at a time.
     // An import, install, or start that already holds it owns the destination
     // trees — a restart must refuse rather than prompt and tear down under it,
@@ -285,9 +290,12 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
       return taskProtection.coordinate('restart', /** @type {Record<string, any>} */ ({
         preConfirmed,
         commit: async () => {
+          if (typeof beforeStart === 'function') await beforeStart();
           invalidateWorkspaceAuthorities?.();
           await cleanupDesktopResources();
-          return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options),
+          return recordLastDesktopStart(
+            app.getPath('userData'),
+            () => (fullPluginRetry && typeof harness.retryFullPlugins === 'function' ? harness.retryFullPlugins() : harness.restart(options)),
             () => kernelLogTail(dsh), () => harness.skippedBuiltins);
         },
       })).then((result) => (result.proceeded ? undefined : result))
@@ -342,11 +350,13 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
           shutdownPromise = Promise.allSettled([
             Promise.resolve().then(() => harness.shutdown()),
             Promise.resolve().then(() => cleanupDesktopResources({ stopWatchers: true })),
+            Promise.resolve().then(() => state.updateCenter?.stop?.()),
             Promise.resolve().then(() => getLive2dPet()?.dispose()),
             Promise.resolve().then(() => state.approvalMonitor?.dispose()),
             Promise.resolve().then(() => stopDesktopInstallControl()),
             Promise.resolve().then(() => taskControlPeer.stop()),
             Promise.resolve().then(() => taskProtection.cleanupAfterQuit()),
+            Promise.resolve().then(() => destroyTray()),
           ]).then((results) => {
             /** @type {any} */
             let failure;
@@ -415,6 +425,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
           state.nativeQuitReady = true;
           const nativeQuitTimer = setTimeout(() => {
             dsh.log('退出：窗口关闭等待超时，结束桌面进程', 'error');
+            destroyTray();
             app.exit(0);
           }, 5000);
           app.once('quit', () => clearTimeout(nativeQuitTimer));
@@ -440,6 +451,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
         } finally {
           clearTimeout(finalTimer);
         }
+        destroyTray();
         app.exit(0);
       } finally {
         if (!state.nativeQuitReady) state.quitInProgress = false;

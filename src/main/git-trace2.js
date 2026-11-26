@@ -6,6 +6,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { StringDecoder } = require('node:string_decoder');
 
 /**
  * @param {{ child_id?: unknown, hook_name?: unknown }} record
@@ -46,6 +47,7 @@ function createTrace2Monitor(onHook) {
   fs.writeFileSync(traceFilePath, '');
   let processedChars = 0;
   let remainder = '';
+  const decoder = new StringDecoder('utf8');
   const hookStartByChildKey = new Map();
 
   const handleLine = (/** @type {string} */ line) => {
@@ -72,15 +74,25 @@ function createTrace2Monitor(onHook) {
   };
 
   const poll = () => {
-    let contents = '';
+    let fd;
+    let appended = '';
     try {
-      contents = fs.readFileSync(traceFilePath, 'utf8');
+      fd = fs.openSync(traceFilePath, 'r');
+      const size = fs.fstatSync(fd).size;
+      if (size <= processedChars) return;
+      const toRead = size - processedChars;
+      const buf = Buffer.allocUnsafe(toRead);
+      const bytesRead = fs.readSync(fd, buf, 0, toRead, processedChars);
+      if (bytesRead <= 0) return;
+      processedChars += bytesRead;
+      appended = decoder.write(buf.subarray(0, bytesRead));
     } catch {
       return;
+    } finally {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch { /* Already closed. */ }
+      }
     }
-    if (contents.length <= processedChars) return;
-    const appended = contents.slice(processedChars);
-    processedChars = contents.length;
     const combined = remainder + appended;
     const lines = combined.split('\n');
     remainder = lines.pop() ?? '';

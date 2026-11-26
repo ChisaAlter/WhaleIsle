@@ -413,6 +413,9 @@ function createPreviewController(options = {}) {
     },
 
     async setColorScheme(id, scheme) {
+      if (scheme !== 'light' && scheme !== 'dark' && scheme !== 'system') {
+        return { ok: false, message: 'invalid color scheme' };
+      }
       const session = requireSession(id);
       const contents = session.view.webContents;
       const dbg = ensureDebugger(contents);
@@ -564,10 +567,9 @@ function createPreviewController(options = {}) {
           },
         });
         if (wc.ipc && typeof wc.ipc.on === 'function') wc.ipc.on(ELEMENT_PICKED_CHANNEL, onMessage);
-        if (typeof wc.once === 'function') {
-          wc.once('destroyed', onDestroyed);
-          wc.once('did-start-navigation', onNavigated);
-        }
+        if (typeof wc.once === 'function') wc.once('destroyed', onDestroyed);
+        if (typeof wc.on === 'function') wc.on('did-start-navigation', onNavigated);
+        else if (typeof wc.once === 'function') wc.once('did-start-navigation', onNavigated);
         if (typeof wc.isFocused === 'function' && !wc.isFocused() && typeof wc.focus === 'function') {
           wc.focus();
         }
@@ -604,9 +606,9 @@ function createPreviewController(options = {}) {
     /** Destroy every live view (app quit, harness restart, renderer teardown). */
     async closeAll() {
       releasePictureInPicture(true);
-      for (const previewId of [...frameCaptureSessions.keys()]) {
-        stopAllFrameCapture(previewId);
-      }
+      for (const previewId of [...frameCaptureSessions.keys()]) stopAllFrameCapture(previewId);
+      for (const pending of [...pickSessions.values()]) pending.cancel();
+      pickSessions.clear();
       for (const session of sessions.values()) {
         try {
           session.view.destroy();
@@ -620,69 +622,31 @@ function createPreviewController(options = {}) {
     async openPictureInPicture(id) {
       const session = sessions.get(id);
       if (!session) return unknownPreviewId();
-      if (pipSession && typeof pipSession.window.isDestroyed === 'function' && !pipSession.window.isDestroyed()) {
-        pipSession.window.showInactive();
-        return { ok: true };
-      }
-      if (pipSession) {
-        releasePictureInPicture(false);
-      }
+      if (pipSession && !pipSession.window.isDestroyed?.()) {
+        if (pipSession.previewId === id) { pipSession.window.showInactive(); return { ok: true }; }
+        releasePictureInPicture(true);
+      } else if (pipSession) releasePictureInPicture(false);
       session.view.setVisible(false);
-      const pictureInPictureWindow = createPipWindow({
-        width: PICTURE_IN_PICTURE_INITIAL_WIDTH,
-        height: PICTURE_IN_PICTURE_INITIAL_HEIGHT,
-        minWidth: PICTURE_IN_PICTURE_MIN_WIDTH,
-        minHeight: PICTURE_IN_PICTURE_MIN_HEIGHT,
-        title: pipWindowTitle(session),
-        show: false,
-        alwaysOnTop: true,
-        autoHideMenuBar: true,
-        fullscreenable: false,
-        maximizable: false,
-        minimizable: false,
-        resizable: true,
-        skipTaskbar: true,
-        backgroundColor: '#111111',
-        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
-        webPreferences: {
-          preload: pipPreloadPath(),
-          backgroundThrottling: false,
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: true,
-        },
+      const win = createPipWindow({
+        width: PICTURE_IN_PICTURE_INITIAL_WIDTH, height: PICTURE_IN_PICTURE_INITIAL_HEIGHT,
+        minWidth: PICTURE_IN_PICTURE_MIN_WIDTH, minHeight: PICTURE_IN_PICTURE_MIN_HEIGHT,
+        title: pipWindowTitle(session), show: false, alwaysOnTop: true, autoHideMenuBar: true,
+        fullscreenable: false, maximizable: false, minimizable: false, resizable: true,
+        skipTaskbar: true, backgroundColor: '#111111', ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+        webPreferences: { preload: pipPreloadPath(), backgroundThrottling: false, contextIsolation: true, nodeIntegration: false, sandbox: true },
       });
-      const onClosed = () => {
-        if (pipSession && pipSession.window === pictureInPictureWindow) {
-          releasePictureInPicture(false);
-        }
-      };
-      if (typeof pictureInPictureWindow.once === 'function') {
-        pictureInPictureWindow.once('closed', onClosed);
+      configurePipWindowGuards(win, () => { if (pipSession?.window === win) releasePictureInPicture(false); });
+      pipSession = { window: win, previewId: id, lastAspectRatio: undefined };
+      try {
+        await Promise.resolve(win.loadURL(buildPreviewPictureInPictureDataUrl()));
+      } catch (error) {
+        if (pipSession?.window === win) releasePictureInPicture(true);
+        else win.destroy?.();
+        throw error;
       }
-      if (typeof pictureInPictureWindow.setAlwaysOnTop === 'function') {
-        pictureInPictureWindow.setAlwaysOnTop(
-          true,
-          process.platform === 'darwin' ? 'floating' : 'normal',
-        );
-      }
-      if (process.platform === 'darwin' && typeof pictureInPictureWindow.setVisibleOnAllWorkspaces === 'function') {
-        pictureInPictureWindow.setVisibleOnAllWorkspaces(true, {
-          visibleOnFullScreen: true,
-          skipTransformProcessType: true,
-        });
-      }
-      pipSession = {
-        window: pictureInPictureWindow,
-        previewId: id,
-        lastAspectRatio: undefined,
-      };
-      await Promise.resolve(pictureInPictureWindow.loadURL(buildPreviewPictureInPictureDataUrl()));
-      if (pipSession && pipSession.window === pictureInPictureWindow) {
+      if (pipSession?.window === win) {
         await startFrameCapture(id, 'picture-in-picture');
-      }
-      if (pipSession && pipSession.window === pictureInPictureWindow) {
-        pictureInPictureWindow.showInactive();
+        win.showInactive();
         publishState(session);
       }
       return { ok: true };
@@ -774,6 +738,20 @@ function createPreviewController(options = {}) {
       }
     },
   };
+}
+
+/**
+ * @param {any} win
+ * @param {() => void} onClosed
+ */
+function configurePipWindowGuards(win, onClosed) {
+  win.once?.('closed', onClosed);
+  win.setAlwaysOnTop?.(true, process.platform === 'darwin' ? 'floating' : 'normal');
+  if (process.platform === 'darwin') {
+    win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  }
+  win.webContents?.setWindowOpenHandler?.(() => ({ action: 'deny' }));
+  win.webContents?.on?.('will-navigate', (/** @type {any} */ event) => { event.preventDefault(); });
 }
 
 module.exports = { createPreviewController };

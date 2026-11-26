@@ -1,4 +1,4 @@
-var __knownSymbol = (name2, symbol) => (symbol = Symbol[name2]) ? symbol : /* @__PURE__ */ Symbol.for("Symbol." + name2);
+var __knownSymbol = (name2, symbol) => (symbol = Symbol[name2]) ? symbol : Symbol.for("Symbol." + name2);
 var __typeError = (msg) => {
   throw TypeError(msg);
 };
@@ -1363,7 +1363,6 @@ var BillingStore = class {
     this.medium = medium;
     this.mode = medium === void 0 ? "memory" : "durable";
   }
-  warn;
   cache = null;
   medium;
   mode;
@@ -2033,6 +2032,9 @@ async function openStatsCache(home, warn) {
       // concurrent reads with the write path + crash recovery
     );
     db.exec(
+      "PRAGMA busy_timeout = 5000"
+    );
+    db.exec(
       "PRAGMA synchronous = NORMAL"
       // WAL's standard durability/perf pairing
     );
@@ -2104,6 +2106,10 @@ async function openStatsCache(home, warn) {
       close() {
         try {
           db.exec("PRAGMA optimize");
+        } catch {
+        }
+        try {
+          db.close?.();
         } catch {
         }
       }
