@@ -254,17 +254,20 @@ function revealInFolder(cwd, relativePath, deps = {}) {
 async function openWithSystemDefault(input = {}, deps = {}) {
   const target = resolveInside(input.cwd, input.relativePath);
   if (!target) return fail('Path is outside the workspace.');
-  if (isBlockedExecutablePath(target)) {
-    return fail('Refusing to open executable or script file with system default handler.');
-  }
+  let realTarget;
   try {
-    if (!fs.statSync(target).isFile()) return fail('Target path is not a regular file.');
+    realTarget = fs.realpathSync.native(target);
+    if (!fs.statSync(realTarget).isFile()) return fail('Target path is not a regular file.');
   } catch {
     return fail('Target path does not exist.');
   }
+  if (!resolveInside(input.cwd, realTarget)) return fail('Path is outside the workspace.');
+  if (isBlockedExecutablePath(target) || isBlockedExecutablePath(realTarget)) {
+    return fail('Refusing to open executable or script file with system default handler.');
+  }
   const electronShell = deps.shell ?? defaultShell();
   try {
-    const error = await electronShell.openPath(target);
+    const error = await electronShell.openPath(realTarget);
     return error ? fail(error) : { ok: true };
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'Unable to open file');

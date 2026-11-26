@@ -244,26 +244,29 @@ function pluginCandidates(sourceHome) {
 
 /**
  * @param {unknown} text
+ * @param {{ strict?: boolean }} [options]
  * @returns {Array<Record<string, any>>}
  */
-function parseMcpServersYaml(text) {
+function parseMcpServersYaml(text, options = {}) {
   const source = String(text || '').trim();
   if (!source) return [];
   try {
     const parsed = YAML.parse(source);
     const rows = Array.isArray(parsed?.servers) ? parsed.servers : [];
     return rows.filter((/** @type {any} */ row) => row && typeof row === 'object' && !Array.isArray(row) && row.id != null && String(row.id));
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error;
     return [];
   }
 }
 
 /**
  * @param {string} home
+ * @param {{ strict?: boolean }} [options]
  * @returns {Array<Record<string, any>>}
  */
-function readMcpServers(home) {
-  return parseMcpServersYaml(readTextFile(path.join(home, MCP_FILE)) || '');
+function readMcpServers(home, options) {
+  return parseMcpServersYaml(readTextFile(path.join(home, MCP_FILE)) || '', options);
 }
 
 function dumpMcpServersYaml(servers) {
@@ -271,16 +274,21 @@ function dumpMcpServersYaml(servers) {
     /** @type {Record<string, unknown>} */
     const out = {};
     for (const [key, value] of Object.entries(server || {})) {
-      if (value === undefined) continue;
-      if (key === 'headers' && value && typeof value === 'object' && !Array.isArray(value)) {
-        out.headers = { ...value };
+      if (value === undefined || value === null) continue;
+      if (key === 'headers' && typeof value === 'object' && !Array.isArray(value)) {
+        /** @type {Record<string, string>} */
+        const cleanHeaders = {};
+        for (const [hk, hv] of Object.entries(value)) {
+          if (hv !== undefined && hv !== null) cleanHeaders[hk] = String(hv);
+        }
+        if (Object.keys(cleanHeaders).length > 0) out.headers = cleanHeaders;
         continue;
       }
       if (Array.isArray(value)) {
-        out[key] = [...value];
+        out[key] = value.filter((item) => item !== undefined && item !== null);
         continue;
       }
-      if (value && typeof value === 'object') continue;
+      if (typeof value === 'object') continue;
       out[key] = value;
     }
     return out;
@@ -1672,10 +1680,10 @@ function importMcp({ scan, selectedIds, overwrite }) {
   if (!chosen.length) {
     return results;
   }
-  const sourceServers = readMcpServers(scan.sourceHome);
+  const sourceServers = readMcpServers(scan.sourceHome, { strict: true });
   const destFile = path.join(scan.destHome, MCP_FILE);
   inspectPrivateImportFile(destFile);
-  const destServers = readMcpServers(scan.destHome);
+  const destServers = readMcpServers(scan.destHome, { strict: true });
   const destById = new Map(destServers.map((row) => [String(row.id), row]));
   let changed = false;
   for (const id of chosen) {
