@@ -6771,20 +6771,20 @@
         "Cannot find name 'dshComposerSend'.": 4,
         "Cannot find name 'dshComposerText'.": 8,
         "Cannot find name 'dshCustomProviderCard'.": 6,
-        "Cannot find name 'dshDialog'.": 13,
+        "Cannot find name 'dshDialog'.": 11,
         "Cannot find name 'dshDialogNamed'.": 26,
-        "Cannot find name 'dshField'.": 2,
+        "Cannot find name 'dshField'.": 1,
         "Cannot find name 'dshFind'.": 50,
         "Cannot find name 'dshHeading'.": 4,
         "Cannot find name 'dshInputInventory'.": 1,
-        "Cannot find name 'dshLabel'.": 16,
+        "Cannot find name 'dshLabel'.": 15,
         "Cannot find name 'dshMcpSnapshot'.": 2,
         "Cannot find name 'dshModelsDiagnostic'.": 1,
         "Cannot find name 'dshQaPngFile'.": 1,
         "Cannot find name 'dshSavedCustomProvider'.": 2,
         "Cannot find name 'dshSelectComposerAll'.": 1,
         "Cannot find name 'dshSetValue'.": 1,
-        "Cannot find name 'dshShown'.": 40,
+        "Cannot find name 'dshShown'.": 38,
         "Cannot find name 'dshSkillsSnapshot'.": 2
       },
       "TS2339": {
@@ -8132,9 +8132,6 @@
       },
       "TS18048": {
         "'base' is possibly 'undefined'.": 2
-      },
-      "TS2322": {
-        "Type 'Promise<void>' is not assignable to type 'null'.": 1
       },
       "TS2339": {
         "Property '__launcherComponents' does not exist on type 'Window & typeof globalThis'.": 1,

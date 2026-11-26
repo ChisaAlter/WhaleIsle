@@ -1,5 +1,6 @@
 'use strict';
 const { PAGE_HELPERS } = require('./release-ui-page-helpers');
+const { openCustomProviderForm } = require('./release-ui-models-walk');
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -827,7 +828,7 @@ async function connectConfiguredWorkspace(wc, helpers, rec) {
     if (!dialog) return null;
     const btn = Array.from(dialog.querySelectorAll('button')).find((el) =>
       dshShown(el) && /^(open|打开)$/i.test(dshLabel(el)) && !el.disabled);
-    return btn || null;
+    return Boolean(btn);
   `), 12_000);
   if (openReady) {
     await pageScript(wc, `
@@ -1218,7 +1219,7 @@ async function runReleaseUiWalk(wc, helpers) {
   const mention = filesSnap
     ? await waitUntil(() => pageEval(wc, () => {
       const panel = document.querySelector('[data-files-panel]');
-      return panel && dshFind('mention in composer|引用到输入框', panel);
+      return Boolean(panel && dshFind('mention in composer|引用到输入框', panel));
     }), 10_000)
     : null;
   rec('files.mentionVisible', Boolean(mention), mention ? 'visible' : 'mention control missing');
@@ -1562,20 +1563,7 @@ async function runReleaseUiWalk(wc, helpers) {
 
   let customFormOk = false;
   if (models?.customAdd) {
-    await clickNamed(wc, 'add model provider|添加模型提供商');
-    const customMode = await waitUntil(() => pageEval(wc, () => {
-      const dialog = dshDialog();
-      const tab = dialog && Array.from(dialog.querySelectorAll('[role="tab"]'))
-        .find((el) => dshShown(el) && /custom model api|自定义模型 api/i.test(dshLabel(el)));
-      if (!tab || tab.disabled) return false;
-      tab.click();
-      return true;
-    }), 8_000);
-    const form = await waitUntil(() => pageEval(wc, () => {
-      const dialog = dshDialog();
-      const route = dialog && dshField('^provider id$', dialog);
-      return route && dshShown(route) ? true : null;
-    }), 8_000);
+    const { customMode, form, detail } = await openCustomProviderForm(wc, { waitUntil, pageScript });
     if (form) {
       const filled = {
         route: await typeIntoAriaField(wc, '^provider id$', 'dshdqa'),
@@ -1648,7 +1636,7 @@ async function runReleaseUiWalk(wc, helpers) {
         saved?.leak ? 'key echoed' : (customFormOk ? 'provider saved without plaintext key' : `provider UI confirmation failed (${fillDetail}) ${providerDiagnostic} ${inventory || ''}`.slice(0, 400)),
       );
     } else {
-      rec('models.customForm', false, `custom provider form did not open (mode=${Boolean(customMode)})`);
+      rec('models.customForm', false, `custom provider form did not open (mode=${Boolean(customMode)} ${detail})`);
     }
   } else {
     rec('models.customForm', false, 'custom add missing');

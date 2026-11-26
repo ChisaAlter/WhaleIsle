@@ -15,7 +15,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('installed and packaged pnpm run the locked CLI and host build scripts offline', t => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-pnpm '));
-  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).devDependencies.pnpm;
   const env = { ...process.env, COREPACK_ENABLE_NETWORK: '0',
     PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}` };
@@ -50,7 +50,7 @@ test('installed and packaged pnpm run the locked CLI and host build scripts offl
 
 test('marketplace supplies source and packaged pnpm to runCli through the Node runner without a system pnpm', async t => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-market-pnpm '));
-  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const resources = path.join(temp, 'resources');
   copyBundledPnpm(root, resources, { platform: process.platform, arch: process.arch });
   // Keep PATH limited to an isolated Node directory, including on machines with pnpm beside Node.
@@ -136,7 +136,7 @@ export async function runCli({ packageManager }) {
 
 test('packaging refuses a native executable from a different pnpm version', t => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-pnpm-version-'));
-  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const source = path.join(temp, 'node_modules', 'pnpm');
   fs.mkdirSync(path.join(source, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(source, 'bin', 'pnpm.mjs'), '');
