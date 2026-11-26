@@ -44,8 +44,11 @@
       }
       return painted.slice(0, 7);
     }
-    const match = painted.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)/i);
+    const match = painted.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/i);
     if (!match) {
+      return '';
+    }
+    if (match[4] !== undefined && Number(match[4].replace('%', '')) === 0) {
       return '';
     }
     const hex = (value) => Math.max(0, Math.min(255, Math.round(Number(value)))).toString(16).padStart(2, '0');
@@ -320,7 +323,11 @@
     } else {
       document.documentElement.removeAttribute('data-window-maximized');
     }
-    document.documentElement.toggleAttribute('data-fullscreen', Boolean(winAny.__dshShellFullscreen));
+    if (winAny.__dshShellFullscreen) {
+      document.documentElement.setAttribute('data-fullscreen', '');
+    } else {
+      document.documentElement.removeAttribute('data-fullscreen');
+    }
     applyControlTheme(host, Boolean(window.__dshShellMaximized));
     const sample = { bg: opaqueBg(document.body) };
     if (window.shell && typeof window.shell.reportChrome === 'function') {

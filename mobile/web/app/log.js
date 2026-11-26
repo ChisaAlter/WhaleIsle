@@ -110,6 +110,7 @@ export function renderLog({ anchor = 'auto' } = {}) {
     clientHeight: logEl.clientHeight,
   });
   const nodes = [];
+  clearButtonBusy(logEl);
   logEl.classList.toggle('surface-busy', state.timelineLoading && !rows.length);
   logEl.setAttribute('aria-busy', String(state.timelineLoading));
   if (state.timelineError) {
@@ -126,7 +127,6 @@ export function renderLog({ anchor = 'auto' } = {}) {
     nodes.push(...state.outbox.map(outboxNode));
     if (queue.length) nodes.push(queuePanelNode(queue));
   }
-  clearButtonBusy(logEl);
   reconcileChildren(logEl, nodes);
   renderBlankHero();
   scheduleNativeSnapshot();

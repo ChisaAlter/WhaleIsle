@@ -366,7 +366,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         modalRef.current.querySelectorAll<HTMLElement>(
           'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
         ),
-      );
+      ).filter((el) => !el.hidden && !el.closest('[hidden], [inert]'));
       if (focusables.length === 0) {
         return;
       }
@@ -531,7 +531,8 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
               <button
                 type="button"
                 className="dsh-bots-link-btn"
-                onClick={() => botsStore.openModal({ kind: 'import', initialTab: 'apps' })}
+                disabled={submitting}
+                onClick={() => { if (!submitting) botsStore.openModal({ kind: 'import', initialTab: 'apps' }); }}
               >
                 {zh ? '导入' : 'Import'}
               </button>
@@ -798,7 +799,8 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
             type="button"
             className="dsh-bots-btn"
             data-variant="ghost"
-            onClick={() => botsStore.openModal({ kind: 'templates' })}
+            disabled={submitting}
+            onClick={() => { if (!submitting) botsStore.openModal({ kind: 'templates' }); }}
           >
             <IconSparkles size={13} />
             <span>{tr('bots.new.fromTemplate', 'Templates')}</span>

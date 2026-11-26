@@ -175,6 +175,9 @@ export function renderSavedComputers() {
 }
 
 export function forceLogout(message, { forget = true } = {}) {
+  if (forgetConfirmTimer !== null) clearTimeout(forgetConfirmTimer);
+  forgetConfirmTimer = null;
+  forgetConfirmId = '';
   const serverId = state.chisacode?.serverId;
   try {
     state.chisacode?.dispose?.();

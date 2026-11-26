@@ -2708,7 +2708,7 @@ ${DISPATCH_SHARED_CSS}
           window.removeEventListener('scroll', onScroll, true)
           window.removeEventListener('resize', onScroll)
         }
-      }, [open, onClose])
+      }, [open, onClose, activeMenu])
 
       if (!presence.mounted || !activeTask) return null
       const accepted = activeTask.status === 'resolved'

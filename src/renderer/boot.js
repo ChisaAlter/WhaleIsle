@@ -287,10 +287,21 @@ function failureText(failure, snapshot) {
  */
 function updateRetryButton(runtimeFailure, recoveryBusy) {
   if (!retryEl) return;
+  if (retryEl.getAttribute('aria-busy') === 'true') {
+    retryEl.disabled = true;
+    return;
+  }
   retryEl.textContent = globalThis.BootRecovery?.retryActionLabel
     ? globalThis.BootRecovery.retryActionLabel(runtimeFailure)
     : (runtimeFailure ? '立即重启' : '重试');
   retryEl.disabled = recoveryBusy;
+}
+
+/** @param {HTMLElement | null} button @param {string} label */
+function setButtonLabelIfIdle(button, label) {
+  if (button && button.getAttribute('aria-busy') !== 'true') {
+    button.textContent = label;
+  }
 }
 
 function renderState(snapshot) {
@@ -328,14 +339,16 @@ function renderState(snapshot) {
 
   actionsEl.hidden = !canAct;
   updateRetryButton(runtimeFailure, recoveryBusy);
-  saveLogEl.textContent = globalThis.BootRecovery?.downloadLogLabel
-    ? globalThis.BootRecovery.downloadLogLabel()
-    : '下载日志';
+  setButtonLabelIfIdle(
+    saveLogEl,
+    globalThis.BootRecovery?.downloadLogLabel ? globalThis.BootRecovery.downloadLogLabel() : '下载日志',
+  );
   // Plugin-level recovery lives on the launcher Recovery Board; the boot
   // page only bridges there on a settled failure.
-  openLauncherEl.textContent = globalThis.BootRecovery?.openLauncherLabel
-    ? globalThis.BootRecovery.openLauncherLabel()
-    : '回启动器排查';
+  setButtonLabelIfIdle(
+    openLauncherEl,
+    globalThis.BootRecovery?.openLauncherLabel ? globalThis.BootRecovery.openLauncherLabel() : '回启动器排查',
+  );
   const recoveryStatus = snapshot?.recovery?.status;
   openLauncherEl.hidden = !(globalThis.BootRecovery?.showLauncherBridge
     ? globalThis.BootRecovery.showLauncherBridge(state, recoveryStatus)
@@ -441,7 +454,10 @@ if (retryEl) {
         restoreLabel();
         retryButton.removeAttribute('aria-busy');
         const snap = /** @type {any} */ (latestSnapshot);
-        retryButton.disabled = snap?.recovery?.status === 'restarting';
+        updateRetryButton(
+          snap?.state === 'error' && snap?.failure?.phase === 'runtime',
+          snap?.recovery?.status === 'restarting',
+        );
       });
   });
 }

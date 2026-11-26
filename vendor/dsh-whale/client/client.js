@@ -10037,7 +10037,7 @@ function NewBotDialog({ open, draft, onClose }) {
         modalRef.current.querySelectorAll(
           'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
         )
-      );
+      ).filter((el) => !el.hidden && !el.closest("[hidden], [inert]"));
       if (focusables.length === 0) {
         return;
       }
@@ -10193,7 +10193,10 @@ function NewBotDialog({ open, draft, onClose }) {
                     {
                       type: "button",
                       className: "dsh-bots-link-btn",
-                      onClick: () => botsStore.openModal({ kind: "import", initialTab: "apps" }),
+                      disabled: submitting,
+                      onClick: () => {
+                        if (!submitting) botsStore.openModal({ kind: "import", initialTab: "apps" });
+                      },
                       children: zh ? "\u5BFC\u5165" : "Import"
                     }
                   )
@@ -10408,7 +10411,10 @@ function NewBotDialog({ open, draft, onClose }) {
                     type: "button",
                     className: "dsh-bots-btn",
                     "data-variant": "ghost",
-                    onClick: () => botsStore.openModal({ kind: "templates" }),
+                    disabled: submitting,
+                    onClick: () => {
+                      if (!submitting) botsStore.openModal({ kind: "templates" });
+                    },
                     children: [
                       /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(IconSparkles, { size: 13 }),
                       /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { children: tr("bots.new.fromTemplate", "Templates") })

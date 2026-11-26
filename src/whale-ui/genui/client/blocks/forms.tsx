@@ -199,7 +199,9 @@ export function SubmitNode({ node, onAction, answers }: {
               ...(Object.keys(filledFields).length > 0 ? { fields: filledFields } : {}),
               total,
               answered,
-            })).finally(() => setPending(false))
+            }))
+              .catch(() => { /* onAction/host owns error presentation */ })
+              .finally(() => setPending(false))
           }
         } : undefined}
       >

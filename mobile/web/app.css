@@ -638,7 +638,7 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 .chip-shrink { flex: 0 1 auto; min-width: 76px; max-width: min(52%, 320px); padding-inline: 8px; }
 .chip-shrink .chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attach-rail {
-  display: flex; gap: 10px; overflow-x: auto; padding: 0 12px;
+  display: flex; gap: 10px; overflow-x: auto; padding: 6px 12px 0;
 }
 .attach-thumb { position: relative; flex: none; width: 64px; height: 64px; }
 .attach-preview {
@@ -650,14 +650,14 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
 }
 .attach-remove {
-  position: absolute; top: 4px; right: 4px;
+  position: absolute; top: -6px; right: -6px;
   display: grid; place-items: center;
-  width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
+  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
-  font-size: 11px; line-height: 1;
+  font-size: 12px; line-height: 1;
 }
-.attach-remove::after { content: ''; position: absolute; inset: -13px; }
+.attach-remove::after { content: ''; position: absolute; inset: -6px; }
 .approval { overflow: hidden; }
 .strip {
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;

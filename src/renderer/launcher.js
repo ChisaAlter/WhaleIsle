@@ -9,7 +9,8 @@ async function saveSettings(control) {
     return;
   }
   const nextChecked = control.checked;
-  control.disabled = true;
+  const controls = /** @type {HTMLInputElement[]} */ (['opt-quit', 'opt-auto', 'opt-ask', 'opt-tray'].map((id) => $(id)).filter(Boolean));
+  controls.forEach((node) => { node.disabled = true; });
   control.setAttribute('aria-busy', 'true');
   try {
     const patch = {
@@ -26,7 +27,7 @@ async function saveSettings(control) {
     control.checked = !nextChecked;
     setHint(errText(error, '设置保存失败'));
   } finally {
-    control.disabled = false;
+    controls.forEach((node) => { node.disabled = false; });
     control.removeAttribute('aria-busy');
   }
 }
