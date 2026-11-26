@@ -20,6 +20,7 @@ let muxAbort = null;
 let muxOrigin = '';
 let muxCookie = '';
 let muxRunning = false;
+let muxSyncScheduled = false;
 let harnessCookie = sanitizeHarnessCookie(process.env.DSHD_HARNESS_COOKIE || '');
 let gitTunnelToken = '';
 
@@ -54,7 +55,7 @@ function dispatchMux(envelope) {
 function ensureMux() {
   const origin = currentOrigin();
   const cookie = currentCookie();
-  if (!origin) {
+  if (!origin || muxListeners.size === 0) {
     closeMux();
     return;
   }
@@ -84,6 +85,19 @@ function ensureMux() {
   });
 }
 
+function scheduleEnsureMux() {
+  if (!currentOrigin() || muxListeners.size === 0) {
+    closeMux();
+    return;
+  }
+  if (muxSyncScheduled) return;
+  muxSyncScheduled = true;
+  queueMicrotask(() => {
+    muxSyncScheduled = false;
+    ensureMux();
+  });
+}
+
 async function gitRpc({ action, cwd, payload }) {
   const url = String(process.env.DSHD_GIT_TUNNEL_URL || '').trim();
   const token = gitTunnelToken;
@@ -97,6 +111,7 @@ async function gitRpc({ action, cwd, payload }) {
       'x-dshd-git-token': token,
     },
     body: JSON.stringify({ action, cwd, payload }),
+    signal: AbortSignal.timeout(60_000),
   });
   const body = await response.json();
   if (!body || body.ok !== true) {
@@ -139,12 +154,12 @@ export function applyDaemonStdinLine(line) {
   if (line === 'stop') return 'stop';
   if (line.startsWith('harness-origin ')) {
     process.env.DSHD_HARNESS_ORIGIN = line.slice('harness-origin '.length).trim();
-    ensureMux();
+    scheduleEnsureMux();
     return 'origin';
   }
   if (line.startsWith('harness-cookie ')) {
     harnessCookie = sanitizeHarnessCookie(line.slice('harness-cookie '.length));
-    ensureMux();
+    scheduleEnsureMux();
     return 'cookie';
   }
   if (line.startsWith('git-tunnel-token ')) {

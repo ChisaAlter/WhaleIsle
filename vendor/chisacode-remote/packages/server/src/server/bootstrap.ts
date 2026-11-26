@@ -504,6 +504,7 @@ export interface ChisaCodeDaemon {
   scriptRuntimeStore: WorkspaceScriptRuntimeStore;
   start(): Promise<void>;
   stop(): Promise<void>;
+  disconnectDevice(deviceId: string): Promise<number>;
   getListenTarget(): ListenTarget | null;
 }
 
@@ -1680,6 +1681,8 @@ export async function createChisaCodeDaemon(
     scriptRuntimeStore,
     start,
     stop,
+    disconnectDevice: (deviceId: string) =>
+      wsServer ? wsServer.disconnectDevice(deviceId) : Promise.resolve(0),
     getListenTarget: () => boundListenTarget,
   };
 }

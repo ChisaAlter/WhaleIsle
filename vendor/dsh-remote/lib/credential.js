@@ -13,7 +13,8 @@
 //   linux   → `secret-tool` (libsecret / gnome-keyring), optional
 //   else    → unsupported (plain)
 import { execFile } from 'node:child_process'
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { mkdirSync, writeFileSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
 import { join as joinPath } from 'node:path'
 
 const SERVICE = 'dsh-remote'
@@ -110,8 +111,17 @@ export async function saveSecret(machineId, password, secretsDir, io = {}) {
       // DPAPI-encrypt and store under the harness home.
       const b64 = await runCmd('powershell', ['-NoProfile', '-STA', '-Command', PS_PROTECT_STDIN_SCRIPT], String(password))
       if (!b64) return { ok: false, backend: 'windows', error: 'DPAPI returned no ciphertext' }
-      mkdirSync(secretsDir || '.', { recursive: true })
-      writeFileSync(joinPath(secretsDir || '.', acc + '.bin'), b64, 'utf8')
+      const dir = secretsDir || '.'
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const dest = joinPath(dir, acc + '.bin')
+      const tmp = `${dest}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+      try {
+        writeFileSync(tmp, b64, { encoding: 'utf8', mode: 0o600 })
+        renameSync(tmp, dest)
+      } catch (err) {
+        try { unlinkSync(tmp) } catch { /* ignore */ }
+        throw err
+      }
       return { ok: true, backend: 'windows', error: '' }
     }
     if (platform === 'linux') {

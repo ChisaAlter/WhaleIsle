@@ -20,7 +20,7 @@
 // server assigned — so the invariant L==R==S holds and the next run is cheap.
 import { readdirSync, statSync, lstatSync, realpathSync, mkdirSync, readFileSync, writeFileSync, utimesSync, renameSync } from 'node:fs'
 import path from 'node:path'
-import { joinRemotePath, relPathUnder } from './paths.js'
+import { joinRemotePath, relPathUnder, remoteDirname, mkdirRemoteDirs } from './paths.js'
 
 function mapLimit(items, limit, fn) {
   const limitN = Math.max(1, Math.min(Math.floor(limit) || 1, items.length))
@@ -140,7 +140,8 @@ async function applyPulledFile({ sftp, rp, lp, r, rel, resolvedLocalRoot, dryRun
 /** Recursively pull remote → local mirror (three-way, ignore-aware). */
 export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
   const {
-    maxDepth = 8,
+    maxDepth: optMaxDepth,
+    depth: optDepth,
     maxFiles = 2000,
     maxFileBytes = 0,
     isIgnored = () => false,
@@ -148,8 +149,10 @@ export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
     force = false,
     state = {},
   } = opts
+  const maxDepth = optMaxDepth !== undefined ? optMaxDepth : (optDepth !== undefined ? optDepth : 8)
   const stats = { files: 0, dirs: 0, skippedUnchanged: 0, skippedLarge: 0, conflicts: [], staleRemote: 0, touched: [], truncated: false }
   const nextState = { ...state }
+  const seenRemote = new Set()
   const resolvedLocalRoot = path.resolve(localDir)
 
   const syncFileEntry = async (rDir, lDir, e) => {
@@ -163,6 +166,7 @@ export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
     let r
     try { r = await sftp.stat(rp) } catch { return }
     if (isRemoteSymlink(r) || r.isDirectory?.()) return
+    seenRemote.add(rel)
     if (maxFileBytes > 0 && r.size > maxFileBytes) { stats.skippedLarge++; return }
     const localStat = lstatOrNull(lp)
     if (localStat && (localStat.isSymbolicLink() || localStat.isDirectory())) return
@@ -203,10 +207,42 @@ export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
   await walk(remoteDir, resolvedLocalRoot, maxDepth)
   if (stats.files >= maxFiles) stats.truncated = true
   // Informational: remote entries in the snapshot that no longer exist remotely.
-  for (const rel of Object.keys(state)) {
-    if (state[rel] && !nextState[rel]) stats.staleRemote++
+  if (!stats.truncated) {
+    for (const rel of Object.keys(state)) {
+      if (state[rel] && !seenRemote.has(rel)) {
+        stats.staleRemote++
+        if (!dryRun) delete nextState[rel]
+      }
+    }
   }
   return { stats, nextState }
+}
+
+function classifyPushConflict(force, r, sk, rk, lk) {
+  if (!r || !sk) return null
+  if (lk === sk && rk === sk) return 'unchanged'
+  if (!force && rk !== sk && lk !== sk && rk !== lk) return 'both-modified'
+  if (!force && rk !== sk && lk === sk) return 'remote-modified'
+  return null
+}
+
+function resolveSafeMirrorFile(localDir, rel) {
+  const resolvedRoot = path.resolve(localDir)
+  const lp = path.resolve(resolvedRoot, String(rel || '').replace(/\//g, path.sep))
+  if (!isInsideDir(resolvedRoot, lp)) return null
+  const realRoot = realpathOrNull(resolvedRoot)
+  const realLp = realpathOrNull(lp)
+  if (realRoot && realLp && !isInsideDir(realRoot, realLp)) return null
+  return lp
+}
+
+async function uploadAndAlignMtime(sftp, lp, rp, size) {
+  await sftp.writeFile(rp, readFileSync(lp))
+  let r2 = null
+  try { r2 = await sftp.stat(rp) } catch { /* Use current-time estimate if server cannot stat. */ }
+  const rmt = r2 ? r2.mtime : Math.floor(Date.now() / 1000)
+  try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch { /* Nonfatal mtime alignment. */ }
+  return rmt
 }
 
 /** Recursively push local mirror → remote (three-way, ignore-aware). */
@@ -221,6 +257,7 @@ export async function pushTree(sftp, localDir, remoteDir, opts = {}) {
   } = opts
   const stats = { files: 0, dirs: 0, skippedUnchanged: 0, skippedLarge: 0, conflicts: [], staleLocal: 0, pushed: [], truncated: false }
   const nextState = { ...state }
+  const seenLocal = new Set()
 
   const walk = async (lDir, rDir) => {
     const entries = readdirSync(lDir, { withFileTypes: true }).filter(
@@ -248,38 +285,24 @@ export async function pushTree(sftp, localDir, remoteDir, opts = {}) {
       if (isIgnored(rel, false)) return
       let l
       try { l = statSync(lp) } catch { return }
+      seenLocal.add(rel)
       if (maxFileBytes > 0 && l.size > maxFileBytes) { stats.skippedLarge++; return }
-      const lk = localKey(l)
       let r = null
       try { r = await sftp.stat(rp) } catch { /* absent → upload */ }
-      const rk = remoteKey(r)
-      const sk = state[rel] ? keyOf(state[rel].size, state[rel].mtime) : null
-      if (r && sk && lk === sk && rk === sk) { stats.skippedUnchanged++; return }
-      if (r && !force && sk && rk !== sk && lk !== sk && rk !== lk) {
-        stats.conflicts.push({ path: rp, reason: 'both-modified（远端与本地都改过，跳过不覆盖）' })
+      const decision = classifyPushConflict(force, r, state[rel] ? keyOf(state[rel].size, state[rel].mtime) : null, remoteKey(r), localKey(l))
+      if (decision === 'unchanged') { stats.skippedUnchanged++; return }
+      if (decision) {
+        stats.conflicts.push({
+          path: rp,
+          reason: decision === 'both-modified'
+            ? 'both-modified（远端与本地都改过，跳过不覆盖）'
+            : 'remote-modified（远端改过而本地未变；如需覆盖请用 force / 先 rw_sync）',
+        })
         return
       }
-      if (r && !force && sk && rk !== sk && lk === sk) {
-        stats.conflicts.push({ path: rp, reason: 'remote-modified（远端改过而本地未变；如需覆盖请用 force / 先 rw_sync）' })
-        return
-      }
-      if (r && !force && sk && rk === sk && lk && lk !== sk) {
-        // Normal case: local edited since sync, remote untouched → push.
-      }
-      if (dryRun) {
-        stats.files++
-        stats.pushed.push(rp)
-        return
-      }
+      if (dryRun) { stats.files++; stats.pushed.push(rp); return }
       try {
-        const buf = readFileSync(lp)
-        await sftp.writeFile(rp, buf)
-        // Align local mtime to whatever the remote server assigned, so the
-        // L==R==S invariant holds for the next run.
-        let r2 = null
-        try { r2 = await sftp.stat(rp) } catch { /* Use the existing current-time estimate if the server cannot stat the uploaded file. */ }
-        const rmt = r2 ? r2.mtime : Math.floor(Date.now() / 1000)
-        try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch { /* The upload succeeded; unsupported local mtime preservation is nonfatal. */ }
+        const rmt = await uploadAndAlignMtime(sftp, lp, rp, l.size)
         stats.files++
         stats.pushed.push(rp)
         nextState[rel] = { size: l.size, mtime: rmt }
@@ -289,8 +312,13 @@ export async function pushTree(sftp, localDir, remoteDir, opts = {}) {
 
   await walk(localDir, remoteDir)
   if (stats.files >= maxFiles) stats.truncated = true
-  for (const rel of Object.keys(state)) {
-    if (state[rel] && !nextState[rel]) stats.staleLocal++
+  if (!stats.truncated) {
+    for (const rel of Object.keys(state)) {
+      if (state[rel] && !seenLocal.has(rel)) {
+        stats.staleLocal++
+        if (!dryRun) delete nextState[rel]
+      }
+    }
   }
   return { stats, nextState }
 }
@@ -321,29 +349,20 @@ export function saveSyncState(localDir, state) {
 export async function pushOneFile(sftp, localDir, remoteDir, rel, opts = {}) {
   const { maxFileBytes = 0, isIgnored = () => false, force = false, state = {} } = opts
   if (isIgnored(rel, false)) return { status: 'skipped' }
-  const lp = path.join(localDir, rel.replace(/\//g, path.sep))
+  const lp = resolveSafeMirrorFile(localDir, rel)
+  if (!lp) return { status: 'skipped' }
   const rp = joinRemotePath(remoteDir, rel)
   let l
   try { l = statSync(lp) } catch { return { status: 'missing' } }
   if (maxFileBytes > 0 && l.size > maxFileBytes) return { status: 'skipped' }
-  const lk = localKey(l)
   let r = null
   try { r = await sftp.stat(rp) } catch { /* absent → upload */ }
-  const rk = remoteKey(r)
-  const sk = state[rel] ? keyOf(state[rel].size, state[rel].mtime) : null
-  if (r && sk && lk === sk && rk === sk) return { status: 'unchanged' }
-  if (r && !force && sk && rk !== sk && lk !== sk && rk !== lk) {
-    return { status: 'conflict', reason: 'both-modified' }
-  }
-  if (r && !force && sk && rk !== sk && lk === sk) {
-    return { status: 'conflict', reason: 'remote-modified' }
-  }
+  const decision = classifyPushConflict(force, r, state[rel] ? keyOf(state[rel].size, state[rel].mtime) : null, remoteKey(r), localKey(l))
+  if (decision === 'unchanged') return { status: 'unchanged' }
+  if (decision) return { status: 'conflict', reason: decision }
   try {
-    await sftp.writeFile(rp, readFileSync(lp))
-    let r2 = null
-    try { r2 = await sftp.stat(rp) } catch { /* Use the existing current-time estimate if the server cannot stat the uploaded file. */ }
-    const rmt = r2 ? r2.mtime : Math.floor(Date.now() / 1000)
-    try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch { /* The upload succeeded; unsupported local mtime preservation is nonfatal. */ }
+    if (!r) await mkdirRemoteDirs(sftp, remoteDirname(rp))
+    const rmt = await uploadAndAlignMtime(sftp, lp, rp, l.size)
     return { status: 'pushed', state: { [rel]: { size: l.size, mtime: rmt } } }
   } catch (e) {
     return { status: 'skipped', error: String((e && e.message) || e) }

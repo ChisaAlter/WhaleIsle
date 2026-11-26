@@ -7,7 +7,7 @@
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import {
-  normalizeRemotePath, joinRemotePath, remoteDirname, mkdirRemoteDirs, toDisplayPath,
+  normalizeRemotePath, joinRemotePath, remoteDirname, mkdirRemoteDirs, toDisplayPath, resolveMirrorDownloadPath,
 } from './paths.js'
 import { requestSessionHint } from './binding.js'
 import { listDirStructured, listRemoteDrives, removeRemoteTree, previewRemoteFile } from './remote-fs.js'
@@ -36,6 +36,7 @@ export function createFsRoutes({
       kind: 'exact',
       path: '/dsh-remote/ls',
       handler: async (req, res) => {
+        if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
         try {
           const hint = requestSessionHint(req)
           const b = await bindOrReply(req, res, hint)
@@ -204,8 +205,8 @@ export function createFsRoutes({
               return sendJson(res, 400, { ok: false, error: `file is ${st.size} bytes (over ${config.maxFileBytes} cap)` })
             }
             const base = b.mirrorDir || mirrorDirFor(ws, b.host, b.username, b.port)
-            const rel = p.startsWith(ws) ? p.slice(ws.length).replace(/^\/+/, '') : p.slice(1)
-            const local = path.join(base, rel)
+            const local = resolveMirrorDownloadPath(path, base, ws, p)
+            if (!local) return sendJson(res, 400, { ok: false, error: 'invalid download target path' })
             mkdirSync(path.dirname(local), { recursive: true })
             await sftp.fastGet(p, local)
             audit('download', `download ${p}`, 0, b)

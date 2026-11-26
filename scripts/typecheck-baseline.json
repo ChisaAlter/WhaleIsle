@@ -4997,7 +4997,6 @@
     },
     "src/main/dshd-daemon-runner.mjs": {
       "TS7005": {
-        "Variable 'daemon' implicitly has an 'any' type.": 1,
         "Variable 'launch' implicitly has an 'any' type.": 5
       },
       "TS7006": {
@@ -5009,7 +5008,6 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       },
       "TS7034": {
-        "Variable 'daemon' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'launch' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
@@ -5070,8 +5068,7 @@
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'next' implicitly has an 'any' type.": 1,
-        "Parameter 'origin' implicitly has an 'any' type.": 1,
-        "Parameter 'pairing' implicitly has an 'any' type.": 1
+        "Parameter 'origin' implicitly has an 'any' type.": 1
       },
       "TS7022": {
         "'gitTunnelStarting' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.": 1,
