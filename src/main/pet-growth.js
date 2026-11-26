@@ -18,13 +18,7 @@ const { Worker } = require('node:worker_threads');
 // version 1 is reset on its first refresh (see needsAccountingMigration).
 const ACCOUNTING_VERSION = 2;
 
-// 1 fed token = 1 growth point. Thresholds are cumulative points.
-// Growth ladder — each tier carries a theme color used across the status
-// card (level badge, growth bar fill, feed button) so the player feels the
-// progression visually, not just by name. Ten tiers, ~1.7× per step:
-// the first promotion costs 1亿 and maxing out takes ~200亿 — a lifetime
-// ladder, not a weekend one. Hue marches cool→warm→gold as she grows from
-// a tiny calf to the god of the compute sea.
+// 1 fed token = 1 growth point. Thresholds are cumulative points (10 tiers, ~1.7x/step).
 const LEVELS = [
   { at: 0,            name: '幼鲸',     color: '#7fb3e8' }, // pale blue — baby
   { at: 100_000_000,  name: '小鲸',     color: '#4a90d9' }, // ocean blue — 1亿
@@ -57,17 +51,10 @@ function levelName(points) {
   return LEVELS[levelFor(points) - 1].name;
 }
 
-// Usage that counts as food: uncached input + output. Cache reads and writes
-// are metered separately by the provider (and by Magpie) — they are re-read
-// context, not fresh work, and adding them multiplied the pet's total over the
-// real spend. Reasoning is already inside output (same convention as the
-// usage panel), so it is not added twice.
+// Food counts uncached input + output (reasoning is inside output).
 function usageTokens(usage) {
-  if (!usage || typeof usage !== 'object') {
-    return 0;
-  }
-  return (usage.inputTokens || 0)
-    + (usage.outputTokens || 0);
+  if (!usage || typeof usage !== 'object') return 0;
+  return (usage.inputTokens || 0) + (usage.outputTokens || 0);
 }
 
 // Pull a usage sample out of one session-log event. Mirrors the panel's
@@ -366,107 +353,117 @@ function scanSessionTokens(sessionsDir, cache, includeSamples = false) {
   return { total, sessions, ...(includeSamples ? { sampleTotals } : {}) };
 }
 
-// Local calendar day key — "今日" means the user's own midnight boundary,
-// not UTC.
+const MAGPIE_AGENT = 'dsh';
 function dayKey(now = Date.now()) {
   const d = new Date(now);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    + `-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
-// ── Magpie usage (preferred source) ──
-//
-// The local Magpie gateway writes one JSON row per completed model call to
-// ~/.config/magpie/usage.jsonl: `in` / `out` are its headline "tokens", while
-// `cache_read` / `cache_write` are separate stats that never join that number.
-// Rows for other agents (codex, …) are not the harness's spend. When this file
-// exists it is the accounting source of truth: it already bills a forked
-// subagent's work once, per request.
-const MAGPIE_AGENT = 'dsh';
-
 function magpieUsageFile(env = process.env) {
   const xdg = typeof env?.XDG_CONFIG_HOME === 'string' && env.XDG_CONFIG_HOME.trim();
   return (typeof env?.MAGPIE_USAGE_FILE === 'string' && env.MAGPIE_USAGE_FILE.trim())
     || path.join(xdg && path.isAbsolute(xdg) ? xdg : path.join(os.homedir(), '.config'), 'magpie', 'usage.jsonl');
 }
-
-// Stable identity for one credited request. `route_id` is unique per routed
-// call; rejected calls (no route) fall back to their written identity.
 function magpieRequestId(row) {
   const id = row.route_id ?? row.request_id ?? row.rid ?? row.response_id;
-  if (id !== undefined && id !== null && id !== '') {
-    return `route:${String(id)}`;
-  }
-  if (typeof row.t === 'string' && row.t) {
-    return `row:${row.t}|${row.session ?? ''}|${row.status ?? ''}|${row.model ?? ''}`;
-  }
+  if (id !== undefined && id !== null && id !== '') return `route:${String(id)}`;
+  if (typeof row.t === 'string' && row.t) return `row:${row.t}|${row.session ?? ''}|${row.status ?? ''}|${row.model ?? ''}`;
   return null;
 }
-
-// One credited sample per request: the ledger never has to guess which part of
-// a cumulative total it already ate, and two calls with the same size cannot
-// cancel each other out.
-function sampleKey(scope, id) {
-  return createHash('sha256').update(JSON.stringify([scope, id])).digest('hex');
+function sampleKey(scope, id) { return createHash('sha256').update(JSON.stringify([scope, id])).digest('hex'); }
+function tokenCount(value) { return Number.isFinite(value) && value > 0 ? value : 0; }
+/** @param {string[]} lines @param {string} day @param {{ total: number, todayUsed: number, calls: number, sessions: Set<string>, sampleTotals: Record<string, number> }} st */
+function foldMagpieLines(lines, day, st) {
+  for (const line of lines) {
+    if (!line || line.charCodeAt(0) !== 123) continue;
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }
+    if (row?.agent !== MAGPIE_AGENT) continue;
+    const amount = tokenCount(row.in) + tokenCount(row.out);
+    st.calls += 1;
+    st.total += amount;
+    if (typeof row.session === 'string' && row.session) st.sessions.add(row.session);
+    const at = typeof row.t === 'string' ? Date.parse(row.t) : NaN;
+    if (Number.isFinite(at) && dayKey(at) === day) st.todayUsed += amount;
+    const id = amount > 0 ? magpieRequestId(row) : null;
+    if (id) st.sampleTotals[sampleKey('magpie', id)] = amount;
+  }
 }
-
-function tokenCount(value) {
-  return Number.isFinite(value) && value > 0 ? value : 0;
+/** @param {{ total: number, todayUsed: number, calls: number, sessions: Set<string>, sampleTotals: Record<string, number> }} st */
+function snapMagpie(st) {
+  return st.calls === 0 ? null : { total: st.total, todayUsed: st.todayUsed, calls: st.calls, sessions: st.sessions.size, sampleTotals: { ...st.sampleTotals } };
 }
-
-// Aggregate the gateway log. Returns null when the file is absent or
-// unreadable so callers fall back to the session-log scan.
-function readMagpieUsage(file, { now = Date.now() } = {}) {
-  if (!file) {
-    return null;
+/** @param {string} file @param {number} start @param {number} len */
+function readRangeUtf8(file, start, len) {
+  const buf = Buffer.alloc(len);
+  const fd = fs.openSync(file, 'r');
+  try {
+    let off = 0;
+    while (off < len) { const n = fs.readSync(fd, buf, off, len - off, start + off); if (n <= 0) break; off += n; }
+    return buf.subarray(0, off).toString('utf8');
+  } finally { fs.closeSync(fd); }
+}
+/** @param {{ total: number, todayUsed: number, calls: number, sessions: Set<string>, sampleTotals: Record<string, number> }} base @param {string} remainder @param {string} day */
+function snapWithRemainder(base, remainder, day) {
+  if (!remainder) return snapMagpie(base);
+  const tmp = { ...base, sessions: new Set(base.sessions), sampleTotals: { ...base.sampleTotals } };
+  foldMagpieLines([remainder], day, tmp);
+  return snapMagpie(tmp);
+}
+/** @param {string} file @param {string} day @param {Map<string, any>} cacheMap */
+function readMagpieUsageCached(file, day, cacheMap) {
+  const cacheKey = `__magpie__:${file}`;
+  let st;
+  try { st = fs.statSync(file); } catch { cacheMap.delete(cacheKey); return null; }
+  const hit = cacheMap.get(cacheKey);
+  if (hit && hit.day === day && hit.ino === st.ino && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
+    return snapWithRemainder(hit.state, hit.remainder, day);
+  }
+  if (hit && hit.day === day && hit.ino === st.ino && st.size > hit.size) {
+    try {
+      const combined = hit.remainder + readRangeUtf8(file, hit.size, st.size - hit.size);
+      const nl = combined.lastIndexOf('\n');
+      hit.remainder = nl >= 0 ? combined.slice(nl + 1) : combined;
+      if (nl >= 0) foldMagpieLines(combined.slice(0, nl).split('\n'), day, hit.state);
+      hit.size = st.size; hit.mtimeMs = st.mtimeMs;
+      return snapWithRemainder(hit.state, hit.remainder, day);
+    } catch { cacheMap.delete(cacheKey); }
   }
   let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
+  try { text = fs.readFileSync(file, 'utf8'); } catch { cacheMap.delete(cacheKey); return null; }
+  const state = { total: 0, todayUsed: 0, calls: 0, sessions: new Set(), sampleTotals: {} };
+  const nl = text.lastIndexOf('\n');
+  const remainder = nl >= 0 ? text.slice(nl + 1) : text;
+  if (nl >= 0) foldMagpieLines(text.slice(0, nl).split('\n'), day, state);
+  cacheMap.set(cacheKey, { day, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs, remainder, state });
+  return snapWithRemainder(state, remainder, day);
+}
+/** @param {string} file @param {{ now?: number, cache?: Map<string, any> }} [options] */
+function readMagpieUsage(file, { now = Date.now(), cache } = {}) {
+  if (!file) return null;
   const day = dayKey(now);
-  let total = 0;
-  let todayUsed = 0;
-  let calls = 0;
-  const sessions = new Set();
-  const sampleTotals = {};
-  for (const line of text.split('\n')) {
-    if (!line || line.charCodeAt(0) !== 123) {
-      continue;
-    }
-    let row;
-    try {
-      row = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (row?.agent !== MAGPIE_AGENT) {
-      continue;
-    }
-    const amount = tokenCount(row.in) + tokenCount(row.out);
-    calls += 1;
-    total += amount;
-    if (typeof row.session === 'string' && row.session) {
-      sessions.add(row.session);
-    }
-    const at = typeof row.t === 'string' ? Date.parse(row.t) : NaN;
-    if (Number.isFinite(at) && dayKey(at) === day) {
-      todayUsed += amount;
-    }
-    const id = amount > 0 ? magpieRequestId(row) : null;
-    if (id) {
-      sampleTotals[sampleKey('magpie', id)] = amount;
+  if (cache instanceof Map) return readMagpieUsageCached(file, day, cache);
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  const state = { total: 0, todayUsed: 0, calls: 0, sessions: new Set(), sampleTotals: {} };
+  foldMagpieLines(text.split('\n'), day, state);
+  return snapMagpie(state);
+}
+/** @param {Record<string, number>} seen @param {Record<string, number>} sampleTotals */
+function mergeFoodSeen(seen, sampleTotals) {
+  let delta = 0;
+  for (const [key, amount] of Object.entries(sampleTotals)) {
+    const previous = seen[key] || 0;
+    delta += Math.max(0, amount - previous);
+    seen[key] = Math.max(previous, amount);
+  }
+  let pruned = false;
+  const seenKeys = Object.keys(seen);
+  if (seenKeys.length > 10_000) {
+    for (const key of seenKeys) {
+      if (!Object.prototype.hasOwnProperty.call(sampleTotals, key)) { delete seen[key]; pruned = true; }
     }
   }
-  // A log with no dsh rows (another tool's gateway traffic, or a file Magpie
-  // has just created) says nothing about this harness — let the session logs
-  // answer instead of reporting zero.
-  if (calls === 0) {
-    return null;
-  }
-  return { total, todayUsed, calls, sessions: sessions.size, sampleTotals };
+  return { delta, pruned };
 }
 
 // The scan interface shared by the tracker and its worker: Magpie first (the
@@ -474,7 +471,7 @@ function readMagpieUsage(file, { now = Date.now() } = {}) {
 // absolute `todayUsed` and its `source`; the log fallback keeps `today`
 // incremental because it has no per-event clock in the fold.
 function scanUsage({ sessionsDir, usageFile, cache, includeSamples = false } = {}) {
-  const magpie = readMagpieUsage(usageFile);
+  const magpie = readMagpieUsage(usageFile, { cache });
   if (magpie) {
     return {
       total: magpie.total,
@@ -665,6 +662,54 @@ function needsAccountingMigration(g) {
 // Electron main thread never pays the decode; tests inject the in-process
 // scan for determinism. `usageFile` names Magpie's usage log ('' disables the
 // preferred source).
+/** @param {any} g @param {number} total @param {number} baseline @param {string} source @param {Record<string, number> | null} sampleTotals */
+function nextFoodLedger(g, total, baseline, source, sampleTotals) {
+  if (!sampleTotals) return { food: g.food, delta: Math.max(0, total - g.tokensSeen), foodChanged: false };
+  const food = g.food;
+  if (!food) {
+    return {
+      food: { version: 1, source, available: Math.max(0, total - baseline - g.tokensFed), seen: { ...sampleTotals } },
+      delta: Math.max(0, total - g.tokensSeen),
+      foodChanged: true,
+    };
+  }
+  if (food.source && food.source !== source) {
+    return { food: { version: 1, source, available: food.available, seen: { ...sampleTotals } }, delta: 0, foodChanged: true };
+  }
+  const seen = { ...food.seen };
+  const merged = mergeFoodSeen(seen, sampleTotals);
+  return {
+    food: { version: 1, source, available: food.available + merged.delta, seen },
+    delta: merged.delta,
+    foodChanged: merged.delta > 0 || merged.pruned || !food.source,
+  };
+}
+/** @param {any} g @param {any} next @param {any} food @param {boolean} foodChanged */
+function isGrowthDirty(g, next, food, foodChanged) {
+  if (next.tokensSeen !== g.tokensSeen || next.baseline !== g.baseline || next.accountingVersion !== g.accountingVersion) return true;
+  if (!g.today || next.today.used !== g.today.used || next.today.day !== g.today.day) return true;
+  return food ? (!g.food || foodChanged) : Boolean(g.food);
+}
+/** @param {any} g @param {any} scan @param {string} day */
+function foldGrowthRefresh(g, scan, day) {
+  const total = Number.isFinite(scan?.total) && scan.total > 0 ? Math.floor(scan.total) : 0;
+  const sampleTotals = scan?.sampleTotals && typeof scan.sampleTotals === 'object' ? scan.sampleTotals : null;
+  const source = scan?.source === 'magpie' ? 'magpie' : 'sessions';
+  const absoluteToday = Number.isFinite(scan?.todayUsed) ? Math.max(0, Math.floor(scan.todayUsed)) : null;
+  if (needsAccountingMigration(g)) {
+    const next = { ...g, accountingVersion: ACCOUNTING_VERSION, tokensSeen: total, baseline: total, tokensFed: 0, today: { day, used: absoluteToday ?? 0 } };
+    if (sampleTotals) next.food = { version: 1, source, available: 0, seen: { ...sampleTotals } };
+    else delete next.food;
+    return { next, dirty: true };
+  }
+  const baseline = g.baseline === null ? Math.max(0, total - g.tokensFed) : Math.min(g.baseline, total);
+  const { food, delta, foodChanged } = nextFoodLedger(g, total, baseline, source, sampleTotals);
+  const prevToday = g.today?.day === day ? g.today.used : 0;
+  const today = { day, used: absoluteToday ?? (g.baseline === null ? 0 : prevToday + delta) };
+  const next = { ...g, accountingVersion: ACCOUNTING_VERSION, tokensSeen: total, baseline, today, ...(food ? { food } : {}) };
+  return { next, dirty: isGrowthDirty(g, next, food, foodChanged) };
+}
+
 function createGrowthTracker({ sessionsDir, getGrowth, saveGrowth, scanTokens, usageFile }) {
   const scanner = scanTokens
     ? { scan: (dir) => scanTokens(dir) }
@@ -686,88 +731,8 @@ function createGrowthTracker({ sessionsDir, getGrowth, saveGrowth, scanTokens, u
     if (!inFlight) {
       inFlight = (async () => {
         const scan = await scanner.scan(sessionsDir, magpieFile);
-        const total = Number.isFinite(scan?.total) && scan.total > 0 ? Math.floor(scan.total) : 0;
-        const sampleTotals = scan?.sampleTotals && typeof scan.sampleTotals === 'object'
-          ? scan.sampleTotals : null;
-        // A Magpie scan knows the exact local-day figure; the log fallback is
-        // incremental (no clock in the fold), so it keeps the running counter.
-        const source = scan?.source === 'magpie' ? 'magpie' : 'sessions';
-        const absoluteToday = Number.isFinite(scan?.todayUsed)
-          ? Math.max(0, Math.floor(scan.todayUsed)) : null;
-        const g = read();
-        const day = dayKey();
-        let next;
-        let dirty;
-        if (needsAccountingMigration(g)) {
-          // Keep earned growth, drop every stale counter and the old ledger:
-          // the new total becomes the watermark, so nothing already spent is
-          // retroactively edible and the old tokensFed debt cannot lock the bowl.
-          next = {
-            ...g,
-            accountingVersion: ACCOUNTING_VERSION,
-            tokensSeen: total,
-            baseline: total,
-            tokensFed: 0,
-            today: { day, used: absoluteToday ?? 0 },
-          };
-          if (sampleTotals) {
-            next.food = { version: 1, source, available: 0, seen: { ...sampleTotals } };
-          } else {
-            delete next.food;
-          }
-          dirty = true;
-        } else {
-          // First scan plants the watermark at corpus-minus-eaten so already-fed
-          // credit survives the upgrade; later the watermark only follows the
-          // corpus DOWN (logs deleted → that ceiling is gone for good).
-          const baseline = g.baseline === null
-            ? Math.max(0, total - g.tokensFed)
-            : Math.min(g.baseline, total);
-          let delta = Math.max(0, total - g.tokensSeen);
-          let food = g.food;
-          let foodChanged = false;
-          if (sampleTotals) {
-            if (!food) {
-              // Seed historical buckets without retroactive food. Preserve only
-              // the legacy balance; neither growth nor lifetime feeding resets.
-              food = { version: 1, source, available: Math.max(0, total - baseline - g.tokensFed), seen: { ...sampleTotals } };
-              foodChanged = true;
-            } else if (food.source && food.source !== source) {
-              // The accounting source flipped (Magpie appeared or went away).
-              // The observed keys belong to the other source, so rebase them
-              // without minting that source's whole history as food.
-              food = { version: 1, source, available: food.available, seen: { ...sampleTotals } };
-              delta = 0;
-              foodChanged = true;
-            } else {
-              const seen = { ...food.seen };
-              delta = 0;
-              for (const [key, amount] of Object.entries(sampleTotals)) {
-                const previous = seen[key] || 0;
-                delta += Math.max(0, amount - previous);
-                seen[key] = Math.max(previous, amount);
-              }
-              food = { version: 1, source, available: food.available + delta, seen };
-              foodChanged = delta > 0 || !g.food.source;
-            }
-          }
-          const today = absoluteToday !== null
-            ? { day, used: absoluteToday }
-            : g.baseline === null
-              ? { day, used: 0 }
-              : { day, used: (g.today && g.today.day === day ? g.today.used : 0) + delta };
-          next = { ...g, accountingVersion: ACCOUNTING_VERSION, tokensSeen: total, baseline, today, ...(food ? { food } : {}) };
-          dirty = next.tokensSeen !== g.tokensSeen
-            || next.baseline !== g.baseline
-            || next.accountingVersion !== g.accountingVersion
-            || !g.today
-            || next.today.used !== g.today.used
-            || next.today.day !== g.today.day
-            || (food ? !g.food || foodChanged : Boolean(g.food));
-        }
-        if (dirty) {
-          write(next);
-        }
+        const { next, dirty } = foldGrowthRefresh(read(), scan, dayKey());
+        if (dirty) write(next);
         return next;
       })().finally(() => { inFlight = null; });
     }

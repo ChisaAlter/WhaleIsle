@@ -1,5 +1,9 @@
 const { app, safeStorage } = require('electron');
-app.commandLine.appendSwitch('force_high_performance_gpu');
+// Respect OS/Electron GPU power policy by default (gpu-tier.js handles low-power hints);
+// opt in to discrete GPU only when explicitly requested.
+if (process.env.DSHD_FORCE_HIGH_PERF_GPU === '1') {
+  app.commandLine.appendSwitch('force_high_performance_gpu');
+}
 // WebCodecs crash reports need JS call stacks in the crash dump.
 app.commandLine.appendSwitch('enable-features', 'DocumentPolicyIncludeJSCallStacksInCrashReports');
 const { PRODUCT_NAME, LEGACY_DESKTOP_USER_DATA, preserveUserDataPath } = require('../shared/product-identity');

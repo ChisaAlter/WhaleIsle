@@ -107,22 +107,23 @@ function createDshWatchWorker(options) {
     }
     return pending.promise;
   }
-  function close() {
-    if (closed) return closing || Promise.resolve();
-    closed = true;
+  function stop() {
     clearInterval(timer);
     timer = null;
-    // Keep the original stop-time sub-minute checkpoint synchronous. A late
-    // worker response cannot write through an old manager after replacement.
     if (runtime && JSON.stringify(runtime) !== JSON.stringify(read())) {
-      try { options.saveDsh?.(runtime); } catch { /* same best-effort stop checkpoint */ }
+      try { options.saveDsh?.(runtime); } catch { /* best-effort pause checkpoint */ }
     }
     runtime = null;
     const w = worker;
     worker = null;
-    active?.reject(new Error('pet watcher closed'));
+    active?.reject(new Error('pet watcher stopped'));
     active = null;
-    closing = w ? w.terminate().then(() => {}, () => {}) : Promise.resolve();
+    return w ? w.terminate().then(() => {}, () => {}) : Promise.resolve();
+  }
+  function close() {
+    if (closed) return closing || Promise.resolve();
+    closed = true;
+    closing = stop();
     return closing;
   }
   function start(intervalMs = 2000) {
@@ -131,7 +132,7 @@ function createDshWatchWorker(options) {
     timer.unref?.();
     return close;
   }
-  return { poll, start, close };
+  return { poll, start, stop, close };
 }
 
 module.exports = { createDshWatchWorker };

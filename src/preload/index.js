@@ -338,6 +338,7 @@ function live2dPetApi(renderer) {
     respondApproval: invoke(renderer, 'shell:live2d-respond'),
     onDsh: subscribe(renderer, 'shell:live2d-dsh'),
     onAlert: subscribe(renderer, 'shell:live2d-alert'),
+    onPower: subscribe(renderer, 'shell:live2d-power'),
   };
 }
 

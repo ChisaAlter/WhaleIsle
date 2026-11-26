@@ -19,14 +19,8 @@ try {
   // `electron.protocol` is unavailable in unit-test stubs.
 }
 
-// Desktop pet window: a transparent, frameless, always-on-top BrowserWindow
-// that covers the whole virtual screen. The OS window itself NEVER moves —
-// setPosition on a layered transparent window blanks its surface on Windows
-// (that was the drag flicker/vanish); instead the renderer draws the
-// character at the persisted screen position inside the overlay, and a drag
-// just repaints at new coordinates. The renderer hit-tests the pet sprite
-// and toggles click-through per cursor position, so the pet is interactive
-// only while the pointer is on it.
+// Desktop pet window: transparent, frameless, always-on-top BrowserWindow covering
+// one display; the renderer draws at screen coordinates and toggles click-through.
 const PET_WIDTH = 240;
 const PET_HEIGHT = 260;
 const EDGE_GAP = 24;
@@ -90,31 +84,39 @@ function isPetFrameUrl(url, petUrl = PET_PAGE_URL) {
   }
 }
 
-// Serve src/renderer/** over pet://pet/**. Path traversal outside the
-// renderer root is rejected.
+// Serve pet-owned assets over pet://pet/** with strict hostname, allowlist and realpath checks.
+const PET_ALLOWED_ROOT_RE = /^(?:pet-live2d(?:\/.*|-[a-z0-9-]+\.(?:js|css)|\.(?:html|js|css)))$/i;
 function createPetProtocolHandler(rendererFile) {
   const root = path.dirname(rendererFile(RENDERER_PAGE));
+  const sharedRoot = path.resolve(root, '../shared');
+  const assetsRoot = path.resolve(root, '../../assets');
   return async (request) => {
     try {
       const url = new URL(request.url);
+      if (url.hostname !== 'pet') return new Response('not found', { status: 404 });
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
-      const sharedTokens = rel === 'dsh-webui-tokens.css';
-      const sharedDom = rel === 'dom.js';
-      const projectHead = rel === 'pet-head.png';
-      const file = sharedTokens
-        ? path.resolve(root, '../shared/dsh-webui-tokens.css')
-        : sharedDom
-          ? path.resolve(root, '../shared/dom.js')
-          : projectHead
-            ? path.resolve(root, '../../assets/whale-head.png')
-            : path.normalize(path.join(root, rel));
-      if ((!sharedTokens && !sharedDom && !projectHead && !file.startsWith(root + path.sep))
-        || !(await fs.promises.stat(file)).isFile()) {
+      let allowedBase = root;
+      let file;
+      if (rel === 'dsh-webui-tokens.css' || rel === 'dom.js') {
+        allowedBase = sharedRoot;
+        file = path.resolve(sharedRoot, rel);
+      } else if (rel === 'pet-head.png') {
+        allowedBase = assetsRoot;
+        file = path.resolve(assetsRoot, 'whale-head.png');
+      } else if (PET_ALLOWED_ROOT_RE.test(rel)) {
+        file = path.resolve(root, rel);
+      } else {
         return new Response('not found', { status: 404 });
       }
-      return new Response(await fs.promises.readFile(file), {
+      const realBase = await fs.promises.realpath(allowedBase);
+      const realFile = await fs.promises.realpath(file);
+      if ((realFile !== realBase && !realFile.startsWith(`${realBase}${path.sep}`))
+        || !(await fs.promises.stat(realFile)).isFile()) {
+        return new Response('not found', { status: 404 });
+      }
+      return new Response(await fs.promises.readFile(realFile), {
         headers: {
-          'Content-Type': MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream',
+          'Content-Type': MIME_TYPES[path.extname(realFile).toLowerCase()] || 'application/octet-stream',
           'Cache-Control': 'no-store',
         },
       });
@@ -122,6 +124,27 @@ function createPetProtocolHandler(rendererFile) {
       return new Response('not found', { status: 404 });
     }
   };
+}
+
+function pointInPaddedRect(point, r, pad) {
+  return point.x >= r.x - pad && point.x <= r.x + r.w + pad
+    && point.y >= r.y - pad && point.y <= r.y + r.h + pad;
+}
+function pointInsideBounds(point, b) {
+  return point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height;
+}
+
+function bindPowerMonitorEvents(powerMonitor, surfaceWatch, onPause, onWake) {
+  if (!powerMonitor || typeof powerMonitor.on !== 'function') return;
+  for (const ev of ['suspend', 'lock-screen']) {
+    powerMonitor.on(ev, onPause);
+    surfaceWatch.push(() => powerMonitor.removeListener?.(ev, onPause));
+  }
+  for (const ev of ['resume', 'unlock-screen']) {
+    const handler = () => onWake(ev);
+    powerMonitor.on(ev, handler);
+    surfaceWatch.push(() => powerMonitor.removeListener?.(ev, handler));
+  }
 }
 
 function createLive2dPetManager(options = {}) {
@@ -138,6 +161,7 @@ function createLive2dPetManager(options = {}) {
   const petUrl = PET_PAGE_URL;
 
   let state = normalizeLive2dPetState(loadConfig()?.live2dPet);
+  /** @type {any} */
   let win = null;
   const getWindow = () => win;
   const voice = createLive2dVoiceBridge({
@@ -177,6 +201,7 @@ function createLive2dPetManager(options = {}) {
     },
     scanTokens: options.scanTokens,
   });
+  /** @type {any} */
   let growthTimer = 0;
 
   // DSH link (§B6): the watcher tails session logs and emits already-gated
@@ -226,6 +251,7 @@ function createLive2dPetManager(options = {}) {
     },
     isPetVisible: () => Boolean(petRendererReady && win && !win.isDestroyed?.() && win.isVisible()),
   });
+  /** @type {any} */
   let stopDshWatch = null;
 
   // Quick chat (§B9): credentials are re-read per call so a key update in
@@ -280,13 +306,7 @@ function createLive2dPetManager(options = {}) {
       return false;
     }
   };
-  // Personality mirror: the pet's 性格 select is the single control for
-  // BOTH personas — the assistant catalog's personality follows it. Writes
-  // ride the same loopback bridge as pet/chat; while the harness is down
-  // the latest value waits in `pendingPersonality` and a slow retry keeps
-  // trying. An answered rejection is usually a real verdict, but a
-  // snapshot-conflict write retries cleanly, so rejections get a bounded
-  // number of extra attempts before the value is dropped.
+  // Personality mirror: sync pet personality to assistant catalog with bounded retries.
   const MIRROR_RETRY_MS = 30000;
   const MIRROR_MAX_REJECT_RETRIES = 3;
   const mirrorRetryMs = typeof options.mirrorRetryMs === 'number' && options.mirrorRetryMs > 0
@@ -345,13 +365,7 @@ function createLive2dPetManager(options = {}) {
     mirrorRejectRetries = 0;
     void flushPersonalityMirror();
   }
-  // Vision route for 「看看屏幕」: the settings-page fields
-  // (live2dPet.settings.lookProvider + lookModel) are the user-facing
-  // knobs; the options.* pair stays as a wiring-time fallback. An empty
-  // model means the look path is unavailable — the handler refuses BEFORE
-  // any screen capture so a dead button never grabs a frame. The provider
-  // is what makes the pick real: petChat dispatches it through the whale
-  // plugin's ctx.llm route, never the desktop's generic baseUrl.
+  // Vision route for 「看看屏幕」: settings-page lookProvider/lookModel with options fallback.
   const optionsLookModel = typeof options.lookModel === 'string' ? options.lookModel.trim() : '';
   const optionsLookProvider = typeof options.lookProvider === 'string' ? options.lookProvider.trim() : '';
   const lookRouteOf = () => {
@@ -391,39 +405,25 @@ function createLive2dPetManager(options = {}) {
     getWhaleSettings,
   });
 
-  // Cursor pump: forwarded mousemoves through a click-through layered window
-  // do not reliably reach the renderer, so the main process polls the global
-  // cursor itself and pushes window-local positions. The renderer keeps
-  // deciding when to toggle interactivity — its sprite bounds are accurate.
   const CURSOR_POLL_MS = 33;
-  // A parked cursor still gets the same key re-sent roughly once a second —
-  // a push emitted before the renderer subscribed would otherwise be lost
-  // forever, leaving her unresponsive until the mouse happens to move.
   const CURSOR_HEARTBEAT = 30;
-  // Hold-zone pad beyond the renderer-reported BODY bounds (already the
-  // tight alpha box + hover pad). While interactive the whole fullscreen
-  // overlay eats clicks, so every px here is a dead ring around her —
-  // 8 covers small frame-to-frame sway without swallowing clicks meant
-  // for neighboring windows.
   const CURSOR_PET_PAD = 8;
+  /** @type {any} */
   let cursorTimer = 0;
   let lastCursorKey = '';
   let cursorTicks = 0;
+  let cursorIdlePolls = 0;
+  /** @type {any} */
+  let cachedWinBounds = null;
   let cursorInPetFrame = false;
   let rendererInteractive = false;
-  // The renderer reports where her BODY is visually drawn (screen coords,
-  // tight alpha bounds + hover pad — not the whole pet frame) while roaming
-  // or resized — this is the interactive hold zone. Without it a wander
-  // leaves a dead hover at the old spot and a phantom interactive hole at
-  // the new one. Never persisted: `state.x/y` stays the user's chosen
-  // anchor.
+  let powerPaused = false;
   let roamRect = null;
-  // Logical interactive islands in screen coords — her body plus the status
-  // card / chat card / picker / pinned bubble, as reported by the renderer.
-  // The cursor hold checks these too, so moving from her body onto the status
-  // card (or back) keeps the window interactive without waiting for the
-  // renderer's exit/enter round trip.
   let hitRects = [];
+  function readCachedWinBounds() {
+    if (cachedWinBounds) return cachedWinBounds;
+    try { cachedWinBounds = win.getBounds(); return cachedWinBounds; } catch { return null; }
+  }
   function setHitRegions(regions) {
     if (!Array.isArray(regions)) {
       hitRects = [];
@@ -436,61 +436,39 @@ function createLive2dPetManager(options = {}) {
     });
   }
   function pollCursor() {
-    if (!win || win.isDestroyed?.()) {
-      return;
-    }
+    if (!win || win.isDestroyed?.() || powerPaused) return;
+    if (cursorIdlePolls > 15 && (cursorTicks % 5) !== 0) { cursorTicks += 1; return; }
     const point = screen?.getCursorScreenPoint?.();
-    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-      return;
-    }
-    let bounds;
-    try {
-      bounds = win.getBounds();
-    } catch {
-      return;
-    }
-    const inside = point.x >= bounds.x && point.x < bounds.x + bounds.width
-      && point.y >= bounds.y && point.y < bounds.y + bounds.height;
-    // Sticky hold, not just a fast enter: while the cursor sits inside the
-    // padded body bounds the overlay keeps accepting input even if the
-    // renderer just asked to drop it. The renderer's tighter alpha bounds
-    // can dip out mid-gesture (she sways or runs under a parked cursor),
-    // and honoring that exit punches a click-through hole under a click
-    // that is already on its way. Leaving the zone releases the hold.
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    const bounds = readCachedWinBounds();
+    if (!bounds) return;
+    const inside = pointInsideBounds(point, bounds);
     let zone = roamRect;
     if (!zone) {
       const pos = petPosition();
       const scale = Number.isFinite(state.settings?.scale) ? state.settings.scale : 1;
       zone = { x: pos.x, y: pos.y, w: PET_WIDTH * scale, h: PET_HEIGHT * scale };
     }
-    const inZone = inside
-      && point.x >= zone.x - CURSOR_PET_PAD && point.x <= zone.x + zone.w + CURSOR_PET_PAD
-      && point.y >= zone.y - CURSOR_PET_PAD && point.y <= zone.y + zone.h + CURSOR_PET_PAD;
-    const inHit = inside && hitRects.some((r) =>
-      point.x >= r.x - CURSOR_PET_PAD && point.x <= r.x + r.w + CURSOR_PET_PAD
-      && point.y >= r.y - CURSOR_PET_PAD && point.y <= r.y + r.h + CURSOR_PET_PAD);
+    const inZone = inside && pointInPaddedRect(point, zone, CURSOR_PET_PAD);
+    const inHit = inside && hitRects.some((r) => pointInPaddedRect(point, r, CURSOR_PET_PAD));
     const inPet = inZone || inHit;
-    if (inPet !== cursorInPetFrame) {
-      cursorInPetFrame = inPet;
-      applyInteractive();
-    }
+    if (inPet !== cursorInPetFrame) { cursorInPetFrame = inPet; applyInteractive(); }
     const x = Math.round(point.x - bounds.x);
     const y = Math.round(point.y - bounds.y);
     const key = inside ? `${x},${y}` : 'out';
     cursorTicks += 1;
-    if (key === lastCursorKey && cursorTicks % CURSOR_HEARTBEAT !== 0) {
-      return;
+    if (key === lastCursorKey) {
+      cursorIdlePolls = inPet ? 0 : cursorIdlePolls + 1;
+      if (cursorTicks % CURSOR_HEARTBEAT !== 0) return;
+    } else {
+      cursorIdlePolls = 0;
     }
     lastCursorKey = key;
-    try {
-      win.webContents.send('shell:live2d-cursor',
-        inside ? { inside: true, x, y } : { inside: false });
-    } catch { /* The overlay can close between cursor sampling and this transient push. */ }
+    try { win.webContents.send('shell:live2d-cursor', inside ? { inside: true, x, y } : { inside: false }); }
+    catch { /* The overlay can close between cursor sampling and this transient push. */ }
   }
   function startCursorPump() {
-    if (cursorTimer) {
-      return;
-    }
+    if (cursorTimer || powerPaused) return;
     cursorTimer = setInterval(pollCursor, CURSOR_POLL_MS);
     cursorTimer.unref?.();
   }
@@ -499,9 +477,8 @@ function createLive2dPetManager(options = {}) {
     cursorTimer = 0;
     lastCursorKey = '';
     cursorTicks = 0;
+    cursorIdlePolls = 0;
     cursorInPetFrame = false;
-    // A stale `true` would pin the next window interactive forever —
-    // the fresh page re-requests what it needs.
     rendererInteractive = false;
     hitRects = [];
   }
@@ -748,8 +725,10 @@ function createLive2dPetManager(options = {}) {
     let origin;
     try {
       origin = win.getBounds();
+      cachedWinBounds = origin;
     } catch {
       origin = overlayBounds();
+      cachedWinBounds = origin;
     }
     const displays = (screen?.getAllDisplays?.() || [])
       .map((display) => display?.bounds)
@@ -828,18 +807,17 @@ function createLive2dPetManager(options = {}) {
     // Creation clamps the window to the primary display's size; re-apply the
     // union bounds so the overlay really covers every monitor.
     try { win.setBounds(overlayBounds()); } catch (error) { console.warn('[desktop-live2d] resize overlay failed', error); }
-    try { dbg(`pet: actual bounds ${JSON.stringify(win.getBounds())}`); } catch { /* Bounds diagnostics must not prevent the overlay from becoming visible. */ }
+    try { cachedWinBounds = win.getBounds(); dbg(`pet: actual bounds ${JSON.stringify(cachedWinBounds)}`); } catch { cachedWinBounds = null; }
     win.setAlwaysOnTop(true, 'screen-saver');
     win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
     surfaceRegionKey = '';
     setSurfaceRegions([]);
     setInteractive(false);
     win.webContents.setWindowOpenHandler?.(() => ({ action: 'deny' }));
-    win.webContents.on?.('will-navigate', (event, url) => {
-      if (!isPetFrameUrl(url, petUrl)) {
-        event.preventDefault();
-      }
-    });
+    const blockNonPetUrl = (/** @type {any} */ event, /** @type {string} */ url) => { if (!isPetFrameUrl(url, petUrl)) event.preventDefault(); };
+    win.webContents.on?.('will-navigate', blockNonPetUrl);
+    win.webContents.on?.('will-redirect', blockNonPetUrl);
+    win.webContents.on?.('will-frame-navigate', (/** @type {any} */ event) => { if (!isPetFrameUrl(event.url, petUrl)) event.preventDefault(); });
     win.once('ready-to-show', () => { dbg('pet: ready-to-show'); win?.showInactive(); });
     win.webContents.once?.('did-finish-load', () => {
       petRendererReady = true;
@@ -847,10 +825,10 @@ function createLive2dPetManager(options = {}) {
       sendLayout();
       sendPetPosition();
       pushSettings();
-      // First growth snapshot after the page is up — she learns her level.
-      rescanGrowth();
+      void rescanGrowth().catch((err) => dbg(`pet: initial growth rescan failed ${String(err)}`));
       pushGrowth(growth.snapshot());
       win.webContents.send('shell:live2d-dsh', { state: dshActivityState });
+      if (powerPaused) win.webContents.send('shell:live2d-power', { paused: true });
       voice.pushCurrentState();
     });
     win.webContents.on?.('render-process-gone', (_e, details) => {
@@ -865,8 +843,9 @@ function createLive2dPetManager(options = {}) {
     win.on('closed', () => {
       dbg('pet: closed');
       win = null;
+      cachedWinBounds = null;
       interactive = false;
-      roamRect = null; // fresh page re-reports; a stale zone would wedge hover
+      roamRect = null;
       hitRects = [];
     });
     void win.loadURL(petUrl).catch((/** @type {unknown} */ error) => { console.warn('[src/main/desktop-live2d.js] background operation failed', error); });
@@ -919,29 +898,52 @@ function createLive2dPetManager(options = {}) {
   for (const eventName of ['display-metrics-changed', 'display-added', 'display-removed']) {
     onSurfaceRisk(screen, eventName);
   }
-  const powerMonitor = options.powerMonitor || electron.powerMonitor;
-  for (const eventName of ['resume', 'unlock-screen']) {
-    onSurfaceRisk(powerMonitor, eventName);
+  function startDshWatchIfNeeded() {
+    if (!options.sessionsDir || !state.enabled || powerPaused || stopDshWatch) return;
+    stopDshWatch = dshWatch.start(2000) || null;
   }
+  function stopDshWatchIfRunning() {
+    if (!stopDshWatch) return;
+    stopDshWatch = null;
+    void dshWatch.stop().catch(() => { /* best-effort pause */ });
+  }
+  function pauseForPower() {
+    if (powerPaused) return;
+    powerPaused = true;
+    clearInterval(growthTimer);
+    growthTimer = 0;
+    stopCursorPump();
+    stopDshWatchIfRunning();
+    try { win?.webContents?.send?.('shell:live2d-power', { paused: true }); } catch { /* overlay closing */ }
+  }
+  function startGrowthTimer() {
+    if (growthTimer || powerPaused) return;
+    growthTimer = setInterval(() => {
+      void rescanGrowth().catch((err) => dbg(`pet: growth rescan failed ${String(err)}`));
+    }, 60000);
+    growthTimer.unref?.();
+  }
+  function resumeFromPower() {
+    if (!powerPaused) return;
+    powerPaused = false;
+    try { win?.webContents?.send?.('shell:live2d-power', { paused: false }); } catch { /* overlay closing */ }
+    if (state.enabled) {
+      startDshWatchIfNeeded();
+      if (win && !win.isDestroyed?.()) { startGrowthTimer(); startCursorPump(); }
+    }
+  }
+  bindPowerMonitorEvents(options.powerMonitor || electron.powerMonitor, surfaceWatch, pauseForPower, (ev) => {
+    resumeFromPower();
+    if (state.enabled && win && !win.isDestroyed?.()) { dbg(`pet: surface-risk ${ev} → recreate`); recreateWindow(); }
+  });
 
   function show() {
-    if (!state.enabled) {
-      return null;
-    }
-    if (!growthTimer) {
-      // Usage rescan cadence: the scan itself runs on a worker thread (a
-      // growing session log can be tens of MB), so a minute tick keeps
-      //「可喂」fresh without stalling the main process.
-      growthTimer = setInterval(rescanGrowth, 60000);
-      growthTimer.unref?.();
-    }
+    if (!state.enabled) return null;
+    startDshWatchIfNeeded();
+    startGrowthTimer();
     startCursorPump();
-    if (!win || win.isDestroyed?.()) {
-      return createWindow();
-    }
-    if (!win.isVisible()) {
-      win.showInactive();
-    }
+    if (!win || win.isDestroyed?.()) return createWindow();
+    if (!win.isVisible()) win.showInactive();
     return win;
   }
 
@@ -950,10 +952,10 @@ function createLive2dPetManager(options = {}) {
     clearInterval(growthTimer);
     growthTimer = 0;
     stopCursorPump();
-    if (win && !win.isDestroyed?.()) {
-      win.close();
-    }
+    stopDshWatchIfRunning();
+    if (win && !win.isDestroyed?.()) win.close();
     win = null;
+    cachedWinBounds = null;
     interactive = false;
   }
 
@@ -1368,25 +1370,16 @@ function createLive2dPetManager(options = {}) {
       watcherClosed = dshWatch.close();
     }
     if (handlersRegistered) {
-      ipcMain.removeHandler?.('shell:live2d-interactive');
-      ipcMain.removeHandler?.('shell:live2d-drag-start');
-      ipcMain.removeHandler?.('shell:live2d-drag-move');
-      ipcMain.removeHandler?.('shell:live2d-drag-commit');
-      ipcMain.removeHandler?.('shell:live2d-relocate');
-      ipcMain.removeHandler?.('shell:live2d-hide');
-      ipcMain.removeHandler?.('shell:live2d-growth');
-      ipcMain.removeHandler?.('shell:live2d-feed');
-      ipcMain.removeHandler?.('shell:live2d-care');
-      ipcMain.removeHandler?.('shell:live2d-settings-get');
-      ipcMain.removeHandler?.('shell:live2d-open-settings');
-      ipcMain.removeHandler?.('shell:live2d-roam');
-      ipcMain.removeHandler?.('shell:live2d-file-eat');
-      ipcMain.removeHandler?.('shell:live2d-chat');
-      ipcMain.removeHandler?.('shell:live2d-chat-focus');
-      ipcMain.removeHandler?.('shell:live2d-chat-state');
-      ipcMain.removeHandler?.('shell:live2d-chat-select-model');
-      ipcMain.removeHandler?.('shell:live2d-open-whale');
-      ipcMain.removeHandler?.('shell:live2d-look');
+      protocol?.unhandle?.('pet');
+      for (const ch of [
+        'shell:live2d-interactive', 'shell:live2d-drag-start', 'shell:live2d-drag-move',
+        'shell:live2d-drag-commit', 'shell:live2d-relocate', 'shell:live2d-hide',
+        'shell:live2d-growth', 'shell:live2d-feed', 'shell:live2d-care',
+        'shell:live2d-settings-get', 'shell:live2d-open-settings', 'shell:live2d-roam',
+        'shell:live2d-file-eat', 'shell:live2d-chat', 'shell:live2d-chat-focus',
+        'shell:live2d-chat-state', 'shell:live2d-chat-select-model', 'shell:live2d-open-whale',
+        'shell:live2d-look',
+      ]) ipcMain.removeHandler?.(ch);
       handlersRegistered = false;
     }
     while (surfaceWatch.length) {
@@ -1396,7 +1389,7 @@ function createLive2dPetManager(options = {}) {
   }
 
   registerHandlers();
-  if (options.sessionsDir) stopDshWatch = dshWatch.start(2000) || null;
+  startDshWatchIfNeeded();
   // Re-assert pet personality into assistant catalog on startup (retries if harness is down).
   queuePersonalityMirror(state.settings?.personality);
   return {

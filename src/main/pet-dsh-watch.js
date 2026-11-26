@@ -177,6 +177,18 @@ function listSessionFiles(sessionsDir, fsImpl) {
   return out;
 }
 
+function pruneVanishedSessions(dsh, live, sessKeyOf, usageSeen) {
+  if (!Object.keys(dsh.openTurns).length && usageSeen.size === 0) return;
+  const liveKeys = new Set();
+  for (const f of live) liveKeys.add(sessKeyOf(f));
+  for (const sessKey of Object.keys(dsh.openTurns)) {
+    if (!liveKeys.has(sessKey)) delete dsh.openTurns[sessKey];
+  }
+  for (const sessKey of usageSeen.keys()) {
+    if (!liveKeys.has(sessKey)) usageSeen.delete(sessKey);
+  }
+}
+
 function createDshWatch({
   sessionsDir,
   outboxFile,
@@ -307,6 +319,7 @@ function createDshWatch({
       dsh.dayTokens = { day: today, used: 0 };
       dsh.milestoneMarks = [];
       dsh.activeSince = 0;
+      usageSeen.clear();
     }
 
     const files = sessionsDir ? listSessionFiles(sessionsDir, fsImpl) : [];
@@ -329,17 +342,7 @@ function createDshWatch({
     // A session dir that vanished mid-turn must drop its open turn. Build the
     // live session-key set once: scanning every live file per open turn was
     // O(openTurns × files) of path work on the main thread every poll.
-    if (Object.keys(dsh.openTurns).length) {
-      const liveKeys = new Set();
-      for (const f of live) {
-        liveKeys.add(sessKeyOf(f));
-      }
-      for (const sessKey of Object.keys(dsh.openTurns)) {
-        if (!liveKeys.has(sessKey)) {
-          delete dsh.openTurns[sessKey]; // session dir vanished mid-turn
-        }
-      }
-    }
+    pruneVanishedSessions(dsh, live, sessKeyOf, usageSeen);
 
     const hadActivityBefore = dsh.lastActiveAt || 0;
     const lastSeenBefore = dsh.lastSeenAt || 0; // feedEvent overwrites it
