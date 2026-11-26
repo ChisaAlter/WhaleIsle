@@ -30,6 +30,12 @@ import {
   useNow,
 } from '../store/bots-store';
 import { RPC_METHODS, callBotRpc, readItemDecisions, type BotDecisionRow } from '../store/rpc';
+import {
+  askLockKey,
+  buildOwnerAnswerPayload,
+  buildQuickAskRequestId,
+  resolveItemQuestionEventId,
+} from './bot-quick-ask';
 import { BotChevron, BotDisclosure } from './BotDisclosure';
 import {
   BotItemQuestionStep,
@@ -89,7 +95,9 @@ export interface WorkItemFull {
   askedInConversation?: string | null;
   links?: WorkItemLink[];
   events?: WorkItemEvent[];
+  questionEventId?: number | string | null;
   question?: {
+    id?: number | string;
     eventId?: number | string;
     text?: string;
     gist?: string;
@@ -278,6 +286,10 @@ export function BotItemDetailView({
   const [dragActive, setDragActive] = useState(false);
   const [pendingComments, setPendingComments] = useState<PendingCommentEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [answeredAskKeys, setAnsweredAskKeys] = useState<Record<string, boolean>>({});
+  const inFlightSubmitRef = useRef(false);
+  const inFlightAskRef = useRef<Set<string>>(new Set());
+  const answeredAskRef = useRef<Set<string>>(new Set());
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [customSnooze, setCustomSnooze] = useState('');
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -392,7 +404,8 @@ export function BotItemDetailView({
     [askData],
   );
 
-  const questionEventId = item?.question?.eventId ?? latestAskEvent?.eventId ?? latestAskEvent?.id;
+  const questionEventId = resolveItemQuestionEventId(item, latestAskEvent);
+  const askKey = askLockKey(itemUid, questionEventId);
   const questionKey = `${itemUid}:${questionEventId ?? 'none'}`;
   const hasOpenQuestion = item?.status === 'needs_you' && Boolean(
     askShape.decisions.length > 0 || item.question?.text || askShape.body || latestAskEvent,
@@ -684,29 +697,54 @@ export function BotItemDetailView({
   };
 
   const dispatchCommentEntry = async (entry: PendingCommentEntry) => {
+    const entryAskKey = entry.decisions
+      ? askLockKey(itemUid, entry.questionEventId)
+      : null;
+    if (entryAskKey && inFlightAskRef.current.has(entryAskKey)) {
+      return;
+    }
+    if (entryAskKey) {
+      inFlightAskRef.current.add(entryAskKey);
+    }
+    inFlightSubmitRef.current = true;
     setSubmitting(true);
     try {
+      const answerPayload = entry.plain
+        ? {}
+        : buildOwnerAnswerPayload(entry.questionEventId, entry.decisions);
       await callBotRpc(RPC_METHODS.ITEMS_OWNER_COMMENT, {
         botId,
         uid: itemUid,
         text: entry.text,
         requestId: entry.requestId,
-        ...(entry.decisions ? { decisions: entry.decisions } : {}),
+        ...answerPayload,
         ...(entry.plain ? { plain: true } : {}),
-        ...(!entry.plain && entry.questionEventId !== undefined ? { questionEventId: entry.questionEventId } : {}),
         ...(entry.images && entry.images.length > 0 ? { images: entry.images } : {}),
         ...(entry.files && entry.files.length > 0 ? { files: entry.files } : {}),
       });
+      if (entryAskKey) {
+        answeredAskRef.current.add(entryAskKey);
+        setAnsweredAskKeys((prev) => ({ ...prev, [entryAskKey]: true }));
+      }
       setPendingComments((prev) => prev.filter((p) => p.requestId !== entry.requestId));
       await load();
       onMutated();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      if (entryAskKey && /item_changed|question has changed|no longer open/i.test(errMsg)) {
+        answeredAskRef.current.add(entryAskKey);
+        setAnsweredAskKeys((prev) => ({ ...prev, [entryAskKey]: true }));
+        void load();
+      }
       setPendingComments((prev) => prev.map((p) => (
         p.requestId === entry.requestId ? { ...p, status: 'failed', error: errMsg } : p
       )));
       botsStore.pushToast({ message: errMsg, tone: 'error' });
     } finally {
+      if (entryAskKey) {
+        inFlightAskRef.current.delete(entryAskKey);
+      }
+      inFlightSubmitRef.current = false;
       setSubmitting(false);
     }
   };
@@ -718,6 +756,9 @@ export function BotItemDetailView({
     const rawBody = (textOverride ?? comment).trim();
     const hasFiles = !textOverride && attachments.length > 0;
     if (!rawBody && !hasFiles) {
+      return;
+    }
+    if (inFlightSubmitRef.current) {
       return;
     }
 
@@ -746,13 +787,23 @@ export function BotItemDetailView({
       : [];
 
     const isPlain = !options.forceReply && hasOpenQuestion && !replyingActive;
+    const resolvedQid = !isPlain ? questionEventId : undefined;
+    if (options.decisions) {
+      const targetAskKey = askLockKey(itemUid, resolvedQid);
+      if (inFlightAskRef.current.has(targetAskKey) || answeredAskRef.current.has(targetAskKey)) {
+        return;
+      }
+    }
+    const requestId = options.decisions && images.length === 0 && files.length === 0
+      ? buildQuickAskRequestId(itemUid, resolvedQid, options.decisions, rawBody)
+      : makeRequestId();
     const entry: PendingCommentEntry = {
-      requestId: makeRequestId(),
+      requestId,
       text: rawBody || (zh ? `[附带 ${attachments.length} 个附件]` : `[${attachments.length} attachment(s)]`),
       createdAt: Date.now(),
       status: 'sending',
       ...(options.decisions ? { decisions: options.decisions } : {}),
-      ...(!isPlain && questionEventId !== undefined ? { questionEventId } : {}),
+      ...(resolvedQid !== undefined ? { questionEventId: resolvedQid } : {}),
       ...(isPlain ? { plain: true } : {}),
       ...(images.length > 0 ? { images } : {}),
       ...(files.length > 0 ? { files } : {}),
@@ -775,6 +826,9 @@ export function BotItemDetailView({
   };
 
   const handleStepperSubmit = (payload: AskSubmitPayload) => {
+    if (inFlightAskRef.current.has(askKey) || answeredAskRef.current.has(askKey)) {
+      return;
+    }
     const extra = comment.trim();
     const combined = [payload.text, extra].filter(Boolean).join('\n');
     if (extra) {
@@ -1128,6 +1182,7 @@ export function BotItemDetailView({
                 questionKey={questionKey}
                 shape={askShape}
                 submitting={submitting}
+                submitted={Boolean(answeredAskKeys[askKey])}
                 onSubmit={handleStepperSubmit}
                 onFillComment={handleFillComment}
               />

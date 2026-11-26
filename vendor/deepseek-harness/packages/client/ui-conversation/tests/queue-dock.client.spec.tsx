@@ -981,4 +981,33 @@ describe('QueueDock', () => {
       QueueDock,
     )
   })
+
+  it('keeps non-user notice rows non-draggable and disables steer while idle', () => {
+    vi.useFakeTimers()
+    try {
+      const noticeRow: UserMessage = {
+        ...row('mail-1', '[WhaleIsle: Work Item update]'),
+        source: { kind: 'dsh-bots:mail', action: 1 } as never,
+      }
+      const secondNotice: UserMessage = {
+        ...row('mail-2', '[WhaleIsle: Work Item update] #2'),
+        source: { kind: 'dsh-bots:mail', action: 2 } as never,
+      }
+      const snap = { ...snapshotWith([noticeRow, secondNotice]), running: false }
+      const source = liveSession(snap)
+      const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
+      // System notice rows do not flash immediately before SYSTEM_ROW_SETTLE_MS.
+      expect(view.container.querySelector('[data-queue-dock]')).toBeNull()
+      act(() => { vi.advanceTimersByTime(400) })
+      const header = view.getByRole('button', { name: '2 条排队消息' })
+      fireEvent.click(header)
+      expect(view.container.querySelectorAll('[role="button"][draggable]')).toHaveLength(0)
+      for (const steerBtn of view.getAllByLabelText('插话发送')) {
+        expect((steerBtn as HTMLButtonElement).disabled).toBe(true)
+        expect(steerBtn.getAttribute('title')).toBe('仅运行中可插话发送')
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

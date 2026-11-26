@@ -1528,3 +1528,59 @@ describe('disposal and cancellation during pre-step assembly', () => {
     expect(adapter.requests).toHaveLength(0)
   })
 })
+
+describe('inbox drain across turn completion boundaries', () => {
+  it('drains a followup queued during an async empty-rewritten pre-step instead of falling idle', async () => {
+    const adapter = new MockAdapter([textResponse('second reply')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('drain-empty-prestep'), { provider: 'mock', model: 'mock' })
+
+    let releaseFirstPreStep!: () => void
+    const firstPreStepEntered = new Promise<void>(resolve => {
+      let first = true
+      ctx.on('agent/pre-step', async ({ messages }, next) => {
+        if (!first) return next()
+        first = false
+        resolve()
+        await new Promise<void>(r => { releaseFirstPreStep = r })
+        return { kind: 'enter' as const, messages: [] }
+      })
+    })
+
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'dropped')
+    await firstPreStepEntered
+    send(agent, 'followup during prestep')
+    releaseFirstPreStep()
+    await idle
+
+    expect(agent.inbox.nextTurn).toHaveLength(0)
+    expect(adapter.requests).toHaveLength(1)
+    expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('followup during prestep')
+  })
+
+  it('drains a followup queued in the microtask window after turn/end resolves normally', async () => {
+    const adapter = new MockAdapter([textResponse('first reply'), textResponse('microtask reply')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('drain-microtask-turn-end'), { provider: 'mock', model: 'mock' })
+
+    let injected = false
+    ctx.on('session/event', (session, event) => {
+      if (session === agent.session && event.type === 'turn/end' && !injected) {
+        injected = true
+        queueMicrotask(() => {
+          send(agent, 'queued on turn/end microtask')
+        })
+      }
+    })
+
+    send(agent, 'first turn')
+    await waitForIdle(ctx, agent)
+    await agent.whenIdle()
+
+    expect(agent.status).toBe('idle')
+    expect(agent.inbox.nextTurn).toHaveLength(0)
+    expect(adapter.requests).toHaveLength(2)
+    expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('queued on turn/end microtask')
+  })
+})

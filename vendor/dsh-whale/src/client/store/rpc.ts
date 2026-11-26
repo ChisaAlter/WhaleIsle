@@ -342,6 +342,8 @@ export interface BotItemOwnerCommentParams {
   text: string;
   requestId?: string;
   questionEventId?: number | string | null;
+  answers?: number | string | null;
+  decisions?: Array<{ picks: number[] }>;
   plain?: boolean;
   askedInConversation?: string | null;
   files?: BotItemAttachmentFile[];
