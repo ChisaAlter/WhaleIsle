@@ -64,7 +64,7 @@
     "node": "^24.22.3 || >=26.13.1"
   },
   "optionalDependencies": {
-    "node-pty": "1.2.0-beta.15"
+    "node-pty": "1.2.0-beta.18"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
