@@ -57,6 +57,35 @@ test('navigation allowlist blocks the Host origin, creds, and non-http', () => {
   assert.equal(guests.allowedNavigation('file:///etc/passwd'), false);
   assert.equal(guests.allowedNavigation('javascript:alert(1)'), false);
   assert.equal(guests.allowedNavigation('not a url'), false);
+  assert.equal(guests.allowedNavigation('http://0.0.0.0:3080/'), false);
+  assert.equal(guests.allowedNavigation('http://127.0.0.2:3080/'), false);
+  assert.equal(guests.allowedNavigation('http://localhost.:3080/'), false);
+  assert.equal(guests.allowedNavigation('http://[::1]:3080/'), false);
+});
+
+test('configureSession blocks data/blob subFrames and loopback variants on control ports', () => {
+  let onBeforeRequest;
+  const ses = {
+    setPermissionRequestHandler() {},
+    setPermissionCheckHandler() {},
+    setDevicePermissionHandler() {},
+    setDisplayMediaRequestHandler() {},
+    on() {},
+    webRequest: { onBeforeRequest(fn) { onBeforeRequest = fn; } },
+  };
+  const guests = new BrowserGuests(() => 'http://127.0.0.1:3080/', () => ses);
+  guests.configureSession(ses);
+  const check = (details) => {
+    let verdict;
+    onBeforeRequest(details, (res) => { verdict = res; });
+    return verdict.cancel;
+  };
+  assert.equal(check({ url: 'about:blank#lease-1', resourceType: 'mainFrame' }), false);
+  assert.equal(check({ url: 'data:text/html,<h1>x</h1>', resourceType: 'subFrame' }), true);
+  assert.equal(check({ url: 'blob:https://example.com/1', resourceType: 'subFrame' }), true);
+  assert.equal(check({ url: 'http://0.0.0.0:3080/api', resourceType: 'xhr' }), true);
+  assert.equal(check({ url: 'http://127.0.0.2:3080/api', resourceType: 'xhr' }), true);
+  assert.equal(check({ url: 'https://example.com/img.png', resourceType: 'image' }), false);
 });
 
 test('installBrowserGuests handles null view, empty origin, and port-prefix collisions safely', async () => {

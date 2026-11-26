@@ -1,11 +1,21 @@
 'use strict';
-const { loadWorkspaceAuthority } = require('./workspace-authority');
+const { createCachedWorkspaceAuthority } = require('./workspace-authority');
 const { createWorkspacePreviewController } = require('./preview-workspace');
 const { createWorkspaceFileReader } = require('./workspace-fs');
 const { createFilePreviewWindowController } = require('./preview-file-window');
 const { createRegisterIpc } = require('./ipc-register');
 const { discoverLocalServers } = require('./preview-common');
 const { createPreviewController } = require('./preview-controller');
+
+function createDynamicWorkspaceAuthority() {
+  const cached = createCachedWorkspaceAuthority({ allowScratchCwd: true });
+  return {
+    authorizedRoot: () => cached.get().authorizedRoot(),
+    authorizedRoots: () => cached.get().authorizedRoots(),
+    resolveAuthorizedCwd: (/** @type {unknown} */ cwd) => cached.get().resolveAuthorizedCwd(cwd),
+    resolveInside: (/** @type {unknown} */ cwd, /** @type {unknown} */ relativePath) => cached.get().resolveInside(cwd, relativePath),
+  };
+}
 
 /**
  * Register desktop preview IPC on ipcMain.
@@ -15,7 +25,7 @@ const { createPreviewController } = require('./preview-controller');
 function registerPreviewIpc(ipcMain, controller, options = {}) {
   const authorize = typeof options.authorize === 'function' ? options.authorize : () => {};
   const workspaceAuthority = options.workspaceAuthority
-    ?? loadWorkspaceAuthority({ allowScratchCwd: true });
+    ?? createDynamicWorkspaceAuthority();
   const workspacePreview = options.workspacePreview
     ?? createWorkspacePreviewController({ authority: workspaceAuthority });
   const previewFileReader = options.readFile

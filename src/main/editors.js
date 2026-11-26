@@ -1,5 +1,24 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const { spawn: nodeSpawn, execFile: nodeExecFile } = require('node:child_process');
 const { createCachedWorkspaceAuthority } = require('./workspace-authority');
+
+const BLOCKED_EXECUTABLE_EXTENSIONS = new Set([
+  '.exe', '.bat', '.cmd', '.com', '.msi', '.msp', '.scr', '.pif', '.lnk', '.url',
+  '.ps1', '.psm1', '.psd1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta',
+  '.cpl', '.reg', '.inf', '.app', '.command', '.action', '.workflow', '.desktop',
+]);
+
+/**
+ * True when `target` ends with an OS executable, script, or shortcut extension
+ * that `shell.openPath` would execute rather than view.
+ * @param {unknown} target
+ * @returns {boolean}
+ */
+function isBlockedExecutablePath(target) {
+  const ext = path.extname(String(target || '')).toLowerCase();
+  return ext !== '' && BLOCKED_EXECUTABLE_EXTENSIONS.has(ext);
+}
 
 const EDITORS = [
   { id: 'cursor', label: 'Cursor', commands: ['cursor'], launchStyle: 'goto' },
@@ -127,6 +146,9 @@ function buildEditorSpawnSpec(/** @type {string} */ command, /** @type {string[]
   const platform = deps.platform ?? process.platform;
   const baseEnv = deps.env ?? process.env;
   if (platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    if (/["\r\n\0]/.test(command) || args.some((value) => /["\r\n\0]/.test(String(value)))) {
+      throw new Error('Unsafe characters in Windows batch editor arguments.');
+    }
     const batchEnv = /** @type {Record<string, string | undefined>} */ ({ ...baseEnv, DSHD_EDITOR_CMD: command });
     const tokens = args.map((/** @type {string} */ value, /** @type {number} */ index) => {
       const key = `DSHD_EDITOR_ARG_${index}`;
@@ -169,6 +191,14 @@ async function openInEditor(input = {}, deps = {}) {
   if (!def.commands) return fail(`Unsupported editor: ${input.editor}`);
   const target = resolveInside(input.cwd, input.relativePath);
   if (!target) return fail('Path is outside the workspace.');
+  if (/[\0\r\n]/.test(target) || ((deps.platform ?? process.platform) === 'win32' && target.includes('"'))) {
+    return fail('Path contains unsupported characters.');
+  }
+  try {
+    fs.statSync(target);
+  } catch {
+    return fail('Target path does not exist.');
+  }
   const command = await firstAvailableCommand(def.commands, deps);
   if (!command) return fail(`Editor command not found: ${def.commands[0]}`);
   const args = resolveEditorArgs(def, target, input.line, input.column);
@@ -224,6 +254,14 @@ function revealInFolder(cwd, relativePath, deps = {}) {
 async function openWithSystemDefault(input = {}, deps = {}) {
   const target = resolveInside(input.cwd, input.relativePath);
   if (!target) return fail('Path is outside the workspace.');
+  if (isBlockedExecutablePath(target)) {
+    return fail('Refusing to open executable or script file with system default handler.');
+  }
+  try {
+    if (!fs.statSync(target).isFile()) return fail('Target path is not a regular file.');
+  } catch {
+    return fail('Target path does not exist.');
+  }
   const electronShell = deps.shell ?? defaultShell();
   try {
     const error = await electronShell.openPath(target);
@@ -235,6 +273,7 @@ async function openWithSystemDefault(input = {}, deps = {}) {
 
 module.exports = {
   EDITORS,
+  isBlockedExecutablePath,
   listAvailableEditors,
   openInEditor,
   showItemInFolder,

@@ -4513,8 +4513,6 @@
         "Property 'extraSkillDirs' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'extraSkillDirs' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
         "Property 'extraSkillDirs' does not exist on type '{}'.": 2,
-        "Property 'headers' does not exist on type '{}'.": 4,
-        "Property 'id' does not exist on type '{}'.": 4,
         "Property 'importAttachments' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'importAttachments' does not exist on type '{}'.": 1,
         "Property 'installPlugin' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
@@ -4561,9 +4559,6 @@
         "Object literal may only specify known properties, and 'scan' does not exist in type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Object literal may only specify known properties, and 'scan' does not exist in type '{ overwrite?: boolean | undefined; }'.": 1
       },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
-      },
       "TS7005": {
         "Variable 'credentials' implicitly has an 'any[]' type.": 2,
         "Variable 'current' implicitly has an 'any[]' type.": 1,
@@ -4587,7 +4582,7 @@
         "Parameter 'explicit' implicitly has an 'any' type.": 1,
         "Parameter 'file' implicitly has an 'any' type.": 5,
         "Parameter 'from' implicitly has an 'any' type.": 1,
-        "Parameter 'home' implicitly has an 'any' type.": 2,
+        "Parameter 'home' implicitly has an 'any' type.": 1,
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'journal' implicitly has an 'any' type.": 1,
         "Parameter 'journalFile' implicitly has an 'any' type.": 1,
@@ -4611,10 +4606,9 @@
         "Parameter 'sourceDir' implicitly has an 'any' type.": 1,
         "Parameter 'sourceHome' implicitly has an 'any' type.": 4,
         "Parameter 'target' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 3,
+        "Parameter 'text' implicitly has an 'any' type.": 2,
         "Parameter 'to' implicitly has an 'any' type.": 1,
-        "Parameter 'userDataDir' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 2
+        "Parameter 'userDataDir' implicitly has an 'any' type.": 2
       },
       "TS7031": {
         "Binding element 'agentsSkillsRoot' implicitly has an 'any' type.": 1,
@@ -4641,9 +4635,6 @@
         "Variable 'found' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'removed' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'results' implicitly has type 'any[]' in some locations where its type cannot be determined.": 4
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 2
       },
       "TS7057": {
         "'yield' expression implicitly results in an 'any' type because its containing generator lacks a return-type annotation.": 1
@@ -6578,9 +6569,6 @@
         "Property 'journalBlocked' does not exist on type '{}'.": 1,
         "Property 'startHarness' does not exist on type '{ startWhenIdle?: boolean | undefined; }'.": 1,
         "Property 'startHarness' does not exist on type '{}'.": 1
-      },
-      "TS2783": {
-        "'ok' is specified more than once, so this usage will be overwritten.": 3
       },
       "TS7005": {
         "Variable 'journalBlockedProbe' implicitly has an 'any' type.": 1,

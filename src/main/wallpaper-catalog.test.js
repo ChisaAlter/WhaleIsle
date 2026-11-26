@@ -271,7 +271,7 @@ test('assertResolvedWallpaperHost rejects hostnames resolving to private address
   );
 });
 
-test('assertResolvedWallpaperHost keeps public results and tolerates DNS failure', async () => {
+test('assertResolvedWallpaperHost keeps public results and fails closed on DNS failure', async () => {
   delete process.env.DSHD_WALLPAPER_ALLOW_HTTP;
   const publicLookup = async () => [
     { address: '93.184.216.34', family: 4 },
@@ -279,7 +279,14 @@ test('assertResolvedWallpaperHost keeps public results and tolerates DNS failure
   ];
   await assertResolvedWallpaperHost('example.com', 'https://example.com/x.json', publicLookup);
   const failingLookup = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
-  await assertResolvedWallpaperHost('gone.example.com', 'https://gone.example.com/x.json', failingLookup);
+  await assert.rejects(
+    () => assertResolvedWallpaperHost('gone.example.com', 'https://gone.example.com/x.json', failingLookup),
+    /域名解析失败/,
+  );
+  await assert.rejects(
+    () => assertResolvedWallpaperHost('empty.example.com', 'https://empty.example.com/x.json', async () => []),
+    /域名解析失败/,
+  );
   // IP literals were classified by the shared verdict; the resolver must not be consulted.
   let called = 0;
   const countingLookup = async () => { called += 1; return []; };
@@ -343,14 +350,33 @@ test('assertResolvedWallpaperHost returns the validated records for the connect 
   );
   assert.deepEqual(returned, records);
   const failing = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
-  assert.equal(
-    await assertResolvedWallpaperHost('gone.example.com', 'https://gone.example.com/x', failing),
-    null,
+  await assert.rejects(
+    () => assertResolvedWallpaperHost('gone.example.com', 'https://gone.example.com/x', failing),
+    /域名解析失败/,
   );
   assert.equal(
     await assertResolvedWallpaperHost('93.184.216.34', 'https://93.184.216.34/x', async () => records),
     null,
   );
+});
+
+test('fetchBuffer fails closed when DNS lookup fails instead of letting fetch resolve unpinned', async () => {
+  delete process.env.DSHD_WALLPAPER_ALLOW_HTTP;
+  let calls = 0;
+  const flakyLookup = async () => {
+    calls += 1;
+    if (calls === 1) throw new Error('SERVFAIL');
+    return [{ address: '127.0.0.1', family: 4 }];
+  };
+  await assert.rejects(
+    () => fetchBuffer('https://rebind-failopen.invalid/pack.json', {
+      maxBytes: 1024,
+      timeoutMs: 2000,
+      lookup: flakyLookup,
+    }),
+    /域名解析失败/,
+  );
+  assert.equal(calls, 1);
 });
 
 test('listWallpaperCatalog accepts a catalog under 4MB and drops one above it', async () => {
