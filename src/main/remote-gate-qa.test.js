@@ -10,6 +10,8 @@ const {
   REMOTE_GATE_PARKED_CASES,
   assertRemoteGateQaResult,
   pairingOffer,
+  pairingTransportReady,
+  clipboardOfferMatchesExpectedHost,
   pairingChromeMatchesRelay,
   pairingControlsMatchRelay,
 } = require('./remote-gate-qa');
@@ -58,6 +60,36 @@ test('pairing chrome follows the live relay control socket', () => {
   assert.equal(pairingControlsMatchRelay({ copy: true, rotate: true }, true, false), false);
   assert.equal(pairingControlsMatchRelay({ copy: false, rotate: false }, false, false), true);
   assert.equal(pairingControlsMatchRelay({ copy: true, rotate: false }, false, false), false);
+});
+
+test('pairingTransportReady supports LAN direct mode without relay connection', () => {
+  assert.equal(pairingTransportReady({ mode: 'lan', lanReady: true, listening: true, relayConnected: false }), true);
+  assert.equal(pairingTransportReady({ mode: 'lan', lanReady: true, listening: false, relayConnected: false }), false);
+  assert.equal(pairingTransportReady({ mode: 'lan', lanReady: false, listening: true, relayConnected: false }), false);
+  assert.equal(pairingTransportReady({ mode: 'relay', listening: true, relayConnected: true }), true);
+  assert.equal(pairingTransportReady({ mode: 'relay', listening: true, relayConnected: false }), false);
+  assert.equal(pairingTransportReady(null), false);
+});
+
+test('clipboardOfferMatchesExpectedHost accepts LAN loopback match and rejects unexpected hosts', () => {
+  assert.equal(
+    clipboardOfferMatchesExpectedHost('http://127.0.0.1:3180/#offer=link', 'http://127.0.0.1:3180/#offer=qr'),
+    true,
+  );
+  assert.equal(
+    clipboardOfferMatchesExpectedHost('http://192.168.1.25:3180/#offer=link', 'http://192.168.1.25:3180/#offer=qr'),
+    true,
+  );
+  assert.equal(
+    clipboardOfferMatchesExpectedHost('http://127.0.0.1:3180/#offer=link', 'https://relay.example.com/#offer=qr'),
+    false,
+  );
+  assert.equal(
+    clipboardOfferMatchesExpectedHost('http://10.0.0.5:3180/#offer=link', 'http://192.168.1.25:3180/#offer=qr'),
+    false,
+  );
+  assert.equal(clipboardOfferMatchesExpectedHost('http://127.0.0.1:3180/#offer=link', ''), false);
+  assert.equal(clipboardOfferMatchesExpectedHost('http://127.0.0.1:3180/', 'http://127.0.0.1:3180/#offer=qr'), false);
 });
 
 test('assertRemoteGateQaResult accepts a parked result', () => {
