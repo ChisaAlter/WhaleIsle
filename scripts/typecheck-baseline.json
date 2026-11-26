@@ -10652,17 +10652,13 @@
     "vendor/dsh-whale/lib/bots/service.js": {
       "TS2339": {
         "Property 'code' does not exist on type '{}'.": 1,
-        "Property 'imDefault' does not exist on type '{}'.": 1,
-        "Property 'message' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 3,
-        "Property 'skillProjects' does not exist on type '{}'.": 1,
-        "Property 'skipModelApply' does not exist on type '{}'.": 1
+        "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
         "Parameter 'b' implicitly has an 'any' type.": 1,
         "Parameter 'base64Png' implicitly has an 'any' type.": 1,
         "Parameter 'bot' implicitly has an 'any' type.": 2,
-        "Parameter 'botId' implicitly has an 'any' type.": 14,
+        "Parameter 'botId' implicitly has an 'any' type.": 13,
         "Parameter 'content' implicitly has an 'any' type.": 1,
         "Parameter 'createdBotId' implicitly has an 'any' type.": 1,
         "Parameter 'fromOffer' implicitly has an 'any' type.": 2,

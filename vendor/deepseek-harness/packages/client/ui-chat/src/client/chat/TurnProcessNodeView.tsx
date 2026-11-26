@@ -11,7 +11,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   node, turnProcess, sessionId, useSessions, t,
 }: ChatNodeViewProps<'turn-process'>) {
   if (turnProcess === undefined) throw new Error('turn-process node requires Turn process owner state')
-  const projectCoordinator = useSessions(state => {
+  const projectCoordinator = useSessions((state) => {
     const presentation = state.byId[sessionId]?.presentation
     return presentation?.owner === 'project' && presentation.composer !== 'managed'
   })

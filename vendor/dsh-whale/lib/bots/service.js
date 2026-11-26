@@ -311,6 +311,11 @@ export function createBotsService(deps) {
     });
   }
 
+  /**
+   * @param {string} botId
+   * @param {Record<string, any>} [patch]
+   * @param {{ skipModelApply?: boolean; skipUnpauseMail?: boolean }} [options]
+   */
   async function updateBot(botId, patch = {}, options = {}) {
     return serialize(async () => {
       const existing = requireBot(botId);

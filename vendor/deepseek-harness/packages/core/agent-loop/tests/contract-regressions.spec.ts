@@ -1536,13 +1536,13 @@ describe('inbox drain across turn completion boundaries', () => {
     const agent = await ctx.agentLoop.create(brandString<SessionId>('drain-empty-prestep'), { provider: 'mock', model: 'mock' })
 
     let releaseFirstPreStep!: () => void
-    const firstPreStepEntered = new Promise<void>(resolve => {
+    const firstPreStepEntered = new Promise<void>((resolve) => {
       let first = true
-      ctx.on('agent/pre-step', async ({ messages }, next) => {
+      ctx.on('agent/pre-step', async (_input, next) => {
         if (!first) return next()
         first = false
         resolve()
-        await new Promise<void>(r => { releaseFirstPreStep = r })
+        await new Promise<void>((r) => { releaseFirstPreStep = r })
         return { kind: 'enter' as const, messages: [] }
       })
     })

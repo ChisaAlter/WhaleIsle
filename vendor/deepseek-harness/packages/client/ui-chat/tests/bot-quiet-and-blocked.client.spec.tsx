@@ -2,14 +2,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { bindSnapshotSelector, contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { stripBotQuietBlocks } from '../src/client/chat/bot-quiet.ts'
 import { TurnProcessNodeView } from '../src/client/chat/TurnProcessNodeView.tsx'
 import type { ChatNode } from '../src/client/contract/chat-nodes.ts'
-import type { ChatTurnProcessPresentation } from '../src/client/contract/snapshot.ts'
+import type { ChatNodeViewProps, TurnProcessOwnerProps } from '../src/client/contract/slots.ts'
 import { derivePresentationPolicy } from '../src/client/presentation-policy.ts'
 import { en, zh } from '../src/client/locale.ts'
 
@@ -48,9 +48,46 @@ function assistantNode(text: string, status: 'running' | 'settled' = 'settled'):
     visibility: 'visible',
     data: {
       status,
+      turn: 1,
       step: 1,
       blocks: [{ kind: 'text', text }],
+      time: 1_000,
     },
+  }
+}
+
+function makeChatNodeProps(
+  owner: string | undefined,
+  locale: typeof zh = zh,
+  turnProcess?: TurnProcessOwnerProps,
+): Omit<ChatNodeViewProps<'turn-process'>, 'node'> {
+  return {
+    sessionId: SID,
+    useSessions: sessionsHook(owner),
+    useDisclosure: () => ({ expanded: false, setExpanded: () => {}, toggle: () => {} }),
+    useGroupAction: () => ({ current: null }),
+    useTurnData: () => undefined,
+    turnProcess,
+    openFile: () => {},
+    loadImage: Object.assign(async () => '', { peek: () => undefined }),
+    renderFactorySlot: () => null,
+    t: makeTranslate(locale),
+    useContextMenu: contextMenuHook(),
+    useSession: (() => undefined) as never,
+    useChat: (() => undefined) as never,
+    useConversation: (() => undefined) as never,
+    useTrajectory: (() => undefined) as never,
+    useSessionRetainInfo: () => undefined,
+    useSessionStatus: (() => undefined) as never,
+    useWorkspaces: (() => undefined) as never,
+    usePanelInfo: () => null as never,
+    useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
+    useProjection: () => undefined,
+    useInput: (() => undefined) as never,
+    inputActions: {} as never,
+    forkAt: () => {},
+    inspectCall: () => {},
+    ...allowAllAccess,
   }
 }
 
@@ -63,22 +100,13 @@ function renderAssistant(text: string, owner: string | undefined, status: 'runni
   )
   return render(
     <AssistantNodeView
+      {...makeChatNodeProps(owner)}
       node={node}
-      sessionId={SID}
-      useSessions={sessionsHook(owner)}
-      useDisclosure={() => [false, () => {}] as const}
-      useGroupAction={() => () => {}}
-      useTurnData={() => undefined}
-      turnProcess={undefined}
-      openFile={() => {}}
-      loadImage={Object.assign(async () => '', { peek: () => undefined })}
       fileMentions={() => undefined}
       usePresentation={bindSnapshotSelector(presentation)}
       renderSlot={() => null}
-      renderFactorySlot={() => null}
-      t={makeTranslate(zh)}
-      useContextMenu={contextMenuHook()}
-      resolveFilePath={(p) => p}
+      SessionProvider={({ children }) => <>{children}</>}
+      resolveFilePath={p => p}
       useOpenUiTheme={selector => selector('light' as never)}
       useOpenUiLocale={selector => selector('zh')}
       sendOpenUiAction={async () => ({ ok: true })}
@@ -88,36 +116,6 @@ function renderAssistant(text: string, owner: string | undefined, status: 'runni
         snapshot: null, base: null, barrier: null, operations: [], lastSeenSeq: -1, collapsed: false, restoreError: null,
       })}
       actions={{ publish: () => {}, collapse: () => {}, clear: () => {} }}
-      useSession={(() => undefined) as never}
-      useChat={(() => undefined) as never}
-      useChatNode={(() => undefined) as never}
-      useChatNodeBottom={(() => undefined) as never}
-      useChatNodeProcess={(() => undefined) as never}
-      useChatGroup={(() => undefined) as never}
-      useConversation={(() => undefined) as never}
-      useTrajectory={(() => undefined) as never}
-      useSessionRetainInfo={() => undefined}
-      useSessionStatus={(() => undefined) as never}
-      useWorkspaces={(() => undefined) as never}
-      usePanelInfo={() => null as never}
-      useResource={() => ({ status: 'none', value: undefined, failure: undefined })}
-      useProjection={() => undefined}
-      useInput={(() => undefined) as never}
-      inputActions={{} as never}
-      useInteractionIds={() => []}
-      dispatchInteraction={() => null}
-      usePerformanceUsage={() => 'compact' as never}
-      openExternalLink={() => {}}
-      loadOlder={() => {}}
-      consumeOlder={() => true}
-      loadThrough={async () => {}}
-      chatScroll={{ save: () => {}, read: () => null }}
-      forkAt={() => {}}
-      inspectCall={() => {}}
-      SessionProvider={({ children }) => <>{children}</>}
-      fileDrag={{} as never}
-      canAccess={() => true}
-      requestAccess={async () => true}
     />,
   )
 }
@@ -159,12 +157,22 @@ describe('TurnProcessNodeView blocked reason', () => {
     [zh, '已拦截', '已完成'],
     [en, 'Blocked', 'Completed'],
   ])('renders blocked turns accurately instead of completed (%s)', (locale, expected, forbidden) => {
-    const turnProcess: ChatTurnProcessPresentation = {
+    const turnProcess: TurnProcessOwnerProps = {
       hasContent: false,
       foldable: false,
       open: false,
       setOpen: vi.fn(),
-      spec: { foldable: false, answerStep: 1, inlineReasoning: false },
+      spec: {
+        turn: 1,
+        controlAnchorSeq: 1,
+        processStartSeq: 1,
+        answerAnchorSeq: null,
+        answerStep: 1,
+        inlineReasoning: false,
+        messageCount: 0,
+        toolCallCount: 0,
+        subagentCount: 0,
+      },
     }
     const node: ChatNode<'turn-process'> = {
       key: 'turn-process:1',
@@ -185,6 +193,11 @@ describe('TurnProcessNodeView blocked reason', () => {
       },
       data: {
         turn: 1,
+        controlAnchorSeq: 1,
+        processStartSeq: 1,
+        answerAnchorSeq: null,
+        answerStep: 1,
+        inlineReasoning: false,
         messageCount: 0,
         toolCallCount: 0,
         subagentCount: 0,
@@ -192,11 +205,8 @@ describe('TurnProcessNodeView blocked reason', () => {
     }
     const view = render(
       <TurnProcessNodeView
+        {...makeChatNodeProps('dsh-bots:home', locale, turnProcess)}
         node={node}
-        turnProcess={turnProcess}
-        sessionId={SID}
-        useSessions={sessionsHook('dsh-bots:home')}
-        t={makeTranslate(locale)}
       />,
     )
     expect(view.getByRole('button').textContent).toBe(expected)
