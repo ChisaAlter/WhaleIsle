@@ -322,7 +322,8 @@ button.primary[aria-busy="true"]:not([data-button-label])::after {
   backdrop-filter: var(--dsw-mask-blur);
 }
 
-html[data-window-maximized] .modal-mask {
+html[data-window-maximized] .modal-mask,
+html[data-fullscreen] .modal-mask {
   border-radius: 0;
 }
 
@@ -336,7 +337,7 @@ html[data-window-maximized] .modal-mask {
   max-height: calc(100dvh - 48px);
   padding: 22px 24px 24px;
   border: 0;
-  border-radius: var(--dsw-radius-panel);
+  border-radius: var(--dsw-radius-dialog, var(--dsw-radius-panel));
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-elevation-prominent);
   display: flex;

@@ -87,11 +87,13 @@ function HighlightedSegments({ segments }: { segments: SearchTextSegment[] }) {
 function BotContextMenu({
   bot,
   position,
+  triggerRef,
   onClose,
   onStartRename,
 }: {
   bot: BotRecord;
   position: { x: number; y: number };
+  triggerRef?: { current: HTMLElement | null };
   onClose: () => void;
   onStartRename: () => void;
 }) {
@@ -100,6 +102,9 @@ function BotContextMenu({
 
   useEffect(() => {
     const handleDown = (event: globalThis.MouseEvent) => {
+      if (event.button === 2 && triggerRef?.current?.contains(event.target as Node)) {
+        return;
+      }
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         onClose();
       }
@@ -115,14 +120,14 @@ function BotContextMenu({
       document.removeEventListener('mousedown', handleDown);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [onClose]);
+  }, [onClose, triggerRef]);
 
   if (typeof document === 'undefined') {
     return null;
   }
 
-  const left = Math.min(position.x, window.innerWidth - 210);
-  const top = Math.min(position.y, window.innerHeight - 280);
+  const left = Math.max(8, Math.min(position.x, window.innerWidth - 210));
+  const top = Math.max(8, Math.min(position.y, window.innerHeight - 280));
 
   return createPortal(
     <div ref={menuRef} className="dsh-bots-popover" style={{ left, top }}>
@@ -552,6 +557,7 @@ export function BotSidebarCard({
         <BotContextMenu
           bot={bot}
           position={menuPos}
+          triggerRef={cardRef}
           onClose={() => setMenuPos(null)}
           onStartRename={() => setRenaming(true)}
         />

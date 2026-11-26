@@ -607,6 +607,12 @@ petLifetime.listen(window, 'contextmenu', (event) => {
   if (event.target !== canvas) { return; }
   togglePanel();
 });
+petLifetime.listen(window, 'keydown', (/** @type {KeyboardEvent} */ event) => {
+  if (event.key === 'Escape' && panelCloseRect()) {
+    event.preventDefault();
+    closePanel('escape');
+  }
+});
 
 // Drag-and-drop file eating (§B10): files dropped on her are "eaten" — a
 // reaction line plus a care bump, counted in stats. Files are NEVER read

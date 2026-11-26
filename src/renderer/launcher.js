@@ -8,6 +8,7 @@ async function saveSettings(control) {
   if (!api) {
     return;
   }
+  const nextChecked = control.checked;
   control.disabled = true;
   control.setAttribute('aria-busy', 'true');
   try {
@@ -22,6 +23,7 @@ async function saveSettings(control) {
     const result = await api.saveLauncherConfig(patch);
     if (result?.ok === false) throw new Error(result.message || result.error || '设置保存被拒绝');
   } catch (error) {
+    control.checked = !nextChecked;
     setHint(errText(error, '设置保存失败'));
   } finally {
     control.disabled = false;
@@ -115,6 +117,7 @@ function bind() {
     const picked = await api?.pickImportSource();
     if (picked) {
       importSourceHome = picked;
+      attachmentsTouched = false;
       await refreshImport();
     }
   });
@@ -154,7 +157,8 @@ function bind() {
   });
   document.addEventListener('keydown', (event) => {
     if (!confirmResolve) return;
-    if (event.key === 'Escape' && $('app-confirm').contains(event.target)) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
       event.stopPropagation();
       settleConfirm(false);
     } else if (event.key === 'Tab') {
@@ -197,7 +201,10 @@ function bind() {
     syncImportSummary();
   });
   $('import-overwrite').addEventListener('change', syncImportSummary);
-  $('import-attachments').addEventListener('change', syncImportSummary);
+  $('import-attachments').addEventListener('change', () => {
+    attachmentsTouched = true;
+    syncImportSummary();
+  });
   $('btn-import-select-all').addEventListener('click', () => {
     setGroupChecked(IMPORT_CATS[importCat].name, true);
     syncSessionClusters();

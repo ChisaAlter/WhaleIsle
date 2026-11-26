@@ -454,8 +454,8 @@ var CSS = `
 .dshr-error { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 1.5; }
 .dshr-ok { color: var(--dsw-alias-state-success-primary); font-size: 12px; }
 .dshr-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dshr-mono { font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
-.dshr-mono input { font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+.dshr-mono { font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); }
+.dshr-mono input { font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); }
 .dshr-iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
 .dshr-iconBtn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dshr-iconBtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -464,7 +464,7 @@ var CSS = `
 @media (prefers-reduced-motion: reduce) { .dshr-miniSpinner { animation: none; } }
 
 .dshr-machineList { display: flex; flex-direction: column; gap: 6px; }
-.dshr-machine { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.dshr-machine { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
 .dshr-machine[data-current="true"] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-interactive-bg-active); }
 .dshr-machineMeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .dshr-machineName { font-weight: 600; font-size: 13px; }
@@ -508,10 +508,10 @@ var CSS = `
 .dshr-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--dsw-alias-label-primary); }
 .dshr-editorHead { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); font-size: 12px; }
 .dshr-editorBody { flex: 1; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
-.dshr-editorText { flex: 1; width: 100%; box-sizing: border-box; border: none; outline: none; resize: none; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 1.55; font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
-.dshr-editorView { font-size: 13px; line-height: 1.55; font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+.dshr-editorText { flex: 1; width: 100%; box-sizing: border-box; border: none; outline: none; resize: none; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 1.55; font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+.dshr-editorView { font-size: 13px; line-height: 1.55; font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
 
-.dshr-audit { max-height: 220px; overflow-y: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px 10px; font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; }
+.dshr-audit { max-height: 220px; overflow-y: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px 10px; font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; }
 .dshr-emptyState { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 16px; text-align: center; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .dshr-warn { color: var(--dsw-alias-state-warn-primary); }
 `;
@@ -643,7 +643,15 @@ function testPayloadOf(f) {
     } : void 0
   };
 }
+function parseValidPort(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return 22;
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null;
+}
 function MachineForm({ t, machine, onSaved, onCancel }) {
+  const uid = React2.useId();
   const editing = machine || null;
   const [form, setForm] = React2.useState(() => editing ? formFromMachine(editing) : EMPTY_FORM);
   const [busy, setBusy] = React2.useState(false);
@@ -658,8 +666,19 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
     { id: "verify", label: t("form.hostKeyVerify") },
     { id: "off", label: t("form.hostKeyOff") }
   ];
+  const validatePorts = () => {
+    if (parseValidPort(form.port) === null) {
+      setNotice({ kind: "err", text: `${t("form.port")}: 1\u201365535` });
+      return false;
+    }
+    if (form.proxyHost.trim() && parseValidPort(form.proxyPort) === null) {
+      setNotice({ kind: "err", text: `${t("form.proxyPort")}: 1\u201365535` });
+      return false;
+    }
+    return true;
+  };
   const save = () => {
-    if (busy) return;
+    if (busy || !validatePorts()) return;
     setBusy(true);
     setNotice(null);
     remoteApi.saveMachine(payloadOf(form)).then((r) => {
@@ -667,7 +686,7 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
     }).catch((e) => setNotice({ kind: "err", text: String(e && e.message || e) })).finally(() => setBusy(false));
   };
   const test = () => {
-    if (testing) return;
+    if (testing || !validatePorts()) return;
     setTesting(true);
     setNotice(null);
     remoteApi.testConnect(testPayloadOf(form)).then((r) => {
@@ -675,39 +694,41 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
       else setNotice({ kind: "err", text: t("form.testFail", { error: r && r.error || "?" }) });
     }).catch((e) => setNotice({ kind: "err", text: t("form.testFail", { error: String(e && e.message || e) }) })).finally(() => setTesting(false));
   };
-  const field = (label, node) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(React2.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-formLabel", children: label }),
+  const field = (label, node, id) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(React2.Fragment, { children: [
+    id ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("label", { className: "dshr-formLabel", htmlFor: id, children: label }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-formLabel", children: label }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-row", children: node })
   ] });
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-col", children: [
     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: editing ? t("form.titleEdit") : t("form.titleAdd") }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-form", children: [
-      field(t("form.name"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.name, onChange: set("name"), placeholder: t("form.namePlaceholder"), className: "dshr-grow" })),
-      field(t("form.host"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.host, onChange: set("host"), placeholder: t("form.hostPlaceholder"), className: "dshr-grow" })),
-      field(t("form.port"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.port, onChange: set("port"), inputMode: "numeric", className: "dshr-grow" })),
-      field(t("form.username"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.username, onChange: set("username"), className: "dshr-grow" })),
+      field(t("form.name"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-name`, value: form.name, onChange: set("name"), placeholder: t("form.namePlaceholder"), className: "dshr-grow" }), `${uid}-name`),
+      field(t("form.host"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-host`, value: form.host, onChange: set("host"), placeholder: t("form.hostPlaceholder"), className: "dshr-grow" }), `${uid}-host`),
+      field(t("form.port"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-port`, value: form.port, onChange: set("port"), inputMode: "numeric", className: "dshr-grow" }), `${uid}-port`),
+      field(t("form.username"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-user`, value: form.username, onChange: set("username"), className: "dshr-grow" }), `${uid}-user`),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-formFull dshr-cardTitle", style: { marginTop: 4 }, children: t("form.auth") }),
       field(t("form.password"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         import_dsh_client_ui_primitives2.Input,
         {
+          id: `${uid}-pass`,
           type: "password",
           value: form.password,
           onChange: set("password"),
           placeholder: editing && editing.passwordSet ? t("form.passwordKeep") : t("form.passwordPlaceholder"),
           className: "dshr-grow"
         }
-      )),
-      field(t("form.privateKeyPath"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.privateKeyPath, onChange: set("privateKeyPath"), placeholder: t("form.privateKeyPlaceholder"), className: "dshr-grow" })),
+      ), `${uid}-pass`),
+      field(t("form.privateKeyPath"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-key`, value: form.privateKeyPath, onChange: set("privateKeyPath"), placeholder: t("form.privateKeyPlaceholder"), className: "dshr-grow" }), `${uid}-key`),
       field(t("form.passphrase"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         import_dsh_client_ui_primitives2.Input,
         {
+          id: `${uid}-phrase`,
           type: "password",
           value: form.passphrase,
           onChange: set("passphrase"),
           placeholder: editing && editing.passphraseSet ? t("form.passwordKeep") : t("form.passphrasePlaceholder"),
           className: "dshr-grow"
         }
-      )),
+      ), `${uid}-phrase`),
       field(t("form.hostKeyMode"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         import_dsh_client_ui_primitives2.SettingsSelect,
         {
@@ -719,7 +740,7 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
           className: "dshr-grow"
         }
       )),
-      field(t("form.workspace"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.workspace, onChange: set("workspace"), placeholder: t("form.workspacePlaceholder"), className: "dshr-grow" })),
+      field(t("form.workspace"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-ws`, value: form.workspace, onChange: set("workspace"), placeholder: t("form.workspacePlaceholder"), className: "dshr-grow" }), `${uid}-ws`),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-formFull dshr-col", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-checkRow", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Checkbox, { checked: form.useAgent, onChange: (v) => setForm((f) => ({ ...f, useAgent: v })), label: t("form.useAgent") }) }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-checkRow", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Checkbox, { checked: form.keyboardInteractive, onChange: (v) => setForm((f) => ({ ...f, keyboardInteractive: v })), label: t("form.keyboardInteractive") }) }),
@@ -731,20 +752,21 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-formFull", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: t("form.proxy") }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-form", style: { marginTop: 8 }, children: [
-          field(t("form.proxyHost"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyHost, onChange: set("proxyHost"), className: "dshr-grow" })),
-          field(t("form.proxyPort"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyPort, onChange: set("proxyPort"), inputMode: "numeric", className: "dshr-grow" })),
-          field(t("form.proxyUser"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyUser, onChange: set("proxyUser"), className: "dshr-grow" })),
+          field(t("form.proxyHost"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-phost`, value: form.proxyHost, onChange: set("proxyHost"), className: "dshr-grow" }), `${uid}-phost`),
+          field(t("form.proxyPort"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-pport`, value: form.proxyPort, onChange: set("proxyPort"), inputMode: "numeric", className: "dshr-grow" }), `${uid}-pport`),
+          field(t("form.proxyUser"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-puser`, value: form.proxyUser, onChange: set("proxyUser"), className: "dshr-grow" }), `${uid}-puser`),
           field(t("form.proxyPassword"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             import_dsh_client_ui_primitives2.Input,
             {
+              id: `${uid}-ppass`,
               type: "password",
               value: form.proxyPassword,
               onChange: set("proxyPassword"),
               placeholder: editing && editing.proxy && editing.proxy.passwordSet ? t("form.passwordKeep") : "",
               className: "dshr-grow"
             }
-          )),
-          field(t("form.proxyKey"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyKey, onChange: set("proxyKey"), className: "dshr-grow" }))
+          ), `${uid}-ppass`),
+          field(t("form.proxyKey"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { id: `${uid}-pkey`, value: form.proxyKey, onChange: set("proxyKey"), className: "dshr-grow" }), `${uid}-pkey`)
         ] })
       ] })
     ] }),
@@ -935,7 +957,8 @@ function RemoteSettingsSection({ t }) {
             setFormOpen(false);
             setEditing(null);
           }
-        }
+        },
+        editing ? editing.id || `import:${editing.host}:${editing.port || 22}:${editing.username || ""}` : "new"
       ) : null,
       !loading && !loadError && !formOpen && !editing && machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-emptyState", children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("machines.empty") }),

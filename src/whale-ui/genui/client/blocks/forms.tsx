@@ -86,6 +86,7 @@ export function SubmitNode({ node, onAction, answers }: {
   answers?: AnswersState | undefined
 }) {
   const t = useT()
+  const [pending, setPending] = useState(false)
   const recorded = answers?.answers ?? {}
   const multiRecorded = answers?.multiAnswers ?? {}
   const fields = answers?.fields ?? {}
@@ -182,21 +183,23 @@ export function SubmitNode({ node, onAction, answers }: {
       <button
         type="button"
         className={`${css.button} ${css.primary} ${css.submit}`}
-        disabled={!ready}
-        onClick={ready ? () => {
+        disabled={!ready || pending}
+        aria-busy={pending || undefined}
+        onClick={ready && !pending ? () => {
           if (shouldGradeLocally) {
             // Local grading: immediate in-place result, no model round trip.
             answers?.setLocked(true)
           } else if (node.action !== undefined && onAction !== undefined) {
             // `ready` already guarantees this branch, but the narrow keeps
             // the optional-action type honest.
-            onAction(node.action, {
+            setPending(true)
+            void Promise.resolve(onAction(node.action, {
               type: 'submit',
               answers: collectedAnswers,
               ...(Object.keys(filledFields).length > 0 ? { fields: filledFields } : {}),
               total,
               answered,
-            })
+            })).finally(() => setPending(false))
           }
         } : undefined}
       >
@@ -436,6 +439,7 @@ export function InputNode({ node, onAction, answers }: {
   useEffect(() => {
     if (!secret && id !== undefined && value.trim() !== '') setField?.(id, value)
   }, [id, value, secret, setField])
+  const numericInvalid = numeric && value.trim() !== '' && parseDecimalNumber(value) === undefined
   return (
     <label className={css.field}>
       {node.label !== undefined && <span>{renderInline(node.label, false)}</span>}
@@ -443,6 +447,7 @@ export function InputNode({ node, onAction, answers }: {
         className={css.input}
         type={numeric ? 'text' : node.inputType ?? 'text'}
         inputMode={numeric ? 'decimal' : undefined}
+        aria-invalid={numericInvalid || undefined}
         style={node.inputType === 'color' ? {
           width: 64,
           height: 40,

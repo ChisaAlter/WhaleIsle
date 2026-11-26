@@ -1813,20 +1813,6 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   scrollbar-width: thin;
   scrollbar-color: var(--dsw-alias-border-l2) transparent;
 }
-.tableWrap::-webkit-scrollbar, .fileTree::-webkit-scrollbar,
-.mermaid::-webkit-scrollbar, .panelBody::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.tableWrap::-webkit-scrollbar-thumb, .fileTree::-webkit-scrollbar-thumb,
-.mermaid::-webkit-scrollbar-thumb, .panelBody::-webkit-scrollbar-thumb {
-  background: var(--dsw-alias-border-l2);
-  border-radius: 4px;
-}
-.tableWrap::-webkit-scrollbar-track, .fileTree::-webkit-scrollbar-track,
-.mermaid::-webkit-scrollbar-track, .panelBody::-webkit-scrollbar-track {
-  background: transparent;
-}
 
 /* ---------- a11y utility ---------- */
 

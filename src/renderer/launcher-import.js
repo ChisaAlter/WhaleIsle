@@ -74,6 +74,7 @@ function settingRowMeta(row) {
 let importCat = 'sessions';
 let importHomeDir = '';
 let importListRendered = false;
+let attachmentsTouched = false;
 
 const IMPORT_COLLAPSE_AT = 8;
 
@@ -475,6 +476,13 @@ function summarizeImport(result) {
   return lines.join('\n');
 }
 
+/** @param {any} scan @param {any[]} sessions */
+function syncDefaultAttachments(scan, sessions) {
+  if (!attachmentsTouched) {
+    $('import-attachments').checked = Boolean(scan?.hasAttachments) && sessions.some((row) => !row.unsupported);
+  }
+}
+
 async function refreshImport(options = {}) {
   const api = pageShell();
   if (!api) {
@@ -571,7 +579,7 @@ async function refreshImport(options = {}) {
       selections: savedSelections,
     });
 
-    $('import-attachments').checked = Boolean(scan?.hasAttachments) && sessions.some((row) => !row.unsupported);
+    syncDefaultAttachments(scan, sessions);
     importListRendered = true;
     syncSessionClusters();
     syncImportSummary();

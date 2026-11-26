@@ -220,6 +220,9 @@ function applyPluginBootCopy(payload) {
     setHint(payload.error || '运行时已就绪，但客户端插件未能完成装载。');
     showFailure(payload.error || '运行时已就绪，但客户端插件未能完成装载。');
     document.body.dataset.state = 'error';
+    if (actionsEl) actionsEl.hidden = false;
+    updateRetryButton(false, false);
+    if (openLauncherEl) openLauncherEl.hidden = false;
     return;
   }
   statusTextEl.textContent = payload.total > 0
@@ -401,8 +404,11 @@ function appendLog(line) {
 if (retryEl) {
   const retryButton = retryEl;
   retryButton.addEventListener('click', () => {
+    if (retryButton.getAttribute('aria-busy') === 'true') return;
     actionNotice = '';
     retryButton.disabled = true;
+    retryButton.setAttribute('aria-busy', 'true');
+    const restoreLabel = (/** @type {any} */ (window)).shellFeedback.buttonBusy(retryButton, '重启中…');
     cancelRestartEl.hidden = true;
     renderState({ state: 'starting', recovery: { status: 'inactive' } });
     invoke('restart')
@@ -412,7 +418,6 @@ if (retryEl) {
           return;
         }
         const message = snapshot && snapshot.error ? String(snapshot.error) : '重启请求被拒绝，请重试';
-        retryButton.disabled = false;
         renderState({
           state: 'error',
           error: message,
@@ -423,7 +428,6 @@ if (retryEl) {
         });
       })
       .catch((error) => {
-        retryButton.disabled = false;
         renderState({
           state: 'error',
           error: error.message || String(error),
@@ -432,6 +436,12 @@ if (retryEl) {
             message: error.message || String(error),
           },
         });
+      })
+      .finally(() => {
+        restoreLabel();
+        retryButton.removeAttribute('aria-busy');
+        const snap = /** @type {any} */ (latestSnapshot);
+        retryButton.disabled = snap?.recovery?.status === 'restarting';
       });
   });
 }

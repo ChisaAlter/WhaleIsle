@@ -283,7 +283,10 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
   };
   paint();
   // The start/stop button carries the spinner; the status line counts seconds.
-  const timer = setInterval(() => renderHomeStatus(lastStatus), 1000);
+  const timer = setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    renderHomeStatus(lastStatus);
+  }, 1000);
   let result;
   try {
     result = await api[method](...args);
@@ -663,7 +666,13 @@ async function checkUpdateNow() {
   }
   reportUpdateNotice(notice);
 }
-async function installTag(tag, kind) {
+/** @param {string} kind @param {string} tag */
+function installTagTitle(kind, tag) {
+  return kind === 'update' ? `正在更新到 ${tag}` : `正在安装 ${tag}`;
+}
+
+/** @param {string} tag @param {string} kind @param {HTMLElement} [button] */
+async function installTag(tag, kind, button) {
   if (tag && await openUpdateCenter('installVersion', tag)) return;
   const api = pageShell();
   if (!api || !tag || updateBusy) {
@@ -671,10 +680,12 @@ async function installTag(tag, kind) {
   }
   // The version button names its action; clicking it is the consent.
   updateBusy = true;
+  const titleText = installTagTitle(kind, tag);
+  const restoreButton = launcherButtonBusy(button, `${titleText}…`);
   progressPanels.get('update-progress')?.show({ reset: true });
   const progressTitle = $('update-progress-title');
   if (progressTitle) {
-    progressTitle.textContent = kind === 'update' ? `正在更新到 ${tag}` : `正在安装 ${tag}`;
+    progressTitle.textContent = titleText;
   }
   paintProgress('update-progress', { phase: 'resolve' });
   $('update-progress').textContent = '正在下载安装包…';
@@ -714,15 +725,18 @@ async function installTag(tag, kind) {
     hintUnlessShown('update-progress', $('update-progress').textContent);
   } finally {
     updateBusy = false;
+    restoreButton();
   }
 }
 
-async function installDelta(tag) {
+/** @param {string} tag @param {HTMLElement} [button] */
+async function installDelta(tag, button) {
   const api = pageShell();
   if (!api || typeof api.installDelta !== 'function' || !tag || updateBusy) {
     return;
   }
   updateBusy = true;
+  const restoreButton = launcherButtonBusy(button, `正在增量更新到 ${tag}…`);
   progressPanels.get('update-progress')?.show({ reset: true });
   const title = $('update-progress-title');
   if (title) {
@@ -762,5 +776,6 @@ async function installDelta(tag) {
     hintUnlessShown('update-progress', $('update-progress').textContent);
   } finally {
     updateBusy = false;
+    restoreButton();
   }
 }

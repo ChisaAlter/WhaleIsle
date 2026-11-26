@@ -35,6 +35,19 @@ let logTail = '';
 
 let logUnseen = false;
 
+/** @type {HTMLButtonElement | null} */
+let olderBtn = null;
+function ensureOlderBtn() {
+  if (!olderBtn) {
+    olderBtn = document.createElement('button');
+    olderBtn.type = 'button';
+    olderBtn.className = 'load-older';
+    olderBtn.textContent = '加载更早消息';
+    olderBtn.addEventListener('click', () => loadOlderMessages());
+  }
+  return olderBtn;
+}
+
 function syncJumpBottom() {
   const distance = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight;
   const away = !logEl.classList.contains('hidden') && distance > 160;
@@ -103,13 +116,9 @@ export function renderLog({ anchor = 'auto' } = {}) {
     nodes.push(timelineErrorNode());
   } else {
     if (state.transport === 'chisacode' && state.timelinePage.hasOlder) {
-      const older = document.createElement('button');
-      older.type = 'button';
-      older.className = 'load-older';
+      const older = ensureOlderBtn();
       older.disabled = state.timelineLoadingOlder;
-      older.textContent = '加载更早消息';
       buttonBusy(older, state.timelineLoadingOlder, { label: '加载中…' });
-      older.addEventListener('click', () => loadOlderMessages());
       nodes.push(older);
     }
     // Unchanged rows keep their nodes: a live tick rebuilds only what changed.

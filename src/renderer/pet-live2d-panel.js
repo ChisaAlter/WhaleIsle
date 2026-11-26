@@ -128,7 +128,7 @@ function panelCells() {
 }
 
 function openPanel() {
-  const b = petBounds();
+  const b = petBodyBounds();
   const host = homeRect || { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
   const hostY = host.y ?? 0;
   const h = PANEL_H;

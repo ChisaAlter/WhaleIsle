@@ -185,7 +185,14 @@ function StatsContent({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps):
       </div>
     )
   } else if (error && !data) {
-    body = <div className="dsw-ust-empty">{t('status.error', { msg: error })}</div>
+    body = (
+      <div className="dsw-ust-empty" role="alert">
+        <div>{t('status.error', { msg: error })}</div>
+        <Button size="sm" variant="ghost" onClick={() => load(true)} disabled={loading} loading={loading}>
+          {t('billing.retry')}
+        </Button>
+      </div>
+    )
   } else if (data && isUsageEmpty(data)) {
     body = (
       <div className="dsw-ust-empty">

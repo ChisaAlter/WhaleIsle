@@ -25,7 +25,9 @@ document.getElementById('close').addEventListener('click', () => { respond(view.
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && view !== undefined) { event.preventDefault(); respond(view.cancelId); }
   if (event.key !== 'Tab') return;
-  const controls = [...document.querySelectorAll('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), #content:not([hidden]), #request-secret:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
+  const controls = [...document.querySelectorAll('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), #content:not([hidden]), #request-secret:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')]
+    .filter((el) => !(/** @type {HTMLElement} */ (el)).hidden && !el.closest('[hidden]'));
+  if (!controls.length) return;
   const current = controls.indexOf(document.activeElement);
   const next = current < 0 ? (event.shiftKey ? controls.length - 1 : 0)
     : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;

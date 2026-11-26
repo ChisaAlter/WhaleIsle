@@ -7894,7 +7894,7 @@
       },
       "TS7005": {
         "Variable 'countdownTimer' implicitly has an 'any' type.": 1,
-        "Variable 'latestSnapshot' implicitly has an 'any' type.": 4,
+        "Variable 'latestSnapshot' implicitly has an 'any' type.": 5,
         "Variable 'pluginBoot' implicitly has an 'any' type.": 1
       },
       "TS7006": {
@@ -8342,7 +8342,6 @@
         "Parameter 'check' implicitly has an 'any' type.": 3,
         "Parameter 'desktop' implicitly has an 'any' type.": 1,
         "Parameter 'guidance' implicitly has an 'any' type.": 2,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
         "Parameter 'method' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'notice' implicitly has an 'any' type.": 1,
@@ -8352,7 +8351,6 @@
         "Parameter 'row' implicitly has an 'any' type.": 1,
         "Parameter 'state' implicitly has an 'any' type.": 1,
         "Parameter 'status' implicitly has an 'any' type.": 6,
-        "Parameter 'tag' implicitly has an 'any' type.": 2,
         "Parameter 'text' implicitly has an 'any' type.": 1,
         "Parameter 'view' implicitly has an 'any' type.": 3
       },
@@ -8417,7 +8415,7 @@
         "Parameter 'reason' implicitly has an 'any' type.": 1,
         "Parameter 'rel' implicitly has an 'any' type.": 2,
         "Parameter 'result' implicitly has an 'any' type.": 1,
-        "Parameter 'row' implicitly has an 'any' type.": 29,
+        "Parameter 'row' implicitly has an 'any' type.": 28,
         "Parameter 'rows' implicitly has an 'any' type.": 3,
         "Parameter 'selections' implicitly has an 'any' type.": 1,
         "Parameter 'source' implicitly has an 'any' type.": 1,
@@ -8664,14 +8662,13 @@
         "Property 'watchShellTheme' does not exist on type 'Window & typeof globalThis'.": 2
       },
       "TS2345": {
-        "Argument of type 'EventTarget | null' is not assignable to parameter of type 'Node | null'.": 1,
         "Argument of type '{ title: string; body: string; tone: string; }' is not assignable to parameter of type '{ title?: string | undefined; body: any; tone?: string | undefined; holdMs: any; }'.": 1
       },
       "TS2353": {
         "Object literal may only specify known properties, and 'activate' does not exist in type '{ orientation?: string | undefined; }'.": 2
       },
       "TS2531": {
-        "Object is possibly 'null'.": 52
+        "Object is possibly 'null'.": 51
       },
       "TS7005": {
         "Variable 'centerView' implicitly has an 'any' type.": 1,

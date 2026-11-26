@@ -43,10 +43,15 @@ export function renderComposer({ nativeSnapshot = true } = {}) {
   attachRail.replaceChildren(...state.attachments.map((image, index) => {
     const wrap = document.createElement('div');
     wrap.className = 'attach-thumb';
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.className = 'attach-preview';
+    preview.setAttribute('aria-label', '预览附件图片');
     const img = document.createElement('img');
     img.src = `data:${image.mediaType};base64,${image.data}`;
     img.alt = '附件图片';
-    img.addEventListener('click', () => {
+    preview.append(img);
+    preview.addEventListener('click', () => {
       state.lightbox = image;
       renderLightbox();
     });
@@ -64,7 +69,7 @@ export function renderComposer({ nativeSnapshot = true } = {}) {
       }
       renderComposer();
     });
-    wrap.append(img, remove);
+    wrap.append(preview, remove);
     return wrap;
   }));
   if (nativeSnapshot) scheduleNativeSnapshot();

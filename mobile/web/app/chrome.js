@@ -115,10 +115,18 @@ export function renderConnBanner() {
   connBanner.classList.toggle('hidden', !visible);
   if (visible) {
     connBanner.dataset.phase = state.connPhase;
-    connBanner.textContent = state.connLabel;
+    connBanner.replaceChildren(document.createTextNode(state.connLabel || ''));
+    if (state.connPhase === 'offline' || state.connPhase === 'disconnected') {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'conn-retry';
+      retry.textContent = '重新连接';
+      retry.addEventListener('click', () => window.dispatchEvent(new Event('dshd-resume')));
+      connBanner.append(' ', retry);
+    }
   } else {
     delete connBanner.dataset.phase;
-    connBanner.textContent = '';
+    connBanner.replaceChildren();
   }
   scheduleNativeSnapshot();
 }
