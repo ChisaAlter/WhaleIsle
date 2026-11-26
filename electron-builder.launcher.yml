@@ -17,7 +17,10 @@ files:
   - '!**/*.test.js'
   - '!src/renderer/pet-live2d/**'
   - '!src/renderer/pet/**'
-  - assets/**/*
+  - assets/icon.ico
+  - assets/icon.png
+  - assets/icon.svg
+  - assets/whale-head.png
   - package.json
 
 extraMetadata:
@@ -34,7 +37,7 @@ electronLanguages:
 publish:
   - provider: github
     owner: ChisaAlter
-    repo: Deepseek-Harness-Desktop
+    repo: WhaleIsle
 
 win:
   icon: assets/icon.ico

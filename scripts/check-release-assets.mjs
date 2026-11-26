@@ -29,8 +29,8 @@
 //     v26 electron-updater metadata carries no blockmap digest, so only the
 //     filename stem can be checked. Do not invent a blockmap-hash field.
 //
-// Data-only, bounded, offline: js-yaml is the exact parser electron-updater
-// already depends on (root node_modules/js-yaml 4.3.1). The installer is hashed
+// Data-only, bounded, offline: `yaml` is a locked direct dependency in
+// package.json (no transitive phantom import). The installer is hashed
 // with a stream and never read fully into memory. Importing this module has no
 // side effects.
 
@@ -39,7 +39,7 @@ import { createReadStream } from 'node:fs'
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { JSON_SCHEMA, load } from 'js-yaml'
+import { parse as parseYaml } from 'yaml'
 
 export const SETUP_PREFIX = 'Whale-Isle-Setup-'
 export const SETUP_SUFFIX = '.exe'
@@ -206,9 +206,9 @@ async function readMetadata(metadataPath) {
   }
   let parsed
   try {
-    // `load` is js-yaml 4's data-only loader (no function/class tags). The
-    // JSON schema keeps scalars predictable so version/url/sha512 are strings.
-    parsed = load(raw.toString('utf8'), { schema: JSON_SCHEMA })
+    // YAML 1.2 core schema keeps ISO timestamps/versions as strings, rejects
+    // custom JS tags, and enforces unique mapping keys strictly.
+    parsed = parseYaml(raw.toString('utf8'), { schema: 'core', uniqueKeys: true, strict: true })
   } catch (error) {
     fail(`cannot parse ${METADATA_NAME}: ${error.message}`)
   }

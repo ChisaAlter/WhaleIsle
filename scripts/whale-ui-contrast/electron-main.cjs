@@ -133,6 +133,9 @@ async function run() {
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+// Prevent Electron's default window-all-closed quit from terminating the process
+// before run() finishes cleaning up its temp dir and writing outPath.
+app.on('window-all-closed', () => {})
 
 app.whenReady().then(async () => {
   const watchdog = setTimeout(() => app.exit(3), 280000)

@@ -107,7 +107,9 @@ test('staged package cleanup removes development trees and remote metadata while
   write('plugin');
   const packages = [
     ['@xmanrui/dsh-im', ['assets/logo.png', 'src/channel.ts', 'plugin-src/index.ts', 'scripts/build.mjs', 'channel.test.mjs', '.tmp-lock-validation.log']],
-    ['dsh-usage-panel', ['assets/sample.png', 'src/index.ts', 'tests/check.js', 'docs/readme.txt', 'scripts/build.mjs', '.tmp/client.cjs']],
+    ['dsh-usage-panel', ['assets/sample.png', 'src/index.ts', 'tests/check.js', 'tests-dist/check.js', 'docs/readme.txt', 'scripts/build.mjs', '.tmp/client.cjs']],
+    ['dsh-remote', ['plugin-src/App.jsx', 'lib/pool.test.js', 'tests/smoke.js']],
+    ['ssh2', ['test/test-client.js']],
     ['@chisacode/protocol', ['dist/messages.d.ts', 'dist/messages.d.mts', 'dist/messages.js.map']],
     ['zod', ['src/v4/index.ts']],
     ['@mixmark-io/domino', ['test/index.js', '.yarn/plugins/plugin-version.cjs', 'yarn.lock']],
@@ -161,7 +163,9 @@ test('actual Electron builder collection keeps the ASAR whitelist and native-hos
   const excluded = ['.tmp/current-package-audit.json',
     'vendor/deepseek-harness/packages/experimental/inspector/lib/devtools/lighthouse_worker.js',
     'vendor/dsh-im/lib/index.js', 'scripts/production-runtime.js', 'dist/previous-build.bin',
-    'src/main/index.test.js', 'mobile/web/chisacode/daemon-client.bundle.js.map'];
+    'src/main/index.test.js', 'mobile/web/package.json', 'mobile/web/demo.fixture.html',
+    'mobile/web/chisacode/daemon-client.bundle.js.map',
+    'assets/screenshot-home.jpg', 'assets/wechat-group.png', 'assets/poster.png'];
   for (const file of [...included, ...excluded]) writeFile(root, file);
   const bundledPreload = fs.readFileSync(new URL('../src/main/preview-guest-preload.bundle.js', import.meta.url));
   fs.writeFileSync(path.join(root, 'src/main/preview-guest-preload.bundle.js'), bundledPreload);
