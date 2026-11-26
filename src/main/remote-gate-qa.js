@@ -81,7 +81,20 @@ function pairingOffer(snap) {
 }
 
 /**
- * Pairing chrome follows the live control socket: QR only when connected.
+ * Return whether the current transport is ready for pairing QR display.
+ * @param {any} snap
+ * @returns {boolean}
+ */
+function pairingTransportReady(snap) {
+  if (!snap) return false;
+  if (snap.mode === 'lan' && snap.lanReady === true) {
+    return Boolean(snap.listening);
+  }
+  return Boolean(snap.relayConnected);
+}
+
+/**
+ * Pairing chrome follows the live transport state: QR when ready.
  * @param {{ hasQr?: boolean, hasStatus?: boolean } | null} face
  * @param {boolean} connected
  * @returns {boolean}
@@ -134,12 +147,267 @@ function assertRemoteGateQaResult(qa, { required } = {}) {
   }
 }
 
-function readMainClipboard() {
+/** @returns {Promise<string>} */
+async function readMainClipboard() {
   try {
-    return require('electron').clipboard.readText() || '';
+    const text = await require('electron').clipboard.readText();
+    return typeof text === 'string' ? text : '';
   } catch {
     return '';
   }
+}
+
+/**
+ * Inspect or click the current Remote entry (sidebar fallback or account menu).
+ * @param {Electron.WebContents} wc
+ * @param {'open-entry' | 'find-menu' | 'click-menu'} action
+ * @returns {Promise<string | boolean>}
+ */
+function evalRemoteEntryStep(wc, action) {
+  return wc.executeJavaScript(`(() => {
+    ${PAGE_HELPERS};
+    const action = ${JSON.stringify(action)};
+    if (action === 'open-entry') {
+      const footer = document.querySelector('[data-dsh-remote-trigger], [data-sidebar-action="remote"]');
+      if (footer && dshShown(footer)) { footer.click(); return 'footer'; }
+      const account = dshFind('^account menu|^账号菜单')
+        || Array.from(document.querySelectorAll('[data-dsh-settings-trigger]')).find(dshShown);
+      if (account && typeof account.click === 'function') { account.click(); return 'account'; }
+      return '';
+    }
+    const menu = Array.from(document.querySelectorAll('[role="menu"]')).find(dshShown);
+    const remote = menu && dshFind('^remote$|^远程$', menu);
+    if (!remote) return false;
+    if (action === 'find-menu') return true;
+    if (remote.disabled) return false;
+    remote.click();
+    return true;
+  })()`);
+}
+
+/**
+ * Check whether the current Remote entry exists without leaving menus open.
+ * @param {Electron.WebContents} wc
+ * @param {any} helpers
+ * @param {number} [timeoutMs]
+ * @returns {Promise<string | null>}
+ */
+async function probeRemoteTrigger(wc, helpers, timeoutMs = 5_000) {
+  const footer = await pageEval(wc, () => {
+    const trigger = document.querySelector('[data-dsh-remote-trigger], [data-sidebar-action="remote"]');
+    return trigger && dshShown(trigger) ? 'footer' : '';
+  });
+  if (footer) return 'footer';
+  const entry = await pageEval(wc, () => {
+    const account = dshFind('^account menu|^账号菜单')
+      || Array.from(document.querySelectorAll('[data-dsh-settings-trigger]')).find((el) => el.getBoundingClientRect().width > 0);
+    if (account instanceof HTMLElement) account.click();
+    return Boolean(account);
+  });
+  if (!entry) return null;
+  const menuHit = await waitUntil(() => evalRemoteEntryStep(wc, 'find-menu'), timeoutMs);
+  await helpers.pressEscape(wc);
+  return menuHit ? 'account-menu' : null;
+}
+
+/**
+ * Open the Remote pairing dialog from the sidebar fallback or account menu.
+ * @param {Electron.WebContents} wc
+ * @param {number} [timeoutMs]
+ * @returns {Promise<boolean>}
+ */
+async function openRemotePopup(wc, timeoutMs = 5_000) {
+  const clicked = await evalRemoteEntryStep(wc, 'open-entry');
+  if (clicked === 'footer') return true;
+  if (clicked !== 'account') return false;
+  return Boolean(await waitUntil(() => evalRemoteEntryStep(wc, 'click-menu'), timeoutMs));
+}
+
+/**
+ * Wait for the Remote pairing popup QR face or status line.
+ * @param {Electron.WebContents} wc
+ * @param {{ includeControls?: boolean }} [options]
+ * @returns {Promise<any>}
+ */
+async function readPairingFace(wc, { includeControls = false } = {}) {
+  return waitUntil(() => pageEval(wc, () => {
+    const root = document.querySelector('[data-dsh-remote-panel], [role="dialog"]') || document.body;
+    const mark = root.querySelector('[data-dsh-remote-qr] img, [data-dsh-remote-qr] svg');
+    const status = root.querySelector('[data-dsh-remote-status]');
+    if (!mark && !status) return null;
+    const copy = root.querySelector('[data-dsh-remote-copy-link]');
+    const rotate = root.querySelector('[data-dsh-remote-rotate]');
+    const text = root instanceof HTMLElement ? root.innerText || '' : '';
+    return {
+      hasQr: Boolean(mark),
+      kind: mark ? mark.tagName.toLowerCase() : '',
+      hasStatus: Boolean(status),
+      bareOffer: text.includes('#offer='),
+      copy: Boolean(copy && dshShown(copy)),
+      rotate: Boolean(rotate && dshShown(rotate)),
+    };
+  }), 8_000).then((face) => (includeControls || !face ? face : {
+    hasQr: face.hasQr,
+    kind: face.kind,
+    hasStatus: face.hasStatus,
+  }));
+}
+
+/**
+ * Open the pairing popup and inspect its QR face against live transport state.
+ * @param {Electron.WebContents} wc
+ * @param {any} helpers
+ * @param {any} fallbackSnap
+ * @param {{ includeControls?: boolean }} [options]
+ */
+async function probeRemotePopupQr(wc, helpers, fallbackSnap, { includeControls = false } = {}) {
+  const opened = await openRemotePopup(wc);
+  const face = opened ? await readPairingFace(wc, { includeControls }) : null;
+  const live = await helpers.probeRemote().catch(() => fallbackSnap);
+  const connected = pairingTransportReady(live);
+  const qrOk = pairingChromeMatchesRelay(face, connected);
+  const relayConnected = Boolean(live && live.relayConnected);
+  const detail = !opened
+    ? 'remote trigger failed to open popup'
+    : face
+      ? `${JSON.stringify(face)}; transportReady=${connected}; relayConnected=${relayConnected}`
+      : 'popup opened but no [data-dsh-remote-qr] face or status';
+  return { opened, face, connected, qrOk, detail };
+}
+
+/**
+ * Verify clipboard offer URL has `#offer=` and matches the expected pairing host (or is non-loopback when omitted).
+ * @param {string} clipboard
+ * @param {string} [expectedOffer]
+ * @returns {boolean}
+ */
+function clipboardOfferMatchesExpectedHost(clipboard, expectedOffer = '') {
+  if (typeof clipboard !== 'string' || !clipboard.includes('#offer=')) return false;
+  let clipHost = '';
+  try {
+    clipHost = new URL(clipboard).hostname;
+  } catch {
+    return false;
+  }
+  if (!clipHost) return false;
+  let expectedHost = '';
+  if (expectedOffer) {
+    try {
+      expectedHost = new URL(expectedOffer).hostname;
+    } catch {
+      expectedHost = '';
+    }
+  }
+  if (expectedHost) {
+    const loopbackHosts = ['127.0.0.1', 'localhost', '::1'];
+    if (!loopbackHosts.includes(expectedHost) && loopbackHosts.includes(clipHost)) return false;
+    return clipHost === expectedHost;
+  }
+  return !['127.0.0.1', 'localhost', '::1'].includes(clipHost);
+}
+
+/**
+ * Read redacted clipboard offer status without exposing secret fragments.
+ * @param {string} [expectedOffer]
+ * @returns {Promise<{ ok: boolean, clipLen: number, clipHost: string, hasOffer: boolean }>}
+ */
+async function readClipboardOfferStatus(expectedOffer = '') {
+  const clipboard = await readMainClipboard();
+  const hasOffer = clipboard.includes('#offer=');
+  let clipHost = '';
+  try {
+    clipHost = clipboard ? new URL(clipboard).hostname : '';
+  } catch {
+    clipHost = '';
+  }
+  const ok = clipboardOfferMatchesExpectedHost(clipboard, expectedOffer);
+  return { ok, clipLen: clipboard.length, clipHost, hasOffer };
+}
+
+/**
+ * Click the copy-link button via real pointer activation and inspect clipboard status.
+ * @param {Electron.WebContents} wc
+ * @param {string} [expectedOffer]
+ * @returns {Promise<{ ok: boolean, detail: string }>}
+ */
+async function clipboardHasPublicOffer(wc, expectedOffer = '') {
+  try {
+    require('electron').clipboard.clear();
+  } catch {
+    // Ignore clipboard clear errors in restricted environments.
+  }
+  if (typeof wc.focus === 'function') wc.focus();
+  const btn = await pageEval(wc, () => {
+    const copy = document.querySelector('[data-dsh-remote-copy-link]');
+    if (!(copy instanceof HTMLElement)) return null;
+    const r = copy.getBoundingClientRect();
+    return {
+      disabled: copy instanceof HTMLButtonElement ? copy.disabled : copy.getAttribute('aria-disabled') === 'true',
+      x: r.left + r.width / 2,
+      y: r.top + r.height / 2,
+    };
+  });
+  if (btn && !btn.disabled && wc.debugger && wc.debugger.isAttached()) {
+    await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: btn.x, y: btn.y });
+    await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: btn.x, y: btn.y, button: 'left', clickCount: 1 });
+    await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: btn.x, y: btn.y, button: 'left', clickCount: 1 });
+  } else {
+    await wc.executeJavaScript(`(() => {
+      const copy = document.querySelector('[data-dsh-remote-copy-link]');
+      if (copy instanceof HTMLElement) copy.click();
+      return Boolean(copy);
+    })()`, true);
+  }
+  const matched = await waitUntil(async () => {
+    const st = await readClipboardOfferStatus(expectedOffer);
+    return st.ok ? st : null;
+  }, 2_500, 100);
+  const finalStatus = matched || (await readClipboardOfferStatus(expectedOffer));
+  const copyDisabled = btn ? btn.disabled : null;
+  return {
+    ok: finalStatus.ok,
+    detail: `copyDisabled=${copyDisabled}; clipLen=${finalStatus.clipLen}; clipHost=${finalStatus.clipHost}; hasOffer=${finalStatus.hasOffer}`,
+  };
+}
+
+/**
+ * Run preset-on cold Remote verification steps.
+ * @param {Electron.WebContents} wc
+ * @param {any} helpers
+ * @param {string | null} footer
+ * @param {any} snap
+ * @param {Function} rec
+ */
+async function runColdRemoteCases(wc, helpers, footer, snap, rec) {
+  const cold = await waitUntil(async () => {
+    const next = await helpers.probeRemote();
+    return next && next.listening === true && pairingOffer(next) && !remoteHasError(next) ? next : null;
+  }, 20_000) || snap;
+
+  if (!footer) {
+    rec('cold.openShowsQr', false, 'remote trigger missing');
+    rec('cold.noBareOfferText', false, 'remote trigger missing');
+    rec('cold.copyAndRotateControls', false, 'remote trigger missing');
+    return;
+  }
+  const { face, connected, qrOk, detail } = await probeRemotePopupQr(wc, helpers, cold, { includeControls: true });
+  const bareOffer = Boolean(!face || face.bareOffer);
+  const copyOk = Boolean(face && face.copy);
+  const rotateOk = Boolean(face && face.rotate);
+  const offer = pairingOffer(cold);
+  const clipResult = copyOk ? await clipboardHasPublicOffer(wc, offer) : { ok: false, detail: 'copyNotShown' };
+  await helpers.pressEscape(wc);
+  rec('cold.openShowsQr', qrOk && Boolean(offer) && !remoteHasError(cold), detail);
+  rec(
+    'cold.noBareOfferText',
+    Boolean(face) && !bareOffer,
+    bareOffer ? 'popup text still dumps #offer=' : 'no bare #offer= in popup text',
+  );
+  rec(
+    'cold.copyAndRotateControls',
+    pairingControlsMatchRelay(face, connected, clipResult.ok),
+    `copy=${copyOk}; rotate=${rotateOk}; clipboardOffer=${clipResult.ok}; ${clipResult.detail}; relayConnected=${connected}`,
+  );
 }
 
 /**
@@ -165,11 +433,7 @@ async function runRemoteGateQa(wc, helpers, { mode = 'full' } = {}) {
     snap = { error: String(error) };
   }
 
-  const footer = await pageEval(wc, () => {
-    const trigger = document.querySelector('[data-dsh-remote-trigger], [data-sidebar-action="remote"]');
-    if (trigger && dshShown(trigger)) return 'trigger';
-    return dshFind('^remote$|^远程$') ? 'label' : null;
-  });
+  const footer = await probeRemoteTrigger(wc, helpers);
 
   if (!REMOTE_FEATURE_ENABLED) {
     rec(
@@ -246,28 +510,9 @@ async function runRemoteGateQa(wc, helpers, { mode = 'full' } = {}) {
     let qrDetail = 'remote trigger missing';
     let qrOk = false;
     if (footer) {
-      await pageEval(wc, () => {
-        const trigger = document.querySelector('[data-dsh-remote-trigger], [data-sidebar-action="remote"]');
-        if (trigger) trigger.click();
-        return Boolean(trigger);
-      });
-      const qr = await waitUntil(() => pageEval(wc, () => {
-        const root = document.querySelector('[data-dsh-remote-panel], [role="dialog"]') || document.body;
-        const mark = root.querySelector('[data-dsh-remote-qr] img, [data-dsh-remote-qr] svg');
-        const status = root.querySelector('[data-dsh-remote-status]');
-        if (!mark && !status) return null;
-        return {
-          hasQr: Boolean(mark),
-          kind: mark ? mark.tagName.toLowerCase() : '',
-          hasStatus: Boolean(status),
-        };
-      }), 8_000);
-      const live = await helpers.probeRemote().catch(() => enabled);
-      const connected = Boolean(live && live.relayConnected);
-      qrOk = pairingChromeMatchesRelay(qr, connected);
-      qrDetail = qr
-        ? `${JSON.stringify(qr)}; relayConnected=${connected}`
-        : 'popup opened but no [data-dsh-remote-qr] face or status';
+      const popup = await probeRemotePopupQr(wc, helpers, enabled);
+      qrOk = popup.qrOk;
+      qrDetail = popup.detail;
       await helpers.pressEscape(wc);
     }
     rec('rem.qrVisible', qrOk, qrDetail);
@@ -295,91 +540,7 @@ async function runRemoteGateQa(wc, helpers, { mode = 'full' } = {}) {
   }
 
   if (coldOnly) {
-    // Preset-on boot: wait for listening + offer. Never call setRemote before open.
-    const cold = await waitUntil(async () => {
-      const next = await helpers.probeRemote();
-      return next && next.listening === true && pairingOffer(next) && !remoteHasError(next) ? next : null;
-    }, 20_000) || snap;
-
-    let coldQrOk = false;
-    let coldQrDetail = 'remote trigger missing';
-    let bareOffer = true;
-    let copyOk = false;
-    let rotateOk = false;
-    let clipboard = '';
-    if (footer) {
-      await pageEval(wc, () => {
-        const trigger = document.querySelector('[data-dsh-remote-trigger], [data-sidebar-action="remote"]');
-        if (trigger) trigger.click();
-        return Boolean(trigger);
-      });
-      const face = await waitUntil(() => pageEval(wc, () => {
-        const root = document.querySelector('[data-dsh-remote-panel], [role="dialog"]') || document.body;
-        const mark = root.querySelector('[data-dsh-remote-qr] img, [data-dsh-remote-qr] svg');
-        const status = root.querySelector('[data-dsh-remote-status]');
-        const copy = root.querySelector('[data-dsh-remote-copy-link]');
-        const rotate = root.querySelector('[data-dsh-remote-rotate]');
-        const text = root.innerText || '';
-        if (!mark && !status) return null;
-        return {
-          hasQr: Boolean(mark),
-          kind: mark ? mark.tagName.toLowerCase() : '',
-          hasStatus: Boolean(status),
-          bareOffer: text.includes('#offer='),
-          copy: Boolean(copy && dshShown(copy)),
-          rotate: Boolean(rotate && dshShown(rotate)),
-        };
-      }), 8_000);
-      const live = await helpers.probeRemote().catch(() => cold);
-      const connected = Boolean(live && live.relayConnected);
-      coldQrOk = pairingChromeMatchesRelay(face, connected);
-      coldQrDetail = face
-        ? `${JSON.stringify(face)}; relayConnected=${connected}`
-        : 'popup opened but no [data-dsh-remote-qr] face or status';
-      bareOffer = Boolean(!face || face.bareOffer);
-      copyOk = Boolean(face && face.copy);
-      rotateOk = Boolean(face && face.rotate);
-      if (copyOk) {
-        await pageEval(wc, () => {
-          const copy = document.querySelector('[data-dsh-remote-copy-link]');
-          if (copy) copy.click();
-          return Boolean(copy);
-        });
-        await sleep(200);
-        clipboard = readMainClipboard();
-      }
-      await helpers.pressEscape(wc);
-      const offer = pairingOffer(cold);
-      let clipHostOk = false;
-      try {
-        const host = clipboard ? new URL(clipboard).hostname : '';
-        clipHostOk = Boolean(
-          clipboard.includes('#offer=')
-          && !['127.0.0.1', 'localhost', '::1'].includes(host),
-        );
-      } catch {
-        clipHostOk = false;
-      }
-      rec(
-        'cold.openShowsQr',
-        coldQrOk && Boolean(offer) && !remoteHasError(cold),
-        coldQrDetail,
-      );
-      rec(
-        'cold.noBareOfferText',
-        Boolean(face) && !bareOffer,
-        bareOffer ? 'popup text still dumps #offer=' : 'no bare #offer= in popup text',
-      );
-      rec(
-        'cold.copyAndRotateControls',
-        pairingControlsMatchRelay(face, connected, clipHostOk),
-        `copy=${copyOk}; rotate=${rotateOk}; clipboardOffer=${clipHostOk}; relayConnected=${connected}`,
-      );
-    } else {
-      rec('cold.openShowsQr', false, coldQrDetail);
-      rec('cold.noBareOfferText', false, 'remote trigger missing');
-      rec('cold.copyAndRotateControls', false, 'remote trigger missing');
-    }
+    await runColdRemoteCases(wc, helpers, footer, snap, rec);
   }
 
   const failed = steps.filter((s) => !s.ok && !s.optional).map((s) => s.name);
@@ -400,6 +561,8 @@ module.exports = {
   runRemoteGateQa,
   assertRemoteGateQaResult,
   pairingOffer,
+  pairingTransportReady,
+  clipboardOfferMatchesExpectedHost,
   pairingChromeMatchesRelay,
   pairingControlsMatchRelay,
 };

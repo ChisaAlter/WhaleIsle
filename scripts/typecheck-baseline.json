@@ -4392,9 +4392,7 @@
       "TS2339": {
         "Property 'click' does not exist on type 'Element'.": 1,
         "Property 'innerText' does not exist on type 'Element'.": 2,
-        "Property 'optional' does not exist on type '{ name: any; ok: boolean; detail: string; }'.": 1,
-        "Property 'port' does not exist on type '{ available?: boolean | undefined; enabled?: boolean | undefined; listening?: boolean | undefined; } | { error: string; }'.": 1,
-        "Property 'urls' does not exist on type '{ available?: boolean | undefined; enabled?: boolean | undefined; listening?: boolean | undefined; } | { error: string; }'.": 2
+        "Property 'optional' does not exist on type '{ name: any; ok: boolean; detail: string; }'.": 1
       },
       "TS2531": {
         "Object is possibly 'null'.": 1
@@ -4414,7 +4412,6 @@
         "Parameter 'ok' implicitly has an 'any' type.": 1,
         "Parameter 'pageErrors' implicitly has an 'any' type.": 1,
         "Parameter 'probe' implicitly has an 'any' type.": 1,
-        "Parameter 'row' implicitly has an 'any' type.": 1,
         "Parameter 'snap' implicitly has an 'any' type.": 1,
         "Parameter 'steps' implicitly has an 'any' type.": 1,
         "Parameter 'timeoutMs' implicitly has an 'any' type.": 1,
@@ -6839,15 +6836,10 @@
         "Cannot find name 'dshFind'.": 1,
         "Cannot find name 'dshShown'.": 3
       },
-      "TS2322": {
-        "Type '\"\" | Promise<string>' is not assignable to type 'string'.": 1
-      },
       "TS2339": {
         "Property 'available' does not exist on type 'object'.": 2,
-        "Property 'click' does not exist on type 'Element'.": 3,
         "Property 'enabled' does not exist on type 'object'.": 3,
-        "Property 'innerText' does not exist on type 'Element'.": 1,
-        "Property 'listening' does not exist on type 'object'.": 7,
+        "Property 'listening' does not exist on type 'object'.": 6,
         "Property 'optional' does not exist on type '{ name: any; ok: boolean; detail: string; }'.": 1,
         "Property 'port' does not exist on type 'object'.": 1,
         "Property 'required' does not exist on type '{}'.": 1

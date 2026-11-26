@@ -95,7 +95,7 @@ async function ensureSurfacesOpen(wc, helpers) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const open = await pageEval(wc, () => {
       const frameEl = document.querySelector('[class*="frame"]');
-      return Boolean(frameEl && frameEl.getAttribute('data-surfaces-collapsed') !== 'true');
+      return Boolean(frameEl && !frameEl.hasAttribute('data-surfaces-collapsed'));
     });
     if (open) return true;
     await helpers.clickTitlebarButton(wc, helpers.surfacesPattern);
@@ -300,9 +300,9 @@ async function runComposerOfficialQa(wc, helpers) {
           dshShown(el) && /^note\.md$/i.test(dshLabel(el).trim()));
         if (tab) tab.click();
         const root = document.querySelector('[data-file-preview]');
-        if (!root) return null;
+        if (!root || root.closest('[inert], [aria-hidden="true"]')) return null;
         const box = root.getBoundingClientRect();
-        if (box.width < 40 || box.height < 40) return null;
+        if (box.width < 40 || box.height < 40 || box.left < 0 || box.right > window.innerWidth + 1) return null;
         if (!root.querySelector('textarea')) {
           const source = Array.from(root.querySelectorAll('button')).find((el) =>
             dshShown(el) && /^(source|源码)$/i.test(dshLabel(el).trim()));
@@ -316,21 +316,11 @@ async function runComposerOfficialQa(wc, helpers) {
     }, 15_000)
     : null;
   if (previewReady) {
-    await pageEval(wc, () => {
-      const root = document.querySelector('[data-file-preview]');
-      const ta = root && root.querySelector('textarea');
-      if (!ta) return false;
-      ta.focus();
-      const end = String(ta.value || '').length;
-      ta.setSelectionRange(0, end);
-      ta.dispatchEvent(new Event('select', { bubbles: true }));
-      ta.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-      return end > 0;
-    });
+    await selectPreviewTextarea(wc);
     await sleep(400);
     const add = await waitUntil(() => pageEval(wc, () => {
       const root = document.querySelector('[data-file-preview]');
-      return root && dshFind('add to chat|添加到对话', root);
+      return Boolean(root && dshFind('add to chat|添加到对话', root));
     }), 5_000);
     if (add) {
       await pageEval(wc, () => {
@@ -345,6 +335,7 @@ async function runComposerOfficialQa(wc, helpers) {
         return /```text[\s\S]*```/.test(value) || /note\.md:L\d+/i.test(value) ? value : null;
       }), 5_000)) || (await readComposer(wc));
     }
+    const previewMissDiag = !add ? await readPreviewSelectionDiag(wc) : '';
     rec(
       'case.preview.addToChat',
       Boolean(clearedBeforePreview)
@@ -353,7 +344,7 @@ async function runComposerOfficialQa(wc, helpers) {
         && !/__dshd_clear_/.test(previewDraft),
       previewDraft
         ? `cleared=${clearedBeforePreview}; draft=${JSON.stringify(previewDraft).slice(0, 240)}`
-        : (add ? 'clicked but draft missing L-range/fence' : 'Add to chat missing after selection'),
+        : (add ? 'clicked but draft missing L-range/fence' : `Add to chat missing after selection; ${previewMissDiag}`),
     );
   } else {
     rec('case.preview.addToChat', false, openedNote
@@ -431,11 +422,14 @@ async function runComposerOfficialQa(wc, helpers) {
         || pane;
       const box = target.getBoundingClientRect();
       if (box.width < 8 || box.height < 8) return null;
+      const startY = box.top + Math.min(34, Math.max(14, box.height / 5));
+      const endY = box.top + Math.min(54, Math.max(36, box.height / 3));
       return {
         x: box.left + 12,
-        y: box.top + Math.min(36, Math.max(12, box.height / 4)),
-        endX: box.left + Math.max(40, box.width - 12),
-        midY: box.top + Math.min(36, Math.max(12, box.height / 4)),
+        y: startY,
+        // Keep drag-release left of the top-right terminal action toolbar even when Surfaces is open.
+        endX: box.left + Math.min(320, Math.max(48, box.width - 180)),
+        midY: endY,
         tag: target.tagName,
       };
     }), 20_000);
@@ -474,7 +468,7 @@ async function runComposerOfficialQa(wc, helpers) {
       await sleep(500);
       const addChat = await waitUntil(() => pageEval(wc, () => {
         const root = document.querySelector('[data-terminal-owner="drawer"]');
-        return root && dshFind('add to chat|加入对话|添加到对话', root);
+        return Boolean(root && dshFind('add to chat|加入对话|添加到对话', root));
       }), 6_000);
       if (addChat) {
         await pageEval(wc, () => {
@@ -526,113 +520,7 @@ async function runComposerOfficialQa(wc, helpers) {
     terminalTrip.length ? terminalTrip.join(' | ') : 'no sessions-without-inject console error',
   );
 
-  // --- Remote gateway is available and listens when enabled ---
-  let remoteSnap = null;
-  try {
-    remoteSnap = await helpers.probeRemote();
-  } catch (error) {
-    remoteSnap = { error: String(error) };
-  }
-  rec(
-    'case.remote.available',
-    remoteSnap
-      && remoteSnap.available === false
-      && remoteSnap.enabled === false,
-    summarizeRemoteQaDetail(remoteSnap),
-  );
-  rec(
-    'case.remote.listening',
-    remoteSnap != null && remoteSnap.listening !== true,
-    remoteSnap ? `listening=${remoteSnap.listening}` : 'no snapshot',
-  );
-
-  let pairingOk = false;
-  let pairingDetail = 'no pairing url';
-  const pairingRaw = Array.isArray(remoteSnap && remoteSnap.urls)
-    ? (remoteSnap.urls.find((row) => row && row.pairingUrl) || {}).pairingUrl
-    : '';
-  const port = Number(remoteSnap && remoteSnap.port);
-  if (typeof pairingRaw === 'string' && pairingRaw.includes('#offer=') && Number.isInteger(port) && port > 0) {
-    const hash = pairingRaw.slice(pairingRaw.indexOf('#'));
-    const loopback = `http://127.0.0.1:${port}/${hash}`;
-    const { BrowserWindow } = require('electron');
-    const guest = new BrowserWindow({
-      show: true,
-      width: 420,
-      height: 720,
-      webPreferences: {
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-    try {
-      await guest.loadURL(loopback);
-      const html = await guest.webContents.executeJavaScript('document.documentElement.innerHTML');
-      pairingOk = /#offer=/.test(html) && /二维码/.test(html) && !/data-composer-card/.test(html);
-      pairingDetail = pairingOk ? 'loopback hash offer is phone SPA' : 'pairing document was not the phone SPA';
-      if (pairingOk) {
-        await guest.webContents.executeJavaScript(`(() => {
-          const btn = document.getElementById('enter');
-          if (btn) btn.click();
-          return Boolean(btn);
-        })()`);
-        const connected = await waitUntil(async () => {
-          const snap = await guest.webContents.executeJavaScript(`({
-            chat: Boolean(document.getElementById('screen-chat') && !document.getElementById('screen-chat').classList.contains('hidden')),
-            sessions: document.querySelectorAll('#session-list button').length,
-            error: (document.getElementById('connect-error') && document.getElementById('connect-error').textContent) || '',
-          })`);
-          return snap.chat ? snap : null;
-        }, 25_000);
-        if (connected) {
-          const listed = await guest.webContents.executeJavaScript(`(() => {
-            const menu = document.getElementById('menu');
-            if (menu) menu.click();
-            return document.querySelectorAll('#session-list button').length;
-          })()`);
-          await guest.webContents.executeJavaScript(`(() => {
-            const ta = document.getElementById('draft');
-            if (!ta) return false;
-            ta.value = 'dshd-rem-002';
-            ta.dispatchEvent(new Event('input', { bubbles: true }));
-            const form = document.getElementById('composer');
-            if (form) form.requestSubmit();
-            return true;
-          })()`);
-          const sent = await waitUntil(async () => {
-            const log = await guest.webContents.executeJavaScript(
-              '(document.getElementById("log") && document.getElementById("log").innerText) || ""',
-            );
-            return /dshd-rem-002/.test(log) ? true : null;
-          }, 15_000);
-          rec(
-            'case.remote.spaSend',
-            Boolean(sent),
-            sent ? `sessions=${listed}; sent dshd-rem-002` : `sessions=${listed}; send did not appear in the phone log`,
-            true,
-          );
-        } else {
-          rec('case.remote.spaSend', false, 'SPA loaded; chat screen did not appear in time', true);
-        }
-      }
-    } catch (error) {
-      pairingOk = false;
-      pairingDetail = error instanceof Error ? error.message : String(error);
-    } finally {
-      if (!guest.isDestroyed()) guest.close();
-    }
-  }
-  rec(
-    'case.remote.spa',
-    remoteSnap != null && remoteSnap.available === false,
-    'parked: no pairing SPA',
-  );
-  rec(
-    'case.remote.pairingSpa',
-    remoteSnap != null && remoteSnap.available === false,
-    'parked: no phone pairing session',
-  );
+  await runComposerRemoteCases(helpers, rec);
 
   const failed = steps.filter((s) => !s.ok && !s.optional).map((s) => s.name);
   return {
@@ -643,6 +531,205 @@ async function runComposerOfficialQa(wc, helpers) {
   };
 }
 
+/**
+ * Drag-select text via CDP with Blink focus emulation enabled so hidden windows dispatch selection events.
+ * @param {Electron.WebContents} wc
+ * @param {{ x: number, y: number, endX: number, endY?: number }} target
+ */
+async function dragSelectWithFocusEmulation(wc, target) {
+  if (!wc.debugger || !wc.debugger.isAttached()) return;
+  const endY = target.endY ?? target.y;
+  await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
+    .catch(() => { /* Emulation domain is optional when debugger detaches mid-run. */ });
+  try {
+    await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+    for (let i = 1; i <= 6; i += 1) {
+      const x = target.x + ((target.endX - target.x) * i) / 6;
+      const y = target.y + ((endY - target.y) * i) / 6;
+      await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left', buttons: 1 });
+    }
+    await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.endX, y: endY, button: 'left', clickCount: 1 });
+  } finally {
+    await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false })
+      .catch(() => { /* Target may already be closed when restoring focus emulation. */ });
+  }
+}
+
+/**
+ * Drag-select across lines 1-2 of the visible FilePreview source textarea so React onSelect mounts Add to chat.
+ * @param {Electron.WebContents} wc
+ * @returns {Promise<boolean>}
+ */
+async function selectPreviewTextarea(wc) {
+  const target = await pageEval(wc, () => {
+    const preview = Array.from(document.querySelectorAll('[data-file-preview]')).find((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 40 && r.height > 40 && !el.closest('[inert], [aria-hidden="true"]');
+    });
+    const ta = preview && preview.querySelector('textarea');
+    if (!ta || String(ta.value || '').length <= 0) return null;
+    ta.scrollIntoView({ block: 'center' });
+    const box = ta.getBoundingClientRect();
+    const cs = getComputedStyle(ta);
+    const padLeft = Number.parseFloat(cs.paddingLeft) || 16;
+    const padTop = Number.parseFloat(cs.paddingTop) || 12;
+    const lineH = Number.parseFloat(cs.lineHeight) || 20;
+    return {
+      x: box.left + padLeft + 2,
+      y: box.top + padTop + 6,
+      endX: box.left + Math.max(padLeft + 40, Math.min(box.width - 8, padLeft + 240)),
+      endY: box.top + padTop + lineH + 8,
+    };
+  });
+  if (!target) return false;
+  if (typeof wc.focus === 'function') wc.focus();
+  await dragSelectWithFocusEmulation(wc, target);
+  await wc.executeJavaScript(`(() => {
+    const root = document.querySelector('[data-file-preview]');
+    const ta = root && root.querySelector('textarea');
+    if (!ta) return false;
+    if (ta.selectionStart === ta.selectionEnd) {
+      ta.focus();
+      ta.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      ta.setSelectionRange(0, String(ta.value || '').length);
+    }
+    document.dispatchEvent(new Event('selectionchange'));
+    ta.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return true;
+  })()`, true);
+  return true;
+}
+
+/**
+ * Snapshot FilePreview textarea selection range, focus state, and toolbar buttons for diagnostics.
+ * @param {Electron.WebContents} wc
+ * @returns {Promise<string>}
+ */
+async function readPreviewSelectionDiag(wc) {
+  const diag = await pageEval(wc, () => {
+    const root = document.querySelector('[data-file-preview]');
+    const ta = root && root.querySelector('textarea');
+    const buttons = root
+      ? Array.from(root.querySelectorAll('button')).map((el) => el.getAttribute('aria-label') || (el.textContent || '').trim()).slice(0, 8)
+      : [];
+    return {
+      selStart: ta ? ta.selectionStart : null,
+      selEnd: ta ? ta.selectionEnd : null,
+      valueLen: ta ? String(ta.value || '').length : null,
+      hasFocus: document.hasFocus(),
+      activeIsTextarea: Boolean(ta && document.activeElement === ta),
+      buttons,
+    };
+  });
+  return JSON.stringify(diag);
+}
+
+/**
+ * Build the loopback pairing URL when listening with a hash offer, preserving the pairing URL port.
+ * @param {any} snap
+ * @returns {string}
+ */
+function pairingUrlAndPort(snap) {
+  const urls = Array.isArray(snap && snap.urls) ? snap.urls : [];
+  const raw = (urls.find((/** @type {any} */ row) => row && row.pairingUrl) || {}).pairingUrl || '';
+  if (typeof raw !== 'string' || !raw.trim()) return '';
+  try {
+    const parsed = new URL(raw);
+    if (!parsed.hash.includes('#offer=')) return '';
+    parsed.hostname = '127.0.0.1';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Load the loopback phone pairing SPA in a sandboxed guest window.
+ * @param {string} loopback
+ */
+async function probePhonePairingSpa(loopback) {
+  const { BrowserWindow } = require('electron');
+  const guest = new BrowserWindow({
+    show: true,
+    width: 420,
+    height: 720,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  try {
+    await guest.loadURL(loopback);
+    const html = await guest.webContents.executeJavaScript('document.documentElement.innerHTML');
+    const pairingOk = /screen-connect/.test(html) && /screen-chat/.test(html) && !/data-composer-card/.test(html);
+    if (!pairingOk) {
+      return {
+        pairingOk: false,
+        pairingDetail: `unexpected document: ${String(html).slice(0, 160)}`,
+        spaSessionOk: false,
+        spaSessionDetail: 'pairing spa skipped',
+      };
+    }
+    const connected = await waitUntil(async () => {
+      const snap = await guest.webContents.executeJavaScript(`({
+        chat: Boolean(document.getElementById('screen-chat') && !document.getElementById('screen-chat').classList.contains('hidden')),
+        sessions: document.querySelectorAll('#session-list button').length,
+      })`);
+      return snap.chat ? snap : null;
+    }, 25_000);
+    return {
+      pairingOk: true,
+      pairingDetail: 'loopback hash offer served phone SPA',
+      spaSessionOk: Boolean(connected),
+      spaSessionDetail: connected ? `connected; sessions=${connected.sessions}` : 'phone chat screen did not connect in time',
+    };
+  } catch (error) {
+    return {
+      pairingOk: false,
+      pairingDetail: error instanceof Error ? error.message : String(error),
+      spaSessionOk: false,
+      spaSessionDetail: 'pairing spa error',
+    };
+  } finally {
+    if (!guest.isDestroyed()) guest.close();
+  }
+}
+
+/**
+ * Verify remote gateway and pairing SPA behavior for parked vs unparked builds.
+ * @param {{ probeRemote: () => Promise<any> }} helpers
+ * @param {Function} rec
+ */
+async function runComposerRemoteCases(helpers, rec) {
+  const { REMOTE_FEATURE_ENABLED } = require('./config');
+  let remoteSnap = await helpers.probeRemote().catch((error) => ({ error: String(error) }));
+  if (!REMOTE_FEATURE_ENABLED) {
+    rec('case.remote.available', Boolean(remoteSnap && remoteSnap.available === false && remoteSnap.enabled === false), summarizeRemoteQaDetail(remoteSnap));
+    rec('case.remote.listening', remoteSnap != null && remoteSnap.listening !== true, remoteSnap ? `listening=${remoteSnap.listening}` : 'no snapshot');
+    rec('case.remote.spa', remoteSnap != null && remoteSnap.available === false, 'parked: no pairing SPA');
+    rec('case.remote.pairingSpa', remoteSnap != null && remoteSnap.available === false, 'parked: no phone pairing session');
+    return;
+  }
+
+  remoteSnap = await waitUntil(async () => {
+    const next = await helpers.probeRemote().catch(() => null);
+    return next && next.listening === true && pairingUrlAndPort(next) ? next : null;
+  }, 15_000) || remoteSnap;
+
+  const availableOk = Boolean(remoteSnap && remoteSnap.available === true && remoteSnap.enabled === true && !remoteHasError(remoteSnap));
+  const listeningOk = Boolean(remoteSnap && remoteSnap.listening === true);
+  rec('case.remote.available', availableOk, summarizeRemoteQaDetail(remoteSnap));
+  rec('case.remote.listening', listeningOk, remoteSnap ? `listening=${remoteSnap.listening}` : 'no snapshot');
+
+  const loopback = pairingUrlAndPort(remoteSnap);
+  const spa = loopback
+    ? await probePhonePairingSpa(loopback)
+    : { pairingOk: false, pairingDetail: 'no pairing url', spaSessionOk: false, spaSessionDetail: 'pairing spa skipped' };
+  rec('case.remote.spa', spa.pairingOk, spa.pairingDetail);
+  rec('case.remote.pairingSpa', spa.spaSessionOk, spa.spaSessionDetail);
+}
+
 module.exports = {
   COMPOSER_OFFICIAL_CASES,
   SESSIONS_INJECT_TRIPWIRE,
@@ -650,4 +737,5 @@ module.exports = {
   assertComposerOfficialQaResult,
   remoteHasError,
   summarizeRemoteQaDetail,
+  pairingUrlAndPort,
 };

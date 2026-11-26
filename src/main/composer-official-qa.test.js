@@ -10,6 +10,7 @@ const {
   assertComposerOfficialQaResult,
   remoteHasError,
   summarizeRemoteQaDetail,
+  pairingUrlAndPort,
 } = require('./composer-official-qa');
 
 test('composer official cases cover the plan claims', () => {
@@ -105,4 +106,18 @@ test('composer official QA module is wired into the main process smoke path', ()
   const source = fs.readFileSync(path.join(__dirname, 'composer-official-qa.js'), 'utf8');
   assert.match(source, /summarizeRemoteQaDetail\(remoteSnap\)/);
   assert.doesNotMatch(source, /JSON\.stringify\(remoteSnap\)/);
+  assert.doesNotMatch(source, /return root && dshFind\(/);
+  assert.match(source, /REMOTE_FEATURE_ENABLED/);
+});
+
+test('pairingUrlAndPort preserves mobile web server port instead of daemon port', () => {
+  assert.equal(
+    pairingUrlAndPort({
+      port: 6767,
+      urls: [{ pairingUrl: 'http://192.168.1.25:3180/#offer=abc123' }],
+    }),
+    'http://127.0.0.1:3180/#offer=abc123',
+  );
+  assert.equal(pairingUrlAndPort({ port: 6767, urls: [{ pairingUrl: 'http://192.168.1.25:3180/' }] }), '');
+  assert.equal(pairingUrlAndPort(null), '');
 });
