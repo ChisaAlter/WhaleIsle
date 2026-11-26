@@ -39,7 +39,7 @@ function defaultStoragesDir() {
 function watchWorkspaceRegistrations(onChange, options = {}) {
   const storagesDir = options.storagesDir !== undefined ? options.storagesDir : defaultStoragesDir();
   const retryMs = options.retryMs ?? WATCH_RETRY_MS;
-  const pollMs = options.retryMs !== undefined ? retryMs : 15_000;
+  const pollMs = retryMs;
   const debounceMs = options.debounceMs ?? WATCH_DEBOUNCE_MS;
   let watcher = null;
   let retryTimer = null;

@@ -356,7 +356,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
             Promise.resolve().then(() => stopDesktopInstallControl()),
             Promise.resolve().then(() => taskControlPeer.stop()),
             Promise.resolve().then(() => taskProtection.cleanupAfterQuit()),
-            Promise.resolve().then(() => destroyTray()),
+            Promise.resolve().then(() => { if (typeof destroyTray === 'function') destroyTray(); }),
           ]).then((results) => {
             /** @type {any} */
             let failure;
@@ -425,7 +425,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
           state.nativeQuitReady = true;
           const nativeQuitTimer = setTimeout(() => {
             dsh.log('退出：窗口关闭等待超时，结束桌面进程', 'error');
-            destroyTray();
+            if (typeof destroyTray === 'function') destroyTray();
             app.exit(0);
           }, 5000);
           app.once('quit', () => clearTimeout(nativeQuitTimer));
@@ -451,7 +451,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
         } finally {
           clearTimeout(finalTimer);
         }
-        destroyTray();
+        if (typeof destroyTray === 'function') destroyTray();
         app.exit(0);
       } finally {
         if (!state.nativeQuitReady) state.quitInProgress = false;
