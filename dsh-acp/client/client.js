@@ -1421,7 +1421,8 @@ var PICKER_CSS = `
   width: 620px;
   max-width: calc(100vw - 24px);
   height: 480px;
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
+  max-height: calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
   padding: 0;
   display: flex;
   flex-direction: row;
@@ -1800,7 +1801,8 @@ var PICKER_CSS = `
 @media (max-width: 560px) {
   .dsh-acp-ms-menu {
     flex-direction: column;
-    height: min(620px, calc(100vh - 24px));
+    height: min(620px, calc(100vh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px))));
+    height: min(620px, calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px))));
   }
   .dsh-acp-ms-rail {
     flex-direction: row;
@@ -4013,16 +4015,34 @@ function filterPickerCategories(categories, effectiveActiveTab, query, rankByNam
     return { ...cat, models: matchedModels };
   }).filter((cat) => (cat.models || []).length > 0);
 }
+function resolveOverlayTopMargin(min = 12) {
+  if (typeof document === "undefined" || !document.documentElement || typeof getComputedStyle !== "function") {
+    return min;
+  }
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  const overlayTop = Number.parseFloat(style?.getPropertyValue?.("--dsh-frame-overlay-top"));
+  if (Number.isFinite(overlayTop)) return Math.max(min, overlayTop);
+  const clearance = Number.parseFloat(style?.getPropertyValue?.("--dsh-frame-top-clearance"));
+  if (Number.isFinite(clearance)) {
+    return Math.max(min, (root.hasAttribute?.("data-fullscreen") ? 0 : clearance) + 20);
+  }
+  return min;
+}
 function computeMenuPos(triggerEl, menuEl, current) {
   const rect = triggerEl?.getBoundingClientRect();
   if (!rect) return current;
   const MARGIN = 12;
+  const topMargin = resolveOverlayTopMargin(MARGIN);
   const lw = menuEl?.offsetWidth ?? 0;
   const lh = menuEl?.offsetHeight ?? 0;
   let x = rect.left;
   let y = rect.top - 8 - lh;
   if (lw > 0) x = Math.max(MARGIN, Math.min(x, window.innerWidth - lw - MARGIN));
-  if (lh > 0) y = Math.max(MARGIN, Math.min(y, window.innerHeight - lh - MARGIN));
+  if (lh > 0) {
+    const maxTop = Math.max(topMargin, window.innerHeight - lh - MARGIN);
+    y = Math.max(topMargin, Math.min(y, maxTop));
+  }
   return current?.left === x && current?.top === y ? current : { left: x, top: y };
 }
 function buildTriggerLabels({ state, currentChoice, currentCategory, effortLabel, waiting, t }) {
