@@ -186,8 +186,8 @@ function attachPrivilegedNavigationGuards(contents, options) {
   contents.on('frame-created', (_event, { frame }) => {
     if (isGeneratedFrame(frame)) generatedFrames.add(frame.frameTreeNodeId);
   });
-  contents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
-    if (isMainFrame) generatedFrames.clear();
+  contents.on('did-start-navigation', (event, _url, inPlace, isMainFrame) => {
+    if ((event?.isMainFrame ?? isMainFrame) && !(event?.isSameDocument ?? inPlace)) generatedFrames.clear();
   });
   contents.once?.('destroyed', () => { generatedFrames.clear(); });
   contents.on('will-frame-navigate', event => {

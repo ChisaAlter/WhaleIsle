@@ -428,9 +428,8 @@ function setSafeStorageForTests(impl) {
 }
 
 function getCachedCredentials(file, canEncrypt, fresh) {
-  if (fresh) return { key: null, hit: null };
   const key = settingsFileKey(file);
-  if (key !== null && credentialsCache?.key === key
+  if (!fresh && key !== null && credentialsCache?.key === key
       && credentialsCache.safeStorage === safeStorageImpl
       && credentialsCache.canEncrypt === canEncrypt) {
     return { key, hit: credentialsCache.creds };
@@ -440,7 +439,7 @@ function getCachedCredentials(file, canEncrypt, fresh) {
 
 function cacheCredentialsResult(file, key, canEncrypt, creds) {
   const afterKey = settingsFileKey(file);
-  if (afterKey !== null && (key === null || key === afterKey)) {
+  if (key !== null && afterKey !== null && key === afterKey) {
     credentialsCache = { key: afterKey, safeStorage: safeStorageImpl, canEncrypt, creds: freezeSettings(creds) };
     return credentialsCache.creds;
   }
@@ -511,8 +510,9 @@ function readCredentials(fresh = false) {
     } catch {
       needsWrite = true;
     }
+    return { creds: plain, needsWrite };
   }
-  return { creds: needsWrite ? plain : cacheCredentialsResult(file, null, canEncrypt, plain), needsWrite };
+  return { creds: cacheCredentialsResult(file, key, canEncrypt, plain), needsWrite };
 }
 
 /**

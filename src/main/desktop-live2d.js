@@ -84,34 +84,34 @@ function isPetFrameUrl(url, petUrl = PET_PAGE_URL) {
   }
 }
 
-// Serve pet-owned assets over pet://pet/** with strict hostname, allowlist and realpath checks.
-const PET_ALLOWED_ROOT_RE = /^(?:pet-live2d(?:\/.*|-[a-z0-9-]+\.(?:js|css)|\.(?:html|js|css)))$/i;
+const PET_ALLOWED_ROOT_FILES = new Set([
+  'pet-live2d.html', 'pet-live2d.js', 'feedback.css', 'pet-physics.js', 'pet-dialogue.js', 'pet-wander.js',
+]);
+const PET_LIVE2D_MODULE_RE = /^pet-live2d-[a-z0-9-]+\.(?:js|css)$/i;
+/** @param {string} root @param {string} rel */
+function resolvePetAssetTarget(root, rel) {
+  if (!rel || rel.includes('\\') || rel.includes('\0') || rel.split('/').some((seg) => !seg || seg === '.' || seg === '..')) return null;
+  if (rel === 'dsh-webui-tokens.css' || rel === 'dom.js') return { base: path.resolve(root, '../shared'), file: path.resolve(root, '../shared', rel), rootOnly: true };
+  if (rel === 'pet-head.png') return { base: path.resolve(root, '../../assets'), file: path.resolve(root, '../../assets/whale-head.png'), rootOnly: true };
+  if (rel.startsWith('pet-live2d/')) return { base: path.resolve(root, 'pet-live2d'), file: path.resolve(root, rel), rootOnly: false };
+  if (rel.startsWith('dialogue/')) return { base: path.resolve(root, 'dialogue'), file: path.resolve(root, rel), rootOnly: false };
+  if (PET_ALLOWED_ROOT_FILES.has(rel) || PET_LIVE2D_MODULE_RE.test(rel)) return { base: root, file: path.resolve(root, rel), rootOnly: true };
+  return null;
+}
 function createPetProtocolHandler(rendererFile) {
   const root = path.dirname(rendererFile(RENDERER_PAGE));
-  const sharedRoot = path.resolve(root, '../shared');
-  const assetsRoot = path.resolve(root, '../../assets');
   return async (request) => {
     try {
       const url = new URL(request.url);
       if (url.hostname !== 'pet') return new Response('not found', { status: 404 });
-      const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
-      let allowedBase = root;
-      let file;
-      if (rel === 'dsh-webui-tokens.css' || rel === 'dom.js') {
-        allowedBase = sharedRoot;
-        file = path.resolve(sharedRoot, rel);
-      } else if (rel === 'pet-head.png') {
-        allowedBase = assetsRoot;
-        file = path.resolve(assetsRoot, 'whale-head.png');
-      } else if (PET_ALLOWED_ROOT_RE.test(rel)) {
-        file = path.resolve(root, rel);
-      } else {
-        return new Response('not found', { status: 404 });
-      }
-      const realBase = await fs.promises.realpath(allowedBase);
-      const realFile = await fs.promises.realpath(file);
-      if ((realFile !== realBase && !realFile.startsWith(`${realBase}${path.sep}`))
-        || !(await fs.promises.stat(realFile)).isFile()) {
+      const target = resolvePetAssetTarget(root, decodeURIComponent(url.pathname).replace(/^\/+/, ''));
+      if (!target) return new Response('not found', { status: 404 });
+      const realBase = await fs.promises.realpath(target.base);
+      const realFile = await fs.promises.realpath(target.file);
+      const inside = target.rootOnly
+        ? path.dirname(realFile) === realBase
+        : (realFile !== realBase && realFile.startsWith(`${realBase}${path.sep}`));
+      if (!inside || !(await fs.promises.stat(realFile)).isFile()) {
         return new Response('not found', { status: 404 });
       }
       return new Response(await fs.promises.readFile(realFile), {

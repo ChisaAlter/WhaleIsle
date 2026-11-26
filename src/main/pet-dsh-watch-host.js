@@ -107,7 +107,7 @@ function createDshWatchWorker(options) {
     }
     return pending.promise;
   }
-  function stop() {
+  function stop(reason = 'pet watcher stopped') {
     clearInterval(timer);
     timer = null;
     if (runtime && JSON.stringify(runtime) !== JSON.stringify(read())) {
@@ -116,14 +116,14 @@ function createDshWatchWorker(options) {
     runtime = null;
     const w = worker;
     worker = null;
-    active?.reject(new Error('pet watcher stopped'));
+    active?.reject(new Error(reason));
     active = null;
     return w ? w.terminate().then(() => {}, () => {}) : Promise.resolve();
   }
   function close() {
     if (closed) return closing || Promise.resolve();
     closed = true;
-    closing = stop();
+    closing = stop('pet watcher closed');
     return closing;
   }
   function start(intervalMs = 2000) {

@@ -392,50 +392,70 @@ function foldMagpieLines(lines, day, st) {
 function snapMagpie(st) {
   return st.calls === 0 ? null : { total: st.total, todayUsed: st.todayUsed, calls: st.calls, sessions: st.sessions.size, sampleTotals: { ...st.sampleTotals } };
 }
-/** @param {string} file @param {number} start @param {number} len */
-function readRangeUtf8(file, start, len) {
+/** @param {number} fd @param {number} start @param {number} len */
+function readFdRange(fd, start, len) {
+  if (len <= 0) return Buffer.alloc(0);
   const buf = Buffer.alloc(len);
-  const fd = fs.openSync(file, 'r');
-  try {
-    let off = 0;
-    while (off < len) { const n = fs.readSync(fd, buf, off, len - off, start + off); if (n <= 0) break; off += n; }
-    return buf.subarray(0, off).toString('utf8');
-  } finally { fs.closeSync(fd); }
+  let off = 0;
+  while (off < len) { const n = fs.readSync(fd, buf, off, len - off, start + off); if (n <= 0) break; off += n; }
+  return buf.subarray(0, off);
 }
-/** @param {{ total: number, todayUsed: number, calls: number, sessions: Set<string>, sampleTotals: Record<string, number> }} base @param {string} remainder @param {string} day */
-function snapWithRemainder(base, remainder, day) {
-  if (!remainder) return snapMagpie(base);
+/** @param {Buffer} buf */
+function prefixDigest(buf) {
+  const head = buf.subarray(0, Math.min(buf.length, 256));
+  return head.length ? createHash('sha256').update(head).digest('hex') : '';
+}
+/** @param {{ total: number, todayUsed: number, calls: number, sessions: Set<string>, sampleTotals: Record<string, number> }} base @param {Buffer} tailBuf @param {string} day */
+function snapWithTail(base, tailBuf, day) {
+  if (!tailBuf.length) return snapMagpie(base);
   const tmp = { ...base, sessions: new Set(base.sessions), sampleTotals: { ...base.sampleTotals } };
-  foldMagpieLines([remainder], day, tmp);
+  foldMagpieLines([tailBuf.toString('utf8')], day, tmp);
   return snapMagpie(tmp);
+}
+/** @param {Buffer} buf @param {string} day @param {{ total: number, todayUsed: number, calls: number, sessions: Set<string>, sampleTotals: Record<string, number> }} state */
+function consumeCompleteLines(buf, day, state) {
+  const lastNl = buf.lastIndexOf(0x0a);
+  if (lastNl < 0) return { consumed: 0, tail: buf };
+  foldMagpieLines(buf.subarray(0, lastNl).toString('utf8').split('\n'), day, state);
+  return { consumed: lastNl + 1, tail: buf.subarray(lastNl + 1) };
 }
 /** @param {string} file @param {string} day @param {Map<string, any>} cacheMap */
 function readMagpieUsageCached(file, day, cacheMap) {
   const cacheKey = `__magpie__:${file}`;
-  let st;
-  try { st = fs.statSync(file); } catch { cacheMap.delete(cacheKey); return null; }
-  const hit = cacheMap.get(cacheKey);
-  if (hit && hit.day === day && hit.ino === st.ino && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
-    return snapWithRemainder(hit.state, hit.remainder, day);
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { cacheMap.delete(cacheKey); return null; }
+  try {
+    const st = fs.fstatSync(fd);
+    const hit = cacheMap.get(cacheKey);
+    const sameFile = Boolean(hit && hit.day === day && hit.ino === st.ino);
+    if (sameFile && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
+      return snapWithTail(hit.state, hit.tail, day);
+    }
+    if (sameFile && st.size >= hit.consumedOffset && hit.headLen > 0
+        && prefixDigest(readFdRange(fd, 0, hit.headLen)) === hit.headHash) {
+      const delta = readFdRange(fd, hit.consumedOffset, st.size - hit.consumedOffset);
+      const { consumed, tail } = consumeCompleteLines(delta, day, hit.state);
+      hit.consumedOffset += consumed;
+      hit.size = hit.consumedOffset + tail.length;
+      hit.mtimeMs = st.mtimeMs;
+      hit.tail = tail;
+      return snapWithTail(hit.state, tail, day);
+    }
+    const raw = readFdRange(fd, 0, st.size);
+    const state = { total: 0, todayUsed: 0, calls: 0, sessions: new Set(), sampleTotals: {} };
+    const { consumed, tail } = consumeCompleteLines(raw, day, state);
+    const headLen = Math.min(consumed, 256);
+    cacheMap.set(cacheKey, {
+      day, ino: st.ino, size: consumed + tail.length, mtimeMs: st.mtimeMs,
+      consumedOffset: consumed, headLen, headHash: prefixDigest(raw.subarray(0, headLen)), tail, state,
+    });
+    return snapWithTail(state, tail, day);
+  } catch {
+    cacheMap.delete(cacheKey);
+    return null;
+  } finally {
+    fs.closeSync(fd);
   }
-  if (hit && hit.day === day && hit.ino === st.ino && st.size > hit.size) {
-    try {
-      const combined = hit.remainder + readRangeUtf8(file, hit.size, st.size - hit.size);
-      const nl = combined.lastIndexOf('\n');
-      hit.remainder = nl >= 0 ? combined.slice(nl + 1) : combined;
-      if (nl >= 0) foldMagpieLines(combined.slice(0, nl).split('\n'), day, hit.state);
-      hit.size = st.size; hit.mtimeMs = st.mtimeMs;
-      return snapWithRemainder(hit.state, hit.remainder, day);
-    } catch { cacheMap.delete(cacheKey); }
-  }
-  let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch { cacheMap.delete(cacheKey); return null; }
-  const state = { total: 0, todayUsed: 0, calls: 0, sessions: new Set(), sampleTotals: {} };
-  const nl = text.lastIndexOf('\n');
-  const remainder = nl >= 0 ? text.slice(nl + 1) : text;
-  if (nl >= 0) foldMagpieLines(text.slice(0, nl).split('\n'), day, state);
-  cacheMap.set(cacheKey, { day, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs, remainder, state });
-  return snapWithRemainder(state, remainder, day);
 }
 /** @param {string} file @param {{ now?: number, cache?: Map<string, any> }} [options] */
 function readMagpieUsage(file, { now = Date.now(), cache } = {}) {

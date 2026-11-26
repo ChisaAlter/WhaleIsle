@@ -88,7 +88,7 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
     restore() { this.minimized = false; showCalls.push('restore'); }
     focus() { showCalls.push('focus'); }
   }
-  const api = vm.runInNewContext(`let mainWindow = null, launcherWindow = null;\nfunction getMainWindow() { return mainWindow; }\n${attach}\n${main}\n${boot}\n${showMain}\n${launcherFactory}\n({ createMainWindow, createLauncherWindow, showBoot, showMain, showLauncher })`, {
+  const api = vm.runInNewContext(`let mainWindow = null, launcherWindow = null, viewTransitionSeq = 0;\nfunction getMainWindow() { return mainWindow; }\n${attach}\n${main}\n${boot}\n${showMain}\n${launcherFactory}\n({ createMainWindow, createLauncherWindow, showBoot, showMain, showLauncher })`, {
     app: { isPackaged, getAppPath: () => sourceOptions.appPath },
     process: { platform, execPath: sourceOptions.execPath, argv: ['--auth-token=private', '--qa'] },
     require: () => ({ isLauncherPackage: () => launcher, getMinimalMode: () => false }),

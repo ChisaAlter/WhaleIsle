@@ -31,14 +31,24 @@ test('readMagpieUsage reuses unchanged cache and incrementally tails appended li
       assert.equal(second.total, 150);
       assert.equal(fullReads, 0);
 
-      // Appending a new row uses incremental range read, not readFileSync
-      const row2 = JSON.stringify({ agent: 'dsh', in: 200, out: 100, t: '2026-11-27T07:30:00Z', route_id: 'r2', session: 's2' });
-      fs.appendFileSync(file, `${row2}\n`, 'utf8');
+      // Appending a UTF-8 multibyte row split mid-character must not corrupt session/sampleKey
+      const row2 = JSON.stringify({ agent: 'dsh', in: 200, out: 100, t: '2026-11-27T07:30:00Z', session: '中文会话' }) + '\n';
+      const bytes = Buffer.from(row2, 'utf8');
+      const midChar = bytes.indexOf(0xe4) + 1;
+      fs.appendFileSync(file, bytes.subarray(0, midChar));
+      readMagpieUsage(file, { now, cache });
+      fs.appendFileSync(file, bytes.subarray(midChar));
       const third = readMagpieUsage(file, { now, cache });
-      assert.equal(third.total, 450);
-      assert.equal(third.calls, 2);
-      assert.equal(third.sessions, 2);
       assert.equal(fullReads, 0);
+      const fresh = readMagpieUsage(file, { now });
+      assert.deepEqual(third, fresh);
+
+      // Same-inode overwrite with larger content must invalidate via prefix digest
+      const rewritten = JSON.stringify({ agent: 'dsh', in: 900, out: 200, t: '2026-11-27T07:45:00Z', route_id: 'rw', session: 's9' }) + '\n'
+        + ' '.repeat(512) + '\n';
+      fs.writeFileSync(file, rewritten, 'utf8');
+      const afterRewrite = readMagpieUsage(file, { now, cache });
+      assert.equal(afterRewrite.total, 1100);
     } finally {
       fs.readFileSync = origReadFile;
     }
@@ -47,18 +57,20 @@ test('readMagpieUsage reuses unchanged cache and incrementally tails appended li
   }
 });
 
-test('pet:// protocol rejects non-pet hostnames and non-pet renderer files', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-pet-proto-'));
-  try {
-    fs.writeFileSync(path.join(dir, 'pet-live2d.html'), '<h1>pet</h1>');
-    fs.writeFileSync(path.join(dir, 'launcher.html'), '<h1>launcher</h1>');
-    const handler = createPetProtocolHandler((name) => path.join(dir, name));
-    assert.equal((await handler({ url: 'pet://pet/pet-live2d.html' })).status, 200);
-    assert.equal((await handler({ url: 'pet://evil/pet-live2d.html' })).status, 404);
-    assert.equal((await handler({ url: 'pet://pet/launcher.html' })).status, 404);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+test('pet:// protocol serves every real pet-live2d.html asset and blocks backslash traversal', async () => {
+  const rendererRoot = path.resolve(__dirname, '../renderer');
+  const html = fs.readFileSync(path.join(rendererRoot, 'pet-live2d.html'), 'utf8');
+  const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1].replace(/^\/+/, ''));
+  refs.push('dialogue/whale.json');
+  const handler = createPetProtocolHandler((name) => path.join(rendererRoot, name));
+  for (const rel of refs) {
+    const res = await handler({ url: `pet://pet/${rel}` });
+    assert.equal(res.status, 200, `expected 200 for pet://pet/${rel}`);
   }
+  assert.equal((await handler({ url: 'pet://evil/pet-live2d.html' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/launcher.html' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/pet-live2d/..%5clauncher.html' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/pet-live2d/..\\launcher.html' })).status, 404);
 });
 
 test('createLive2dPetManager skips dshWatch when disabled and pauses/resumes on powerMonitor events', async (t) => {
