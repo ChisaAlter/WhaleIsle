@@ -18,6 +18,15 @@ const SIZE_SETTLE_MS = 120
 /** Longest a continuous resize (a window drag) waits for those properties. */
 const SIZE_SETTLE_MAX_MS = 400
 
+const POPOVER_SELECTOR = '[data-trigger-menu], [aria-expanded="true"], [data-composer-overlay] [data-dsh-motion="popover"]:not([aria-hidden="true"])'
+
+function hasDomCollapseBlockers(seat: HTMLElement, scroller: HTMLElement): boolean {
+  return (
+    scroller.querySelector('[data-conversation-composer-overlay]') !== null
+    || seat.querySelector(POPOVER_SELECTOR) !== null
+  )
+}
+
 function ConversationSessionView({ renderSlot }: ConversationViewsProps) {
   return renderSlot('conversation.session', {})
 }
@@ -75,7 +84,7 @@ export function ConversationContent(props: ConversationContentProps) {
     activePhase: false,
     hasOverlay: false,
     hasPendingInteraction: false,
-    hasDraftOrAttachment: false,
+    hasMultilineOrAttachment: false,
     hasEditSession: false,
     hasOpenPopover: false,
   })
@@ -86,7 +95,7 @@ export function ConversationContent(props: ConversationContentProps) {
     activePhase: effectivePhase === 'active' && !effectiveHero,
     hasOverlay: false,
     hasPendingInteraction: pendingInteraction !== undefined,
-    hasDraftOrAttachment: (inputState?.draft.trim() ?? '') !== '' || (inputState?.attachmentIds.length ?? 0) > 0,
+    hasMultilineOrAttachment: /[\r\n]/.test(inputState?.draft ?? '') || (inputState?.attachmentIds.length ?? 0) > 0,
     hasEditSession: inputState?.edit != null,
     hasOpenPopover: false,
   }
@@ -108,9 +117,32 @@ export function ConversationContent(props: ConversationContentProps) {
   }, [
     staticGuards.activePhase,
     staticGuards.hasPendingInteraction,
-    staticGuards.hasDraftOrAttachment,
+    staticGuards.hasMultilineOrAttachment,
     staticGuards.hasEditSession,
   ])
+
+  useEffect(() => {
+    if (!effectiveCollapsed) return
+    const seat = seatRef.current
+    const scroller = scrollerRef.current
+    if (seat === null || scroller === null) return
+    const checkDomGuards = () => {
+      if (hasDomCollapseBlockers(seat, scroller)) {
+        setCollapseState(prev => (prev.mode === 'collapsed' ? INITIAL_COMPOSER_COLLAPSE_STATE : prev))
+      }
+    }
+    checkDomGuards()
+    if (typeof MutationObserver !== 'function') return
+    const observer = new MutationObserver(checkDomGuards)
+    observer.observe(seat, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-expanded', 'aria-hidden'],
+    })
+    observer.observe(scroller, { childList: true, subtree: true })
+    return () => { observer.disconnect() }
+  }, [effectiveCollapsed])
 
   useLayoutEffect(() => {
     if (effectiveCollapsed) return
@@ -179,7 +211,7 @@ export function ConversationContent(props: ConversationContentProps) {
     const readDomGuards = (): ComposerCollapseGuards => ({
       ...guardsRef.current,
       hasOverlay: scroller.querySelector('[data-conversation-composer-overlay]') !== null,
-      hasOpenPopover: seat.querySelector('[data-trigger-menu], [aria-expanded="true"]') !== null,
+      hasOpenPopover: seat.querySelector(POPOVER_SELECTOR) !== null,
     })
     const onScroll = () => {
       const guards = readDomGuards()

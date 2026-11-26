@@ -433,10 +433,10 @@ describe('web e2e: agent-preset selection', () => {
 
     await compareOrRefreshGolden(HEADER_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Minimal mode')
-    // The Session's subagents live in the Session panel, whose toggle follows the preset label.
+    // The Session's subagents live in the Session panel, whose toggle sits in the titlebar trailing cluster.
     expect(snapshot).not.toContain('button "1 subagent"')
-    expect(snapshot.indexOf('Minimal mode')).toBeLessThan(snapshot.indexOf('button "Session panel"'))
-    expect(snapshot.indexOf('button "Session panel"')).toBeLessThan(snapshot.indexOf('button "More actions"'))
+    const trailingSnapshot = await captureStableAria(page, '#dshd-shell-titlebar-trailing', scaffold.workspaceCwd)
+    expect(trailingSnapshot).toContain('button "Session panel"')
     // Static chrome, not a control: the header can only report a composition
     // the host would refuse to change.
     expect(snapshot).not.toContain('button "Minimal mode"')

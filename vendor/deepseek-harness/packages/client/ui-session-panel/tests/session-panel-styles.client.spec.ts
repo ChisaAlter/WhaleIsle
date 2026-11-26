@@ -11,12 +11,14 @@ import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/SessionPanel.module.css', import.meta.url)), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, ' ')
+const toggleCss = readFileSync(fileURLToPath(new URL('../src/client/SessionPanelToggle.module.css', import.meta.url)), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
 
 /** Declarations of the rule with exactly this selector list, with whitespace collapsed. */
-function declarationsOf(selector: string): Record<string, string> {
+function declarationsOf(selector: string, source = css): Record<string, string> {
   const pattern = selector.split(',').map(part => part.trim().replace(/[.[\]():*+^$\\'=]/g, '\\$&')).join('\\s*,\\s*')
-  const rule = new RegExp(`(?:^|[{}])\\s*${pattern}\\s*\\{([^{}]*)\\}`).exec(css)
-  if (rule === null) throw new Error(`SessionPanel.module.css has no \`${selector}\` rule`)
+  const rule = new RegExp(`(?:^|[{}])\\s*${pattern}\\s*\\{([^{}]*)\\}`).exec(source)
+  if (rule === null) throw new Error(`stylesheet has no \`${selector}\` rule`)
   const entries = (rule[1] ?? '').split(';').map(part => part.trim()).filter(Boolean).map((part): [string, string] => {
     const colon = part.indexOf(':')
     return [part.slice(0, colon).trim(), part.slice(colon + 1).replace(/\s+/g, ' ').replace(/\( /g, '(').replace(/ \)/g, ')').trim()]
@@ -252,5 +254,24 @@ describe('SessionPanel.module.css row rules', () => {
     }
     expect(at(fold)).toBeGreaterThan(at('[data-session-panel-row]'))
     expect(at(`${fold} [data-row-part='icon']`, ' svg')).toBeGreaterThan(at("[data-session-panel-row] [data-row-part='icon']", ' svg'))
+  })
+})
+
+describe('SessionPanelToggle.module.css titlebar geometry', () => {
+  it('matches the 32x32 titlebar toggle footprint, punches a caption no-drag hole, and anchors the indicator dot', () => {
+    expect(declarationsOf('.trigger[data-session-panel-toggle]', toggleCss)).toMatchObject({
+      'position': 'relative',
+      'width': '32px',
+      'height': '32px',
+      'padding': '0',
+      '-webkit-app-region': 'no-drag',
+    })
+    expect(declarationsOf(".indicators > :global([data-slot='conversation.session.panel.indicator']) > *", toggleCss)).toMatchObject({
+      'position': 'absolute',
+      'top': '6px',
+      'right': '6px',
+      'width': '6px',
+      'height': '6px',
+    })
   })
 })

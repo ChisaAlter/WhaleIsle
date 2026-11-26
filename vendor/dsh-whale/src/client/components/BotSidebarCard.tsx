@@ -12,10 +12,13 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  botChatFoldKey,
   botFoldLiveStatus,
   botHasSubChats,
+  botOwnChatTree,
   botRowLineText,
   botWaitTimeFormat,
+  chatFoldCounts,
   countLiveBotWorkspaces,
   resolveBotRowActivityLine,
 } from '../../shared/bot-sidebar-logic.js';
@@ -25,7 +28,7 @@ import {
   useBotsLocale,
   useBotsState,
 } from '../store/bots-store';
-import type { BotRecord } from '../store/rpc';
+import type { BotChatRow, BotRecord } from '../store/rpc';
 import { BotAvatar } from './BotAvatar';
 import { BotChevron, BotDisclosure } from './BotDisclosure';
 import { BotHoverCard } from './BotHoverCard';
@@ -228,6 +231,8 @@ export function BotSidebarCard({
   const { locale, tr } = useBotsLocale();
   const activeBotId = useBotsState((state) => state.activeBotId);
   const activeGroupId = useBotsState((state) => state.activeGroupId);
+  const activeSessionId = useBotsState((state) => state.activeSessionId);
+  const chatFolds = useBotsState((state) => state.chatFolds);
   const needsYouCount = useBotsState((state) => state.needsYou[bot.id] ?? bot.needsYouCount ?? 0);
   const startingSessionIds = useBotsState((state) => state.startingSessionIds);
   const chatTree = useBotsState((state) => state.chatsByBot[bot.id]);
@@ -365,8 +370,50 @@ export function BotSidebarCard({
     [chatTree, hideSleepingWorkers],
   );
   const showExpandedTree = hasSubChats && !collapsed;
-  const parentActive = isActive && !showExpandedTree;
-  const hasActiveChild = isActive && showExpandedTree;
+  const ownedChatTree = useMemo(
+    () => (chatTree ? (botOwnChatTree(chatTree) as { chats?: BotChatRow[] }) : null),
+    [chatTree],
+  );
+  const homeChat = useMemo(
+    () => (ownedChatTree?.chats ?? []).find((chat) => chat.origin === 'home' && !chat.closed) ?? null,
+    [ownedChatTree],
+  );
+  const homeSessionId = bot.chatSessionId ?? bot.homeSessionId ?? homeChat?.sessionId ?? homeChat?.chatId ?? null;
+  const isHomeSession = !activeSessionId || (homeSessionId !== null && activeSessionId === homeSessionId);
+  const hasActiveVisibleChild = useMemo(() => {
+    if (!showExpandedTree || !activeSessionId || isHomeSession) {
+      return false;
+    }
+    const openChats = (ownedChatTree?.chats ?? []).filter((chat) => !chat.closed);
+    for (const chat of openChats) {
+      const chatKey = chat.sessionId || chat.chatId || (chat as { id?: string }).id || '';
+      const isHome = chat.origin === 'home';
+      if (!isHome && (chat.sessionId === activeSessionId || chat.chatId === activeSessionId)) {
+        return true;
+      }
+      const workers = [...(chat.running ?? []), ...(chat.finished ?? [])].filter(
+        (w) => !hideSleepingWorkers || w.state !== 'sleeping',
+      );
+      if (workers.length === 0) {
+        continue;
+      }
+      if (isHome) {
+        if (workers.some((w) => w.sessionId === activeSessionId)) {
+          return true;
+        }
+        continue;
+      }
+      const foldKey = botChatFoldKey('local', bot.id, chatKey);
+      const folded = chatFolds[foldKey] ? chatFolds[foldKey] === 'folded' : !chatFoldCounts(chat);
+      if (!folded && workers.some((w) => w.sessionId === activeSessionId)) {
+        return true;
+      }
+    }
+    return false;
+  }, [activeSessionId, bot.id, chatFolds, hideSleepingWorkers, isHomeSession, ownedChatTree, showExpandedTree]);
+
+  const parentActive = isActive && !hasActiveVisibleChild;
+  const hasActiveChild = isActive && hasActiveVisibleChild;
   const timeText = formatRelativeTime(bot.lastActiveAt ?? bot.updatedAt ?? bot.createdAt, now, locale);
   const avatarStatus = needsYouCount > 0 ? 'attention' : (bot.dotState ?? undefined);
 
@@ -375,15 +422,15 @@ export function BotSidebarCard({
       className="dsh-bots-card-wrap"
       data-dragging={dragging ? 'true' : 'false'}
       data-drop-position={dropPosition ?? undefined}
-      draggable={manualSort && !renaming}
-      onDragStart={() => onDragStart?.(bot.id)}
       onDragOver={(e) => onDragOverCard?.(bot.id, e)}
       onDrop={(e) => onDropCard?.(bot.id, e)}
-      onDragEnd={onDragEnd}
     >
       <div
         ref={cardRef}
         className="dsh-bots-card"
+        draggable={manualSort && !renaming}
+        onDragStart={() => onDragStart?.(bot.id)}
+        onDragEnd={onDragEnd}
         data-active={parentActive ? 'true' : 'false'}
         data-has-active-child={hasActiveChild ? 'true' : 'false'}
         data-unread={bot.unread ? 'true' : 'false'}

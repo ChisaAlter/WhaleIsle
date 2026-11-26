@@ -127,6 +127,7 @@ function defaultFixtures() {
         chats: [
           { chatId: 'sess-whale-home', sessionId: 'sess-whale-home', origin: 'home', title: 'Home Chat' },
           { chatId: 'sess-whale-side', sessionId: 'sess-whale-side', origin: 'side', title: '支线讨论' },
+          { chatId: 'sess-whale-work', sessionId: 'sess-whale-work', origin: 'work', title: 'Worker · repo' },
         ],
       },
       'bot-scout': {
@@ -144,6 +145,7 @@ function defaultFixtures() {
 function makeHarnessCtx(disposers) {
   const declared = new Set(ALL_SLOT_SPECS);
   const registrations = [];
+  const calls = { openSession: [] };
   const services = {
     sessions: {
       list: {
@@ -151,7 +153,7 @@ function makeHarnessCtx(disposers) {
         subscribe: () => () => {},
       },
     },
-    uiWorkspace: { openSession: async () => {} },
+    uiWorkspace: { openSession: async (id) => { calls.openSession.push(id); } },
     sidebarRight: { openTab: () => {}, openTabIn: () => true },
     sidebarRightTabs: { register: () => () => {} },
   };
@@ -184,10 +186,10 @@ function makeHarnessCtx(disposers) {
       return () => dispose?.();
     },
   };
-  return { ctx, registrations };
+  return { ctx, registrations, calls };
 }
 
-function createDomHarness(t) {
+function createDomHarness(t, options = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><main></main><div id="outside-target">outside</div></body></html>', {
     url: 'http://localhost:3123/',
     pretendToBeVisual: true,
@@ -197,7 +199,7 @@ function createDomHarness(t) {
 
   const eventSources = [];
   const rpcCalls = [];
-  const fixtures = defaultFixtures();
+  const fixtures = options.fixtures ?? defaultFixtures();
   const FakeEventSource = createFakeEventSourceClass(eventSources);
 
   const fetchImpl = async (url, init = {}) => {
@@ -205,10 +207,24 @@ function createDomHarness(t) {
     if (rawUrl.endsWith('/dsh-bots/rpc')) {
       const body = init.body ? JSON.parse(String(init.body)) : {};
       rpcCalls.push(body);
+      if (options.rpcOverride) {
+        const overrideResult = await options.rpcOverride(body.method, body.params ?? {}, fixtures);
+        if (overrideResult !== undefined) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            json: async () => ({ ok: true, result: overrideResult }),
+          };
+        }
+      }
       let result = { ok: true, items: [], chats: [], files: [], requests: [], automations: [], suggestions: [] };
       if (body.method === 'bots.list') result = fixtures;
       else if (body.method === 'bots.chatTree') result = fixtures.chatsByBot[body.params?.botId] ?? { chats: [] };
-      else if (body.method === 'bots.import.sources') {
+      else if (body.method === 'bots.chat.open') {
+        const bot = fixtures.bots.find((b) => b.id === body.params?.botId);
+        result = { sessionId: bot?.chatSessionId ?? bot?.homeSessionId ?? 'sess-whale-home' };
+      } else if (body.method === 'bots.import.sources') {
         result = {
           sources: [
             {
@@ -365,6 +381,8 @@ function createDomHarness(t) {
     act,
     h,
     rpcCalls,
+    fixtures,
+    host,
     flush,
     pressAndClick,
     pressKey,
@@ -464,7 +482,17 @@ domTest('SidebarBotsSection top action popovers toggle closed on second click, s
 });
 
 domTest('BotSubChatList, BotChatsTab, AvatarPickerPopover, and inline menus toggle closed cleanly on second click', async (t) => {
-  const { dom, doc, root, act, h, flush, pressAndClick, pressKey, slotComp } = createDomHarness(t);
+  const {
+    dom,
+    doc,
+    root,
+    act,
+    h,
+    flush,
+    pressAndClick,
+    pressKey,
+    slotComp,
+  } = createDomHarness(t);
   const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
   const RightPanelComp = slotComp((d) => d.name === 'sidebar.right.pane.tab');
   const LeadingComp = slotComp((d) => d.name === 'conversation.session.header.leading');
@@ -723,4 +751,202 @@ domTest('useAnchoredPopoverDismiss deduplicates pointerdown+mousedown and interc
   } finally {
     doc.removeEventListener('keydown', onBubbleKey);
   }
+});
+
+domTest('Sidebar bot tree omits Home Chat subrow, surfaces home workers, avoids tail overlap, and fixes subagent menu actions without chatId', async (t) => {
+  const customFixtures = defaultFixtures();
+  customFixtures.botSidebarView.sortBy = 'manual';
+  // bot-whale: home chat with 1 running worker + 1 non-home work subchat (without chatId, matching decorateChatRow) + 1 side chat with folded worker
+  customFixtures.chatsByBot['bot-whale'] = {
+    botId: 'bot-whale',
+    homeSessionId: 'sess-whale-home',
+    chats: [
+      {
+        id: 'sess-whale-home',
+        sessionId: 'sess-whale-home',
+        origin: 'home',
+        title: 'Home Chat',
+        closed: false,
+        runningTotal: 1,
+        running: [
+          {
+            id: 'work-home-1',
+            dispatchId: 'disp-home-1',
+            taskId: 'task-home-1',
+            sessionId: 'sess-home-worker-1',
+            title: '主对话子代理A',
+            state: 'running',
+            createdAt: Date.now() - 5000,
+          },
+        ],
+        finished: [
+          {
+            id: 'work-home-done',
+            sessionId: 'sess-home-worker-done',
+            title: '已完成子代理B',
+            state: 'done',
+          },
+        ],
+      },
+      {
+        id: 'sess-whale-work-chat',
+        sessionId: 'sess-whale-work-chat',
+        origin: 'work',
+        title: 'Worker · repo',
+        closed: false,
+        lastActiveAt: Date.now() - 10_000,
+        runningTotal: 1,
+        running: [
+          {
+            id: 'work-nested-1',
+            sessionId: 'sess-nested-worker-1',
+            title: '嵌套运行子代理',
+            state: 'running',
+            createdAt: Date.now() - 3000,
+          },
+        ],
+      },
+    ],
+  };
+  // bot-scout: ONLY home chat + 1 running home worker (no non-home subchats) -> fold button and worker list must still appear
+  customFixtures.chatsByBot['bot-scout'] = {
+    botId: 'bot-scout',
+    homeSessionId: 'sess-scout-home',
+    chats: [
+      {
+        id: 'sess-scout-home',
+        sessionId: 'sess-scout-home',
+        origin: 'home',
+        title: 'Home Chat',
+        closed: false,
+        runningTotal: 1,
+        running: [
+          {
+            id: 'work-scout-1',
+            sessionId: 'sess-scout-worker-1',
+            title: '巡检子代理',
+            state: 'running',
+            createdAt: Date.now() - 2000,
+          },
+        ],
+      },
+    ],
+  };
+
+  let failNextDelete = false;
+  const { doc, root, act, h, rpcCalls, host, flush, pressAndClick, slotComp } = createDomHarness(t, {
+    fixtures: customFixtures,
+    rpcOverride: (method) => {
+      if (method === 'bots.chat.delete') {
+        if (failNextDelete) {
+          failNextDelete = false;
+          throw new Error('delete_blocked_for_test');
+        }
+        return { ok: true, deleted: true };
+      }
+      if (method === 'bots.work.stop') return { ok: true, stopped: true };
+      return undefined;
+    },
+  });
+  const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
+  const OverlayComp = slotComp((d) => d.name === 'shell.overlay' && d.id === 'dsh-bots.modals');
+
+  await act(async () => {
+    root.render(h('div', null, h(SidebarComp, { wide: true }), h(OverlayComp, {})));
+  });
+  await flush();
+
+  const wraps = [...doc.querySelectorAll('.dsh-bots-card-wrap')];
+  const whaleWrap = wraps.find((w) => w.querySelector('.dsh-bots-card-name')?.textContent === '鲸鱼娘');
+  const scoutWrap = wraps.find((w) => w.querySelector('.dsh-bots-card-name')?.textContent === '巡检官');
+  assert.ok(whaleWrap && scoutWrap);
+
+  // Drag handle sits on .dsh-bots-card only, never wrapping subrows/workers in draggable="true".
+  assert.notEqual(whaleWrap.getAttribute('draggable'), 'true', '.dsh-bots-card-wrap must not be draggable');
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('draggable'), 'true', '.dsh-bots-card keeps manualSort draggable');
+
+  // 1. Home Chat subrow is gone; home workers render directly under bot card; bot with only home workers still shows fold chevron.
+  assert.equal([...whaleWrap.querySelectorAll('.dsh-bots-subrow')].some((r) => r.textContent?.includes('Home Chat')), false);
+  assert.ok(scoutWrap.querySelector('.dsh-bots-card-fold-btn'), 'bot with only home workers must show fold button');
+  assert.ok(scoutWrap.querySelector('.dsh-bots-worker-list[data-root-workers="true"]'), 'home workers must render directly under bot card');
+  assert.match(whaleWrap.textContent, /主对话子代理A/);
+  assert.match(whaleWrap.textContent, /已完成子代理B/);
+  assert.match(whaleWrap.textContent, /Worker · repo/);
+
+  // 2. Clicking bot card opens Home Chat and highlights parent card itself (data-active="true"), even while sublist is expanded.
+  await pressAndClick(whaleWrap.querySelector('.dsh-bots-card'));
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-active'), 'true');
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-has-active-child'), 'false');
+
+  // Clicking a home worker row highlights that worker row and marks parent data-has-active-child="true".
+  const homeWorkerRow = [...whaleWrap.querySelectorAll('.dsh-bots-worker-list[data-root-workers="true"] .dsh-bots-worker-row')]
+    .find((el) => el.textContent?.includes('主对话子代理A'));
+  assert.ok(homeWorkerRow);
+  await pressAndClick(homeWorkerRow);
+  assert.equal(homeWorkerRow.getAttribute('data-active'), 'true');
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-active'), 'false');
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-has-active-child'), 'true');
+  assert.ok(host.calls.openSession.includes('sess-home-worker-1'));
+
+  // Clicking bot card again re-highlights parent card for Home Chat.
+  await pressAndClick(whaleWrap.querySelector('.dsh-bots-card'));
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-active'), 'true');
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-has-active-child'), 'false');
+
+  // 3. CSS layout contract: subrow-more-btn and worker-stop-btn use flex flow (no position: absolute overlap).
+  const cssText = [...doc.head.querySelectorAll('style[data-dsh-whale-style]')].map((el) => el.textContent).join('\n');
+  const subrowMoreBlock = /\.dsh-bots-subrow-more-btn\s*\{([^}]*)\}/.exec(cssText);
+  assert.ok(subrowMoreBlock && !/position:\s*absolute/.test(subrowMoreBlock[1]), '.dsh-bots-subrow-more-btn must not use position: absolute');
+  const workerStopBlock = /\.dsh-bots-worker-row\s+\.dsh-bots-worker-stop-btn\s*\{([^}]*)\}/.exec(cssText);
+  assert.ok(workerStopBlock && !/position:\s*absolute/.test(workerStopBlock[1]), '.dsh-bots-worker-row .dsh-bots-worker-stop-btn must not use position: absolute');
+
+  // 4. Real backend subrow WITHOUT chatId opens '...' menu on first click and executes Open / Delete.
+  const workSubrow = whaleWrap.querySelector('.dsh-bots-subrow');
+  assert.ok(workSubrow);
+  const workMoreBtn = workSubrow.querySelector('.dsh-bots-subrow-more-btn');
+  assert.ok(workMoreBtn);
+  assert.equal(workSubrow.getAttribute('data-menu-open'), 'false');
+  assert.equal(workMoreBtn.getAttribute('aria-expanded'), 'false');
+
+  await pressAndClick(workMoreBtn);
+  const subrowMenu = doc.querySelector('.dsh-bots-chat-row-menu');
+  assert.ok(subrowMenu, 'subrow without chatId must open .dsh-bots-chat-row-menu on first click');
+  assert.equal(workSubrow.getAttribute('data-menu-open'), 'true');
+
+  const openItem = [...subrowMenu.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent?.includes('打开对话'));
+  assert.ok(openItem);
+  await pressAndClick(openItem);
+  assert.equal(doc.querySelector('.dsh-bots-chat-row-menu'), null);
+  assert.ok(host.calls.openSession.includes('sess-whale-work-chat'));
+  assert.equal(workSubrow.getAttribute('data-active'), 'true');
+  assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-has-active-child'), 'true');
+
+  // Re-open menu and delete subrow chat.
+  await pressAndClick(workMoreBtn);
+  const delItem = doc.querySelector('.dsh-bots-chat-row-menu .dsh-bots-menu-item-danger');
+  assert.ok(delItem && !delItem.disabled);
+  await pressAndClick(delItem);
+  assert.ok(rpcCalls.some((c) => c.method === 'bots.chat.delete' && c.params?.botId === 'bot-whale' && c.params?.sessionId === 'sess-whale-work-chat'));
+
+  // 5. Worker row '...' menu opens, toggles, stops running worker, and supports open/delete.
+  const workerMoreBtn = homeWorkerRow.querySelector('.dsh-bots-subrow-more-btn');
+  assert.ok(workerMoreBtn, 'worker row must render .dsh-bots-subrow-more-btn');
+  await pressAndClick(workerMoreBtn);
+  const workerMenu = doc.querySelector('.dsh-bots-chat-row-menu');
+  assert.ok(workerMenu, 'worker row menu must open on first click');
+  assert.equal(homeWorkerRow.getAttribute('data-menu-open'), 'true');
+
+  const stopItem = [...workerMenu.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent?.includes('停止运行'));
+  assert.ok(stopItem, 'running worker menu must include Stop worker action');
+  await pressAndClick(stopItem);
+  assert.ok(rpcCalls.some((c) => c.method === 'bots.work.stop' && c.params?.botId === 'bot-whale' && c.params?.workId === 'work-home-1'));
+
+  // Worker row delete error must surface via error toast (never swallowed).
+  failNextDelete = true;
+  await pressAndClick(workerMoreBtn);
+  const workerDeleteItem = doc.querySelector('.dsh-bots-chat-row-menu .dsh-bots-menu-item-danger');
+  assert.ok(workerDeleteItem, 'worker row menu with sessionId must include Delete chat action');
+  await pressAndClick(workerDeleteItem);
+  const errToast = doc.querySelector('.dsh-bots-toast[data-tone="error"]');
+  assert.ok(errToast, 'delete failure on worker row must surface an error toast');
 });

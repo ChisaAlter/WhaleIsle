@@ -57,8 +57,16 @@ function applyWidth(card: HTMLElement, width: number, settle: boolean): void {
   const seat = seatOf(card)
   const content = contentOf(card) ?? contentOf(seat)
   if (content !== null) {
+    const parent = card.parentElement
+    const cs = parent === null ? undefined : getComputedStyle(parent)
+    const maxCardWidth = parent !== null && parent.clientWidth > 0
+      ? composerResizeMaxWidth(parent, cs?.paddingLeft ?? '0', cs?.paddingRight ?? '0', width)
+      : (content.clientWidth > 0 ? Math.max(248 + CARD_CONTENT_DELTA, content.clientWidth) : undefined)
     const contentWidth = Math.max(0, width - CARD_CONTENT_DELTA)
-    content.style.setProperty(USER_WIDTH_VAR, `${contentWidth}px`)
+    const clampedContentWidth = maxCardWidth === undefined
+      ? contentWidth
+      : Math.min(contentWidth, Math.max(248, maxCardWidth - CARD_CONTENT_DELTA))
+    content.style.setProperty(USER_WIDTH_VAR, `${clampedContentWidth}px`)
     content.dataset.composerUserWidth = `${contentWidth}`
     if (settle) {
       try { localStorage.removeItem(WIDTH_PREF_KEY) } catch { /* private storage */ }
@@ -73,6 +81,7 @@ function applyWidth(card: HTMLElement, width: number, settle: boolean): void {
     }
     for (const el of targets) {
       el.style.width = ''
+      el.style.removeProperty(WIDTH_VAR)
       el.dataset.composerResizedWidth = `${width}`
     }
     return
@@ -88,6 +97,8 @@ function applyWidth(card: HTMLElement, width: number, settle: boolean): void {
   }
   for (const el of targets) {
     el.style.width = value
+    if (seat === null) el.style.setProperty(WIDTH_VAR, value)
+    else el.style.removeProperty(WIDTH_VAR)
     el.dataset.composerResizedWidth = `${width}`
   }
 }
@@ -107,6 +118,7 @@ function clearSize(scroll: HTMLElement | null, card: HTMLElement | null): void {
   }
   for (const el of cards) {
     el.style.width = ''
+    el.style.removeProperty(WIDTH_VAR)
     delete el.dataset.composerResizedWidth
   }
   if (seat !== null) {
@@ -132,6 +144,7 @@ function adoptFromSeat(scroll: HTMLElement, card: HTMLElement): void {
   if (content !== null) {
     const contentWidth = Number.parseFloat(content.dataset.composerUserWidth ?? '')
     if (Number.isFinite(contentWidth)) {
+      card.style.width = ''
       card.dataset.composerResizedWidth = `${contentWidth + CARD_CONTENT_DELTA}`
     }
     return
@@ -175,6 +188,7 @@ export function useComposerResizeDrag(
     originWidth: number
     originHeight: number
     maxWidth: number
+    scale: number
     lastWidth?: number
   } | null>(null)
   const onCommitRef = useRef(onCommit)
@@ -210,6 +224,9 @@ export function useComposerResizeDrag(
     e.stopPropagation()
     const parent = card.parentElement
     const cs = parent === null ? undefined : getComputedStyle(parent)
+    const seat = seatOf(card)
+    const endInset = seat !== null ? Number.parseFloat(getComputedStyle(seat).paddingInlineEnd) : 0
+    const scale = Number.isFinite(endInset) && endInset > 0 ? 1 : 2
     resizeDrag.current = {
       pointerId: e.pointerId,
       edge,
@@ -223,6 +240,7 @@ export function useComposerResizeDrag(
         cs?.paddingRight ?? '0',
         card.getBoundingClientRect().width,
       ),
+      scale,
     }
     /* v8 ignore next -- Pointer Capture is missing in jsdom; browsers have it */
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -242,7 +260,7 @@ export function useComposerResizeDrag(
       return
     }
     const nextWidth = composerResizeWidth(
-      drag.originWidth, drag.originX, e.clientX, drag.edge, drag.maxWidth,
+      drag.originWidth, drag.originX, e.clientX, drag.edge, drag.maxWidth, drag.scale,
     )
     drag.lastWidth = nextWidth
     applyWidth(card, nextWidth, false)

@@ -1593,7 +1593,7 @@ describe('ConversationRoot resident composer', () => {
     delete document.documentElement.dataset.titlebarDensity
   })
 
-  it('collapses composer on scroll up while freezing expanded reserve, and restores on bottom or pill click', async () => {
+  it('collapses composer on scroll up while freezing expanded reserve, allows direct typing, and restores on bottom', async () => {
     vi.useFakeTimers()
     try {
       const b = mount(sessionSnapshotOf())
@@ -1638,29 +1638,13 @@ describe('ConversationRoot resident composer', () => {
       })
       expect(scroller.style.getPropertyValue('--dsh-composer-reserve')).toBe('140px')
 
-      // Clicking the collapsed pill expands, pins, and focuses the editor.
+      // Clicking and typing a single-line draft in the collapsed bar focuses editor without expanding.
       textbox.blur()
-      act(() => { fireEvent.click(card) })
-      await act(async () => { await Promise.resolve() })
-      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
-      expect(card.hasAttribute('data-composer-collapsed')).toBe(false)
+      act(() => { fireEvent.mouseDown(card, { button: 0 }) })
       expect(document.activeElement).toBe(textbox)
-
-      seatHeight = 140
-      act(() => {
-        fireResize(seat)
-        vi.advanceTimersByTime(50)
-      })
-      expect(scroller.style.getPropertyValue('--dsh-composer-reserve')).toBe('140px')
-
-      // Small scroll delta while pinned (< 32px) stays expanded; larger delta re-collapses.
-      scrollTop = 880
-      act(() => { fireEvent.scroll(scroller) })
-      expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
-
-      scrollTop = 840
-      act(() => { fireEvent.scroll(scroller) })
+      act(() => { b.wiring.setDraft('single line draft') })
       expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+      expect(card.hasAttribute('data-composer-collapsed')).toBe(true)
 
       // Scrolling back near bottom restores expanded state.
       scrollTop = 1190
@@ -1671,7 +1655,7 @@ describe('ConversationRoot resident composer', () => {
     }
   })
 
-  it('prevents scroll collapse when draft is non-empty or a composer overlay is active', () => {
+  it('expands collapsed bar on multiline draft, popover, or composer overlay, but keeps single-line draft collapsed', async () => {
     const b = mount(sessionSnapshotOf())
     const scroller = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
     const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')!
@@ -1685,14 +1669,32 @@ describe('ConversationRoot resident composer', () => {
       set: (value: number) => { scrollTop = value },
     })
 
-    // Non-empty draft ('ordinary draft') prevents collapse on scroll up.
+    // Non-empty single-line draft ('ordinary draft') stays collapsed on scroll up.
     act(() => { fireEvent.scroll(scroller) })
     scrollTop = 900
     act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+
+    // Inserting a newline expands immediately.
+    act(() => { b.wiring.setDraft('first line\nsecond line') })
     expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
 
-    // Clear draft, scroll to bottom then up -> collapses; mounting an overlay expands it.
-    act(() => { b.wiring.setDraft('') })
+    // Back to single line, scroll to bottom then up -> collapses; opening a trigger menu expands immediately.
+    act(() => { b.wiring.setDraft('single line') })
+    scrollTop = 1200
+    act(() => { fireEvent.scroll(scroller) })
+    scrollTop = 900
+    act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+
+    const menu = document.createElement('div')
+    menu.setAttribute('data-trigger-menu', '')
+    seat.appendChild(menu)
+    await act(async () => { await Promise.resolve() })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+    menu.remove()
+
+    // Collapse again, then mount a composer overlay -> expands.
     scrollTop = 1200
     act(() => { fireEvent.scroll(scroller) })
     scrollTop = 900
@@ -1702,8 +1704,35 @@ describe('ConversationRoot resident composer', () => {
     const overlay = document.createElement('div')
     overlay.setAttribute('data-conversation-composer-overlay', '')
     scroller.appendChild(overlay)
-    scrollTop = 850
+    await act(async () => { await Promise.resolve() })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+    overlay.remove()
+
+    // Collapse again, then mount a popupSelect popover inside [data-composer-overlay] -> expands.
+    scrollTop = 1200
     act(() => { fireEvent.scroll(scroller) })
+    scrollTop = 900
+    act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+
+    const overlayAnchor = document.createElement('div')
+    overlayAnchor.setAttribute('data-composer-overlay', '')
+    const popover = document.createElement('div')
+    popover.setAttribute('data-dsh-motion', 'popover')
+    overlayAnchor.appendChild(popover)
+    seat.appendChild(overlayAnchor)
+    await act(async () => { await Promise.resolve() })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
+    overlayAnchor.remove()
+
+    // Collapse again, then add an attachment -> expands.
+    scrollTop = 1200
+    act(() => { fireEvent.scroll(scroller) })
+    scrollTop = 900
+    act(() => { fireEvent.scroll(scroller) })
+    expect(seat.hasAttribute('data-composer-collapsed')).toBe(true)
+
+    act(() => { b.wiring.addAttachments(['att-1' as never]) })
     expect(seat.hasAttribute('data-composer-collapsed')).toBe(false)
   })
 })

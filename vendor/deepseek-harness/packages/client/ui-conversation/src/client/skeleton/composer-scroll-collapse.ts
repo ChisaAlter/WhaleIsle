@@ -24,7 +24,7 @@ export type ComposerCollapseGuards = {
   readonly activePhase: boolean
   readonly hasOverlay: boolean
   readonly hasPendingInteraction: boolean
-  readonly hasDraftOrAttachment: boolean
+  readonly hasMultilineOrAttachment: boolean
   readonly hasEditSession: boolean
   readonly hasOpenPopover: boolean
 }
@@ -40,7 +40,7 @@ export function canCollapseComposer(guards: ComposerCollapseGuards): boolean {
     guards.activePhase
     && !guards.hasOverlay
     && !guards.hasPendingInteraction
-    && !guards.hasDraftOrAttachment
+    && !guards.hasMultilineOrAttachment
     && !guards.hasEditSession
     && !guards.hasOpenPopover
   )

@@ -2677,9 +2677,9 @@ describe('scroll collapse pill', () => {
     expect(editing.view.container.querySelector('[data-composer-card]')?.hasAttribute('data-composer-collapsed')).toBe(false)
   })
 
-  it('expands and focuses on pill click or focus capture while letting Stop work directly', async () => {
+  it('allows direct focusing, typing, and Enter submission in collapsed bar without forced expansion while letting Stop work directly', async () => {
     const onExpandCollapsed = vi.fn()
-    const { view, props, textarea, stop } = bench({ running: true, collapsed: true, onExpandCollapsed })
+    const { view, shell, textarea, stop, sink } = bench({ running: true, collapsed: true, onExpandCollapsed })
     const card = view.container.querySelector<HTMLElement>('[data-composer-card]')!
     const stopButton = view.getByRole('button', { name: '停止生成' })
 
@@ -2688,30 +2688,25 @@ describe('scroll collapse pill', () => {
     fireEvent.click(stopButton)
     expect(stop).toHaveBeenCalledOnce()
     expect(onExpandCollapsed).not.toHaveBeenCalled()
+    expect(card.hasAttribute('data-composer-collapsed')).toBe(true)
 
-    onExpandCollapsed.mockImplementationOnce(() => {
-      view.rerender(<InputBar {...props} collapsed={false} />)
-    })
+    // Clicking card chrome in collapsed mode focuses DraftEditor without forcing expand.
     textarea.blur()
+    fireEvent.pointerDown(card, { button: 0 })
+    fireEvent.mouseDown(card, { button: 0 })
     fireEvent.click(card)
     await act(async () => { await Promise.resolve() })
-    expect(onExpandCollapsed).toHaveBeenCalledTimes(1)
+    expect(onExpandCollapsed).not.toHaveBeenCalled()
     expect(document.activeElement).toBe(textarea)
+    expect(card.hasAttribute('data-composer-collapsed')).toBe(true)
 
-    onExpandCollapsed.mockImplementationOnce(() => {
-      view.rerender(<InputBar {...props} collapsed={false} />)
-    })
+    // Focusing textarea directly keeps collapsed bar and allows single-line Enter submit.
     textarea.blur()
-    view.rerender(<InputBar {...props} collapsed />)
-    fireEvent.pointerDown(textarea, { button: 0 })
-    fireEvent.click(textarea)
-    await act(async () => { await Promise.resolve() })
-    expect(onExpandCollapsed).toHaveBeenCalledTimes(2)
-    expect(document.activeElement).toBe(textarea)
-
-    textarea.blur()
-    view.rerender(<InputBar {...props} collapsed />)
     fireEvent.focus(textarea)
-    expect(onExpandCollapsed).toHaveBeenCalledTimes(3)
+    expect(onExpandCollapsed).not.toHaveBeenCalled()
+    writeDraft(shell, 'single line prompt')
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(card.hasAttribute('data-composer-collapsed')).toBe(true)
   })
 })

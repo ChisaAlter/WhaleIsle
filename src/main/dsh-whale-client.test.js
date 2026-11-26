@@ -683,12 +683,21 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
   assert.equal(pausedCard?.sublist, null, 'single-chat bot must omit redundant Home Chat subrow');
   assert.equal(pausedCard?.card?.getAttribute('data-active'), 'true', 'single-chat active bot highlights its own row');
 
-  // Switch active selection to multi-chat bot and verify parent stays unlit while active subrow highlights.
+  // Switch active selection to multi-chat bot Home Chat: parent card itself highlights while sublist stays expanded.
   await act(async () => { whaleCard.card.click(); });
+  await flush();
+  assert.equal(whaleCard.card.getAttribute('data-active'), 'true');
+  assert.equal(whaleCard.card.getAttribute('data-has-active-child'), 'false');
+  assert.equal(whaleCard.sublist.querySelector('.dsh-bots-subrow[data-active="true"]'), null);
+
+  // Clicking a non-home sub-chat row highlights that subrow and marks parent data-has-active-child="true".
+  const sideSubrow = whaleCard.sublist.querySelector('.dsh-bots-subrow');
+  assert.ok(sideSubrow, 'non-home subrow must render');
+  await act(async () => { sideSubrow.click(); });
   await flush();
   assert.equal(whaleCard.card.getAttribute('data-active'), 'false');
   assert.equal(whaleCard.card.getAttribute('data-has-active-child'), 'true');
-  assert.ok(whaleCard.sublist.querySelector('.dsh-bots-subrow[data-active="true"]'));
+  assert.equal(sideSubrow.getAttribute('data-active'), 'true');
 
   const waitFrames = async (ms = 120) => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
@@ -1572,17 +1581,11 @@ domTest('Wave 2 wiring: HandToBotDialog, workspace context menu, prefill/flash e
   await flush();
   assert.ok(dom.window.document.querySelector('main').classList.contains('dsh-bots-pane-rim-flash'));
 
-  // 4. BotSubChatList '...' menu protects Home Chat and deletes Side Chat via bots.chat.delete.
+  // 4. BotSubChatList omits Home Chat subrow and deletes Side Chat via bots.chat.delete.
   const subrows = [...dom.window.document.querySelectorAll('.dsh-bots-subrow')];
-  assert.ok(subrows.length >= 2);
-  const homeMoreBtn = subrows[0].querySelector('.dsh-bots-subrow-more-btn');
-  const sideMoreBtn = subrows[1].querySelector('.dsh-bots-subrow-more-btn');
-  assert.ok(homeMoreBtn && sideMoreBtn);
-  await act(async () => { homeMoreBtn.click(); });
-  await flush();
-  const homeDeleteBtn = dom.window.document.querySelector('.dsh-bots-chat-row-menu .dsh-bots-menu-item-danger');
-  assert.ok(homeDeleteBtn && homeDeleteBtn.disabled, 'Home Chat delete menu item must be disabled');
-
+  assert.equal(subrows.length, 1, 'Home Chat subrow must not be rendered in BotSubChatList');
+  const sideMoreBtn = subrows[0].querySelector('.dsh-bots-subrow-more-btn');
+  assert.ok(sideMoreBtn);
   await act(async () => { sideMoreBtn.click(); });
   await flush();
   const sideDeleteBtn = dom.window.document.querySelector('.dsh-bots-chat-row-menu .dsh-bots-menu-item-danger');

@@ -13,9 +13,11 @@ describe('composerResizeHeight', () => {
 })
 
 describe('composerResizeWidth', () => {
-  it('grows the card from either vertical edge and clamps to the min and column', () => {
-    expect(composerResizeWidth(400, 500, 560, 'right', 800)).toBe(460)
-    expect(composerResizeWidth(400, 100, 40, 'left', 800)).toBe(460)
+  it('grows the card symmetrically from either vertical edge by default and clamps to the min and column', () => {
+    expect(composerResizeWidth(400, 500, 560, 'right', 800)).toBe(520)
+    expect(composerResizeWidth(400, 100, 40, 'left', 800)).toBe(520)
+    expect(composerResizeWidth(400, 500, 560, 'right', 800, 1)).toBe(460)
+    expect(composerResizeWidth(400, 100, 40, 'left', 800, 1)).toBe(460)
     expect(composerResizeWidth(400, 500, -200, 'right', 800)).toBe(COMPOSER_RESIZE_MIN_WIDTH_PX)
     expect(composerResizeWidth(400, 500, 2000, 'right', 800)).toBe(800)
     expect(composerResizeWidth(200, 50, 0, 'left', 240)).toBe(240)

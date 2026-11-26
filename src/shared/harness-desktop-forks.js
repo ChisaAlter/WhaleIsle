@@ -603,6 +603,21 @@ const FORK_FILE_MARKERS = [
     file: 'packages/client/ui-subagent/src/client/SubagentCatalog.module.css',
     includes: ['-webkit-app-region: no-drag;', '.switcherTrigger', '.menu'],
   },
+  // Session panel toggle sits in the titlebar trailing cluster (between ui-git
+  // at 20 and ui-titlebar panel toggles at 40) and bridges session indicators.
+  {
+    file: 'packages/client/ui-session-panel/src/client/index.ts',
+    includes: ["name: 'shell.titlebar.trailing'", "id: 'session-panel'", 'order: 30'],
+    excludes: ["name: 'conversation.session.header.utilities'"],
+  },
+  {
+    file: 'packages/client/ui-session-panel/src/client/SessionPanelToggle.tsx',
+    includes: ['SessionProvider', 'usePanelInfo', 'useSessions', 'data-session-panel-toggle'],
+  },
+  {
+    file: 'packages/client/ui-session-panel/src/client/SessionPanelToggle.module.css',
+    includes: ['.trigger[data-session-panel-toggle]', 'width: 32px;', 'height: 32px;', '-webkit-app-region: no-drag;'],
+  },
   ...WAVE1_FORK_FILE_MARKERS,
   ...WAVE2_FORK_FILE_MARKERS,
   ...WAVE3_FORK_FILE_MARKERS,

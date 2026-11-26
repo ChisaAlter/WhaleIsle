@@ -22,14 +22,14 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** Boot the browser half over a real slot tree that declares the header utilities and the Chat aside. */
+/** Boot the browser half over a real slot tree that declares the titlebar trailing cluster and the Chat aside. */
 async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'shell.titlebar.trailing': { kind: 'list', scope: 'root' },
       'conversation.chat.aside': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
@@ -57,12 +57,12 @@ describe('ui-session-panel browser half', () => {
     expect(inject).toEqual(['slots', 'locale', 'remote'])
   })
 
-  it('registers the fold control and row details Factories, the toggle first among the header utilities, the panel in the Chat aside, the Environment section, and the project row', async () => {
+  it('registers the fold control and row details Factories, the toggle in shell.titlebar.trailing at order 30, the panel in the Chat aside, the Environment section, and the project row', async () => {
     const { ctx } = await bench()
     expect(ctx.slots.snapshot('factory:conversation.session.panel.fold')).toHaveLength(1)
     expect(ctx.slots.snapshot('factory:conversation.session.panel.details')).toHaveLength(1)
-    const toggle = ctx.slots.entries('conversation.session.header.utilities').find(entry => entry.options.id === 'session-panel')
-    expect(toggle?.options.order).toBe(-10)
+    const toggle = ctx.slots.entries('shell.titlebar.trailing').find(entry => entry.options.id === 'session-panel')
+    expect(toggle?.options.order).toBe(30)
     expect(ctx.slots.entries('conversation.chat.aside')).toHaveLength(1)
     const section = ctx.slots.entries('conversation.session.panel.section').find(entry => entry.options.id === 'environment')
     expect(section?.options.order).toBe(0)
@@ -71,7 +71,7 @@ describe('ui-session-panel browser half', () => {
 
   it('hands the toggle the room to dock the panel tracks, and both the shared visibility', async () => {
     const { ctx, fiber } = await bench()
-    const toggle = faceOf(ctx, 'conversation.session.header.utilities', 'session-panel') as SessionPanelToggleInjected
+    const toggle = faceOf(ctx, 'shell.titlebar.trailing', 'session-panel') as SessionPanelToggleInjected
     const panel = faceOf(ctx, 'conversation.chat.aside', undefined) as SessionPanelInjected
     expect(toggle.hooks.visibility).toBe(panel.hooks.visibility)
     const attach = panel.createProbeRef(SID, 'main')
@@ -148,7 +148,7 @@ describe('ui-session-panel browser half', () => {
     await fiber.dispose()
     expect(ctx.slots.snapshot('factory:conversation.session.panel.fold')).toHaveLength(0)
     expect(ctx.slots.snapshot('factory:conversation.session.panel.details')).toHaveLength(0)
-    expect(ctx.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(ctx.slots.entries('shell.titlebar.trailing')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.chat.aside')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.session.panel.section')).toHaveLength(0)
   })

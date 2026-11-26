@@ -431,6 +431,37 @@ test('bot-sidebar-logic: search, 5-avatar preview, 11-tier row line, sort/filter
   ]);
   assert.deepEqual(orderedChats.map((c) => c.chatId), ['home', 'side-need', 'side-reply', 'side-active', 'closed']);
   assert.deepEqual(shared.CHAT_TREE_CAPS, { runningShown: 5, finishedShown: 2, step: 8 });
+
+  // botHasSubChats & botOwnChatTree: home workers count as expandable sub-items, sleeping workers honor filter,
+  // and group-member sessions without chatId still merge into home chat.
+  assert.equal(shared.botHasSubChats({ chats: [{ sessionId: 'h1', origin: 'home', closed: false }] }, true), false);
+  assert.equal(
+    shared.botHasSubChats({
+      chats: [{ sessionId: 'h1', origin: 'home', closed: false, running: [{ id: 'w1', state: 'running' }] }],
+    }, true),
+    true,
+  );
+  assert.equal(
+    shared.botHasSubChats({
+      chats: [{ sessionId: 'h1', origin: 'home', closed: false, running: [{ id: 'w1', state: 'sleeping' }] }],
+    }, true),
+    false,
+  );
+  assert.equal(
+    shared.botHasSubChats({
+      chats: [{ sessionId: 'h1', origin: 'home', closed: false, running: [{ id: 'w1', state: 'sleeping' }] }],
+    }, false),
+    true,
+  );
+  const ownedWithoutChatId = shared.botOwnChatTree({
+    chats: [
+      { sessionId: 'h1', origin: 'home', closed: false, running: [] },
+      { sessionId: 'bot-group-member-1', origin: 'group', closed: false, running: [{ id: 'wg1', state: 'running' }] },
+    ],
+  });
+  assert.equal(ownedWithoutChatId.chats.length, 1);
+  assert.equal(ownedWithoutChatId.chats[0].running.length, 1);
+  assert.equal(ownedWithoutChatId.chats[0].running[0].id, 'wg1');
 });
 
 test('bot-items: statuses, Ask validation, Snooze presets, and Stale calculation', () => {
