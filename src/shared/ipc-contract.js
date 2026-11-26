@@ -532,6 +532,7 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:live2d-growth', kind: 'event', roles: [SURFACES.PET_LIVE2D] },
   { channel: 'shell:live2d-settings', kind: 'event', roles: [SURFACES.PET_LIVE2D] },
   { channel: 'shell:live2d-dsh', kind: 'event', roles: [SURFACES.PET_LIVE2D] },
+  { channel: 'shell:live2d-power', kind: 'event', roles: [SURFACES.PET_LIVE2D] },
   // Preload already exposes these; the main-side tailer/respond handler lands in a
   // follow-up, so they are declared but `pending` (not yet registered).
   { channel: 'shell:live2d-respond', kind: 'invoke', roles: [SURFACES.PET_LIVE2D],
