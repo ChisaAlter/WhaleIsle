@@ -18,7 +18,7 @@
     list: null,
     homeEl: null,
     homeList: null,
-    refreshing: null,
+    refreshing: /** @type {Promise<void> | null} */ (null),
     // A failed action stays on its component row until the next action.
     failures: new Map(),
     dismissBound: false,
@@ -395,19 +395,44 @@
     }
   }
 
-  function refresh(checkUpdates = false, notifyError = true) {
+  /**
+   * @param {boolean} [checkUpdates]
+   * @param {boolean} [notifyError]
+   * @param {() => void} [onBeforeRender]
+   * @param {() => void} [onAfterRender]
+   */
+  function refresh(checkUpdates = false, notifyError = true, onBeforeRender = undefined, onAfterRender = undefined) {
     if (!state.shell || typeof state.shell.componentsList !== 'function') {
+      try {
+        onBeforeRender?.();
+      } finally {
+        onAfterRender?.();
+      }
       return Promise.resolve();
     }
-    if (state.refreshing) return state.refreshing;
+    if (state.refreshing) {
+      return state.refreshing.finally(() => {
+        try {
+          onBeforeRender?.();
+        } finally {
+          onAfterRender?.();
+        }
+      });
+    }
     const button = state.el?.querySelector('[data-comp-refresh]');
     const restore = button ? window.launcherButtonBusy(button, '正在刷新组件…') : () => {};
     state.refreshing = Promise.resolve().then(async () => {
       try {
-        renderRows(await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined));
+        const payload = await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined);
+        onBeforeRender?.();
+        renderRows(payload);
+        onAfterRender?.();
       } catch (error) {
+        onBeforeRender?.();
         if (notifyError) showListFailure(errorText(error, '无法读取组件列表'));
+        onAfterRender?.();
       } finally {
+        onBeforeRender?.();
         restore();
         state.refreshing = null;
       }
@@ -574,10 +599,25 @@
     } finally {
       if (res.failure) state.failures.set(id, res.failure);
       const restoreFocus = canRestoreActionFocus(button, focusHost);
-      pending.restoreButtons.forEach(restore => restore());
-      state.pending.delete(id);
-      await refresh(false, !res.failure);
-      if (restoreFocus) restoreActionFocus(button, focusHost, action, id);
+      let released = false;
+      const releasePending = () => {
+        if (released) return;
+        released = true;
+        pending.restoreButtons.forEach(restore => restore());
+        state.pending.delete(id);
+      };
+      let focusRestored = false;
+      const finishFocus = () => {
+        if (focusRestored) return;
+        focusRestored = true;
+        if (restoreFocus) restoreActionFocus(button, focusHost, action, id);
+      };
+      try {
+        await refresh(false, !res.failure, releasePending, finishFocus);
+      } finally {
+        releasePending();
+        finishFocus();
+      }
     }
     if (res.failure) setComponentStatusText(`${name}操作未完成：${res.failure}`);
     else if (res.completionMessage) void window.appNotice({ title: `${name}操作结果`, body: res.completionMessage });
