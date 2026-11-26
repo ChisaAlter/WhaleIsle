@@ -452,3 +452,35 @@ describe('desktop install plugin module', { concurrency: false }, () => {
     assert.equal(tools[0].name, 'install_dsh_plugin');
   });
 });
+
+test('isDroppedPluginName rejects unified packages dsh-acp-agents and dsh-deepseek-tools', () => {
+  const { isDroppedPluginName } = require('./plugins');
+  assert.equal(isDroppedPluginName('dsh-acp-agents'), true);
+  assert.equal(isDroppedPluginName('@deepseek-ai/dsh-acp-agents'), true);
+  assert.equal(isDroppedPluginName('dsh-deepseek-tools'), true);
+  assert.equal(isDroppedPluginName('@deepseek-ai/dsh-deepseek-tools'), true);
+});
+
+test('listInstalledPluginsAsync matches listInstalledPlugins output', async () => {
+  const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
+  const { listInstalledPlugins, listInstalledPluginsAsync } = require('./plugins');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugins-async-'));
+  setDesktopDshHome(home);
+  try {
+    assert.deepEqual(await listInstalledPluginsAsync(), listInstalledPlugins());
+    const pdir = path.join(home, 'profiles', 'web');
+    fs.mkdirSync(pdir, { recursive: true });
+    fs.writeFileSync(path.join(pdir, 'package.json'), JSON.stringify({
+      dependencies: { 'dsh-acp-agents': '1.0.0', '@acme/ext': '^2.0.0' },
+      dsh: { profile: { bundles: ['@acme/ext'] } },
+    }));
+    const res = await listInstalledPluginsAsync();
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.plugins, listInstalledPlugins().plugins);
+    assert.equal(res.plugins.find((p) => p.name === 'dsh-acp-agents').dropped, true);
+    assert.equal(res.plugins.find((p) => p.name === '@acme/ext').bundle, true);
+  } finally {
+    clearDesktopDshHome();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

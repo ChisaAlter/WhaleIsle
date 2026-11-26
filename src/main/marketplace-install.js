@@ -509,30 +509,29 @@ async function captureInstallSnapshot() {
   const entries = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'node_modules'].map(name => {
     const file = path.join(profile, name);
     const stat = installPathStat(file);
-    if (stat && (stat.isSymbolicLink() || (name === 'node_modules' ? !stat.isDirectory() : !stat.isFile()))) {
-      throw new Error(`无法安全备份 ${name}：需要普通文件或目录`);
-    }
+    if (stat && (stat.isSymbolicLink() || (name === 'node_modules' ? !stat.isDirectory() : !stat.isFile()))) throw new Error(`无法安全备份 ${name}：需要普通文件或目录`);
     return { name, file, existed: Boolean(stat) };
   });
   const dir = fs.mkdtempSync(path.join(profile, '.install-rollback-'));
   try {
     for (const entry of entries) {
-      if (entry.existed) {
-        await fs.promises.cp(entry.file, path.join(dir, entry.name), {
-          recursive: true, verbatimSymlinks: true,
-          filter: (source, target) => {
-            if (process.platform === 'win32' && fs.lstatSync(source).isSymbolicLink()
-              && fs.statSync(source).isDirectory()) {
-              // fs.cp recreates junctions as directory symlinks, which need
-              // elevated privileges on Windows. Keep directory links as
-              // junctions and never copy the external target's contents.
-              ensureDirectoryLink(source, target);
-              return false;
-            }
-            return true;
-          },
-        });
-      }
+      if (!entry.existed) continue;
+      await fs.promises.cp(entry.file, path.join(dir, entry.name), { recursive: true, verbatimSymlinks: true,
+        filter: async (source, target) => {
+          if (process.platform !== 'win32') return true;
+          try {
+            if (!(await fs.promises.lstat(source)).isSymbolicLink()
+              || !(await fs.promises.stat(source)).isDirectory()) return true;
+          } catch (error) {
+            if (error && typeof error === 'object' && 'code' in error && ['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM'].includes(String(error.code))) return false;
+            throw error;
+          }
+          // fs.cp recreates junctions as directory symlinks, which need
+          // elevated privileges on Windows. Keep directory links as junctions.
+          ensureDirectoryLink(source, target);
+          return false;
+        },
+      });
     }
     return { dir, entries };
   } catch (error) {

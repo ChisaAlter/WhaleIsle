@@ -909,3 +909,25 @@ test('ipc-components before-quit waits for stopCompanion before re-invoking app.
   appMock.emit('before-quit', { preventDefault() { preventedAgain = true; } });
   assert.equal(preventedAgain, false);
 });
+
+test('start marks component error if process exits during waitForStateFile window', async (t) => {
+  const env = fakeEnv(t);
+  makeSample(env.samplesRoot, 'toy', '1.0.0');
+  const svc = createComponentsService({ ...env.deps, stateWaitMs: 300 });
+  await svc.install('toy');
+  const starting = svc.start('toy');
+  await waitFor(() => env.spawned.length === 1);
+  // Wait past startGraceMs (30ms) so the process exits inside waitForStateFile, not grace.
+  await sleep(60);
+  const { child, pid } = env.spawned[0];
+  env.alive.delete(pid);
+  child.exitCode = 1;
+  child.emit('exit', 1);
+  const result = await starting;
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'early-exit');
+  assert.equal(result.state, 'error');
+  const row = svc.list().components.find((item) => item.id === 'toy');
+  assert.equal(row.state, 'error');
+  assert.equal(row.pid, null);
+});

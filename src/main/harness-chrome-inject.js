@@ -82,6 +82,11 @@
       :root {
         --dshd-wco-controls: ${windowControlsRight()}px;
         --dshd-wco-caption: ${CAPTION_HEIGHT}px;
+        --dsh-frame-top-clearance: ${CAPTION_HEIGHT}px;
+        --dsh-frame-overlay-top: calc(var(--dsh-frame-top-clearance) + 20px);
+      }
+      html[data-fullscreen] {
+        --dsh-frame-overlay-top: 20px;
       }
       #${CONTROLS_ID} {
         position: fixed;

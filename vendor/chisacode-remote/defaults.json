@@ -1,8 +1,8 @@
 {
-  "relayEndpoint": "125.124.85.212:8411",
-  "relayUseTls": false,
+  "relayEndpoint": "ayase.cn:443",
+  "relayUseTls": true,
   "relayEnabled": true,
-  "appBaseUrl": "http://125.124.85.212:8411",
+  "appBaseUrl": "https://ayase.cn/dshd",
   "listen": "127.0.0.1:6767",
   "notes": "Documentation mirror only. Runtime defaults are hardcoded in src/shared/lan.js so packaged Setup.exe always has the built-in Away relay without reading this file."
 }

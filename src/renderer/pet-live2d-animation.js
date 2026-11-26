@@ -105,8 +105,15 @@ function drawToken(x, y, alpha) {
   ctx2d.save();
   ctx2d.globalAlpha = alpha;
   ctx2d.translate(x, y);
-  ctx2d.shadowColor = 'rgba(94, 210, 255, 0.9)';
-  ctx2d.shadowBlur = 14;
+  if (typeof ctx2d.createRadialGradient === 'function') {
+    const glow = ctx2d.createRadialGradient(0, -1, 2, 0, -1, 20);
+    glow.addColorStop(0, 'rgba(94, 210, 255, 0.45)');
+    glow.addColorStop(1, 'rgba(94, 210, 255, 0)');
+    ctx2d.fillStyle = glow;
+    ctx2d.beginPath();
+    ctx2d.arc(0, -1, 20, 0, Math.PI * 2);
+    ctx2d.fill();
+  }
   ctx2d.fillStyle = '#8fdcff';
   ctx2d.beginPath();
   ctx2d.moveTo(0, -18);
@@ -115,7 +122,6 @@ function drawToken(x, y, alpha) {
   ctx2d.lineTo(-12, -4);
   ctx2d.closePath();
   ctx2d.fill();
-  ctx2d.shadowBlur = 0;
   ctx2d.fillStyle = '#eaf8ff';
   ctx2d.beginPath();
   ctx2d.moveTo(0, -18);

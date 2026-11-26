@@ -112,16 +112,22 @@ function applyWindowMaterial(win, material, options = {}) {
   if (!isValidWindowMaterial(material)) return false;
   const enabled = material === 'acrylic';
   if (enabled === acrylicWindows.has(win)) return true;
-  if (options.transparent) {
-    if (!setWindowAcrylic(/** @type {Electron.BrowserWindow} */ (win), enabled)) return false;
-  } else {
-    if (typeof win.setBackgroundMaterial !== 'function') return false;
-    win.setBackgroundMaterial(material);
-    if (typeof win.setBackgroundColor === 'function') {
-      const color = enabled ? '#00000000' : restoreColors.get(win)
-        || (isValidChromeColor(options.restoreColor) ? options.restoreColor.trim() : '');
-      if (color) win.setBackgroundColor(color);
+  try {
+    if (options.transparent) {
+      if (!setWindowAcrylic(/** @type {Electron.BrowserWindow} */ (win), enabled)) return false;
+    } else {
+      if (typeof win.setBackgroundMaterial !== 'function') return false;
+      win.setBackgroundMaterial(material);
+      if (typeof win.setBackgroundColor === 'function') {
+        const color = enabled ? '#00000000' : restoreColors.get(win)
+          || (isValidChromeColor(options.restoreColor) ? options.restoreColor.trim() : '');
+        if (color) win.setBackgroundColor(color);
+      }
     }
+  } catch (error) {
+    console.warn('[window-material] Failed to apply window material:', error);
+    if (!enabled) acrylicWindows.delete(win);
+    return false;
   }
   if (enabled) acrylicWindows.add(win);
   else acrylicWindows.delete(win);

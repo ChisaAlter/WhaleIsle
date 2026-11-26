@@ -26,17 +26,11 @@
     "dsh-acp/lib/acp-session.js": {
       "_onRuntimeEvent": 59,
       "_requestApproval": 22,
-      "_resolvePermission": 60,
-      "_start": 64,
-      "_wireHandlers/handleElicitation": 41,
-      "handleEvent": 40,
-      "modelsFromConfigOptions": 23,
-      "probeAcpAgent": 28,
-      "syncModelAndEffort": 28
+      "_start": 64
     },
     "dsh-acp/lib/agent-auth.js": {
       "accountHintsFor": 77,
-      "getAgentAccountStatus": 64
+      "getAgentAccountStatus": 57
     },
     "dsh-acp/lib/catalog-models.js": {
       "createCatalogManager/getAllModelsForAgent": 29
@@ -49,28 +43,14 @@
       "buildDelegateConfirmRequest": 21,
       "registerDelegation/acp_delegate": 22
     },
-    "dsh-acp/lib/index.js": {
-      "apply/6d6ecf10aebee4fd/handler": 34,
-      "createAcpAgentsManager/_streamImpl": 75,
-      "createAcpAgentsManager/autoDeliver": 22,
-      "createAcpAgentsManager/delegate": 36,
-      "createAcpAgentsManager/delegate/9eb9482540fe5b88": 35,
-      "createAcpAgentsManager/executeTrackedToolCall": 25,
-      "createAcpAgentsManager/getAllModelsForAgent": 29,
-      "createAcpAgentsManager/handleRpc": 198,
-      "createAcpAgentsManager/requestAcpApproval": 31,
-      "extractLatestUserPromptBlocks": 22,
-      "resolveActiveDshAgent": 26
-    },
     "dsh-acp/lib/llm-adapter.js": {
       "createLlmAdapter/_streamImpl": 77,
       "createLlmAdapter/autoDeliver": 22,
       "createLlmAdapter/executeTrackedToolCall": 25,
-      "createLlmAdapter/requestAcpApproval": 34,
-      "resolveActiveDshAgent": 26
+      "createLlmAdapter/requestAcpApproval": 34
     },
     "dsh-acp/lib/mcp-server.js": {
-      "createWhaleIsleMcp/callTool": 101,
+      "createWhaleIsleMcp/callTool": 92,
       "createWhaleIsleMcp/dispatch": 25,
       "createWhaleIsleMcp/handleAgentControl": 32
     },
@@ -86,77 +66,10 @@
       "prepareConversationPrompt": 30
     },
     "dsh-acp/lib/rpc-handlers.js": {
-      "createHttpHandler/handler": 37,
+      "createHttpHandler/handler": 27,
       "createRpcHandler/handleRpc": 198
     },
     "dsh-acp/lib/tasks.js": {
-      "createTaskStore/checkActivity": 22,
-      "createTaskStore/install/5e0b1aed76bfd971": 24,
-      "createTaskStore/snapshot": 27
-    },
-    "dsh-acp/tests/agent-fixture.cjs": {
-      "18206621b25e14e9": 69
-    },
-    "dsh-acp\\client-src\\delegation.js": {
-      "buildDelegationViewModel": 44
-    },
-    "dsh-acp\\client-src\\picker-data.js": {
-      "handlePickerKeyDown": 27
-    },
-    "dsh-acp\\client-src\\settings-actions.js": {
-      "createAccountInstance": 22
-    },
-    "dsh-acp\\client-src\\settings-section.js": {
-      "AgentsSettingsSection": 29
-    },
-    "dsh-acp\\lib\\acp-config-options.js": {
-      "modelsFromConfigOptions": 23,
-      "syncConnectionModelAndEffort": 28
-    },
-    "dsh-acp\\lib\\acp-probe.js": {
-      "probeAcpAgent": 28
-    },
-    "dsh-acp\\lib\\acp-session-handlers.js": {
-      "resolveSessionPermission": 58,
-      "wireSessionHandlers/handleElicitation": 41
-    },
-    "dsh-acp\\lib\\acp-session.js": {
-      "_onRuntimeEvent": 59,
-      "_start": 64
-    },
-    "dsh-acp\\lib\\catalog-models.js": {
-      "createCatalogManager/getAllModelsForAgent": 29
-    },
-    "dsh-acp\\lib\\delegate-cwd.js": {
-      "assertWorkspaceContainment": 23,
-      "validateExplicitDelegateCwd": 21
-    },
-    "dsh-acp\\lib\\delegation.js": {
-      "buildDelegateConfirmRequest": 21,
-      "registerDelegation/acp_delegate": 22
-    },
-    "dsh-acp\\lib\\llm-adapter.js": {
-      "createLlmAdapter/_streamImpl": 77,
-      "createLlmAdapter/autoDeliver": 22,
-      "createLlmAdapter/executeTrackedToolCall": 25,
-      "createLlmAdapter/requestAcpApproval": 34,
-      "resolveActiveDshAgent": 26
-    },
-    "dsh-acp\\lib\\mcp-server.js": {
-      "createWhaleIsleMcp/dispatch": 25,
-      "createWhaleIsleMcp/handleAgentControl": 32
-    },
-    "dsh-acp\\lib\\presets.js": {
-      "buildAgentRuntimeEnv": 41
-    },
-    "dsh-acp\\lib\\prompt-context.js": {
-      "prepareConversationPrompt": 30
-    },
-    "dsh-acp\\lib\\rpc-handlers.js": {
-      "createHttpHandler/handler": 37,
-      "createRpcHandler/handleRpc": 198
-    },
-    "dsh-acp\\lib\\tasks.js": {
       "createTaskStore/checkActivity": 22,
       "createTaskStore/install/5e0b1aed76bfd971": 24,
       "createTaskStore/snapshot": 27
@@ -182,14 +95,10 @@
       "toolRowNode": 22
     },
     "mobile/web/app/log.js": {
-      "renderLog": 23
+      "renderLog": 22
     },
     "mobile/web/app/native.js": {
       "d276f47bcf45eb5d/execute": 25
-    },
-    "mobile/web/app/navigation.js": {
-      "backOneSurface": 27,
-      "scheduleNavigation/2d323293e704a8fa": 23
     },
     "mobile/web/app/pickers.js": {
       "renderSheet": 35
@@ -221,12 +130,9 @@
     "mobile/web/chisacode/parity.js": {
       "chisaCheckoutStatusToVcs": 26
     },
-    "mobile/web/chisacode/session.js": {
-      "pairFromOfferUrl": 21
-    },
     "mobile/web/conversation/fold.js": {
       "extractWhaleUi": 39,
-      "foldEvents": 106,
+      "foldEvents": 91,
       "foldTimelineItem": 67,
       "toolDetailView": 39,
       "toolResultOf": 24
@@ -311,7 +217,7 @@
       "supplementMacosRelease/8652c7641eccbbfb": 23
     },
     "scripts/publish-release.mjs": {
-      "releaseDecision": 23
+      "releaseDecision": 22
     },
     "scripts/qa-update-download.cjs": {
       "runNative/4eb6b4d66fc1ff79": 21,
@@ -341,14 +247,13 @@
       "runLive": 76
     },
     "src/launcher/components/index.js": {
-      "createComponentsService/listRow": 23,
-      "createComponentsService/startComponent": 22
+      "createComponentsService/listRow": 23
     },
     "src/launcher/components/registry.js": {
       "scanCatalog": 23
     },
     "src/launcher/delta/apply.js": {
-      "applyDeltaFile": 52
+      "applyDeltaFile": 48
     },
     "src/launcher/delta/install.js": {
       "installDelta": 34
@@ -358,7 +263,6 @@
       "getInstalledAppInfo": 23
     },
     "src/launcher/launcher-service.js": {
-      "createLauncherService/collectForensics": 23,
       "createLauncherService/installUpdateOp": 23,
       "createLauncherService/runImportTask": 23
     },
@@ -367,7 +271,7 @@
     },
     "src/launcher/runtime-install.js": {
       "installRuntime": 50,
-      "startExternalDesktop": 26
+      "startExternalDesktop": 24
     },
     "src/main/account-backend.js": {
       "accountView": 32
@@ -397,9 +301,8 @@
       "runImport": 52
     },
     "src/main/desktop-install-control.js": {
-      "createHandler/0395ec01c4c03fc1": 47,
-      "handleDesktopConfirm": 24,
-      "handleDesktopPlugin": 32
+      "handleDesktopConfirm": 21,
+      "handleDesktopPlugin": 31
     },
     "src/main/desktop-live2d.js": {
       "createLive2dPetManager": 29,
@@ -409,20 +312,14 @@
     "src/main/dsh-pad-desktop.js": {
       "ensureDesktopDshPad": 22
     },
-    "src/main/dsh-project-desktop.js": {
-      "ensureDesktopDshProject": 21
-    },
     "src/main/dsh.js": {
-      "_start": 47,
+      "_start": 42,
       "buildLaunch": 23,
       "constructor": 21,
-      "ensureOwnedPort": 26
-    },
-    "src/main/dshd-git-dispatch.js": {
-      "dispatchGitTunnel": 25
+      "ensureOwnedPort": 25
     },
     "src/main/git-diff.js": {
-      "gitDiff": 29,
+      "gitDiff": 27,
       "parseUnifiedDiff": 23
     },
     "src/main/git-pullrequest.js": {
@@ -434,13 +331,12 @@
       "gitCheckLargeFiles": 21,
       "gitCommit": 24,
       "gitCreateChangeRequest": 53,
-      "gitPublishRepository": 22,
       "prepareCommitContext": 23,
       "readGitStatus": 31
     },
     "src/main/harness-controller.js": {
       "constructor": 34,
-      "performStartOnce": 146
+      "performStartOnce": 120
     },
     "src/main/harness-extract.js": {
       "preparePackagedHarness": 35
@@ -450,7 +346,7 @@
       "recoverImportTransactions": 34
     },
     "src/main/launcher-gate.js": {
-      "runColdStartGate": 31
+      "runColdStartGate": 29
     },
     "src/main/legacy-notification-shortcut.js": {
       "migrateLegacyNotificationShortcut": 36
@@ -494,17 +390,13 @@
       "applyRendererConfigPatch": 21
     },
     "src/main/project-environment.js": {
-      "createProjectEnvironment/dispatch": 26,
       "createProjectEnvironment/prepareWorkspace": 27
     },
     "src/main/release-ui-walk.js": {
-      "runReleaseUiWalk": 266
+      "runReleaseUiWalk": 262
     },
     "src/main/remote-gate-qa.js": {
       "runRemoteGateQa": 62
-    },
-    "src/main/remote-patch.js": {
-      "normalizeRemotePatch": 26
     },
     "src/main/shell-p0-qa.js": {
       "runRecoveryQa": 26,
@@ -523,9 +415,6 @@
     },
     "src/main/smoke/welcome-presentation.js": {
       "assertWelcomePresentation": 23
-    },
-    "src/main/task-protection.js": {
-      "createTaskProtection/coordinate": 26
     },
     "src/main/update-dialog.js": {
       "show": 22
@@ -551,14 +440,8 @@
     "src/main/window.js": {
       "revealHarnessView": 34
     },
-    "src/main/workspace-authority.js": {
-      "readProjectExecutionPaths": 26
-    },
     "src/renderer/boot.js": {
-      "renderState": 48
-    },
-    "src/renderer/launcher-components.js": {
-      "14e99dd4dcf75312/runAction": 37
+      "renderState": 45
     },
     "src/renderer/launcher-home.js": {
       "askPluginRecovery": 26,
@@ -578,7 +461,7 @@
     },
     "src/renderer/launcher-plugins.js": {
       "actPlugin": 21,
-      "renderHomeRecovery": 39
+      "renderHomeRecovery": 37
     },
     "src/renderer/launcher-routes.js": {
       "renderRouteControls": 30
@@ -614,7 +497,7 @@
       "drawPanel": 40
     },
     "src/renderer/pet-live2d-presentation.js": {
-      "paintFrame": 56
+      "paintFrame": 46
     },
     "src/renderer/pet-live2d-rig.js": {
       "drawRig": 36
@@ -627,12 +510,6 @@
     },
     "src/renderer/pet-live2d.js": {
       "runAction": 25
-    },
-    "src/renderer/update-center.js": {
-      "952b4d8ae28f7cba/describe": 42
-    },
-    "src/shared/dshd-host-tunnel.js": {
-      "forwardHostRpc": 23
     },
     "src/shared/dshd-mux-sse.js": {
       "mapRemoteStreamItem": 22,
@@ -661,53 +538,13 @@
     "vendor/dsh-deepseek-tools/lib/api.js": {
       "wavChunks": 29
     },
-    "vendor/dsh-project/lib/catalog-migration.js": {
-      "migrateCatalog": 47,
-      "migrateCatalog/bb9bfdce81ab0bd8": 32
-    },
-    "vendor/dsh-project/lib/catalog-recovery.js": {
-      "recoverEmptyRequestIds": 47
-    },
-    "vendor/dsh-project/lib/queue.js": {
-      "change/b3d48868d49221e8": 26
-    },
-    "vendor/dsh-project/lib/requirements.js": {
-      "accept/4bdf4c2b0430ddfe": 22,
-      "assignment": 41,
-      "card": 52,
-      "card/9eec0c62626da448": 44,
-      "declare": 26,
-      "publishedPages": 40,
-      "replacement": 27,
-      "stage": 27,
-      "validate": 21
-    },
-    "vendor/dsh-project/lib/service.js": {
-      "admit": 22,
-      "command": 47,
-      "doDelegate": 42,
-      "doDelegate/a2b90dbd2460d78b": 34,
-      "doLaunch": 48,
-      "doLaunch/e5fc161ddbd38ded": 22,
-      "guard": 30,
-      "nativeDelegate": 21,
-      "preStep": 43,
-      "projectView": 35,
-      "readStoreTool": 22,
-      "recover": 26,
-      "report": 26,
-      "revertRequest/84e31e6a244d84e6": 22,
-      "runEnded/dfdfd71ee88ad56b/61adb4748f8d87bd": 23,
-      "stop": 27,
-      "workRows/b3bc67ef0e36cb84": 27
-    },
     "vendor/dsh-remote/lib/binding.js": {
       "lookupSessionCwd": 21,
       "resolveMirror": 21
     },
     "vendor/dsh-remote/lib/index.js": {
       "apply/execute": 24,
-      "apply/handler": 58,
+      "apply/handler": 47,
       "apply/poolForMachine": 24
     },
     "vendor/dsh-remote/lib/routes-fs.js": {
@@ -715,35 +552,26 @@
     },
     "vendor/dsh-remote/lib/sync.js": {
       "pushOneFile": 33,
-      "pushTree/walk/d085ab78fead9c80": 35,
-      "syncTree/walk/d4971959a507c992": 28
+      "pushTree/walk/d085ab78fead9c80": 35
     },
     "vendor/dsh-task-control/lib/http.js": {
       "createControlHandler/controlRoute": 22
     },
     "vendor/dsh-whale/lib/desktop-tools.js": {
-      "registerDesktopTools/execute": 32
+      "registerDesktopTools/execute": 24
     },
     "vendor/dsh-whale/lib/index.js": {
       "createOrReuseAssistantSession": 34,
       "historyFromRecords": 28,
       "petLook": 34,
       "petSessionTurn/9fee45aaa7098ab9/b9407157a5c5d6d7": 26,
-      "registerRpc/28c264e944ea3a8e/handler": 25,
-      "registerRpc/handle": 122
+      "registerRpc/handle": 77
     },
     "vendor/dsh-whale/lib/observe.js": {
       "describeEvent": 28
     },
-    "vendor/dsh-whale/lib/profile-tools.js": {
-      "registerProfileTools/execute": 22
-    },
     "vendor/dsh-whale/lib/session-tools.js": {
-      "formatRecords": 42,
       "registerSessionTools/execute": 22
-    },
-    "vendor/dsh-whale/lib/shared.js": {
-      "rowSummary": 24
     },
     "vendor/dsh-whale/lib/task-inputs.js": {
       "captureInputs": 28
@@ -752,40 +580,33 @@
       "accept/66859eb1b5ded217": 27,
       "deliverTask": 33,
       "resume/296e910a02f48fda": 23
-    },
-    "vendor/dsh-whale/lib/tools.js": {
-      "apply/execute": 21
     }
   },
   "maxLines": {
-    "dsh-acp/lib/acp-session.js": 1826,
-    "dsh-acp/lib/index.js": 2105,
-    "scripts/after-pack.js": 1924,
+    "scripts/after-pack.js": 1923,
     "scripts/lib/desktop-perf-worker.cjs": 856,
     "scripts/measure-desktop-lifecycle.mjs": 2019,
     "scripts/profile-import-scan.mjs": 1768,
-    "src/launcher/launcher-service.js": 1000,
     "src/main/appendix-a-qa.js": 875,
-    "src/main/data-import.js": 2123,
-    "src/main/desktop-live2d.js": 1451,
-    "src/main/dsh.js": 1381,
-    "src/main/dshd-remote.js": 1202,
-    "src/main/git.js": 1415,
-    "src/main/harness-controller.js": 1082,
-    "src/main/marketplace-install.js": 964,
+    "src/main/data-import.js": 2052,
+    "src/main/desktop-live2d.js": 1438,
+    "src/main/dsh.js": 1357,
+    "src/main/dshd-remote.js": 900,
+    "src/main/git.js": 1414,
+    "src/main/harness-controller.js": 1026,
+    "src/main/marketplace-install.js": 963,
     "src/main/pet-growth.js": 867,
     "src/main/preview-guest-preload.js": 1162,
-    "src/main/pty.js": 897,
-    "src/main/release-ui-walk.js": 1817,
+    "src/main/pty.js": 894,
+    "src/main/release-ui-walk.js": 1814,
     "src/main/smoke/index.js": 1012,
     "src/main/update.js": 1128,
     "src/main/wallpaper-catalog.js": 816,
-    "src/main/window.js": 1044,
+    "src/main/window.js": 964,
     "tools/mobile-web-qa/fake-daemon-client.mjs": 1365,
     "tools/mobile-web-qa/run-live.mjs": 1069,
-    "tools/mobile-web-qa/run-qa.mjs": 821,
-    "vendor/dsh-project/lib/service.js": 1472,
-    "vendor/dsh-remote/lib/index.js": 2397,
-    "vendor/dsh-whale/lib/index.js": 929
+    "vendor/dsh-project/lib/service.js": 980,
+    "vendor/dsh-remote/lib/index.js": 2377,
+    "vendor/dsh-whale/lib/index.js": 928
   }
 }

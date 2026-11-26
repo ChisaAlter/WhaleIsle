@@ -38,7 +38,7 @@ function loadWindowWithOpenExternal(opened) {
       BrowserWindow: class {},
       shell: { openExternal: (url) => { opened.push(url); } },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
-      app: { isPackaged: false },
+      app: { isPackaged: false, getAppPath: () => __dirname },
     },
   };
   delete require.cache[require.resolve('./window.js')];
@@ -257,5 +257,100 @@ test('OpenUI frames retain their navigation veto across names and viewer updates
     assert.deepEqual(opened, []);
   } finally {
     loaded.restore();
+  }
+});
+
+test('window launcher and boot helpers guard destroyed windows and webContents', async () => {
+  const electronPath = require.resolve('electron');
+  const prevElectron = require.cache[electronPath];
+  const chromePath = require.resolve('./chrome');
+  const prevChrome = require.cache[chromePath];
+  const detailsPath = require.resolve('./window-app-details');
+  const prevDetails = require.cache[detailsPath];
+  const recPath = require.resolve('./window-renderer-recovery');
+  const prevRec = require.cache[recPath];
+  const winPath = require.resolve('./window.js');
+  const prevWin = require.cache[winPath];
+
+  let urlThrows = false;
+  let lastCreated = null;
+  class FakeBrowserWindow extends EventEmitter {
+    constructor() {
+      super();
+      this.destroyed = false;
+      this.webContents = Object.assign(new EventEmitter(), {
+        destroyed: false,
+        isDestroyed: () => this.webContents.destroyed,
+        isLoading: () => false,
+        setWindowOpenHandler() {},
+        getURL: () => {
+          if (urlThrows) throw new Error('Object has been destroyed');
+          return 'file:///C:/app/src/renderer/launcher.html';
+        },
+        send() { throw new Error('send should not run when destroyed'); },
+      });
+      lastCreated = this;
+    }
+    isDestroyed() { return this.destroyed; }
+    isMinimized() { return false; }
+    loadFile() { return Promise.resolve(); }
+    show() {}
+    showInactive() {}
+    focus() {}
+  }
+
+  require.cache[electronPath] = {
+    id: electronPath, filename: electronPath, loaded: true,
+    exports: {
+      BrowserView: class {},
+      BrowserWindow: FakeBrowserWindow,
+      shell: { openExternal() {} },
+      nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+      app: { isPackaged: false, getAppPath: () => __dirname },
+    },
+  };
+  require.cache[chromePath] = {
+    id: chromePath, filename: chromePath, loaded: true,
+    exports: {
+      shellWindowChrome: (o) => o,
+      attachIntegratedChrome() {},
+      hideNativeMenu() {},
+      prepareHarnessChrome() {},
+      syncHarnessChrome() {},
+      currentTheme: () => ({}),
+      markWindowTransparent() {},
+      paintBackground() {},
+      resetWindowMaterial() {},
+    },
+  };
+  require.cache[detailsPath] = { id: detailsPath, filename: detailsPath, loaded: true, exports: { applyWindowsAppDetails() {} } };
+  require.cache[recPath] = { id: recPath, filename: recPath, loaded: true, exports: { attachRendererRecovery() {} } };
+  delete require.cache[winPath];
+  try {
+    const winMod = require('./window.js');
+    const launcher = winMod.createLauncherWindow();
+    assert.equal(launcher, lastCreated);
+
+    urlThrows = true;
+    await winMod.showLauncher({ activate: false });
+
+    launcher.webContents.destroyed = true;
+    winMod.sendToLauncher('test:ch', {});
+
+    launcher.destroyed = true;
+    winMod.sendToLauncher('test:ch', {});
+    winMod.sendToBoot('test:ch', {});
+    await winMod.showLauncher({ activate: false });
+  } finally {
+    if (prevElectron) require.cache[electronPath] = prevElectron;
+    else delete require.cache[electronPath];
+    if (prevChrome) require.cache[chromePath] = prevChrome;
+    else delete require.cache[chromePath];
+    if (prevDetails) require.cache[detailsPath] = prevDetails;
+    else delete require.cache[detailsPath];
+    if (prevRec) require.cache[recPath] = prevRec;
+    else delete require.cache[recPath];
+    if (prevWin) require.cache[winPath] = prevWin;
+    else delete require.cache[winPath];
   }
 });

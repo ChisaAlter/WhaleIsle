@@ -302,10 +302,14 @@ function bindChromeIpc() {
       if (!role || !windowsAcrylicSupported() || !isValidWindowMaterial(material)) return;
       const win = windowFromEvent(event, role);
       if (!win || win.isDestroyed()) return;
-      applyWindowMaterial(win, material, {
-        transparent: transparentWindows.has(win),
-        restoreColor: chromeBackgroundFor(win),
-      });
+      try {
+        applyWindowMaterial(win, material, {
+          transparent: transparentWindows.has(win),
+          restoreColor: chromeBackgroundFor(win),
+        });
+      } catch (error) {
+        console.warn('[chrome] Failed to apply window material:', error);
+      }
     },
   });
 }

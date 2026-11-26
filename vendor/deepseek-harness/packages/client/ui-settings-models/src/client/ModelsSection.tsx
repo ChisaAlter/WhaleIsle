@@ -34,6 +34,7 @@ import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
+import { localizeProviderError } from './provider-error.ts'
 import { VISION_FALLBACK_NS, VisionModelPicker, type VisionPickerApi } from './VisionModelPicker.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -468,7 +469,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           if (namespace === undefined) return null
           const error = row.entry.error === undefined
             ? null
-            : <p role="alert" className={styles['error']}>{row.entry.error}</p>
+            : <p role="alert" className={styles['error']}>{localizeProviderError(row.entry.error, t)}</p>
           if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
             // First-run posture: the provider exists but has no key — the
             // setup card IS its presence on the page, until the user closes it.

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { listMarketplace, getMarketplacePlugin, resolveCommitSha } = require('./marketplace-catalog');
-const { listInstalledPlugins, webProfileDir } = require('./plugins');
+const { listInstalledPlugins, listInstalledPluginsAsync, webProfileDir } = require('./plugins');
 const { GITHUB_PATH_SPEC, githubIdentity } = require('./marketplace-spec');
 
 const UPDATES_TTL_MS = 30 * 60 * 1000;
@@ -52,31 +52,59 @@ function isUpgrade(installed, latest) {
   return comparison !== null && comparison > 0;
 }
 
+/** @param {string} raw */
+function parseInstalledVersion(raw) {
+  const manifest = JSON.parse(raw);
+  return typeof manifest.version === 'string' ? manifest.version : null;
+}
+
+/** @param {string} lock */
+function parseLockCommits(lock) {
+  const commits = new Map();
+  for (const match of lock.matchAll(/codeload\.github\.com\/([^/\s]+\/[^/\s]+)\/tar\.gz\/([0-9a-f]{40})/g)) {
+    const repository = match[1].toLowerCase();
+    const commit = match[2].toLowerCase();
+    commits.set(repository, commits.has(repository) && commits.get(repository) !== commit ? null : commit);
+  }
+  return commits;
+}
+
+/** @param {string} name */
 function readInstalledVersion(name) {
   try {
-    const manifest = JSON.parse(fs.readFileSync(
-      path.join(webProfileDir(), 'node_modules', name, 'package.json'),
-      'utf8',
-    ));
-    return typeof manifest.version === 'string' ? manifest.version : null;
+    return parseInstalledVersion(fs.readFileSync(path.join(webProfileDir(), 'node_modules', name, 'package.json'), 'utf8'));
   } catch {
     return null;
   }
 }
 
 function readLockCommits() {
-  const commits = new Map();
   try {
-    const lock = fs.readFileSync(path.join(webProfileDir(), 'pnpm-lock.yaml'), 'utf8');
-    for (const match of lock.matchAll(/codeload\.github\.com\/([^/\s]+\/[^/\s]+)\/tar\.gz\/([0-9a-f]{40})/g)) {
-      const repository = match[1].toLowerCase();
-      const commit = match[2].toLowerCase();
-      commits.set(repository, commits.has(repository) && commits.get(repository) !== commit ? null : commit);
-    }
+    return parseLockCommits(fs.readFileSync(path.join(webProfileDir(), 'pnpm-lock.yaml'), 'utf8'));
   } catch {
-    // No readable lockfile means GitHub updates cannot be proven safely.
+    return new Map();
   }
-  return commits;
+}
+
+/** @param {string} name */
+async function readInstalledVersionAsync(name) {
+  try {
+    return parseInstalledVersion(await fs.promises.readFile(path.join(webProfileDir(), 'node_modules', name, 'package.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function readLockCommitsAsync() {
+  try {
+    return parseLockCommits(await fs.promises.readFile(path.join(webProfileDir(), 'pnpm-lock.yaml'), 'utf8'));
+  } catch {
+    return new Map();
+  }
+}
+
+async function listInstalledPluginsSafeAsync() {
+  return typeof listInstalledPluginsAsync === 'function' ? listInstalledPluginsAsync() : listInstalledPlugins();
 }
 
 function pinnedCommit(spec) {
@@ -141,14 +169,14 @@ async function checkMarketplacePluginUpdate(plugin, installed, options = {}) {
       id: plugin.id,
       packageName,
       kind: 'linked',
-      current: readInstalledVersion(packageName),
+      current: await readInstalledVersionAsync(packageName),
       latest: null,
       updateAvailable: false,
       checkFailed: false,
     };
   }
   if (plugin.packageName && plugin.installSpec === plugin.packageName) {
-    const current = readInstalledVersion(packageName);
+    const current = await readInstalledVersionAsync(packageName);
     const latest = await fetchNpmLatest(packageName, options.fetchImpl);
     return {
       id: plugin.id,
@@ -174,7 +202,7 @@ async function checkMarketplacePluginUpdate(plugin, installed, options = {}) {
   }
   const repository = identity.split('#path:')[0];
   const [owner, repo] = repository.split('/');
-  const current = currentCommit(plugin, installedRow, options.lockCommits || readLockCommits());
+  const current = currentCommit(plugin, installedRow, options.lockCommits || await readLockCommitsAsync());
   const latest = await resolveCommitSha(owner, repo, 'HEAD', options.token, options.fetchImpl);
   return {
     id: plugin.id,
@@ -194,10 +222,11 @@ function invalidateMarketplaceUpdates() {
 /** Check all installed plugins that still have a curated catalog row. */
 async function checkMarketplaceUpdates(options = {}) {
   const catalog = await listMarketplace({ refresh: Boolean(options.refresh), locale: 'zh' });
-  const installed = listInstalledPlugins().plugins || [];
-  const lockCommits = readLockCommits();
+  const installed = (await listInstalledPluginsSafeAsync()).plugins || [];
+  const lockCommits = await readLockCommitsAsync();
+  const versions = await Promise.all(installed.map(row => readInstalledVersionAsync(row.name)));
   const installedKey = installed
-    .map(row => `${row.name}:${row.spec}:${readInstalledVersion(row.name) || ''}`)
+    .map((row, index) => `${row.name}:${row.spec}:${versions[index] || ''}`)
     .sort()
     .join(',');
   const commitsKey = [...lockCommits].sort(([left], [right]) => left.localeCompare(right)).join(',');
@@ -223,7 +252,7 @@ async function checkMarketplaceUpdates(options = {}) {
 async function resolveMarketplaceUpdate(id, options = {}) {
   const plugin = getMarketplacePlugin(id);
   if (!plugin) return { plugin: null, status: null };
-  const installed = listInstalledPlugins().plugins || [];
+  const installed = (await listInstalledPluginsSafeAsync()).plugins || [];
   const status = await checkMarketplacePluginUpdate(plugin, installed, options);
   return { plugin, status };
 }

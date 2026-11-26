@@ -101,7 +101,7 @@
   content: '';
   transform: translateY(-50%) scaleX(0.6);
   transform-origin: left center;
-  transition: transform 140ms ease, background-color 140ms ease;
+  transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out), background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
 /* Ordered before hover/active so those states keep their stronger tick. */

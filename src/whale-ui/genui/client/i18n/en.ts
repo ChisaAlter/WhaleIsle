@@ -358,6 +358,14 @@ export const EN = {
   'block.chart.linePoints': 'Line chart, {count} points, range {min} to {max}',
   'block.chart.donutSummary': 'Donut chart, {count} slices, total {total}',
   'block.chart.node': 'Point',
+  'diagram.legend.title': 'LEGEND',
+  'diagram.legend.focal': 'Focal',
+  'diagram.legend.backend': 'Backend',
+  'diagram.legend.store': 'Store',
+  'diagram.legend.external': 'External',
+  'diagram.legend.optional': 'Optional',
+  'diagram.legend.security': 'Security',
+  'diagram.desc': '{kind} diagram with {nodes} nodes and {edges} connectors',
   'err.unsupportedComponent': 'Unsupported component "{type}" at {path}; no renderer is registered.',
 
   // ------------------------------------------------------ action prompt

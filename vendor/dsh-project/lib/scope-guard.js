@@ -17,28 +17,41 @@ export const SCOPE_RANK = Object.freeze({
   development: 3,
 });
 
-const SHELL_TOOLS = new Set(['bash', 'pwsh', 'run_code', 'shell', 'exec']);
+const SHELL_TOOLS = new Set(['bash', 'pwsh', 'run_code', 'shell', 'exec', 'terminal', 'run_command']);
 const WRITE_TOOLS = new Set([
   'write',
+  'write_file',
+  'fs_write',
+  'create_file',
   'edit',
+  'edit_file',
+  'fs_edit',
+  'multi_edit',
+  'replace_file',
   'apply_patch',
   'str_replace_editor',
-  'create_file',
+  'str_replace_based_edit_tool',
+  'delete',
   'delete_file',
+  'remove_file',
+  'rm',
+  'unlink',
 ]);
 
 /** @param {string} toolName */
 function isShellTool(toolName) {
-  if (SHELL_TOOLS.has(toolName)) return true;
-  return toolName.startsWith('terminal_')
-    || toolName.startsWith('job_')
-    || toolName.endsWith('_bash')
-    || toolName.endsWith('_pwsh');
+  const normalized = String(toolName || '').trim().toLowerCase();
+  if (SHELL_TOOLS.has(normalized)) return true;
+  return normalized.startsWith('terminal_')
+    || normalized.startsWith('job_')
+    || normalized.endsWith('_bash')
+    || normalized.endsWith('_pwsh')
+    || normalized.endsWith('_shell');
 }
 
 /** @param {string} toolName */
 function isWriteTool(toolName) {
-  return WRITE_TOOLS.has(toolName);
+  return WRITE_TOOLS.has(String(toolName || '').trim().toLowerCase());
 }
 
 /** @param {any} rawPath @param {string} baseDir */
@@ -77,21 +90,43 @@ function matchesWritePaths(relPosix, writePaths) {
   });
 }
 
+/** @param {Record<string, any>} obj */
+function singleTargetPath(obj) {
+  const candidate = obj.file_path ?? obj.path ?? obj.target_path ?? obj.filePath;
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
+}
+
+/** @param {string} input */
+function extractPatchTargets(input) {
+  if (!input.trim()) return null;
+  const targets = [];
+  for (const line of input.split(/\r?\n/)) {
+    const match = PATCH_PATH_RE.exec(line.trim());
+    if (match && match[1]?.trim()) targets.push(match[1].trim());
+  }
+  return targets.length > 0 ? targets : null;
+}
+
+/** @param {unknown[]} edits */
+function extractEditArrayTargets(edits) {
+  const targets = [];
+  for (const entry of edits) {
+    const candidate = entry && typeof entry === 'object' ? singleTargetPath(entry) : null;
+    if (!candidate) return null;
+    targets.push(candidate);
+  }
+  return targets.length > 0 ? targets : null;
+}
+
 /** @param {string} toolName @param {any} args */
 function extractWriteTargets(toolName, args) {
   if (!args || typeof args !== 'object') return null;
-  if (toolName === 'apply_patch') {
-    const input = typeof args.input === 'string' ? args.input : '';
-    if (!input.trim()) return null;
-    const targets = [];
-    for (const line of input.split(/\r?\n/)) {
-      const match = PATCH_PATH_RE.exec(line.trim());
-      if (match && match[1]?.trim()) targets.push(match[1].trim());
-    }
-    return targets.length > 0 ? targets : null;
+  if (String(toolName || '').trim().toLowerCase() === 'apply_patch') {
+    return typeof args.input === 'string' ? extractPatchTargets(args.input) : null;
   }
-  const single = args.file_path ?? args.path ?? args.target_path;
-  return typeof single === 'string' && single.trim() ? [single.trim()] : null;
+  const single = singleTargetPath(args);
+  if (single) return [single];
+  return Array.isArray(args.edits) ? extractEditArrayTargets(args.edits) : null;
 }
 
 /** @param {any} agent */
@@ -234,7 +269,13 @@ function guardDocsCeiling(task, toolName, args, baseDir, allowedPaths) {
 
 /** @param {any} task @param {string} toolName @param {any} args @param {string} baseDir @param {string[]} allowedPaths */
 function guardDevelopmentWritePaths(task, toolName, args, baseDir, allowedPaths) {
-  if (allowedPaths.length === 0 || !isWriteTool(toolName)) return undefined;
+  if (allowedPaths.length === 0) return undefined;
+  // When writePaths explicitly narrows writable paths under development, shell/terminal
+  // tools cannot be path-confined safely and must be blocked (fail-closed).
+  if (isShellTool(toolName)) {
+    return `Task ${task.id} restricts writePaths (${allowedPaths.join(', ')}): shell/terminal tool "${toolName}" is not permitted.`;
+  }
+  if (!isWriteTool(toolName)) return undefined;
   const targets = extractWriteTargets(toolName, args);
   if (!targets) {
     return `Task ${task.id} restricts writePaths: cannot verify target file paths for "${toolName}".`;

@@ -32,7 +32,7 @@ const WEB_BOOT_AUDIT_ENTRY = /^\s*(?:\[(?:app|error|dsh)\]\s*)?(@?[\w.-]+(?:\/[\
 // desktop built-in modules, but the `preset` marker
 // only gates removal; disable is blocked separately via IPC and config
 // alias-stripping. Project retains this removal guard while honoring disable.
-const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES, ...DSH_ACP_AGENTS_ALIASES]);
+const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES, ...DSH_ACP_AGENTS_ALIASES, 'dsh-deepseek-tools']);
 const EVIDENCE_LINE_MAX = 240;
 
 // In-box names cover the harness fork packages plus the desktop built-in
@@ -45,6 +45,7 @@ const IN_BOX_PACKAGE_NAMES = new Set([
   ...DSH_WHALE_ALIASES,
   ...DSH_REMOTE_ALIASES,
   ...DSH_ACP_AGENTS_ALIASES,
+  'dsh-deepseek-tools',
   ...USAGE_PANEL_ALIASES,
 ]);
 

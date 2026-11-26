@@ -10,6 +10,8 @@ const {
   captureProcessSnapshotEntry,
   summarizeProcessSnapshot,
   capturePeakProcessSnapshot,
+  waitForMaintenanceIdle,
+  performMeasuredRestart,
 } = require('./lib/desktop-runtime-perf.cjs');
 
 const report = { ok: true, platform: 'linux', arch: 'x64', startupMs: 30000, restartMs: 1000,
@@ -221,4 +223,107 @@ test('summary renders optional private/PSS/shared columns and degrades cleanly w
   assert.match(legacyMd, /\| PID \| Electron process type \| Working set MiB at total peak \|/);
   assert.match(legacyMd, /per-process private\/PSS metrics unavailable\./);
   assert.doesNotMatch(legacyMd, /\bNaN\b|\bundefined\b/);
+});
+
+test('performMeasuredRestart rejects { ok: false } and { proceeded: false } refusals instead of hitting old DOM', async () => {
+  const oldWc = { isDestroyed: () => false };
+  await assert.rejects(
+    () => performMeasuredRestart({
+      win: { webContents: { executeJavaScript: async () => ({ ok: false, error: 'maintenance-in-progress' }) } },
+      getHarnessWebContents: () => oldWc,
+      waitForClientReady: async () => { throw new Error('must not call waitForClientReady after refusal'); },
+      sleep: async () => {},
+      pollMs: 1,
+    }),
+    /Restart refused: maintenance-in-progress/,
+  );
+
+  await assert.rejects(
+    () => performMeasuredRestart({
+      win: { webContents: { executeJavaScript: async () => ({ proceeded: false, code: 'cancelled' }) } },
+      getHarnessWebContents: () => oldWc,
+      waitForClientReady: async () => { throw new Error('must not call waitForClientReady after refusal'); },
+      sleep: async () => {},
+      pollMs: 1,
+    }),
+    /Restart refused: cancelled/,
+  );
+});
+
+test('performMeasuredRestart rejects when restart resolves without unloading previous workbench', async () => {
+  const oldWc = { isDestroyed: () => false };
+  let clock = 0;
+  await assert.rejects(
+    () => performMeasuredRestart({
+      win: { webContents: { executeJavaScript: async () => ({ state: 'ready' }) } },
+      getHarnessWebContents: () => oldWc,
+      waitForClientReady: async () => oldWc,
+      sleep: async (ms) => { clock += ms; },
+      now: () => clock,
+      pollMs: 10,
+      unloadGraceMs: 20,
+    }),
+    /Previous workbench did not unload during restart/,
+  );
+});
+
+test('performMeasuredRestart waits for old workbench unload and passes rejectWc to waitForClientReady', async () => {
+  let destroyed = false;
+  const oldWc = { isDestroyed: () => destroyed };
+  const newWc = { isDestroyed: () => false };
+  let currentWc = oldWc;
+  let clock = 100;
+  let seenRejectWc = null;
+
+  const elapsed = await performMeasuredRestart({
+    win: {
+      webContents: {
+        executeJavaScript: async () => {
+          clock += 20;
+          destroyed = true;
+          currentWc = null;
+          return { state: 'ready' };
+        },
+      },
+    },
+    getHarnessWebContents: () => currentWc,
+    waitForClientReady: async (opts) => {
+      seenRejectWc = opts?.rejectWc;
+      clock += 300;
+      currentWc = newWc;
+      return newWc;
+    },
+    sleep: async (ms) => { clock += ms; },
+    now: () => clock,
+    pollMs: 5,
+  });
+
+  assert.equal(seenRejectWc, oldWc);
+  assert.ok(elapsed >= 320, `expected full restart duration >= 320ms, got ${elapsed}`);
+});
+
+test('waitForMaintenanceIdle waits until maintenance clears and fails on timeout', async () => {
+  let held = true;
+  let ticks = 0;
+  await waitForMaintenanceIdle(
+    { isMaintenanceHeld: () => held },
+    {
+      sleep: async () => {
+        ticks += 1;
+        if (ticks >= 2) held = false;
+      },
+      now: () => ticks * 10,
+      timeoutMs: 100,
+    },
+  );
+  assert.equal(ticks, 2);
+
+  let clock = 0;
+  await assert.rejects(
+    () => waitForMaintenanceIdle(
+      { isMaintenanceHeld: () => true },
+      { sleep: async (ms) => { clock += ms; }, now: () => clock, pollMs: 10, timeoutMs: 20 },
+    ),
+    /Startup maintenance remained held/,
+  );
 });

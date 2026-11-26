@@ -97,6 +97,12 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .regionArea')?.get('margin-right')).toBeUndefined()
     expect(declarations('.collapsed .regionArea')?.get('padding-left')).toBeUndefined()
     expect(declarations('.scrollFade')?.get('height')).toBe('24px')
+    expect(declarations('.scrollFade')?.get('background')).toBe(
+      'linear-gradient(to bottom, transparent, var(--dsh-sidebar-rail-fill, var(--dsw-specific-sidebar-fill)))',
+    )
+    for (const attr of ['data-dsh-gradient', 'data-dsh-wallpaper', 'data-dsh-window-material', 'data-dsh-transparent']) {
+      expect(declarations(`:global(html[${attr}]) .scrollFade`)?.get('display')).toBe('none')
+    }
     expect(declarations('.collapsed .scrollArea')?.get('overflow')).toBe('visible')
     expect(declarations('.collapsed .scrollArea')?.get('margin')).toBe('0')
   })

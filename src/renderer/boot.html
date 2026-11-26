@@ -42,13 +42,13 @@
       </div>
     </div>
     <div class="logdrawer" id="logdrawer" hidden>
-      <div class="logdrawer-panel" role="dialog" aria-label="启动日志">
+      <div class="logdrawer-panel" role="dialog" aria-modal="true" aria-label="启动日志">
         <div class="logdrawer-head">
           <span class="logdrawer-title">启动日志</span>
           <span class="logdrawer-count" id="log-count">0 行</span>
           <button type="button" class="logdrawer-close" id="log-close" aria-label="关闭">×</button>
         </div>
-        <ol class="logdrawer-lines" id="log" aria-label="全部启动日志"></ol>
+        <ol class="logdrawer-lines" id="log" tabindex="0" aria-label="全部启动日志"></ol>
       </div>
     </div>
   </main>

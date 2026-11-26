@@ -7,6 +7,27 @@ const path = require('node:path');
 const test = require('node:test');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
 const { runImport, recoverInterruptedImport } = require('./data-import');
+const { requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+
+function createFileSymlinkOrSkip(t, target, linkPath) {
+  try {
+    fs.symlinkSync(target, linkPath, 'file');
+    return true;
+  } catch (error) {
+    if (error.code === 'EPERM' || error.code === 'ENOTSUP') {
+      requirePrerequisite(t, false, `file-symlink creation unavailable (${error.code}): ${error.message}`);
+      return false;
+    }
+    throw error;
+  }
+}
+
+function requireFileSymlinkOrSkip(t, tree) {
+  const probeLink = path.join(tree.root, '.symlink-probe');
+  if (!createFileSymlinkOrSkip(t, tree.outside, probeLink)) return false;
+  fs.unlinkSync(probeLink);
+  return true;
+}
 
 const configs = [
   { name: 'mcp', file: 'mcp-servers.yaml', selection: { selectedMcpIds: ['new-server'] },
@@ -70,17 +91,25 @@ for (const config of configs) {
     test(`${config.name}: ${side} read failure after scan still aborts the real merge`, async (t) => {
       const tree = fixture(t, config);
       const { readFileSync } = fs;
+      const { readFile: readFileAsync } = fs.promises;
       let injected = 0;
       let scanned = 0;
-      t.mock.method(fs, 'readFileSync', function (file, ...args) {
-        if (file === tree[side]) {
-          if (fs.existsSync(path.join(tree.userDataDir, 'import-journal.json'))) {
-            injected++;
-            throw ioError('EIO');
-          }
-          scanned++;
+      const handleFaultOrScan = (file) => {
+        if (file !== tree[side]) return false;
+        if (fs.existsSync(path.join(tree.userDataDir, 'import-journal.json'))) {
+          injected++;
+          throw ioError('EIO');
         }
+        scanned++;
+        return false;
+      };
+      t.mock.method(fs, 'readFileSync', function (file, ...args) {
+        handleFaultOrScan(file);
         return readFileSync.call(this, file, ...args);
+      });
+      t.mock.method(fs.promises, 'readFile', async function (file, ...args) {
+        handleFaultOrScan(file);
+        return readFileAsync.call(this, file, ...args);
       });
       const value = await outcome(tree.options);
       t.mock.restoreAll();
@@ -95,10 +124,15 @@ for (const config of configs) {
       test(`${config.name}: ${side} ${code} read fails closed with old bytes intact`, async (t) => {
         const tree = fixture(t, config);
         const read = fs.readFileSync;
+        const readAsync = fs.promises.readFile;
         let injected = 0;
         t.mock.method(fs, 'readFileSync', function (file, ...args) {
           if (file === tree[side]) { injected++; throw ioError(code); }
           return read.call(this, file, ...args);
+        });
+        t.mock.method(fs.promises, 'readFile', async function (file, ...args) {
+          if (file === tree[side]) { injected++; throw ioError(code); }
+          return readAsync.call(this, file, ...args);
         });
         const value = await outcome(tree.options);
         t.mock.restoreAll();
@@ -154,7 +188,7 @@ for (const config of configs) {
   test(`${config.name}: real destination file symlink is refused`, async (t) => {
     const tree = fixture(t, config);
     fs.unlinkSync(tree.dest);
-    fs.symlinkSync(tree.outside, tree.dest, 'file');
+    if (!createFileSymlinkOrSkip(t, tree.outside, tree.dest)) return;
     const value = await outcome(tree.options);
     assertOld(tree, config);
     assert.ok(fs.lstatSync(tree.dest).isSymbolicLink(), 'refusal preserves the link itself');
@@ -176,7 +210,7 @@ for (const config of configs) {
   test(`${config.name}: preplanted legacy temp symlink is never opened or removed`, async (t) => {
     const tree = fixture(t, config);
     const legacyTmp = `${tree.dest}.import-tmp`;
-    fs.symlinkSync(tree.outside, legacyTmp, 'file');
+    if (!createFileSymlinkOrSkip(t, tree.outside, legacyTmp)) return;
     const value = await outcome(tree.options);
     assert.equal(value.result?.ok, true);
     assert.equal(fs.readFileSync(tree.outside, 'utf8'), config.old);
@@ -196,6 +230,7 @@ for (const config of configs) {
 
   test(`${config.name}: random staging is exclusive and a collision cannot clobber a link`, async (t) => {
     const tree = fixture(t, config);
+    if (!requireFileSymlinkOrSkip(t, tree)) return;
     const { openSync } = fs;
     let planted;
     t.mock.method(fs, 'openSync', function (file, flags, mode) {
@@ -250,6 +285,7 @@ for (const config of configs) {
 
   test(`${config.name}: destination link introduced during staging is caught before rename`, async (t) => {
     const tree = fixture(t, config);
+    if (!requireFileSymlinkOrSkip(t, tree)) return;
     const { openSync, writeFileSync } = fs;
     let stagedFd;
     let injected = 0;

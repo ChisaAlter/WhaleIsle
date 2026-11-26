@@ -235,7 +235,7 @@ html[data-window-maximized] .shell::after { border: 0; }
   padding: 4px 6px;
   margin: -4px -6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: none;
   font: inherit;
   cursor: pointer;
@@ -304,6 +304,7 @@ button.primary[aria-busy="true"]:not([data-button-label])::after {
 @media (prefers-reduced-motion: reduce) {
   button[aria-busy="true"]:not([data-button-label])::after,
   .modal-mask.is-loading .modal-title::before { animation: none; }
+  .bar > i { transition: none; }
 }
 
 /* In-app confirm dialog (replaces window.confirm). */
@@ -749,10 +750,12 @@ html[data-ds-dark-theme] .badge.amber {
 .bar > i {
   display: block;
   height: 100%;
-  width: 0;
+  width: 100%;
   border-radius: 999px;
   background: var(--dsw-alias-state-business-primary);
-  transition: width 0.4s var(--ds-ease-in-out);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 .phases {
@@ -1341,9 +1344,9 @@ body[data-launcher-state="downloading"] #route-picker {
   min-width: 240px;
   padding: 6px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-layer-2);
-  box-shadow: 0 10px 32px color-mix(in srgb, var(--dsw-alias-label-primary) 22%, transparent);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
 .route-opt {
@@ -1363,6 +1366,11 @@ body[data-launcher-state="downloading"] #route-picker {
 
 .route-opt:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.route-opt:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
 }
 
 .route-opt:disabled {
@@ -1595,7 +1603,7 @@ body[data-launcher-state="downloading"] #route-picker {
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;

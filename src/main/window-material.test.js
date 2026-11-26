@@ -447,3 +447,97 @@ test('window advertises acrylic only with OS support and a ready compositor', as
     }
   }
 });
+
+test('window-material catches native DWM errors from setBackgroundMaterial and setBackgroundColor', () => {
+  const failingMaterialWin = {
+    isDestroyed: () => false,
+    setBackgroundMaterial() { throw new Error('DWM error'); },
+    setBackgroundColor() {},
+  };
+  let colorThrows = false;
+  const failingColorWin = {
+    isDestroyed: () => false,
+    setBackgroundMaterial() {},
+    setBackgroundColor() {
+      if (colorThrows) throw new Error('color error');
+    },
+  };
+  const warned = [];
+  const prevWarn = console.warn;
+  console.warn = (...args) => warned.push(args.map(String).join(' '));
+  try {
+    assert.equal(applyWindowMaterial(failingMaterialWin, 'acrylic', { platform: 'win32', release: '10.0.22621', isAcrylicReady: true }), false);
+    assert.equal(applyWindowMaterial(failingColorWin, 'acrylic', { platform: 'win32', release: '10.0.22621', isAcrylicReady: true }), true);
+    colorThrows = true;
+    assert.equal(resetWindowMaterial(failingColorWin, { transparent: false, restoreColor: '#111111' }), false);
+    assert.equal(warned.length, 2);
+  } finally {
+    console.warn = prevWarn;
+  }
+});
+
+test('window-acrylic catches native acrylic helper throws without crashing', () => {
+  delete require.cache[acrylicPath];
+  const fs = require('node:fs');
+  const electronPath = require.resolve('electron');
+  const prevElectron = require.cache[electronPath];
+  const koffiPath = require.resolve('koffi');
+  const prevKoffi = require.cache[koffiPath];
+  const prevExists = fs.existsSync;
+
+  let mode = 'ok';
+  fs.existsSync = (p) => (String(p).endsWith('whale-window-acrylic.dll') ? true : prevExists.call(fs, p));
+  require.cache[electronPath] = {
+    id: electronPath, filename: electronPath, loaded: true,
+    exports: { app: { isPackaged: false } },
+  };
+  require.cache[koffiPath] = {
+    id: koffiPath, filename: koffiPath, loaded: true,
+    exports: {
+      load: () => ({
+        func(sig) {
+          if (sig.includes('CreateWindowAcrylic')) return (_hwnd, out) => { out[0] = {}; return 0; };
+          if (sig.includes('UpdateWindowAcrylic')) return () => (mode === 'fail' ? -1 : 0);
+          return () => { throw new Error('destroy error'); };
+        },
+      }),
+    },
+  };
+  const warned = [];
+  const prevWarn = console.warn;
+  console.warn = (...args) => warned.push(args.map(String).join(' '));
+  try {
+    const realAcrylic = require('./window-acrylic');
+    const listeners = new Map();
+    const fakeWin = {
+      isDestroyed: () => false,
+      isFullScreen: () => false,
+      isMaximized: () => false,
+      getNativeWindowHandle: () => Buffer.alloc(8),
+      on(ev, fn) { listeners.set(ev, fn); },
+      once(ev, fn) { listeners.set(ev, fn); },
+      removeListener(ev) { listeners.delete(ev); },
+    };
+    assert.equal(realAcrylic.prepareWindowAcrylic(fakeWin), true);
+    mode = 'fail';
+    assert.equal(realAcrylic.setWindowAcrylic(fakeWin, true), false);
+    mode = 'ok';
+    assert.equal(realAcrylic.setWindowAcrylic(fakeWin, true), true);
+    mode = 'fail';
+    listeners.get('resize')?.();
+    listeners.get('closed')?.();
+    assert.ok(warned.length >= 3);
+  } finally {
+    console.warn = prevWarn;
+    fs.existsSync = prevExists;
+    if (prevElectron) require.cache[electronPath] = prevElectron;
+    else delete require.cache[electronPath];
+    if (prevKoffi) require.cache[koffiPath] = prevKoffi;
+    else delete require.cache[koffiPath];
+    delete require.cache[acrylicPath];
+    require.cache[acrylicPath] = { id: acrylicPath, filename: acrylicPath, loaded: true, exports: {
+      prepareWindowAcrylic: () => true,
+      setWindowAcrylic: (win, visible) => win.updateAcrylic?.(visible) ?? false,
+    } };
+  }
+});

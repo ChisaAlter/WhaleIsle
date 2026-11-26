@@ -10,6 +10,7 @@
  */
 import { renderInline } from '../../inline.ts'
 import { useMemo } from 'react'
+import { useT, type GenuiTextKey } from '../../i18n/index.ts'
 import type { GenuiDiagram } from '../../spec.ts'
 import { GENUI_LIMITS } from '../../genui-runtime/index.ts'
 import { resolveLayout } from './layout.ts'
@@ -23,13 +24,13 @@ const FONT_MONO = 'var(--ds-font-family-code)'
 const NODE_H = 64 // node box height (48→64 for the editorial ramp)
 const LEGEND_COL_W = 150
 const LEGEND_ROW_H = 22
-const LEGEND_ITEMS: Array<{ label: string; type: string | undefined }> = [
-  { label: 'Focal', type: 'focal' },
-  { label: 'Backend', type: 'backend' },
-  { label: 'Store', type: 'store' },
-  { label: 'External', type: 'external' },
-  { label: 'Optional', type: 'optional' },
-  { label: 'Security', type: 'security' },
+const LEGEND_ITEMS: Array<{ key: GenuiTextKey; type: string | undefined }> = [
+  { key: 'diagram.legend.focal', type: 'focal' },
+  { key: 'diagram.legend.backend', type: 'backend' },
+  { key: 'diagram.legend.store', type: 'store' },
+  { key: 'diagram.legend.external', type: 'external' },
+  { key: 'diagram.legend.optional', type: 'optional' },
+  { key: 'diagram.legend.security', type: 'security' },
 ]
 
 /**
@@ -169,19 +170,25 @@ function renderZone(z: { label: string; x: number; y: number; w: number; h: numb
 }
 
 /** Legend strip at the bottom: hairline separator + treatment swatches. */
-function renderLegend(palette: ReturnType<typeof resolvePalette>, items: typeof LEGEND_ITEMS, width: number, cols: number): React.ReactNode {
+function renderLegend(
+  palette: ReturnType<typeof resolvePalette>,
+  items: typeof LEGEND_ITEMS,
+  width: number,
+  cols: number,
+  t: (key: GenuiTextKey, params?: Record<string, unknown>) => string,
+): React.ReactNode {
   return (
     <g>
       <line x1={40} y1={0} x2={Math.max(120, width - 40)} y2={0} stroke={inkAt(palette.ink, 0.10)} strokeWidth={0.8} />
-      <text x={40} y={16} fill={palette.soft} fontSize={8} fontFamily={FONT_MONO} letterSpacing={1.6}>LEGEND</text>
+      <text x={40} y={16} fill={palette.soft} fontSize={8} fontFamily={FONT_MONO} letterSpacing={1.6}>{t('diagram.legend.title')}</text>
       {items.map((item, i) => {
-        const t = nodeTreatment(item.type, palette)
+        const tr = nodeTreatment(item.type, palette)
         const x = 40 + (i % cols) * LEGEND_COL_W
         const y = 32 + Math.floor(i / cols) * LEGEND_ROW_H
         return (
-          <g key={item.label}>
-            <rect x={x} y={y} width={14} height={10} rx={2} fill={t.fill} stroke={t.stroke} strokeWidth={1} strokeDasharray={t.dashed === true ? '3,2' : undefined} />
-            <text x={x + 20} y={y + 9} fill={palette.soft} fontSize={8.5} fontFamily={FONT_SANS}>{item.label}</text>
+          <g key={item.key}>
+            <rect x={x} y={y} width={14} height={10} rx={2} fill={tr.fill} stroke={tr.stroke} strokeWidth={1} strokeDasharray={tr.dashed === true ? '3,2' : undefined} />
+            <text x={x + 20} y={y + 9} fill={palette.soft} fontSize={8.5} fontFamily={FONT_SANS}>{t(item.key)}</text>
           </g>
         )
       })}
@@ -204,6 +211,7 @@ function nextUid(): string {
 
 /** The `diagram` node renderer. */
 export function DiagramNode({ node }: { node: GenuiDiagram }) {
+  const t = useT()
   const uid = useMemo(nextUid, [])
   // CSS token references follow the surrounding theme without remounting SVG nodes.
   const palette = useMemo(() => resolvePalette(node.variant, node.theme), [node.variant, node.theme])
@@ -252,7 +260,7 @@ export function DiagramNode({ node }: { node: GenuiDiagram }) {
         style={{ maxWidth: '100%', height: 'auto', background: palette.paper }}
       >
         <title id={titleId}>{node.title ?? node.kind}</title>
-        <desc id={descId}>{`${node.kind} diagram with ${nodes.length} nodes and ${edges.length} connectors`}</desc>
+        <desc id={descId}>{t('diagram.desc', { kind: node.kind, nodes: nodes.length, edges: edges.length })}</desc>
         {renderMarkers(uid, palette)}
         {renderGround(uid, palette)}
         {/* zones drawn before arrows and nodes */}
@@ -285,7 +293,7 @@ export function DiagramNode({ node }: { node: GenuiDiagram }) {
         </g>
         {/* legend strip */}
         <g transform={`translate(0, ${contentH + 8})`}>
-          {renderLegend(palette, legendItems, layout.width, legendCols)}
+          {renderLegend(palette, legendItems, layout.width, legendCols, t)}
         </g>
       </svg>
     </figure>

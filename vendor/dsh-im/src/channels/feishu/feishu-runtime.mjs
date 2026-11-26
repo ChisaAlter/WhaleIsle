@@ -7,6 +7,7 @@ import {
   connectionTestTargetUnavailable,
   sendRememberedConnectionTest,
 } from '../shared/connection-test.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -119,6 +120,8 @@ export class FeishuRuntime {
   #stopping = null;
   #abortController = null;
   #pendingCardActionProbes = new Map();
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status;
 
   constructor({
@@ -135,6 +138,7 @@ export class FeishuRuntime {
     harness,
     state,
     repair,
+    outboundBridge,
     replyTimeoutMs = 600000,
     connectTimeoutMs = 15000,
     requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
@@ -172,6 +176,7 @@ export class FeishuRuntime {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#wsAgent = wsAgent;
     this.#logger = logger;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#status = createBridgeStatus({ allowedSenderCount: normalizedOwners.length });
   }
 
@@ -276,6 +281,7 @@ export class FeishuRuntime {
         replyTimeoutMs: this.#replyTimeoutMs,
         signal,
         logger: this.#logger,
+        outboundBridge: this.#outboundBridge,
       });
       this.#bridge = bridge;
 
@@ -339,10 +345,12 @@ export class FeishuRuntime {
           this.#status.feishuLongConnectionState = 'connected';
           this.#status.ready = true;
           this.#status.lastError = null;
+          this.#registerOutboundSender();
           settleReady();
         },
         onError: (error) => {
           if (!isCurrentStart()) return;
+          this.#unregisterOutbound();
           this.#status.feishuLongConnectionState = 'failed';
           this.#status.ready = false;
           this.#status.lastError = error?.message ?? String(error);
@@ -351,6 +359,7 @@ export class FeishuRuntime {
         },
         onReconnecting: () => {
           if (!isCurrentStart()) return;
+          this.#unregisterOutbound();
           this.#status.feishuLongConnectionState = 'reconnecting';
           this.#status.ready = false;
         },
@@ -359,6 +368,7 @@ export class FeishuRuntime {
           this.#status.feishuLongConnectionState = 'connected';
           this.#status.ready = true;
           this.#status.lastError = null;
+          this.#registerOutboundSender();
         },
       });
       this.#wsClient = wsClient;
@@ -600,6 +610,7 @@ export class FeishuRuntime {
       probe.reject(probeError('abort', '飞书运行时已停止'));
     }
     this.#pendingCardActionProbes.clear();
+    this.#unregisterOutbound();
     this.#status.ready = false;
     const wsClient = this.#wsClient;
     this.#wsClient = null;
@@ -613,5 +624,46 @@ export class FeishuRuntime {
     this.#status.feishuLongConnectionState = preserveError ? 'failed' : 'idle';
     this.#status.lastError = error;
     return this.status;
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    const deliver = async (payload) => {
+      if (!this.#status.ready || !this.#client) {
+        throw Object.assign(new Error('Feishu bot is not connected'), { code: 'channel_not_connected' });
+      }
+      const target = String(payload.targetId ?? '').trim();
+      const receiveIdType = target.startsWith('ou_')
+        ? 'open_id'
+        : target.startsWith('on_')
+          ? 'union_id'
+          : target.includes('@')
+            ? 'email'
+            : 'chat_id';
+      const isCard = payload.card?.format === 'feishu-card-v2' && payload.card?.content;
+      const response = await this.#client.im.v1.message.create({
+        params: { receive_id_type: receiveIdType },
+        data: isCard
+          ? { receive_id: target, msg_type: 'interactive', content: payload.card.content }
+          : { receive_id: target, msg_type: 'text', content: JSON.stringify({ text: payload.text }) },
+      });
+      if (response?.code && response.code !== 0) {
+        throw new Error(`Feishu outbound delivery failed: ${response.msg || response.code}`);
+      }
+      return {
+        messageId: nonEmptyString(response?.data?.message_id) ?? nonEmptyString(response?.message_id) ?? null,
+      };
+    };
+    this.#unregisterOutboundSender = bridge.registerSender('feishu', {
+      sendCard: deliver,
+      sendText: deliver,
+    }, { accountId: this.#botId ?? this.#appId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

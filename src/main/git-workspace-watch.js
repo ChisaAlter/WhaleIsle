@@ -47,9 +47,11 @@ function watchWorkspaceRegistrations(onChange, options = {}) {
   let closed = false;
   let deliveredStamp = null;
 
-  const registryStamp = () => {
+  let polling = false;
+
+  const registryStampAsync = async () => {
     try {
-      const stat = fs.statSync(path.join(storagesDir, WORKSPACE_REGISTRY_FILE), { bigint: true });
+      const stat = await fs.promises.stat(path.join(storagesDir, WORKSPACE_REGISTRY_FILE), { bigint: true });
       return stat.isFile() ? `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}` : null;
     } catch {
       return null;
@@ -58,11 +60,11 @@ function watchWorkspaceRegistrations(onChange, options = {}) {
 
   const fire = () => {
     if (debounceTimer !== null) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
+    debounceTimer = setTimeout(async () => {
       debounceTimer = null;
       if (closed) return;
-      const stamp = registryStamp();
-      if (stamp === deliveredStamp) return;
+      const stamp = await registryStampAsync();
+      if (closed || stamp === deliveredStamp) return;
       deliveredStamp = stamp;
       onChange();
     }, debounceMs);
@@ -97,11 +99,10 @@ function watchWorkspaceRegistrations(onChange, options = {}) {
     // created and workspace.json written between two arm attempts). If the
     // file already exists when the watch comes up, signal once: a spurious
     // refresh is a cheap status re-read, a missed registration is the flake.
-    try {
-      if (fs.statSync(path.join(storagesDir, WORKSPACE_REGISTRY_FILE)).isFile()) fire();
-    } catch {
-      // No registry yet; the watch reports its creation.
-    }
+    void (async () => {
+      const stamp = await registryStampAsync();
+      if (!closed && stamp !== null) fire();
+    })();
     watcher.on('error', () => {
       // Watch handle died (directory removed, EPERM); drop it and re-arm.
       try {
@@ -119,7 +120,15 @@ function watchWorkspaceRegistrations(onChange, options = {}) {
     // Native watchers can miss writes during FSEvents startup or directory replacement.
     // Reconcile one file's metadata; share the debounce/stamp with native events.
     pollTimer = setInterval(() => {
-      if (!closed && debounceTimer === null && registryStamp() !== deliveredStamp) fire();
+      if (closed || polling) return;
+      polling = true;
+      void (async () => {
+        try {
+          if (!closed && debounceTimer === null && await registryStampAsync() !== deliveredStamp) fire();
+        } finally {
+          polling = false;
+        }
+      })();
     }, retryMs);
     pollTimer.unref();
   }

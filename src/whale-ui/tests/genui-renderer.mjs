@@ -297,3 +297,34 @@ test('G10 late 3D mount results are disposed after update and unmount', async ()
   await unmount()
   assert.equal(active.size,0)
 })
+
+test('DiagramNode translates legend labels and desc via i18n locale', async () => {
+  const spec = {
+    items: [{
+      type: 'diagram',
+      kind: 'architecture',
+      nodes: [
+        { id: 'a', label: 'Gateway', type: 'focal', x: 40, y: 40 },
+        { id: 'b', label: 'Worker', type: 'backend', x: 240, y: 40 },
+      ],
+      edges: [{ from: 'a', to: 'b', kind: 'solid' }],
+    }],
+  }
+  try {
+    api.setLocale('zh')
+    await render(h(api.GenuiBlock, { spec }))
+    assert(env.container.textContent.includes('图例'))
+    assert(env.container.textContent.includes('核心节点'))
+    assert(env.container.textContent.includes('后端服务'))
+    assert(env.container.querySelector('svg desc')?.textContent.includes('包含 2 个节点'))
+
+    api.setLocale('en')
+    await render(h(api.GenuiBlock, { spec }))
+    assert(env.container.textContent.includes('LEGEND'))
+    assert(env.container.textContent.includes('Focal'))
+    assert(env.container.textContent.includes('Backend'))
+    assert(env.container.querySelector('svg desc')?.textContent.includes('2 nodes and 1 connectors'))
+  } finally {
+    api.setLocale('en')
+  }
+})

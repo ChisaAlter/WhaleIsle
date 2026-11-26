@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 
 import { createEditableMessageStream, splitMessageText } from '../shared/editable-message-stream.mjs';
 import { createTextDeliveryBlock } from '../shared/semantic/delivery.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 import { COMMANDS_MENU_BUTTON, TelegramApi } from './telegram-api.mjs';
 import { createTelegramBridgeStatus, TelegramHarnessBridge } from './telegram-bridge.mjs';
@@ -664,6 +665,8 @@ export class TelegramRuntime {
   #createApi;
   #accessMode;
   #allowedPrivateUserIds;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createTelegramRuntimeStatus();
   #api = null;
   #bridge = null;
@@ -676,6 +679,7 @@ export class TelegramRuntime {
     token,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     createApi = (options) => new TelegramApi(options),
@@ -687,6 +691,7 @@ export class TelegramRuntime {
     this.#token = token;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#createApi = createApi;
@@ -775,9 +780,11 @@ export class TelegramRuntime {
       this.#status.connectionState = 'connected';
       this.#status.lastCheckedAt = now;
       this.#status.lastConnectedAt = now;
+      this.#registerOutboundSender();
       this.#pollTask = this.#poll(cursor, controller.signal);
       this.#pollTask.catch((error) => {
         if (controller.signal.aborted) return;
+        this.#unregisterOutbound();
         this.#status.ready = false;
         this.#status.connectionState = 'failed';
         this.#status.lastError = error?.message ?? String(error);
@@ -829,6 +836,7 @@ export class TelegramRuntime {
   }
 
   async stop() {
+    this.#unregisterOutbound();
     const pollTask = this.#pollTask;
     const bridge = this.#bridge;
     this.#abortController?.abort();
@@ -847,5 +855,32 @@ export class TelegramRuntime {
     this.#status.ready = false;
     this.#status.connectionState = 'idle';
     return this.status;
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    const deliver = async (payload) => {
+      if (!this.#status.ready || !this.#api) {
+        throw Object.assign(new Error('Telegram bot is not connected'), { code: 'channel_not_connected' });
+      }
+      const res = await this.#api.sendMessage({
+        chatId: payload.targetId,
+        text: payload.text,
+        replyToMessageId: payload.replyTo,
+        signal: payload.signal ?? this.#abortController?.signal,
+      });
+      return { messageId: Number.isSafeInteger(res?.message_id) ? String(res.message_id) : null };
+    };
+    this.#unregisterOutboundSender = bridge.registerSender('telegram', {
+      sendCard: deliver,
+      sendText: deliver,
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

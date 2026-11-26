@@ -99,6 +99,7 @@ function makeCtx(canvas) {
     drawImage(...args) { this.ops.push(['drawImage', ...args]); },
     translate() {}, rotate() {}, scale() {},
     setTransform(...args) { this.ops.push(['setTransform', ...args]); },
+    createRadialGradient() { return { addColorStop() {} }; },
     putImageData() {},
     createImageData(w, h) { return { data: new Uint8ClampedArray(w * h * 4) }; },
     getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4) }; },
@@ -143,7 +144,7 @@ test('failed shared turns preserve partial replies and persisted errors while sh
   assert.equal(pet.run('chatLog.filter((entry) => entry.role === "err").length'), 1, 'backfill keeps the persisted error role');
   assert.match(pet.nodes['pc-feedback-text'].textContent, /这轮出错/);
   assert.equal(pet.nodes['pc-thread'].querySelectorAll('.pc-err').length, 0);
-  pet.nodes['pc-feedback-close'].click();
+  pet.run('closeChatFeedback()');
   assert.equal(pet.nodes['pc-feedback'].hidden, true);
   assert.equal(pet.run('chatLog.filter((entry) => entry.role === "err").length'), 1, 'closing feedback preserves the failure record');
   pet.run('chatRenderHistory(chatLog.map(entry => ({ ...entry })))');
@@ -169,7 +170,7 @@ test('sending keeps its original button content, blocks duplicate turns, and clo
   assert.equal(send.textContent, originalLabel, 'busy feedback does not replace the button content');
   pet.nodes['pc-input'].value = '尚未发送的草稿';
   pet.run(`showChatFeedback('请求仍在处理')`);
-  pet.nodes['pc-feedback-close'].click();
+  pet.run('closeChatFeedback()');
   assert.equal(pet.nodes['pc-feedback'].hidden, true);
   assert.equal(pet.run('chatBusy'), true);
   assert.equal(send.disabled, true);
@@ -190,25 +191,55 @@ test('visible feedback owns only its own hit region and closing it restores the 
   const pet = loadPet();
   pet.run(`drawPos = { x: 50, y: 50 };
     homeRect = { x: 0, y: 0, width: 800, height: 600 };
-    lastPaintRect = { x: 50, y: 50, w: 40, h: 50 };
+    lastPaintRect = null;
     chatRect = { x: 500, y: 350, w: 200, h: 120 };
     globalThis.__surfaceReports = [];
     petShell.setInteractive = payload => { if (payload.regions) __surfaceReports.push(payload); };
-    showChatFeedback('连接失败'); reportSurfaceRegions();`);
+    showChatFeedback('连接失败');`);
+  pet.flushFrames();
   const feedback = JSON.parse(pet.run('JSON.stringify(chatFeedbackRect)'));
   assert.equal(pet.run(`overPet(${feedback.x + 8}, ${feedback.y + 8})`), true);
   assert.equal(pet.run(`overPet(${feedback.x + 8}, ${feedback.y + feedback.h + 4})`), false, 'the gap below the feedback remains click-through');
   const regions = JSON.parse(pet.run('JSON.stringify(__surfaceReports.at(-1).regions)'));
   assert.deepEqual(regions, [
-    { x: 50, y: 50, width: 40, height: 50 },
     { x: 500, y: 350, width: 200, height: 120 },
     { x: feedback.x, y: feedback.y, width: feedback.w, height: feedback.h },
   ]);
-  pet.nodes['pc-feedback-close'].click();
-  pet.run('reportSurfaceRegions()');
+  pet.run('closeChatFeedback()');
+  pet.flushFrames();
   assert.equal(pet.run('chatFeedbackRect'), null);
   assert.equal(pet.run(`overPet(${feedback.x + 8}, ${feedback.y + 8})`), false);
-  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(__surfaceReports.at(-1).regions)')), regions.slice(0, 2));
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(__surfaceReports.at(-1).regions)')), regions.slice(0, 1));
+});
+
+test('chat feedback has no manual close button, auto-fades after 6s, and vector fallbacks avoid shadowBlur or emoji', () => {
+  assert.doesNotMatch(PET_HTML, /id="pc-feedback-close"/);
+  const pet = loadPet();
+  pet.run(`
+    globalThis.__timers = new Map(); globalThis.__tid = 0;
+    setTimeout = (fn, ms) => { const id = ++__tid; __timers.set(id, { fn, ms }); return id; };
+    clearTimeout = id => { __timers.delete(id); };
+    drawPos = { x: 50, y: 50 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    chatRect = { x: 500, y: 350, w: 200, h: 120 };
+    showChatFeedback('连接失败');
+  `);
+  assert.equal(pet.nodes['pc-feedback'].hidden, false);
+  const timers = JSON.parse(pet.run('JSON.stringify([...__timers.values()].map(t => t.ms))'));
+  assert.ok(timers.includes(6000), 'feedback schedules 6s auto-fadeout');
+  pet.run('for (const t of [...__timers.values()]) { if (t.ms === 6000) t.fn(); }');
+  assert.equal(pet.nodes['pc-feedback'].hidden, true);
+  assert.equal(pet.run('chatFeedbackRect'), null);
+
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('drawToken(120, 120, 1)');
+  assert.equal(pet.canvas.ctx.shadowBlur, undefined);
+  assert.equal(pet.canvas.ctx.ops.some(op => op[0] === 'fillText'), false);
+
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('panel = { x: 10, y: 10, w: 200, h: 120, cells: [] }; growth = { level: 1, title: "幼鲸", bars: [] }; stats = { mood: 50, hunger: 50 }; drawPanel();');
+  const texts = pet.canvas.ctx.ops.filter(op => op[0] === 'fillText').map(op => op[1]);
+  assert.equal(texts.includes('🐋'), false);
 });
 
 function makeNode(id = '') {
@@ -246,7 +277,7 @@ function loadPet() {
   mathStub.random = () => rand();
   const mainCanvas = makeCanvas();
   const nodes = Object.fromEntries(['pet-chat', 'pc-thread', 'pc-empty', 'pc-input', 'pc-send',
-    'pc-feedback', 'pc-feedback-text', 'pc-feedback-close'].map(id => [id, makeNode(id)]));
+    'pc-feedback', 'pc-feedback-text'].map(id => [id, makeNode(id)]));
   nodes['pet-chat'].querySelector = selector => nodes[selector.slice(1)] || null;
   nodes['pet-chat'].offsetHeight = 120;
   nodes['pet-chat'].hidden = true;
@@ -2480,15 +2511,13 @@ test('unload releases DOM, IPC, polling, timeouts and display callbacks exactly 
     }
   `);
   await pet.run('mount()');
-  pet.run(`chatStartPoll(); startLookAnim(); startRelocatePoll();
+  pet.run(`chatStartPoll(); startLookAnim(); startRelocatePoll(); showChatFeedback('提示');
     globalThis.__staleCallbacks = [...__scheduled.values()];`);
   assert.ok(pet.run('__scheduled.size') >= 5, 'real mount and feature loops own pending work');
   assert.ok(pet.run('window.listenerCount()') > 0);
-  assert.ok(pet.nodes['pc-feedback-close'].listenerCount() > 0);
   pet.run('petLifetime.dispose(); petLifetime.dispose()');
   assert.equal(pet.run('__released.length'), 7);
   assert.equal(pet.run('window.listenerCount()'), 0);
-  assert.equal(pet.nodes['pc-feedback-close'].listenerCount(), 0);
   assert.equal(pet.nodes['pc-send'].listenerCount(), 0);
   assert.equal(pet.run('__scheduled.size'), 0);
   pet.run(`for (const callback of __staleCallbacks) callback(performance.now());
@@ -2733,9 +2762,7 @@ function loadPetWithChatDom() {
   const feedback = makeEl('div', 'pc-feedback');
   feedback.hidden = true;
   const feedbackText = makeEl('span', 'pc-feedback-text');
-  const feedbackClose = makeEl('button', 'pc-feedback-close');
   feedback.appendChild(feedbackText);
-  feedback.appendChild(feedbackClose);
   const canvasEl = makeEl('div', 'pet-outside');
   body.appendChild(canvasEl);
   body.appendChild(chat);
@@ -2747,7 +2774,7 @@ function loadPetWithChatDom() {
     'pc-model-trigger': trigger, 'pc-effort-box': effortBox, 'pc-model': modelSel,
     'pc-effort': effortSel, 'pc-input': input, 'pc-send': send, 'pc-close': closeBtn,
     'pc-open': openBtn, 'pc-picker': picker, 'pc-feedback': feedback,
-    'pc-feedback-text': feedbackText, 'pc-feedback-close': feedbackClose,
+    'pc-feedback-text': feedbackText,
   };
 
   const win = {

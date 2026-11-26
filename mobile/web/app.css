@@ -385,14 +385,15 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 @keyframes flow-dot-spin { to { transform: rotate(360deg); } }
 /* Running Think row: light sweep across the head (desktop dsh-reasoning-row-sweep). */
 .think-row[data-state="running"] .flow-head::after {
-  content: ""; position: absolute; inset-block: 0; left: -300px; width: 300px;
+  content: ""; position: absolute; inset: 0;
   background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 55%, transparent 100%);
+  transform: translateX(-100%);
   animation: flow-sweep 2.6s ease-out infinite; pointer-events: none;
 }
 [data-ds-dark-theme] .think-row[data-state="running"] .flow-head::after {
   background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.08) 55%, transparent 100%);
 }
-@keyframes flow-sweep { 0% { left: -300px; } 90%, 100% { left: 100%; } }
+@keyframes flow-sweep { 0% { transform: translateX(-100%); } 90%, 100% { transform: translateX(100%); } }
 .flow-body { padding: 2px 0 6px 22px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .think-body {
   color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 20px;

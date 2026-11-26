@@ -46,8 +46,15 @@ function artifactError(code, message) {
   return error;
 }
 
+export function readSessionEvents(session) {
+  if (!session) return null;
+  if (typeof session.snapshotEvents === 'function') return session.snapshotEvents();
+  if (typeof session.events === 'function') return session.events();
+  return Array.isArray(session.events) ? session.events : null;
+}
+
 function currentTurn(agent) {
-  const events = agent?.session?.events;
+  const events = readSessionEvents(agent?.session);
   if (!Array.isArray(events)) return null;
   let turn = null;
   for (const event of events) {

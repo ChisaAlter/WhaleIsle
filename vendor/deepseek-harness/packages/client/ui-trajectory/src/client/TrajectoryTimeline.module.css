@@ -136,13 +136,6 @@
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .lanes[data-animate-viewport='true'],
-  .turnBoundaries[data-animate-viewport='true'] {
-    transition: left var(--ds-transition-duration) var(--ds-ease-in-out);
-  }
-}
-
 .turnBoundary {
   position: absolute;
   top: 0;

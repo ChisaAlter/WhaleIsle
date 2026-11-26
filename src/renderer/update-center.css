@@ -26,13 +26,15 @@ main#center.has-notes { height: min(680px, calc(100vh - 48px)); }
 }
 #bar-fill {
   height: 100%;
-  width: 0;
+  width: 100%;
   border-radius: inherit;
   background: var(--dsw-alias-state-business-primary);
-  transition: width var(--ds-transition-duration-fast) linear;
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform var(--ds-transition-duration-fast) linear;
 }
 #progress[data-state="paused"] #bar-fill { background: var(--dsw-alias-label-tertiary); }
-#progress[data-state="indeterminate"] #bar-fill { width: 100% !important; opacity: 0.45; }
+#progress[data-state="indeterminate"] #bar-fill { transform: scaleX(1) !important; opacity: 0.45; }
 #progress p { padding: 0; margin-top: 8px; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 
 #problem {
@@ -78,7 +80,7 @@ main#center #notes { white-space: pre-wrap; font-size: 13px; line-height: 21px; 
 .segmented button[aria-checked="true"] {
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
-  box-shadow: var(--dsw-elevation-subtle, 0 1px 2px rgb(0 0 0 / 12%));
+  box-shadow: var(--dsw-elevation-panel);
 }
 .text-field {
   flex: 1 1 auto;
@@ -119,15 +121,15 @@ main#center #notes { white-space: pre-wrap; font-size: 13px; line-height: 21px; 
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  background: var(--dsw-alias-switch-thumb);
+  box-shadow: var(--dsw-shadow-lv2);
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 .toggle input:checked { background: var(--dsw-alias-state-business-primary); }
 .toggle input:checked::after { transform: translateX(14px); }
 .toggle input:disabled { opacity: 0.5; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
-  .toggle input, .toggle input::after { transition: none; }
+  #bar-fill, .toggle input, .toggle input::after { transition: none; }
 }
 
 main#center #actions { flex-direction: row-reverse; align-items: center; flex-wrap: wrap; }

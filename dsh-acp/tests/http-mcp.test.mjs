@@ -11,13 +11,27 @@ import { allowDesktopConfirm } from './confirm-stub.mjs';
 
 const tempDir = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 
-async function mountHttpPlugin({ requestRejection, storeFile }) {
+async function mountHttpPlugin({ admit, rpcHandle = false, storeFile }) {
   const routes = [];
+  const rpcHandlers = new Map();
   const cleanups = [];
   const server = http.createServer((req, res) => {
-    const route = routes.find((r) => req.url.startsWith(r.path));
-    if (route) void route.handler(req, res);
-    else { res.writeHead(404); res.end('no route'); }
+    const target = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const exact = routes.find((r) => r.kind === 'exact' && r.path === target.pathname);
+    const route = exact ?? routes.find((r) => target.pathname.startsWith(r.path));
+    if (!route) { res.writeHead(404); res.end('no route'); return; }
+    const policy = typeof route.auth === 'function' ? route.auth({ url: target, headers: req.headers, method: req.method }) : (route.auth ?? 'required');
+    if (policy === 'anonymous') {
+      void route.handler(req, res, undefined);
+      return;
+    }
+    const admission = typeof admit === 'function' ? admit(req) : { rejection: 503 };
+    if (admission && 'rejection' in admission) {
+      res.writeHead(admission.rejection);
+      res.end(admission.rejection === 401 ? 'unauthorized' : admission.rejection === 503 ? 'authentication unavailable' : 'forbidden');
+      return;
+    }
+    void route.handler(req, res, admission?.peer);
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -25,7 +39,17 @@ async function mountHttpPlugin({ requestRejection, storeFile }) {
   });
   const origin = `http://127.0.0.1:${server.address().port}`;
   const ctx = {
-    connection: requestRejection === undefined ? {} : { requestRejection },
+    connection: {
+      ...(admit === undefined ? {} : { admit }),
+      ...(rpcHandle ? {
+        rpc: {
+          handle: (channel, fn) => {
+            rpcHandlers.set(channel, fn);
+            return () => rpcHandlers.delete(channel);
+          },
+        },
+      } : {}),
+    },
     llm: { registerAdapter: () => () => {} },
     webServer: {
       getOrigin: () => origin,
@@ -45,6 +69,8 @@ async function mountHttpPlugin({ requestRejection, storeFile }) {
   return {
     origin,
     port: server.address().port,
+    routes,
+    rpcHandlers,
     async dispose() {
       for (const fn of cleanups.reverse()) await fn();
       await new Promise((resolve) => server.close(resolve));
@@ -65,13 +91,38 @@ function rawRequest({ port, method = 'POST', path: reqPath, headers = {}, body =
   });
 }
 
-test('HTTP /dsh-acp-agents/* enforces fail-closed requestRejection, body limits, content-type, path validation, and MCP pre-body Host/Origin/Bearer checks', async () => {
+test('HTTP /dsh-acp-agents/* enforces fail-closed admit/peer, rpc.handle owner check, dynamic auth for /mcp, body limits, content-type, path validation, and MCP pre-body Host/Origin/Bearer checks', async () => {
   const root = tempDir('acp-http-guard-');
   const storeFile = path.join(root, 'agents.json');
   saveAgentsConfig([], storeFile);
 
-  // 1) Missing ctx.connection.requestRejection fails closed with 503 on non-MCP endpoints
-  const noAuthHost = await mountHttpPlugin({ requestRejection: undefined, storeFile });
+  // 0) Modern 0.2.3-alpha.2 contract: ctx.connection.rpc.handle + exact /dsh-acp-agents/mcp auth: 'anonymous'
+  const modernHost = await mountHttpPlugin({ rpcHandle: true, storeFile });
+  try {
+    const rpcFn = modernHost.rpcHandlers.get('/dsh-acp-agents');
+    assert.equal(typeof rpcFn, 'function');
+    const mcpRoute = modernHost.routes.find((r) => r.kind === 'exact' && r.path === '/dsh-acp-agents/mcp');
+    assert.equal(mcpRoute?.auth, 'anonymous');
+    const guestRes = await rpcFn('catalog', {}, new AbortController().signal, { principal: { kind: 'guest' } });
+    assert.equal(guestRes.ok, false);
+    assert.equal(guestRes.error.code, 'dsh-acp-agents/forbidden');
+    const ownerRes = await rpcFn('catalog', {}, new AbortController().signal, { principal: { kind: 'owner' } });
+    assert.equal(ownerRes.ok, true);
+    assert.ok(Array.isArray(ownerRes.value.agents));
+    // /mcp bypasses WebServer session auth (auth: 'anonymous') and enforces its own Bearer guard
+    const mcpUnauth = await rawRequest({
+      port: modernHost.port,
+      path: '/dsh-acp-agents/mcp',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer forged-token' },
+      body: '{}',
+    });
+    assert.equal(mcpUnauth.status, 401);
+  } finally {
+    await modernHost.dispose();
+  }
+
+  // 1) Missing ctx.connection.admit fails closed with 503 on non-MCP endpoints
+  const noAuthHost = await mountHttpPlugin({ admit: undefined, storeFile });
   try {
     const res = await rawRequest({
       port: noAuthHost.port,
@@ -84,12 +135,18 @@ test('HTTP /dsh-acp-agents/* enforces fail-closed requestRejection, body limits,
     await noAuthHost.dispose();
   }
 
-  // 2) Full HTTP boundary matrix with active requestRejection
-  let rejectCode = undefined;
-  const host = await mountHttpPlugin({ requestRejection: () => rejectCode, storeFile });
+  // 2) Full HTTP boundary matrix with active admit(req) + dynamic auth selector
+  const ownerPeer = { id: 'owner-1', principal: { kind: 'owner' }, signal: new AbortController().signal };
+  let admitResult = { peer: ownerPeer };
+  const host = await mountHttpPlugin({ admit: () => admitResult, storeFile });
   try {
-    // requestRejection 401/403 enforced
-    rejectCode = 403;
+    const prefixRoute = host.routes.find((r) => r.kind === 'prefix' && r.path === '/dsh-acp-agents');
+    assert.equal(typeof prefixRoute?.auth, 'function');
+    assert.equal(prefixRoute.auth({ url: 'http://127.0.0.1/dsh-acp-agents/mcp' }), 'anonymous');
+    assert.equal(prefixRoute.auth({ url: 'http://127.0.0.1/dsh-acp-agents/catalog' }), 'required');
+
+    // admit rejection 401/403 enforced & non-owner peer rejected with 403
+    admitResult = { rejection: 403 };
     assert.equal(
       (await rawRequest({
         port: host.port,
@@ -99,7 +156,17 @@ test('HTTP /dsh-acp-agents/* enforces fail-closed requestRejection, body limits,
       })).status,
       403,
     );
-    rejectCode = undefined;
+    admitResult = { peer: { id: 'guest-1', principal: { kind: 'guest' }, signal: new AbortController().signal } };
+    assert.equal(
+      (await rawRequest({
+        port: host.port,
+        path: '/dsh-acp-agents/catalog',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      })).status,
+      403,
+    );
+    admitResult = { peer: ownerPeer };
 
     // Method & path traversal guards -> 404
     assert.equal((await rawRequest({ port: host.port, method: 'GET', path: '/dsh-acp-agents/catalog' })).status, 404);

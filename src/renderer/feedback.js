@@ -193,15 +193,10 @@
   // A pending action reports on the button that started it: the caption keeps
   // its place but turns transparent, and a spinner and short label are drawn
   // over the whole button, so neither the button nor its neighbours move.
-  // Callers set `disabled` first so the overlay takes the settled text color.
   function setButtonLabel(button, label, busy) {
     button.querySelector(':scope > .shell-button-overlay')?.remove();
     const overlay = document.createElement('span');
     overlay.className = 'shell-button-overlay';
-    // Read the settled color before the caption is made transparent; the
-    // marker also lifts the older spinner-only busy rule.
-    button.dataset.buttonLabel = 'measure';
-    overlay.style.color = getComputedStyle(button).color;
     const text = document.createElement('span');
     text.className = 'shell-button-label';
     const track = document.createElement('span');

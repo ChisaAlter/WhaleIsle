@@ -1346,3 +1346,47 @@ test('installMarketplacePlugin pins a SHA when a GitHub token is stored', async 
     globalThis.fetch = previous;
   }
 });
+
+test('rollback snapshot skips dangling symlinks during fs.promises.cp filter', async () => {
+  writeDiskRegistry([{
+    ...githubRow('13071301808', NPM_SPEC, `https://github.com/13071301808/${NPM_SPEC}`, NPM_SPEC),
+    npm: NPM_SPEC,
+  }]);
+  writeProfileDep(NPM_SPEC, '1.0.0');
+  writeVersionedBundlePlugin(NPM_SPEC, '1.0.0');
+  const modDir = path.join(profileDir(), 'node_modules', ...NPM_SPEC.split('/'));
+  const dangling = path.join(modDir, 'dangling-link');
+  const origLstat = fs.promises.lstat;
+  const origStat = fs.promises.stat;
+  let checkedDangling = false;
+  if (process.platform === 'win32') {
+    fs.promises.lstat = async (p, ...args) => {
+      if (path.normalize(String(p)) === path.normalize(modDir)) {
+        checkedDangling = true;
+        return { isSymbolicLink: () => true };
+      }
+      return origLstat.call(fs.promises, p, ...args);
+    };
+    fs.promises.stat = async (p, ...args) => {
+      if (path.normalize(String(p)) === path.normalize(modDir)) {
+        const err = new Error('ENOENT dangling target');
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return origStat.call(fs.promises, p, ...args);
+    };
+  } else {
+    fs.symlinkSync(path.join(modDir, 'missing-target'), dangling);
+    checkedDangling = true;
+  }
+  try {
+    const result = await installMarketplacePlugin(NPM_ID, {
+      runPlugin: async () => ({ ok: true, code: 0, log: '', needsAllowBuilds: false, allowBuilds: [] }),
+    }).catch(() => null);
+    assert.equal(checkedDangling, true);
+    assert.notEqual(result, undefined);
+  } finally {
+    fs.promises.lstat = origLstat;
+    fs.promises.stat = origStat;
+  }
+});

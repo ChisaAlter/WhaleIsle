@@ -8,7 +8,7 @@ const {
   dispatchGitTunnel,
 } = require('./dshd-git-dispatch');
 
-test('git tunnel allowlist matches titlebar set and excludes stage/pty/writeFile', () => {
+test('git tunnel allowlist matches titlebar set plus hunk-level stage-patch/unstage-patch and excludes full stage/unstage/discard/pty/writeFile', () => {
   assert.equal(isAllowedGitAction('git-status'), true);
   assert.equal(isAllowedGitAction('git-create-branch'), true);
   assert.equal(isAllowedGitAction('git-publish'), true);
@@ -22,6 +22,9 @@ test('git tunnel allowlist matches titlebar set and excludes stage/pty/writeFile
   assert.ok(GIT_TUNNEL_ACTIONS.has('git-commit'));
   assert.ok(GIT_TUNNEL_ACTIONS.has('git-stage-patch'));
   assert.ok(GIT_TUNNEL_ACTIONS.has('git-unstage-patch'));
+  assert.equal(GIT_TUNNEL_ACTIONS.has('git-stage'), false);
+  assert.equal(GIT_TUNNEL_ACTIONS.has('git-unstage'), false);
+  assert.equal(GIT_TUNNEL_ACTIONS.has('git-discard'), false);
 });
 
 test('dispatchGitTunnel forwards git-stage-patch and git-unstage-patch with patchText', async () => {

@@ -64,31 +64,74 @@ function refreshTickerLine() {
 
 // The bottom ticker opens a drawer with the full log; closing paths are the
 // backdrop, the × button, and Escape.
+/** @type {Element | null} */
+let lastFocusBeforeDrawer = null;
+
+/** @param {boolean} inert */
+function setDrawerBackgroundInert(inert) {
+  const scene = document.querySelector('.scene');
+  if (!scene || !scene.children) return;
+  for (const child of scene.children) {
+    if (child !== drawerEl && 'inert' in child) {
+      /** @type {HTMLElement} */ (child).inert = inert;
+    }
+  }
+}
+
 function openDrawer() {
+  if (!drawerEl || !drawerEl.hidden) return;
+  lastFocusBeforeDrawer = document.activeElement;
+  setDrawerBackgroundInert(true);
   drawerEl.hidden = false;
-  logEl.scrollTop = logEl.scrollHeight;
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  logCloseEl?.focus?.();
 }
 
 function closeDrawer() {
+  if (!drawerEl || drawerEl.hidden) return;
   drawerEl.hidden = true;
+  setDrawerBackgroundInert(false);
+  const restore = /** @type {HTMLElement | null} */ (lastFocusBeforeDrawer);
+  lastFocusBeforeDrawer = null;
+  if (restore && typeof restore.focus === 'function' && restore.isConnected !== false) {
+    restore.focus();
+  } else {
+    tickerInnerEl?.focus?.();
+  }
 }
 
-tickerInnerEl.addEventListener('click', openDrawer);
-tickerInnerEl.addEventListener('keydown', (event) => {
+tickerInnerEl?.addEventListener('click', openDrawer);
+tickerInnerEl?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
     openDrawer();
   }
 });
-logCloseEl.addEventListener('click', closeDrawer);
-drawerEl.addEventListener('click', (event) => {
+logCloseEl?.addEventListener('click', closeDrawer);
+drawerEl?.addEventListener('click', (event) => {
   if (event.target === drawerEl) {
     closeDrawer();
   }
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !drawerEl.hidden) {
+  if (!drawerEl || drawerEl.hidden) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
     closeDrawer();
+    return;
+  }
+  if (event.key === 'Tab') {
+    const focusables = /** @type {HTMLElement[]} */ (
+      [logCloseEl, logEl].filter((el) => Boolean(el && !(/** @type {any} */ (el)).disabled))
+    );
+    if (!focusables.length) return;
+    const active = /** @type {HTMLElement | null} */ (document.activeElement);
+    const idx = active ? focusables.indexOf(active) : -1;
+    const next = idx < 0
+      ? (event.shiftKey ? focusables.length - 1 : 0)
+      : (idx + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length;
+    event.preventDefault();
+    focusables[next]?.focus();
   }
 });
 

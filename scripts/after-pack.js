@@ -290,10 +290,9 @@ async function assertDshdRemoteRuntime(resources) {
   const serverExport = path.join(root, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js');
   const required = [
     serverExport,
-    path.join(root, 'node_modules', '@chisacode', 'protocol', 'dist', 'connection-offer.js'),
-    path.join(root, 'node_modules', '@chisacode', 'relay', 'dist', 'e2ee.js'),
-    path.join(root, 'node_modules', 'pino', 'package.json'),
-    path.join(root, 'node_modules', 'ws', 'package.json'),
+    ...['@chisacode/protocol/dist/connection-offer.js', '@chisacode/relay/dist/e2ee.js',
+      'better-sqlite3/build/Release/better_sqlite3.node', 'pino/package.json', 'ws/package.json']
+      .map((rel) => path.join(root, 'node_modules', ...rel.split('/'))),
   ];
   const missing = required.filter((file) => !fs.existsSync(file));
   if (missing.length > 0) {

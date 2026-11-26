@@ -3,10 +3,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { readSessionDisplayMeta, readSessionDisplayMetaAsync } = require('./data-import-session-meta');
+const { readSessionDisplayMeta, scanImportPipelineAsync } = require('./data-import-session-meta');
 const { randomUUID } = require('crypto');
 const { getDesktopDshHome, tryGetDesktopDshHome } = require('../shared/dsh-home');
-const { DROPPED, OFFICIAL_TEMPLATE_BUNDLES, listInstalledPlugins } = require('./plugins');
+const { DROPPED, OFFICIAL_TEMPLATE_BUNDLES, listInstalledPlugins, listInstalledPluginsAsync } = require('./plugins');
 const { isValidGithubSpec, isValidPackageName } = require('../host/install-dsh-plugin-client');
 const { replaceDirJournaled, commitStagedDir, recoverImportTransactions, reconcileImportTransactionsSync, overlayDir, nextOpId, parentChainIsLinkFree } = require('./import-transaction');
 
@@ -864,101 +864,30 @@ function presetCandidates(sourceHome, destTarget) {
   return rows.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function scanImport({
-  sourceHome,
-  destHome: dest,
-  extraSkillDirs,
-  agentsSkillsRoot,
-} = {}) {
-  const source = resolveSourceHome(sourceHome);
-  const target = destHome(dest);
-  const sourceSessions = path.join(source, 'sessions');
-  const destSessions = path.join(target, 'sessions');
-  const sessions = walkSessionDirs(sourceSessions)
-    .filter((row) => !isHarnessPresetSessionRel(row.rel))
-    .map((row) => {
-      const meta = readSessionDisplayMeta(row);
-      return {
-        ...row,
-        id: meta.id,
-        cwd: meta.cwd,
-        title: meta.title,
-        createdAt: meta.createdAt,
-        compressedLog: Boolean(meta.compressedLog),
-        conflict: !row.unsupported && destHasSession(destSessions, row.rel),
-      };
-    });
-  return finishImportScan({ source, target, extraSkillDirs, agentsSkillsRoot }, sessions);
+/** Async non-blocking import scan (alias of {@link scanImportAsync}). */
+async function scanImport(options = {}) {
+  return scanImportAsync(options);
 }
 
-// The renderer scan uses asynchronous filesystem reads. Keep the synchronous
-// API for callers that already own a non-interactive import snapshot.
+/** Async non-blocking import scan using streaming JSONL meta, libuv zstd, and async fs I/O. */
 async function scanImportAsync({ sourceHome, destHome: dest, extraSkillDirs, agentsSkillsRoot } = {}) {
-  const source = resolveSourceHome(sourceHome);
-  const target = destHome(dest);
-  const rows = (await walkSessionDirsAsync(path.join(source, 'sessions')))
-    .filter((row) => !isHarnessPresetSessionRel(row.rel));
-  const sessions = new Array(rows.length);
-  let nextRow = 0;
-  await Promise.all(Array.from({ length: Math.min(4, rows.length) }, async () => {
-    while (nextRow < rows.length) {
-      const index = nextRow++;
-      const row = rows[index];
-      const meta = await readSessionDisplayMetaAsync(row);
-      let conflict = false;
-      if (!row.unsupported) {
-        try {
-          const entries = await fs.promises.readdir(path.join(target, 'sessions', row.rel));
-          conflict = entries.some((name) => SESSION_LOG.test(name));
-        } catch { /* A missing destination directory has no existing session to conflict with. */ }
-      }
-      sessions[index] = { ...row, id: meta.id, cwd: meta.cwd, title: meta.title,
-        createdAt: meta.createdAt, compressedLog: Boolean(meta.compressedLog), conflict };
-    }
-  }));
-  const scan = finishImportScan({ source, target, extraSkillDirs, agentsSkillsRoot }, sessions, false);
-  scan.destEmpty = (await walkSessionDirsAsync(path.join(target, 'sessions'))).length === 0;
-  return scan;
-}
-
-function finishImportScan({ source, target, extraSkillDirs, agentsSkillsRoot }, sessions, destEmpty) {
-  const destSessions = path.join(target, 'sessions');
-  const attachmentsDir = path.join(source, 'attachments');
-  const plugins = pluginCandidates(source);
-  const { skills, skillRoots } = collectSkills({
-    source,
+  return scanImportPipelineAsync({
+    source: resolveSourceHome(sourceHome),
+    target: destHome(dest),
     extraSkillDirs,
     agentsSkillsRoot,
-    destSkills: path.join(target, 'skills'),
+    DROPPED,
+    OFFICIAL_TEMPLATE_BUNDLES,
+    listInstalledPluginsAsync,
+    isHarnessPresetSessionRel,
+    pluginReinstallSpec,
+    parseMcpServersYaml,
+    publicMcpRow,
+    splitTopLevelSections,
+    credentialRefsOfSection,
+    isInside,
+    isUnsafeRel,
   });
-  const destMcpIds = new Set(readMcpServers(target).map((row) => String(row.id)));
-  const mcp = readMcpServers(source).map((row) => publicMcpRow(row, destMcpIds));
-  const settings = settingsCandidates(source, target);
-  const presets = presetCandidates(source, target);
-  const hasAttachments = fs.existsSync(attachmentsDir);
-  const sourceHasData = sessions.some((row) => !row.unsupported)
-    || hasAttachments
-    || skills.length > 0
-    || plugins.some((row) => !row.skipped)
-    || mcp.length > 0
-    || settings.length > 0
-    || presets.some((row) => !row.broken);
-  return {
-    sourceHome: source,
-    destHome: target,
-    homeDir: os.homedir(),
-    destEmpty: destEmpty === undefined ? walkSessionDirs(destSessions).length === 0 : destEmpty,
-    sourceHasData,
-    sessions,
-    plugins,
-    skills,
-    mcp,
-    settings,
-    presets,
-    skillRoots,
-    extraSkillDirs: Array.isArray(extraSkillDirs) ? extraSkillDirs.filter(Boolean) : [],
-    hasAttachments,
-  };
 }
 
 function shouldHoldForImport(scan) {

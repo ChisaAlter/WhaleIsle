@@ -2,13 +2,13 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnTreeOptions, killProcessTree: stopTree } = require('../shared/process-tree');
-const { loadWorkspaceAuthority, isPathInside } = require('./workspace-authority');
+const { createCachedWorkspaceAuthority, isPathInside } = require('./workspace-authority');
 
-let workspaceAuthority = null;
+const authorityCache = createCachedWorkspaceAuthority();
 
 /** Test seam: pin the trust root (node:test runs outside Electron). */
 function setWorkspaceAuthority(authority) {
-  workspaceAuthority = authority;
+  authorityCache.set(authority);
 }
 
 /**
@@ -18,8 +18,7 @@ function setWorkspaceAuthority(authority) {
  * @returns {string | null}
  */
 function resolveAuthorizedCwd(cwd) {
-  if (workspaceAuthority === null) workspaceAuthority = loadWorkspaceAuthority();
-  return workspaceAuthority.resolveAuthorizedCwd(cwd);
+  return authorityCache.get().resolveAuthorizedCwd(cwd);
 }
 
 function asCwd(cwd) {
@@ -28,8 +27,7 @@ function asCwd(cwd) {
 
 /** Resolve a renderer-supplied relative path inside its authorized workspace root. */
 function resolveInsideWorkspace(cwd, relativePath) {
-  if (workspaceAuthority === null) workspaceAuthority = loadWorkspaceAuthority();
-  return workspaceAuthority.resolveInside(cwd, relativePath);
+  return authorityCache.get().resolveInside(cwd, relativePath);
 }
 
 /** Wall-clock limit for status/list/read git children. */

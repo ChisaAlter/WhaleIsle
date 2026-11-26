@@ -164,16 +164,18 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * @param {Electron.App} app
  * @param {string} root
+ * @param {{ rejectWc?: Electron.WebContents | null }} [options]
  */
-async function clientReady(app, root) {
+async function clientReady(app, root, options = {}) {
   const { getHarnessWebContents } = require(path.join(root, 'src/main/window.js'));
   const { readLastDesktopStart } = require(path.join(root, 'src/main/launcher-gate.js'));
+  const rejectWc = options.rejectWc ?? null;
   const deadline = performance.now() + 180000;
   while (performance.now() < deadline) {
     const startup = readLastDesktopStart(app.getPath('userData'));
     if (startup.ok === false) throw new Error(`Desktop start failed: ${startup.error}`);
     const wc = getHarnessWebContents();
-    if (wc && !wc.isDestroyed() && !wc.isLoading()) {
+    if (wc && wc !== rejectWc && !wc.isDestroyed() && !wc.isLoading()) {
       // Require the assembled workbench, rather than an HTTP-ready host alone.
       const ready = await wc.executeJavaScript('Boolean(document.querySelector("[data-dshd-caption=band]"))');
       if (ready) return wc;
@@ -181,6 +183,118 @@ async function clientReady(app, root) {
     await pause(100);
   }
   throw new Error('Desktop workbench did not become ready within 180 seconds');
+}
+
+/**
+ * Wait until startup's maintenance slot is released before issuing `shell:restart`.
+ * @param {{ isMaintenanceHeld?: () => boolean }} importGuard
+ * @param {{ timeoutMs?: number, pollMs?: number, sleep?: (ms: number) => Promise<void>, now?: () => number }} [options]
+ */
+async function waitForMaintenanceIdle(importGuard, options = {}) {
+  if (typeof importGuard?.isMaintenanceHeld !== 'function') return;
+  const timeoutMs = options.timeoutMs ?? 30000;
+  const pollMs = options.pollMs ?? 50;
+  const sleep = options.sleep ?? pause;
+  const now = options.now ?? (() => performance.now());
+  const deadline = now() + timeoutMs;
+  while (importGuard.isMaintenanceHeld()) {
+    if (now() >= deadline) {
+      throw new Error(`Startup maintenance remained held after ${timeoutMs} ms`);
+    }
+    await sleep(pollMs);
+  }
+}
+
+/**
+ * Observe `window.shell.restart()` settlement without blocking the unload poll loop.
+ * @param {{ webContents: { executeJavaScript: (code: string) => Promise<any> } }} win
+ */
+function startRestartProbe(win) {
+  const state = { settled: false, outcome: /** @type {any} */ (undefined), rejected: false, error: /** @type {unknown} */ (null) };
+  Promise.resolve()
+    .then(() => win.webContents.executeJavaScript('window.shell.restart()'))
+    .then(
+      (value) => { state.settled = true; state.outcome = value; },
+      (error) => { state.settled = true; state.rejected = true; state.error = error; },
+    );
+  return state;
+}
+
+/**
+ * Check whether the previous workbench WebContents has been destroyed or replaced.
+ * @param {any} previousWc
+ * @param {() => any} getHarnessWebContents
+ */
+function hasWorkbenchUnloaded(previousWc, getHarnessWebContents) {
+  if (!previousWc) return true;
+  if (typeof previousWc.isDestroyed === 'function' && previousWc.isDestroyed()) return true;
+  return getHarnessWebContents() !== previousWc;
+}
+
+/**
+ * Throw when `window.shell.restart()` rejected or returned a refusal payload.
+ * @param {{ settled: boolean, outcome: any, rejected: boolean, error: unknown }} probe
+ */
+function assertRestartAccepted(probe) {
+  if (probe.rejected) throw probe.error;
+  if (!probe.settled) return;
+  const { outcome } = probe;
+  if (outcome && (outcome.ok === false || outcome.proceeded === false)) {
+    throw new Error(`Restart refused: ${outcome.error || outcome.code || 'unknown'}`);
+  }
+}
+
+/**
+ * Trigger `window.shell.restart()`, reject `{ ok: false }` / `{ proceeded: false }`
+ * refusals, observe the previous workbench view unloading/replacing, and measure
+ * elapsed milliseconds until the newly mounted workbench becomes ready.
+ * @param {{
+ *   win: { webContents: { executeJavaScript: (code: string) => Promise<any> } },
+ *   getHarnessWebContents: () => any,
+ *   waitForClientReady: (options?: { rejectWc?: any }) => Promise<any>,
+ *   sleep?: (ms: number) => Promise<void>,
+ *   pollMs?: number,
+ *   timeoutMs?: number,
+ *   unloadGraceMs?: number,
+ *   now?: () => number,
+ * }} deps
+ * @returns {Promise<number>}
+ */
+async function performMeasuredRestart({
+  win,
+  getHarnessWebContents,
+  waitForClientReady,
+  sleep = pause,
+  pollMs = 50,
+  timeoutMs = 180000,
+  unloadGraceMs = 5000,
+  now = () => performance.now(),
+}) {
+  const previousWc = getHarnessWebContents();
+  const started = now();
+  const deadline = started + timeoutMs;
+  const probe = startRestartProbe(win);
+
+  let sawUnload = !previousWc;
+  let settledAt = null;
+  while (now() < deadline) {
+    assertRestartAccepted(probe);
+    if (!sawUnload && hasWorkbenchUnloaded(previousWc, getHarnessWebContents)) {
+      sawUnload = true;
+    }
+    if (sawUnload && probe.settled) break;
+    if (probe.settled && !sawUnload) {
+      if (settledAt === null) settledAt = now();
+      else if (now() - settledAt >= unloadGraceMs) {
+        throw new Error('Previous workbench did not unload during restart');
+      }
+    }
+    await sleep(pollMs);
+  }
+  if (!probe.settled) throw new Error(`Restart did not complete within ${timeoutMs} ms`);
+  if (!sawUnload) throw new Error('Previous workbench did not unload during restart');
+  await waitForClientReady({ rejectWc: previousWc });
+  return now() - started;
 }
 
 function startRuntimeMeasurement() {
@@ -231,16 +345,17 @@ function startRuntimeMeasurement() {
       await clientReady(app, root);
       report.startupMs = process.uptime() * 1000;
       await pause(1000);
+      const importGuard = require(path.join(root, 'src/main/import-guard.js'));
+      await waitForMaintenanceIdle(importGuard);
       phase = 'restart';
-      const { getMainWindow } = require(path.join(root, 'src/main/window.js'));
+      const { getMainWindow, getHarnessWebContents } = require(path.join(root, 'src/main/window.js'));
       const win = getMainWindow();
       if (!win || win.isDestroyed()) throw new Error('Main window unavailable for restart');
-      const started = performance.now();
-      // Exercise the same privileged renderer entry as the user, including cleanup.
-      const outcome = await win.webContents.executeJavaScript('window.shell.restart()');
-      if (outcome?.proceeded === false) throw new Error(`Restart refused: ${outcome.code}`);
-      await clientReady(app, root);
-      report.restartMs = performance.now() - started;
+      report.restartMs = await performMeasuredRestart({
+        win,
+        getHarnessWebContents,
+        waitForClientReady: (options) => clientReady(app, root, options),
+      });
       await pause(1000);
       if (samplingError) throw new Error(`Process sampling failed: ${samplingError}`);
       if (samples.length === 0) throw new Error('No Electron process samples collected');
@@ -284,4 +399,6 @@ module.exports = {
   captureProcessSnapshotEntry,
   summarizeProcessSnapshot,
   capturePeakProcessSnapshot,
+  waitForMaintenanceIdle,
+  performMeasuredRestart,
 };

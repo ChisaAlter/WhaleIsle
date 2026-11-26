@@ -28,6 +28,7 @@ const GIT_TUNNEL_HANDLERS = {
   'git-branch-list': (git, cwd) => git.gitBranchList(cwd),
   'git-switch-branch': (git, cwd, body) => git.gitSwitchBranch(cwd, body.ref),
   'git-create-branch': (git, cwd, body) => git.gitCreateBranch(cwd, body.name),
+  // Hunk-level patch staging only; full git-stage/git-unstage/git-discard remain excluded.
   'git-stage-patch': (git, cwd, body) => git.gitStagePatch(cwd, body.patchText),
   'git-unstage-patch': (git, cwd, body) => git.gitUnstagePatch(cwd, body.patchText),
 };

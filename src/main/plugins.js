@@ -32,6 +32,9 @@ const DROPPED = [
   'dsh-remote',
   // Antigravity is now unified inside first-party dsh-acp (Settings -> Agent).
   'dsh-antigravity',
+  // Unified into dsh-acp / internal tools; reject duplicate marketplace installs.
+  'dsh-acp-agents',
+  'dsh-deepseek-tools',
 ];
 // Exact unscoped basenames of the dropped families. A rename that only moves
 // the package to a new scope (e.g. `@changfenhuang/dsh-genui`) or a new
@@ -49,6 +52,8 @@ const DROPPED_BASENAMES = [
   'dsh-whale',
   'dsh-remote',
   'dsh-antigravity',
+  'dsh-acp-agents',
+  'dsh-deepseek-tools',
 ];
 
 /** The npm name without its scope (`@scope/name` → `name`). */
@@ -388,31 +393,47 @@ function stripDroppedPlugins() {
   return { ok: true, changed, patchChanged };
 }
 
+/** @param {string} raw */
+function installedPluginsFromRaw(raw) {
+  const manifest = JSON.parse(raw);
+  const dependencies = manifest.dependencies && typeof manifest.dependencies === 'object'
+    ? manifest.dependencies
+    : {};
+  const bundles = Array.isArray(manifest.dsh?.profile?.bundles) ? manifest.dsh.profile.bundles : [];
+  return {
+    ok: true,
+    profile: PROFILE,
+    profileDir: webProfileDir(),
+    plugins: Object.entries(dependencies).map(([name, spec]) => ({
+      name,
+      spec: String(spec || ''),
+      bundle: bundles.includes(name),
+      dropped: isDroppedPluginName(name),
+    })),
+    bundles,
+  };
+}
+
 function listInstalledPlugins() {
   const file = manifestPath();
   if (!fs.existsSync(file)) {
     return { ok: true, profile: PROFILE, profileDir: webProfileDir(), plugins: [], bundles: [] };
   }
   try {
-    const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const dependencies = manifest.dependencies && typeof manifest.dependencies === 'object'
-      ? manifest.dependencies
-      : {};
-    const bundles = Array.isArray(manifest.dsh?.profile?.bundles) ? manifest.dsh.profile.bundles : [];
-    return {
-      ok: true,
-      profile: PROFILE,
-      profileDir: webProfileDir(),
-      plugins: Object.entries(dependencies).map(([name, spec]) => ({
-        name,
-        spec: String(spec || ''),
-        bundle: bundles.includes(name),
-        dropped: isDroppedPluginName(name),
-      })),
-      bundles,
-    };
+    return installedPluginsFromRaw(fs.readFileSync(file, 'utf8'));
   } catch {
     return { ok: false, profile: PROFILE, profileDir: webProfileDir(), plugins: [], bundles: [] };
+  }
+}
+
+/** Async variant for background scans and update checks without blocking the main loop. */
+async function listInstalledPluginsAsync() {
+  const file = manifestPath();
+  try {
+    return installedPluginsFromRaw(await fs.promises.readFile(file, 'utf8'));
+  } catch (error) {
+    const ok = Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT');
+    return { ok, profile: PROFILE, profileDir: webProfileDir(), plugins: [], bundles: [] };
   }
 }
 
@@ -509,6 +530,7 @@ module.exports = {
   stripDroppedPlugins,
   healDanglingBundles,
   listInstalledPlugins,
+  listInstalledPluginsAsync,
   applyDisabledBundles,
   setBundleEnabled,
   ensureDesktopInstallPlugin,

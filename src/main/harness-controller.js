@@ -5,6 +5,7 @@ const { isPluginTreeFailure } = require('./plugin-tree-failure');
 const { stickySkipActive, kernelLogTail } = require('./launcher-gate');
 const { prepareDshImForStart } = require('./dsh-im-desktop');
 const importGuard = require('./import-guard');
+const { invalidateWorkspaceAuthorities } = require('./workspace-authority');
 
 const DEFAULT_STABLE_MS = 60_000;
 const MAX_RESTART_DELAY_MS = 30_000;
@@ -525,8 +526,25 @@ class HarnessController extends EventEmitter {
   /** @param {() => void} checkCurrent */
   async yieldPrep(checkCurrent) {
     if (this._prepYieldAt && Date.now() - this._prepYieldAt >= 8) {
-      await new Promise((resolve) => setTimeout(resolve, 0)); this._prepYieldAt = Date.now(); checkCurrent();
+      await new Promise((resolve) => (typeof setImmediate === 'function' ? setImmediate(resolve) : setTimeout(resolve, 0)));
+      this._prepYieldAt = Date.now();
+      checkCurrent();
     }
+  }
+
+  /**
+   * Run synchronous/mixed prep steps sequentially with event-loop yields
+   * between them so startup does not stack sync FS probes into one turn.
+   * @param {Array<() => Promise<any>>} tasks
+   * @param {() => void} checkCurrent
+   */
+  async runYieldedPrepBatch(tasks, checkCurrent) {
+    const results = [];
+    for (const task of tasks) {
+      await this.yieldPrep(checkCurrent);
+      results.push(await task());
+    }
+    return results;
   }
 
   /** Prepare one optional built-in; failures leave it off and record skippedBuiltins. */
@@ -646,12 +664,12 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置任务保护失败：${errorMessage(error)}`);
     }
-    // Independent overlays (no shared cordis.patch.yml mutation) prepare concurrently.
-    const [platformSession, acpAgents, office] = await Promise.all([
-      this.prepareLoggedStep('平台文档会话路由未接入', () => (typeof this.ensureDesktopPlatformSession === 'function' ? this.ensureDesktopPlatformSession() : null), checkCurrent),
-      this.prepareLoggedStep('外部 ACP 智能体插件未接入', () => (typeof this.ensureDesktopAcpAgents === 'function' ? this.ensureDesktopAcpAgents() : null), checkCurrent),
-      this.prepareOptionalBuiltin('Office 运行时', () => this.ensureDesktopOfficeRuntime(), checkCurrent),
-    ]);
+    // Independent overlays (no shared cordis.patch.yml mutation) yield between sync FS probes.
+    const [platformSession, acpAgents, office] = await this.runYieldedPrepBatch([
+      () => this.prepareLoggedStep('平台文档会话路由未接入', () => (typeof this.ensureDesktopPlatformSession === 'function' ? this.ensureDesktopPlatformSession() : null), checkCurrent),
+      () => this.prepareLoggedStep('外部 ACP 智能体插件未接入', () => (typeof this.ensureDesktopAcpAgents === 'function' ? this.ensureDesktopAcpAgents() : null), checkCurrent),
+      () => this.prepareOptionalBuiltin('Office 运行时', () => this.ensureDesktopOfficeRuntime(), checkCurrent),
+    ], checkCurrent);
     checkCurrent();
     if (platformSession?.overlayFile) patchFiles.push(platformSession.overlayFile);
     if (acpAgents?.overlayFile) patchFiles.push(acpAgents.overlayFile);
@@ -700,25 +718,27 @@ class HarnessController extends EventEmitter {
         return null;
       }
     };
-    // Prepare remaining built-in overlays concurrently (dsh-whale stages async).
-    const [market, removedDshbot, whale, deepseekTools, remotePlugin, pad] = await Promise.all([
-      this.prepareOptionalBuiltin('插件市场', () => this.ensureDesktopMarket(), checkCurrent),
-      this.prepareLoggedStep('清理 dshbot 预置残留失败', () => this.removeLegacyDshbotPreset(), checkCurrent),
-      this.prepareOptionalBuiltin('鲸鱼娘助理（dsh-whale）', () => this.ensureDshWhalePlugin({
-        enabled: startConfig.whaleAssistantEnabled !== false,
-      }), checkCurrent),
-      (async () => {
+    // Start async dsh-whale staging concurrently while yielding between sync built-in preparers.
+    const whalePromise = this.prepareOptionalBuiltin('鲸鱼娘助理（dsh-whale）', () => this.ensureDshWhalePlugin({
+      enabled: startConfig.whaleAssistantEnabled !== false,
+    }), checkCurrent);
+    whalePromise.catch(() => { /* Awaited after the batch; prevent unhandled rejection if the batch throws first. */ });
+    const [market, removedDshbot, deepseekTools, remotePlugin, pad] = await this.runYieldedPrepBatch([
+      () => this.prepareOptionalBuiltin('插件市场', () => this.ensureDesktopMarket(), checkCurrent),
+      () => this.prepareLoggedStep('清理 dshbot 预置残留失败', () => this.removeLegacyDshbotPreset(), checkCurrent),
+      async () => {
         checkCurrent();
         const res = await this.ensureDeepSeekToolsPlugin();
         checkCurrent();
         return res;
-      })(),
-      this.prepareOptionalBuiltin('远程工作区（dsh-remote）', () => this.ensureDshRemotePlugin({
+      },
+      () => this.prepareOptionalBuiltin('远程工作区（dsh-remote）', () => this.ensureDshRemotePlugin({
         enabled: startConfig.remoteWorkspaceEnabled !== false,
       }), checkCurrent),
-      this.prepareOptionalBuiltin('悬浮面板（dsh-pad）',
+      () => this.prepareOptionalBuiltin('悬浮面板（dsh-pad）',
         () => this.ensureDshPadPlugin({ skipUserPlugins, disabledPlugins: startConfig.disabledPlugins }), checkCurrent),
-    ]);
+    ], checkCurrent);
+    const whale = await whalePromise;
     checkCurrent();
     if (market?.overlayFile) patchFiles.push(market.overlayFile);
     if (market?.ok) this.dsh.log('桌面内置插件市场已就绪：设置 → 市场', 'app');
@@ -777,9 +797,11 @@ class HarnessController extends EventEmitter {
     const workspaceTask = (async () => {
       try {
         await this.ensureWorkspace(url, workspace);
+        invalidateWorkspaceAuthorities?.();
         checkCurrent();
         this.dsh.log(`已注册工作区 ${workspace}`);
       } catch (error) {
+        invalidateWorkspaceAuthorities?.();
         if (isCancellation(error)) throw error;
         checkCurrent();
         this.dsh.log(`工作区自动注册跳过：${errorMessage(error)}`, 'app');
