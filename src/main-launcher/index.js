@@ -110,7 +110,18 @@ function quitApp() {
 function supervisedComponentsLabel() {
   try {
     const snap = ipcComponents.contributeStatus()?.components;
-    const running = Array.isArray(snap) ? snap.filter((c) => c.state === 'running').length : 0;
+    const { isPidAlive } = require('../launcher/components/lifecycle');
+    const running = Array.isArray(snap) ? snap.filter((c) => {
+      if (!c) return false;
+      if (c.ownership === 'external') return false;
+      if (c.ownership === 'external-ui-companion') {
+        return Boolean(c.companionPid && isPidAlive(c.companionPid));
+      }
+      if (c.ownership === 'managed' || c.ownership === 'managed-shared-config') {
+        return c.state === 'running' && (!c.pid || isPidAlive(c.pid));
+      }
+      return c.state === 'running' && (!c.pid || isPidAlive(c.pid));
+    }).length : 0;
     return running > 0 ? `组件运行中：${running} 个` : '无组件运行';
   } catch {
     return undefined;

@@ -32,9 +32,6 @@ const generatedWatch = (() => {
 export function selectChecks(paths, { manual = false } = {}) {
   const scope = { product: manual, vendor: manual, tools: manual, motion: manual }
   for (const path of paths) {
-    // Historical component source/build deletions and external-package QA
-    // do not rebuild the unrelated Harness runtime.
-    if (/^(vendor\/whalebridge\/|scripts\/(build-whalebridge|qa-whalebridge[^/]*)\.(mjs|cjs)$|\.github\/workflows\/whalebridge\.yml$)/.test(path)) continue
     if (/^(docs\/|\.devin\/|\.cursor\/|\.agents\/)/.test(path) ||
         /^[^/]+\.(md|i18n\.yaml)$/.test(path) ||
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
@@ -48,7 +45,7 @@ export function selectChecks(paths, { manual = false } = {}) {
         (/^(src\/(shared|preload|main|main-launcher|host|launcher|renderer)\/|mobile\/web\/)/.test(path) && !/\.test\.(js|mjs|cjs)$/.test(path))) scope.tools = true
     if (/^(eslint\.config\.mjs|eslint-suppressions\.json)$/.test(path)) { scope.product = true; scope.tools = true }
     if (/^\.github\/workflows\/(?:magpie-)?cnb-mirror\.yml$/.test(path)) { scope.tools = true; continue }
-    if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|sync-magpie-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
+    if (/^scripts\/(verify-md-links\.mjs|lib\/(?:gate|cnb-client)\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|sync-magpie-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
     if (/\.test\.(js|mjs)$/.test(path)) {
       if (!path.startsWith('scripts/')) scope.product = true
       if (/^(vendor|dsh-acp)\//.test(path)) scope.vendor = true

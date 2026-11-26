@@ -48,7 +48,10 @@ function welcomeWindowOptions() {
   };
 }
 
+/** @type {(() => void) | undefined} */
 let disposeActiveHandlers;
+/** @type {Electron.BrowserWindow | undefined} */
+let activeWelcomeWindow;
 
 /**
  * Open the process's sole welcome window with desktop-owned operations.
@@ -56,8 +59,13 @@ let disposeActiveHandlers;
  * @param {object} operations - { takeNotice, startSignIn, cancelSignIn, copySignInLink, saveApiKey, skip }.
  */
 async function openWelcomeWindow(locale, operations) {
-  const window = new BrowserWindow(welcomeWindowOptions());
+  const previousWindow = activeWelcomeWindow;
   disposeActiveHandlers?.();
+  if (previousWindow && !previousWindow.isDestroyed()) {
+    previousWindow.destroy();
+  }
+  const window = new BrowserWindow(welcomeWindowOptions());
+  activeWelcomeWindow = window;
   let active = true;
   const disposeHandlers = () => {
     if (!active) return;
@@ -67,6 +75,7 @@ async function openWelcomeWindow(locale, operations) {
     }
     ipcMain.removeAllListeners(IPC.locale);
     disposeActiveHandlers = undefined;
+    if (activeWelcomeWindow === window) activeWelcomeWindow = undefined;
   };
   disposeActiveHandlers = disposeHandlers;
   const assertSender = (event) => {

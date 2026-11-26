@@ -440,7 +440,8 @@ function remoteCrumbs(p) {
 // plugin-src/client/styles.js
 var STYLE_ID = "dsh-remote";
 var CSS = `
-.dshr-page { display: flex; flex-direction: column; gap: 12px; color: var(--dsw-alias-label-primary); font-size: 13px; }
+.dshr-page { display: flex; flex-direction: column; gap: 12px; padding-top: 2px; color: var(--dsw-alias-label-primary); font-size: 13px; }
+.dshr-pageTitle { margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .dshr-card { border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .dshr-cardTitle { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); display: flex; align-items: center; gap: 8px; }
 .dshr-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -449,7 +450,7 @@ var CSS = `
 .dshr-grow { flex: 1; min-width: 0; }
 .dshr-muted { color: var(--dsw-alias-label-tertiary); }
 .dshr-secondary { color: var(--dsw-alias-label-secondary); }
-.dshr-caption { color: var(--dsw-alias-label-caption, var(--dsw-alias-label-tertiary)); font-size: 12px; }
+.dshr-caption { color: var(--dsw-alias-label-caption, var(--dsw-alias-label-tertiary)); font-size: 12px; line-height: 18px; }
 .dshr-error { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 1.5; }
 .dshr-ok { color: var(--dsw-alias-state-success-primary); font-size: 12px; }
 .dshr-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -867,6 +868,7 @@ function RemoteSettingsSection({ t }) {
   };
   const current = machines.find((m) => m.id === currentId) || null;
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-page", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("h2", { className: "dshr-pageTitle", children: t("settings.nav") }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("settings.summary") }),
     loading && !status ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { role: "status", className: "dshr-caption", children: t("settings.loading") }) : null,
     loadError ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { role: "alert", className: "dshr-error", children: [

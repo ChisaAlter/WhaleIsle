@@ -43,11 +43,11 @@ test('manifest keeps the documented npm entry points', () => {
 });
 
 test('manifest keeps the runtime and build-tool dependencies', () => {
-  assert.equal(pkg.dependencies?.['electron-updater'], '6.8.10');
+  assert.equal(pkg.dependencies?.['electron-updater'], '6.8.11');
   for (const name of ['electron', 'electron-builder', 'semver', 'pnpm']) {
     assert.equal(typeof pkg.devDependencies?.[name], 'string', `devDependencies.${name} is missing`);
   }
-  assert.equal(pkg.optionalDependencies?.['node-pty'], '1.2.0-beta.15');
+  assert.equal(pkg.optionalDependencies?.['node-pty'], '1.2.0-beta.18');
   assert.equal(pkg.engines?.node, '^24.22.3 || >=26.13.1');
 });
 
@@ -59,6 +59,16 @@ test('account startup WebSocket dependency is locked for production packaging', 
   assert.ok(websocket, 'a developer-only node_modules/ws must not mask a missing lock entry');
   assert.notEqual(websocket.dev, true);
   assert.equal(typeof websocket.integrity, 'string');
+});
+
+test('DSH YAML sync dependency is locked for production packaging', () => {
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
+  assert.equal(typeof pkg.dependencies?.yaml, 'string', 'dsh-sync needs yaml in the packaged runtime');
+  assert.equal(lock.packages[''].dependencies.yaml, pkg.dependencies.yaml);
+  const yamlPkg = lock.packages['node_modules/yaml'];
+  assert.ok(yamlPkg, 'a developer-only node_modules/yaml must not mask a missing lock entry');
+  assert.notEqual(yamlPkg.dev, true);
+  assert.equal(typeof yamlPkg.integrity, 'string');
 });
 
 test('manifest keeps the packaging contract after-pack depends on', () => {

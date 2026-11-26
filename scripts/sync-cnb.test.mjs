@@ -8,28 +8,47 @@ import { basename, join } from 'node:path'
 import { load } from 'js-yaml'
 import { cnbClient, mirrorRelease, supplementMacosMirror, syncSource, validateMirrorAssets } from './sync-cnb.mjs'
 
-test('component mirror validates native bytes against the component manifest', async t => {
-  const directory = mkdtempSync(join(tmpdir(), 'cnb-component-'))
+test('validateMirrorAssets validates desktop vX.Y.Z assets and rejects retired whalebridge-v* tags', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'cnb-desktop-validate-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
-  const binary = Buffer.from('component')
-  const manifest = { id: 'whalebridge', version: '1.0.0', license: 'MIT License', platforms: { 'win32-x64': {
-    asset: 'WhaleBridge-win32-x64.exe', size: binary.length, sha256: createHash('sha256').update(binary).digest('hex'),
-  } } }
-  const bytes = Buffer.from(JSON.stringify(manifest))
-  writeFileSync(join(directory, 'WhaleBridge-component.json'), bytes)
-  writeFileSync(join(directory, 'WhaleBridge-win32-x64.exe'), binary)
-  const release = { tag_name: 'whalebridge-v1.0.0', assets: [
-    { name: 'WhaleBridge-component.json', size: bytes.length }, { name: 'WhaleBridge-win32-x64.exe', size: binary.length },
-  ] }
-  assert.equal((await validateMirrorAssets(release, directory)).length, 2)
-  writeFileSync(join(directory, 'WhaleBridge-win32-x64.exe'), Buffer.from('tampered!'))
-  await assert.rejects(validateMirrorAssets(release, directory), /manifest mismatch/)
+  const setupName = 'Whale-Isle-Setup-1.2.3.exe'
+  const setupBytes = Buffer.from('installer')
+  const blockmapName = setupName + '.blockmap'
+  const blockmapBytes = Buffer.from('blockmap')
+  const ymlBytes = Buffer.from(JSON.stringify({
+    version: '1.2.3',
+    files: [{ url: setupName, size: setupBytes.length, sha512: createHash('sha512').update(setupBytes).digest('base64') }],
+  }))
+  const sumsBytes = Buffer.from([
+    [setupName, setupBytes],
+    [blockmapName, blockmapBytes],
+    ['latest.yml', ymlBytes],
+  ].map(([n, b]) => createHash('sha512').update(b).digest('hex') + '  ' + n).join('\n') + '\n')
+  for (const [n, b] of [[setupName, setupBytes], [blockmapName, blockmapBytes], ['latest.yml', ymlBytes], ['SHA512SUMS.txt', sumsBytes]]) {
+    writeFileSync(join(directory, n), b)
+  }
+  const desktopRelease = {
+    tag_name: 'v1.2.3',
+    assets: [
+      [setupName, setupBytes],
+      [blockmapName, blockmapBytes],
+      ['latest.yml', ymlBytes],
+      ['SHA512SUMS.txt', sumsBytes],
+    ].map(([name, b]) => ({ name, size: b.length })),
+  }
+  assert.equal((await validateMirrorAssets(desktopRelease, directory)).length, 4)
+
+  const retiredWhaleBridge = {
+    tag_name: 'whalebridge-v1.0.0',
+    assets: [{ name: 'WhaleBridge-component.json', size: 2 }],
+  }
+  await assert.rejects(validateMirrorAssets(retiredWhaleBridge, directory), /published stable GitHub release/)
 })
 
 const repo = 'ayasealter/WhaleIsle'
 const sha = 'a'.repeat(40)
 const digest = (bytes, algo = 'sha512', encoding = 'hex') => createHash(algo).update(bytes).digest(encoding)
-function fixture(t, { existing = null, uploaded = [], corruptRemote = false, failUpload = false, tagSha = sha, latest = null } = {}) {
+function fixture(t, { existing = null, uploaded = [], corruptRemote = false, failUpload = false, tagSha = sha, latest = null, releasesPages = null } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'cnb-mirror-test-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const name = 'Whale-Isle-Setup-1.2.3.exe'
@@ -45,6 +64,11 @@ function fixture(t, { existing = null, uploaded = [], corruptRemote = false, fai
   const request = async (path, options = {}) => {
     calls.push([path, options])
     if (path.includes('/git/tags/')) return { name: release.tag_name, commit: { sha: tagSha } }
+    if (path.includes('/releases?page_size=')) {
+      const page = Number(new URL('https://api.cnb.cool' + path).searchParams.get('page') || '1')
+      if (releasesPages) return releasesPages[page - 1] || []
+      return page === 1 && latest ? [{ draft: false, prerelease: false, ...latest }] : []
+    }
     if (path.endsWith('/releases/latest')) return latest
     if (path.includes('/releases/tags/')) return target
     if (path.endsWith('/asset-upload-url')) return { upload_url: 'https://storage.example/' + options.body.asset_name, verify_url: 'https://api.cnb.cool/' + repo + '/-/releases/9/asset-upload-confirmation/' + options.body.asset_name }
@@ -105,6 +129,31 @@ test('backfilling an older stable release preserves the newer latest version', a
   assert.equal(f.calls.at(-1)[1].body.make_latest, 'false')
 })
 
+test('non-desktop /releases/latest (magpie-v*/android-v*) does not falsely overwrite make_latest across pages', async t => {
+  const page1 = Array.from({ length: 100 }, (_, i) => ({
+    tag_name: i % 2 === 0 ? `magpie-v0.1.${4700 + i}` : `android-v0.3.${10 + i}`,
+    draft: false,
+    prerelease: false,
+  }))
+  const fOlder = fixture(t, {
+    latest: { tag_name: 'magpie-v0.1.4798' },
+    releasesPages: [page1, [{ tag_name: 'v2.0.0', draft: false, prerelease: false }]],
+  })
+  await mirrorRelease(fOlder.options)
+  assert.equal(fOlder.calls.at(-1)[1].body.make_latest, 'false')
+
+  const fNewer = fixture(t, {
+    latest: { tag_name: 'magpie-v0.1.4798' },
+    releasesPages: [[
+      { tag_name: 'magpie-v0.1.4798', draft: false, prerelease: false },
+      { tag_name: 'android-v0.3.11', draft: false, prerelease: false },
+      { tag_name: 'v1.2.0', draft: false, prerelease: false },
+    ]],
+  })
+  await mirrorRelease(fNewer.options)
+  assert.equal(fNewer.calls.at(-1)[1].body.make_latest, 'true')
+})
+
 test('interrupted uploads or corrupt anonymous bytes never promote the staged release', async t => {
   for (const changes of [{ failUpload: true }, { corruptRemote: true }]) {
     const f = fixture(t, changes)
@@ -140,7 +189,7 @@ test('CNB API uses bearer JSON, supports empty confirmations and never logs sign
   assert.equal(seen[0][1].headers.Authorization, 'Bearer secret-value')
   assert.equal(seen[0][1].headers.Accept, 'application/vnd.cnb.api+json')
   assert.deepEqual(JSON.parse(seen[1][1].body), { prerelease: true })
-  const failed = cnbClient('secret-value', async () => { throw new Error('signed URL secret-value') })
+  const failed = cnbClient('secret-value', async () => { throw new Error('signed URL secret-value') }, { baseDelayMs: 1, maxDelayMs: 2 })
   await assert.rejects(failed('/a/b/-/releases'), error => !error.message.includes('secret-value'))
   assert.throws(() => cnbClient(''), /CNB_TOKEN/)
 })

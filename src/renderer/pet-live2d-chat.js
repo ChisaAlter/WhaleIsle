@@ -2,28 +2,46 @@
 
 let chatOpen = false;
 let chatBusy = false;
+/** @type {{ x: number, y: number, w: number, h: number } | null} */
 let chatRect = null; // { x, y, w, h } — joins petBounds so the card takes clicks
 let chatPickerRect = null; // floating menu joins the interactive area only while open
+/** @type {{ x: number, y: number, w: number, h: number } | null} */
 let chatFeedbackRect = null;
 const chatFeedbackEl = document.getElementById('pc-feedback');
 let lastChatFeedbackText = '';
+/** @type {ReturnType<typeof setTimeout> | 0} */
+let chatFeedbackTimer = 0;
+const CHAT_FEEDBACK_HOLD_MS = 6000;
 
 function closeChatFeedback() {
+  if (chatFeedbackTimer) {
+    petLifetime.clearTimeout(chatFeedbackTimer);
+    chatFeedbackTimer = 0;
+  }
+  if (!chatFeedbackEl || (chatFeedbackEl.hidden && chatFeedbackRect === null)) return;
   chatFeedbackEl.hidden = true;
   chatFeedbackRect = null;
+  requestFrame();
 }
-petLifetime.listen(document.getElementById('pc-feedback-close'), 'click', closeChatFeedback);
 
+/** @param {string} text */
 function showChatFeedback(text) {
   lastChatFeedbackText = text;
-  document.getElementById('pc-feedback-text').textContent = text;
+  const feedbackTextEl = document.getElementById('pc-feedback-text');
+  if (feedbackTextEl) feedbackTextEl.textContent = text;
+  if (!chatFeedbackEl) return;
   chatFeedbackEl.hidden = false;
   syncChatFeedbackPos();
   setInteractive(true);
+  if (chatFeedbackTimer) {
+    petLifetime.clearTimeout(chatFeedbackTimer);
+  }
+  chatFeedbackTimer = petLifetime.timeout(closeChatFeedback, CHAT_FEEDBACK_HOLD_MS);
+  requestFrame();
 }
 
 function syncChatFeedbackPos() {
-  if (chatFeedbackEl.hidden) return;
+  if (!chatFeedbackEl || chatFeedbackEl.hidden) return;
   const host = homeRect || { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
   const w = chatFeedbackEl.offsetWidth;
   const h = chatFeedbackEl.offsetHeight;

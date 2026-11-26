@@ -94,7 +94,7 @@ function isPetFrameUrl(url, petUrl = PET_PAGE_URL) {
 // renderer root is rejected.
 function createPetProtocolHandler(rendererFile) {
   const root = path.dirname(rendererFile(RENDERER_PAGE));
-  return (request) => {
+  return async (request) => {
     try {
       const url = new URL(request.url);
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
@@ -109,10 +109,10 @@ function createPetProtocolHandler(rendererFile) {
             ? path.resolve(root, '../../assets/whale-head.png')
             : path.normalize(path.join(root, rel));
       if ((!sharedTokens && !sharedDom && !projectHead && !file.startsWith(root + path.sep))
-        || !fs.statSync(file).isFile()) {
+        || !(await fs.promises.stat(file)).isFile()) {
         return new Response('not found', { status: 404 });
       }
-      return new Response(fs.readFileSync(file), {
+      return new Response(await fs.promises.readFile(file), {
         headers: {
           'Content-Type': MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream',
           'Cache-Control': 'no-store',

@@ -3,6 +3,7 @@
   - img
   - text: Commit
 - button "Git actions"
+- button "Session panel"
 - button "Toggle terminal drawer":
   - img
 - button "Toggle right panel":

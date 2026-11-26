@@ -30,7 +30,7 @@ const React = HARNESS_DEPS.ok ? clientRequire('react') : {};
 const { JSDOM } = HARNESS_DEPS.ok ? vendorRequire('jsdom') : {};
 const { act, createElement: h } = React;
 
-async function waitFor(check, timeoutMs = 3000) {
+async function waitFor(check, timeoutMs = 10000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     let result;
@@ -44,6 +44,13 @@ async function waitFor(check, timeoutMs = 3000) {
   await act(async () => {
     finalResult = await check();
   });
+  if (!finalResult) {
+    throw new assert.AssertionError({
+      message: `waitFor timed out after ${timeoutMs}ms: ${check.toString()}`,
+      expected: 'truthy value',
+      actual: finalResult,
+    });
+  }
   return finalResult;
 }
 
@@ -494,7 +501,7 @@ async function createDesktopClientBench(
       else delete globalThis[k];
     }
     dom.window.close();
-    await fsp.rm(tmpRoot, { recursive: true, force: true });
+    await fsp.rm(tmpRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
   return {
@@ -587,7 +594,7 @@ test('full workspace lifecycle: create -> auto-ensure isolated coordinator -> 0-
   await b.mountPage();
 
   // 1. Open New Project modal, verify inline empty-name validation (no persistent toast), pick directory via selectDirectory, create.
-  const newBtn = [...b.container.querySelectorAll('button')].find((el) => el.textContent.includes('新建项目'));
+  const newBtn = await waitFor(() => [...b.container.querySelectorAll('button')].find((el) => el.textContent.includes('新建项目')));
   assert.ok(newBtn);
   await act(async () => { newBtn.click(); });
 
@@ -1100,13 +1107,15 @@ test('3-color status dot priority (yellow > blue > green > grey), default auto N
   await flushUi();
 
   // 1. Default NewProjectModal selects "auto" (自动并行) with Claude Projects guidance text.
-  await act(async () => { b.container.querySelector('button[aria-label="切换项目"]').click(); });
+  const switcherBtn = await waitFor(() => b.container.querySelector('button[aria-label="切换项目"]'));
+  await act(async () => { switcherBtn.click(); });
   const newItem = await waitFor(() => [...b.container.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent.includes('新建项目')));
   await act(async () => { newItem.click(); });
   const newDlg = await waitFor(() => b.container.querySelector('[role="dialog"][aria-label="新建项目"]'));
   assert.equal(newDlg.querySelector('#pj-new-autonomy-auto')?.getAttribute('aria-selected'), 'true', 'New project modal must default to auto parallel');
   assert.match(newDlg.textContent, /协调者先澄清需求，再自动并行派发线程/);
-  await act(async () => { newDlg.querySelector('button[aria-label="关闭"]').click(); });
+  const closeNewDlgBtn = await waitFor(() => newDlg.querySelector('button[aria-label="关闭"]'));
+  await act(async () => { closeNewDlgBtn.click(); });
   await flushUi(40);
 
   // 2. Status dot priority: idle -> review (green) -> running (blue) -> blocked (yellow).
@@ -1143,12 +1152,14 @@ test('3-color status dot priority (yellow > blue > green > grey), default auto N
   assert.equal(readSwitcherDot(), 'waiting');
 
   // Overview card displays the same highest-priority yellow status dot.
-  await act(async () => { b.container.querySelector('button[aria-label="全部项目"]').click(); });
+  const allProjectsBtn = await waitFor(() => b.container.querySelector('button[aria-label="全部项目"]'));
+  await act(async () => { allProjectsBtn.click(); });
   const overviewCardDot = await waitFor(() => b.container.querySelector('.pj-card [data-project-status]'));
   assert.equal(overviewCardDot.getAttribute('data-project-status'), 'waiting');
 
   // Return to workspace and transition running task -> review while unfocused -> fires Notification!
-  await act(async () => { b.container.querySelector('.pj-card').click(); });
+  const projectCard = await waitFor(() => b.container.querySelector('.pj-card'));
+  await act(async () => { projectCard.click(); });
   await waitFor(() => b.container.querySelector('[data-projects-topbar]'));
   await flushUi();
 

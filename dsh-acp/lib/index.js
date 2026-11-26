@@ -34,6 +34,8 @@ import { createLlmAdapter } from './llm-adapter.js';
 import {
   createRpcHandler,
   createHttpHandler,
+  createMcpHttpHandler,
+  createRpcDispatchHandler,
 } from './rpc-handlers.js';
 
 export { isAuxiliaryCall, extractLatestUserPromptBlocks, conversationPrompt, prepareConversationPrompt };
@@ -649,13 +651,35 @@ export function apply(ctx, config = {}) {
   }
 
   ctx.effect(() => {
-    const unregister = ctx.webServer.register({
-      kind: 'prefix',
-      path: '/dsh-acp-agents',
-      handler: createHttpHandler(ctx, manager),
-    });
+    const cleanups = [];
+    if (typeof ctx.connection?.rpc?.handle === 'function') {
+      cleanups.push(
+        ctx.connection.rpc.handle('/dsh-acp-agents', createRpcDispatchHandler(manager)),
+      );
+      cleanups.push(
+        ctx.webServer.register({
+          kind: 'exact',
+          path: '/dsh-acp-agents/mcp',
+          auth: 'anonymous',
+          handler: createMcpHttpHandler(ctx, manager),
+        }),
+      );
+    } else {
+      const unregister = ctx.webServer.register({
+        kind: 'prefix',
+        path: '/dsh-acp-agents',
+        auth: (req) => {
+          const pathname = new URL(req?.url ?? '/', 'http://dsh.internal').pathname;
+          return pathname === '/dsh-acp-agents/mcp' ? 'anonymous' : 'required';
+        },
+        handler: createHttpHandler(ctx, manager),
+      });
+      if (unregister) cleanups.push(unregister);
+    }
     return async () => {
-      unregister?.();
+      for (const cleanup of cleanups.reverse()) {
+        await cleanup?.();
+      }
       await manager.dispose();
     };
   });

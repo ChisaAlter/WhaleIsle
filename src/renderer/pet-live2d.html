@@ -122,16 +122,14 @@
         padding: 3px;
         border: 1px solid var(--dsw-alias-border-l1);
         border-radius: 16px;
-        background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1));
-        backdrop-filter: var(--dsw-menu-backdrop-filter, blur(16px));
-        box-shadow: var(--dsw-elevation-prominent, 0 8px 24px rgba(0,0,0,.16));
+        background: var(--dsw-specific-menu);
+        backdrop-filter: var(--dsw-menu-backdrop-filter);
+        box-shadow: var(--dsw-elevation-prominent);
         color: var(--dsw-alias-label-primary);
-        scrollbar-width: thin;
+        --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+        --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
       }
       #pc-picker[hidden] { display: none; }
-      #pc-picker::-webkit-scrollbar { width: 6px; }
-      #pc-picker::-webkit-scrollbar-thumb { border-radius: 6px; background: var(--dsw-alias-scrollbar-bg-l2); }
-      #pc-picker::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-scrollbar-hover-l2); }
       #pc-picker .pc-picker-group {
         padding: 6px 8px 3px;
         color: var(--dsw-alias-label-tertiary);
@@ -181,7 +179,6 @@
         scrollbar-width: none;
         flex: none;
       }
-      #pet-chat .pc-thread::-webkit-scrollbar { display: none; }
       #pet-chat .pc-empty {
         color: var(--dsw-alias-label-primary);
         opacity: 0.45;
@@ -207,19 +204,19 @@
       }
       #pet-chat .pc-msg.pc-her {
         align-self: flex-start;
-        background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.12));
+        background: var(--dsw-alias-bg-layer-2);
         border-bottom-left-radius: 4px;
       }
       #pet-chat .pc-msg.pc-err {
         align-self: center;
         background: transparent;
-        color: var(--dsw-alias-state-error-primary, #e5534b);
+        color: var(--dsw-alias-state-error-primary);
         font-size: 11px;
         padding: 2px 4px;
       }
       #pet-chat .pc-msg.pc-typing {
         align-self: flex-start;
-        background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.12));
+        background: var(--dsw-alias-bg-layer-2);
         border-bottom-left-radius: 4px;
         color: var(--dsw-alias-label-primary);
         opacity: 0.7;
@@ -250,7 +247,6 @@
         overflow-y: auto;
         scrollbar-width: none;
       }
-      #pet-chat textarea::-webkit-scrollbar { display: none; }
       #pet-chat textarea:focus { border-color: var(--dsw-alias-state-business-primary); }
       #pet-chat .pc-send {
         flex: none;
@@ -265,7 +261,7 @@
         line-height: 1;
         cursor: pointer;
         background: var(--dsw-alias-state-business-primary);
-        color: var(--dsw-alias-bg-layer-1, #fff);
+        color: var(--dsw-alias-bg-layer-1);
       }
       #pet-chat .pc-send:disabled {
         background: var(--dsw-alias-border-l2);
@@ -301,7 +297,6 @@
     <div id="pc-picker" role="menu" aria-label="模型与思考" hidden></div>
     <div id="pc-feedback" class="shell-feedback-toast" role="alert" hidden>
       <span id="pc-feedback-text" class="shell-feedback-text"></span>
-      <button id="pc-feedback-close" class="shell-feedback-close" type="button" aria-label="关闭提示"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
     </div>
     <script src="pet-live2d/ort/ort.all.min.js"></script>
     <script src="pet-live2d/anime4k.js"></script>

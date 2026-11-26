@@ -29,10 +29,12 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
       };
     }
     isDestroyed() { return this.destroyed; }
+    getURL() { return this.loadedUrls.at(-1) || this.mainFrame.url; }
     setWindowOpenHandler(fn) { this.openHandler = fn; }
     loadURL(url) { this.loadedUrls.push(url); return Promise.resolve(); }
     loadFile(file) { this.loadedFiles.push(file); this.mainFrame.url = pathToFileURL(file).href; return Promise.resolve(); }
     send(channel, payload) { this.sent.push([channel, payload]); }
+    reload() { this.loadedUrls.push(`reloaded:${this.getURL()}`); }
     close() { this.destroyed = true; }
   }
 
@@ -43,9 +45,12 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
       this.webContents = new FakeWebContents();
       this.minimizable = true;
       this.maximizable = true;
+      this.maximized = false;
+      this.fullscreen = false;
       this.destroyed = false;
       this.shown = false;
       this.focused = false;
+      this.transparentMarked = false;
       this.children = [];
       this.contentView = {
         addChildView: (view) => this.children.push(view),
@@ -58,7 +63,8 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
     }
     getContentSize() { return [1120, 780]; }
     isDestroyed() { return this.destroyed; }
-    isMaximized() { return false; }
+    isMaximized() { return this.maximized; }
+    isFullScreen() { return this.fullscreen; }
     loadFile(file) { return this.webContents.loadFile(file); }
     show() { this.shown = true; }
     showInactive() { this.shown = true; }
@@ -75,9 +81,11 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
       this.options = options;
       this.webContents = new FakeWebContents();
       this.bounds = null;
+      this.borderRadius = null;
       createdViews.push(this);
     }
     setBounds(b) { this.bounds = b; }
+    setBorderRadius(r) { this.borderRadius = r; }
   }
 
   const electronMock = {
@@ -103,11 +111,14 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
   };
   const chromeMock = {
     windowChrome: (opts) => opts,
+    shellWindowChrome: (opts) => ({ ...opts, transparent: true, thickFrame: true, roundedCorners: false, backgroundColor: '#00000000' }),
+    markWindowTransparent: (win) => { win.transparentMarked = true; },
     currentTheme: () => ({ scheme: 'dark' }),
   };
+  let mockMaximized = false;
   const nativeMotionMock = {
     enableNativeWindowMotion: () => {},
-    isNativeWindowMaximized: () => false,
+    isNativeWindowMaximized: () => mockMaximized,
     minimizeNativeWindow: () => true,
     toggleNativeWindowMaximize: () => true,
   };
@@ -127,7 +138,7 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
   });
 
   const mod = require('./magpie-window');
-  return { mod, createdWindows, createdViews, partitions };
+  return { mod, createdWindows, createdViews, partitions, setMockMaximized: (v) => { mockMaximized = v; } };
 }
 
 test('buildMagpieTargetUrl enforces loopback URL and injects initial theme without losing token', () => {
@@ -175,7 +186,16 @@ test('openMagpieWindow mounts zero-injection sandboxed WebContentsView and guard
   assert.equal(view.options.webPreferences.preload, undefined);
   assert.equal(view.options.webPreferences.sandbox, true);
   assert.equal(view.options.webPreferences.partition, 'persist:magpie');
-  assert.deepEqual(view.bounds, { x: 0, y: mod.TOPBAR_HEIGHT, width: 1120, height: 780 - mod.TOPBAR_HEIGHT });
+  assert.equal(win.options.transparent, true);
+  assert.equal(win.options.backgroundColor, '#00000000');
+  assert.equal(win.transparentMarked, true);
+  if (process.platform === 'darwin') {
+    assert.deepEqual(view.bounds, { x: 0, y: mod.TOPBAR_HEIGHT, width: 1120, height: 780 - mod.TOPBAR_HEIGHT });
+    assert.equal(view.borderRadius, 0);
+  } else {
+    assert.deepEqual(view.bounds, { x: 1, y: mod.TOPBAR_HEIGHT, width: 1118, height: 780 - mod.TOPBAR_HEIGHT - 1 });
+    assert.equal(view.borderRadius, 19);
+  }
   assert.deepEqual(view.webContents.loadedUrls, ['http://127.0.0.1:3430/?k=abc&theme=dark']);
 
   const part = partitions.get('persist:magpie');
@@ -225,5 +245,70 @@ test('openMagpieWindow mounts zero-injection sandboxed WebContentsView and guard
   assert.equal(redirectBlocked, true);
   assert.throws(() => handler({ sender: win.webContents, senderFrame: { url: otherFileUrl } }), /Unauthorized/);
 
+  // Window state transitions sync fullscreen/maximized and zero out inset + radius
+  const activeView = createdViews[1];
+  win.fullscreen = true;
+  win.emit('enter-full-screen');
+  assert.equal(activeView.borderRadius, 0);
+  assert.deepEqual(activeView.bounds, { x: 0, y: mod.TOPBAR_HEIGHT, width: 1120, height: 780 - mod.TOPBAR_HEIGHT });
+  assert.equal(win.webContents.sent.at(-1)[0], 'magpie:window-state');
+  assert.equal(win.webContents.sent.at(-1)[1].fullscreen, true);
+
+  win.fullscreen = false;
+  win.emit('leave-full-screen');
+  if (process.platform !== 'darwin') {
+    assert.equal(activeView.borderRadius, 19);
+    assert.deepEqual(activeView.bounds, { x: 1, y: mod.TOPBAR_HEIGHT, width: 1118, height: 780 - mod.TOPBAR_HEIGHT - 1 });
+  }
+  assert.equal(win.webContents.sent.at(-1)[1].fullscreen, false);
+
+  // Cross-origin redirect prevents navigation WITHOUT opening external browser
+  let redirectViewBlocked = false;
+  const openCountBeforeRedirect = openExternalCalls.length;
+  activeView.webContents.emit('will-redirect', { preventDefault() { redirectViewBlocked = true; } }, 'https://evil.example.com/redir');
+  assert.equal(redirectViewBlocked, true);
+  assert.equal(openExternalCalls.length, openCountBeforeRedirect);
+
+  // Subframe navigation blocks cross-origin while allowing same-origin and about:blank
+  let badFramePrevented = false;
+  activeView.webContents.emit('will-frame-navigate', { url: 'https://evil.example.com/frame', isMainFrame: false, preventDefault() { badFramePrevented = true; } });
+  assert.equal(badFramePrevented, true);
+  let blankFramePrevented = false;
+  activeView.webContents.emit('will-frame-navigate', { url: 'about:blank', isMainFrame: false, preventDefault() { blankFramePrevented = true; } });
+  assert.equal(blankFramePrevented, false);
+
+  // Theme sync pushes updated magpie:shell-meta and updates reload URL theme
+  assert.equal(mod.syncMagpieTheme({ scheme: 'light' }), true);
+  assert.deepEqual(win.webContents.sent.at(-1), ['magpie:shell-meta', {
+    ownership: 'managed',
+    version: '0.1.4708',
+    latestVersion: '0.1.4709',
+    externalUpdateUrl: '',
+    theme: { scheme: 'light' },
+  }]);
+
+  // Topbar reload loads the latest target URL (preserving updated ?k= and theme)
+  const loadsBeforeReload = activeView.webContents.loadedUrls.length;
+  win.webContents.ipc.emit('magpie:reload', ownedEvent);
+  assert.equal(activeView.webContents.loadedUrls.length, loadsBeforeReload + 1);
+  assert.equal(activeView.webContents.loadedUrls.at(-1), 'http://127.0.0.1:3430/?k=rotated&theme=light');
+
+  // closeMagpieWindow detaches activeOnClose before destroy so programmatic close does not re-trigger onClose
+  let onCloseCount = 0;
+  mod.openMagpieWindow({
+    url: 'http://127.0.0.1:3430/?k=rotated',
+    theme: { scheme: 'light' },
+    onClose: () => { onCloseCount += 1; },
+  });
   mod.closeMagpieWindow();
+  assert.equal(onCloseCount, 0);
+
+  // User-initiated close still triggers onClose once
+  mod.openMagpieWindow({
+    url: 'http://127.0.0.1:3430/?k=userclose',
+    theme: { scheme: 'light' },
+    onClose: () => { onCloseCount += 1; },
+  });
+  createdWindows.at(-1).close();
+  assert.equal(onCloseCount, 1);
 });

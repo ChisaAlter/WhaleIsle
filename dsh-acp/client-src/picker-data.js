@@ -149,16 +149,35 @@ export function filterPickerCategories(categories, effectiveActiveTab, query, ra
     .filter((cat) => (cat.models || []).length > 0);
 }
 
+export function resolveOverlayTopMargin(min = 12) {
+  if (typeof document === 'undefined' || !document.documentElement || typeof getComputedStyle !== 'function') {
+    return min;
+  }
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  const overlayTop = Number.parseFloat(style?.getPropertyValue?.('--dsh-frame-overlay-top'));
+  if (Number.isFinite(overlayTop)) return Math.max(min, overlayTop);
+  const clearance = Number.parseFloat(style?.getPropertyValue?.('--dsh-frame-top-clearance'));
+  if (Number.isFinite(clearance)) {
+    return Math.max(min, (root.hasAttribute?.('data-fullscreen') ? 0 : clearance) + 20);
+  }
+  return min;
+}
+
 export function computeMenuPos(triggerEl, menuEl, current) {
   const rect = triggerEl?.getBoundingClientRect();
   if (!rect) return current;
   const MARGIN = 12;
+  const topMargin = resolveOverlayTopMargin(MARGIN);
   const lw = menuEl?.offsetWidth ?? 0;
   const lh = menuEl?.offsetHeight ?? 0;
   let x = rect.left;
   let y = rect.top - 8 - lh;
   if (lw > 0) x = Math.max(MARGIN, Math.min(x, window.innerWidth - lw - MARGIN));
-  if (lh > 0) y = Math.max(MARGIN, Math.min(y, window.innerHeight - lh - MARGIN));
+  if (lh > 0) {
+    const maxTop = Math.max(topMargin, window.innerHeight - lh - MARGIN);
+    y = Math.max(topMargin, Math.min(y, maxTop));
+  }
   return current?.left === x && current?.top === y ? current : { left: x, top: y };
 }
 

@@ -1,7 +1,7 @@
 'use strict';
 
-const { copyFile, mkdir, readFile, writeFile } = require('node:fs/promises');
-const { dirname, join } = require('node:path');
+const { copyFile, mkdir, readFile, rm, writeFile } = require('node:fs/promises');
+const { basename, dirname, join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 /** Keep NSIS from traversing dependency junctions while retiring/rolling back a tree. */
@@ -88,6 +88,14 @@ function transactionalUninstallerScript(source) {
   return directoryRemovalScript(normalized.slice(0, atomicStart) + atomic + restore + normalized.slice(end), 'un.');
 }
 
+/** @param {string} outDir */
+async function cleanupDirectoryInstaller(outDir) {
+  if (!outDir) return;
+  const directory = join(outDir, '.nsis-directory-installer');
+  if (basename(directory) !== '.nsis-directory-installer') return;
+  await rm(directory, { recursive: true, force: true });
+}
+
 /** Reuse the pinned official adapter with this shell's electron-builder and branded UI. */
 async function installWindowsDirectoryInstaller() {
   const official = await import(pathToFileURL(join(__dirname,
@@ -106,34 +114,57 @@ async function installWindowsDirectoryInstaller() {
   const original = NsisTarget.prototype.computeFinalScript;
   NsisTarget.prototype.computeFinalScript = async function (source, ...args) {
     const directory = join(this.outDir, '.nsis-directory-installer');
-    await mkdir(directory, { recursive: true });
-    const section = join(directory, 'installSection.nsh');
-    await writeFile(section, official.directoryInstallSection(await readFile(join(templates, 'installSection.nsh'), 'utf8')));
-    const directories = join(directory, 'installer-directories.nsh');
-    await writeFile(directories, directoryTransactionsScript(await readFile(join(__dirname,
-      '../vendor/deepseek-harness/apps/desktop/scripts/installer-directories.nsh'), 'utf8')));
-    const sourceTool = await getPath7za();
-    const tool = join(directory, '7za.exe');
-    await copyFile(sourceTool, tool);
-    await this.packager.signIf(tool);
-    function replaceInclude(text, name, target) {
-      const before = `!include "${name}"`;
-      if (text.split(before).length !== 2) throw new Error(`NSIS template changed: ${before}`);
-      return text.replace(before, `!include "${target}"`);
+    try {
+      await mkdir(directory, { recursive: true });
+      const section = join(directory, 'installSection.nsh');
+      await writeFile(section, official.directoryInstallSection(await readFile(join(templates, 'installSection.nsh'), 'utf8')));
+      const directories = join(directory, 'installer-directories.nsh');
+      await writeFile(directories, directoryTransactionsScript(await readFile(join(__dirname,
+        '../vendor/deepseek-harness/apps/desktop/scripts/installer-directories.nsh'), 'utf8')));
+      const sourceTool = await getPath7za();
+      const tool = join(directory, '7za.exe');
+      await copyFile(sourceTool, tool);
+      await this.packager.signIf(tool);
+      function replaceInclude(text, name, target) {
+        const before = `!include "${name}"`;
+        if (text.split(before).length !== 2) throw new Error(`NSIS template changed: ${before}`);
+        return text.replace(before, `!include "${target}"`);
+      }
+      let adapted = replaceInclude(source, 'installSection.nsh', section);
+      for (const helper of ['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh']) {
+        const target = join(directory, helper);
+        const helperSource = official.directoryInstallerExits(await readFile(join(templates, 'include', helper), 'utf8'));
+        await writeFile(target, helper === 'installUtil.nsh' ? silentUninstallFailureScript(helperSource) : helperSource);
+        adapted = replaceInclude(adapted, helper, target);
+      }
+      // Preserve uninstall UI/data policy; recursive removal never follows runtime junctions.
+      const uninstaller = join(directory, 'uninstaller.nsh');
+      await writeFile(uninstaller, transactionalUninstallerScript(await readFile(join(templates, 'uninstaller.nsh'), 'utf8')));
+      adapted = replaceInclude(adapted, 'uninstaller.nsh', uninstaller);
+      return `!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n${await original.call(this, adapted, ...args)}`;
+    } catch (error) {
+      await cleanupDirectoryInstaller(this.outDir).catch(() => {
+        // Preserve the original script generation error while reclaiming staging.
+      });
+      throw error;
     }
-    let adapted = replaceInclude(source, 'installSection.nsh', section);
-    for (const helper of ['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh']) {
-      const target = join(directory, helper);
-      const helperSource = official.directoryInstallerExits(await readFile(join(templates, 'include', helper), 'utf8'));
-      await writeFile(target, helper === 'installUtil.nsh' ? silentUninstallFailureScript(helperSource) : helperSource);
-      adapted = replaceInclude(adapted, helper, target);
+  };
+  const nsisProto = /** @type {any} */ (NsisTarget.prototype);
+  const originalExecuteMakensis = nsisProto.executeMakensis;
+  nsisProto.executeMakensis = /** @param {...any} args */ async function (...args) {
+    try {
+      return await originalExecuteMakensis.apply(this, args);
+    } finally {
+      await cleanupDirectoryInstaller(this.outDir);
     }
-    // Preserve uninstall UI/data policy; recursive removal never follows runtime junctions.
-    const uninstaller = join(directory, 'uninstaller.nsh');
-    await writeFile(uninstaller, transactionalUninstallerScript(await readFile(join(templates, 'uninstaller.nsh'), 'utf8')));
-    adapted = replaceInclude(adapted, 'uninstaller.nsh', uninstaller);
-    return `!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n${await original.call(this, adapted, ...args)}`;
   };
 }
 
-module.exports = { directoryRemovalScript, directoryTransactionsScript, transactionalUninstallerScript, silentUninstallFailureScript, installWindowsDirectoryInstaller };
+module.exports = {
+  directoryRemovalScript,
+  directoryTransactionsScript,
+  transactionalUninstallerScript,
+  silentUninstallFailureScript,
+  cleanupDirectoryInstaller,
+  installWindowsDirectoryInstaller,
+};

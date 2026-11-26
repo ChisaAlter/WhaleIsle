@@ -24,6 +24,7 @@ import {
 } from '../../../../src/channels/shared/bot-workspace-store.mjs';
 import { listAgentPresetCatalog } from '../../../../src/channels/shared/agent-preset.mjs';
 import { sharedSingleOwnerGate } from '../../../../src/channels/shared/single-owner-gate.mjs';
+import { getActiveBotOutboundBridge } from '../../../../src/channels/shared/bot-outbound-bridge.mjs';
 import { createFeishuTaskBinding } from './whale-tasks.mjs';
 
 function webSocketProxyUrl(env) {
@@ -182,6 +183,7 @@ export async function createProductionController(ctx, config = {}, internals = {
       const workspaceScope = createBotWorkspaceScope(harness, {
         botId: id, workspaces, state, agentPresetCatalog, accessGate,
       });
+      const outboundBridge = internals.outboundBridge ?? getActiveBotOutboundBridge(ctx);
       return new Runtime({
         lark,
         botId: id,
@@ -195,6 +197,7 @@ export async function createProductionController(ctx, config = {}, internals = {
         taskBinding: createFeishuTaskBinding(ctx, { botId: id, botConfig, workspaces, configStore, accessGate }),
         harness: workspaceScope.harness,
         state: workspaceScope.state,
+        outboundBridge,
         replyTimeoutMs: config.replyTimeoutMs ?? 600_000,
         ...(wsAgent ? { wsAgent } : {}),
         logger: {

@@ -29,7 +29,7 @@
 ## 不变量
 
 - 更新资产按平台选择：Windows Setup.exe，macOS 匹配架构的 DMG；DMG 校验后由系统打开并提示拖入 Applications，当前应用保持运行，不宣称已安装。
-- 桌面版本列表与指定版本安装只接受桌面版本号；同仓库的 `whalebridge-v…` 组件发布不进入桌面更新。Windows 仅选择 Setup/NSIS/installer 安装器，不把组件或便携 EXE 当成安装包。
+- 桌面版本列表与指定版本安装只接受桌面版本号；同仓库的 `magpie-v…`、`android-v…` 与历史 `whalebridge-v…` 组件/移动端发布不进入桌面更新。Windows 仅选择 Setup/NSIS/installer 安装器，不把组件或便携 EXE 当成安装包。
 - 差量通道只负责下载；目标版本与 SHA512 校验后和整包路径共用任务保护 commit 中的 spawn。操作系统拒绝启动会报错、释放接纳锁，不能报告 launched 或提前退出。
 - 增量基底按实际运行版本、正式发布资产及 SHA512 配对；已下载但尚未安装的新版本不能替换当前基底。blockmap 必须对应同一份安装器，不能在新版本下载完成、安装尚未完成时提升为当前基底的映射。
 

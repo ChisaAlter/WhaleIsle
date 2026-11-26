@@ -1,11 +1,54 @@
 /* Gateway advanced settings tab. */
 
 .legacy {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  padding: 10px 12px;
   font-size: 13px;
   line-height: 20px;
 }
 
-.legacy p { margin: 8px 0; }
+.legacyToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.legacyToggle:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+  border-radius: var(--dsw-radius-xs);
+}
+
+.legacyTitle {
+  min-width: 0;
+}
+
+.legacyChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.legacyBody {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.legacyBody p { margin: 0; }
 
 .page {
   display: flex;
@@ -69,19 +112,9 @@
   outline-offset: 1px;
 }
 
-.modes {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 8px;
-  width: min(320px, 100%);
-  justify-content: stretch;
-  align-items: stretch;
-}
-
-.modeButton {
-  flex: 1;
-  min-width: 0;
+.modeControl {
+  min-width: 220px;
+  max-width: 100%;
 }
 
 .lanWarning {

@@ -116,6 +116,8 @@
   let lastErrorAt = 0;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let toastTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let toastHideTimer = null;
   /** @type {Map<string, number>} */
   const lockedWidths = new Map();
 
@@ -136,7 +138,14 @@
   function showToast(message) {
     const toast = els.toast;
     if (!toast || !message) return;
-    if (toastTimer !== null) clearTimeout(toastTimer);
+    if (toastTimer !== null) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    if (toastHideTimer !== null) {
+      clearTimeout(toastHideTimer);
+      toastHideTimer = null;
+    }
     toast.textContent = message;
     toast.hidden = false;
     requestAnimationFrame(() => {
@@ -145,7 +154,8 @@
     toastTimer = setTimeout(() => {
       toastTimer = null;
       toast.removeAttribute('data-visible');
-      setTimeout(() => {
+      toastHideTimer = setTimeout(() => {
+        toastHideTimer = null;
         if (!toast.hasAttribute('data-visible')) toast.hidden = true;
       }, 200);
     }, 4000);
@@ -183,6 +193,38 @@
   }
 
   /**
+   * @param {HTMLButtonElement & { _actionCtx?: { eventId: string, action: ApprovalAction }, _copy?: typeof COPY.zh }} btn
+   * @param {ProjectedItem} item
+   * @param {{ action: ApprovalAction, label: string, variant: 'primary' | 'outline' | 'danger' }} spec
+   * @param {typeof COPY.zh} copy
+   * @param {boolean} isBusy
+   */
+  function updateActionButton(btn, item, spec, copy, isBusy) {
+    btn.className = spec.variant === 'primary'
+      ? 'action-btn action-btn-primary'
+      : spec.variant === 'danger'
+        ? 'action-btn action-btn-outline action-btn-danger'
+        : 'action-btn action-btn-outline';
+    const key = `${item.eventId}:${spec.action}`;
+    const activeBusy = item.busyAction === spec.action;
+    const label = activeBusy ? copy.busy : spec.label;
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.disabled = isBusy;
+    btn.setAttribute('aria-label', spec.label);
+    btn.dataset.actionKey = key;
+    btn._actionCtx = { eventId: item.eventId, action: spec.action };
+    btn._copy = copy;
+    if (activeBusy) {
+      btn.setAttribute('aria-busy', 'true');
+      const locked = lockedWidths.get(key);
+      btn.style.minWidth = locked ? `${locked}px` : '';
+    } else {
+      btn.removeAttribute('aria-busy');
+      btn.style.minWidth = '';
+    }
+  }
+
+  /**
    * @param {ProjectedItem} item
    * @param {typeof COPY.zh} copy
    */
@@ -190,36 +232,35 @@
     const container = els.actions;
     if (!container) return;
     const specs = buildActionSpecs(item, copy);
-    const fragment = document.createDocumentFragment();
     const isBusy = item.busyAction !== null;
-
+    const existing = /** @type {Array<HTMLButtonElement & { _actionCtx?: { eventId: string, action: ApprovalAction }, _copy?: typeof COPY.zh }>} */ (
+      [...container.children]
+    );
+    const sameShape = existing.length === specs.length
+      && specs.every((spec, idx) => existing[idx]?.dataset?.actionKey === `${item.eventId}:${spec.action}`);
+    if (sameShape) {
+      specs.forEach((spec, idx) => updateActionButton(existing[idx], item, spec, copy, isBusy));
+      return;
+    }
+    const fragment = document.createDocumentFragment();
     for (const spec of specs) {
-      const btn = document.createElement('button');
+      const btn = /** @type {HTMLButtonElement & { _actionCtx?: { eventId: string, action: ApprovalAction }, _copy?: typeof COPY.zh }} */ (
+        document.createElement('button')
+      );
       btn.type = 'button';
-      btn.className = spec.variant === 'primary'
-        ? 'action-btn action-btn-primary'
-        : spec.variant === 'danger'
-          ? 'action-btn action-btn-outline action-btn-danger'
-          : 'action-btn action-btn-outline';
-      const key = `${item.eventId}:${spec.action}`;
-      const activeBusy = item.busyAction === spec.action;
-      btn.textContent = activeBusy ? copy.busy : spec.label;
-      btn.disabled = isBusy;
-      btn.setAttribute('aria-label', spec.label);
-      if (activeBusy) {
-        btn.setAttribute('aria-busy', 'true');
-        const locked = lockedWidths.get(key);
-        if (locked) btn.style.minWidth = `${locked}px`;
-      }
+      updateActionButton(btn, item, spec, copy, isBusy);
       btn.addEventListener('click', () => {
-        if (!currentView?.activeItem || currentView.activeItem.busyAction !== null) return;
+        const ctx = btn._actionCtx;
+        if (!ctx || !currentView?.activeItem || currentView.activeItem.busyAction !== null) return;
+        const key = `${ctx.eventId}:${ctx.action}`;
         lockedWidths.set(key, Math.ceil(btn.getBoundingClientRect().width));
-        void bridge.decide(item.eventId, spec.action).then((result) => {
+        const activeCopy = btn._copy || copy;
+        void bridge.decide(ctx.eventId, ctx.action).then((result) => {
           if (result && result.ok === false && result.error) {
             showToast(result.error);
           }
         }).catch(() => {
-          showToast(copy.actionFailed);
+          showToast(activeCopy.actionFailed);
         });
       });
       fragment.appendChild(btn);

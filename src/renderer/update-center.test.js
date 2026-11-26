@@ -72,3 +72,181 @@ test('formatting helpers', () => {
   assert.equal(formatEta(125), '剩余约 3 分钟');
   assert.equal(formatEta(3700), '剩余约 1 小时 2 分钟');
 });
+
+test('update-center reuses buttons across ticks, implements tablist/radiogroup/focus-trap, and uses scaleX + tokens', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const vm = require('node:vm');
+  const css = fs.readFileSync(path.join(__dirname, 'update-center.css'), 'utf8');
+  const tokensCss = fs.readFileSync(path.join(__dirname, '../shared/dsh-webui-tokens.css'), 'utf8');
+  assert.match(tokensCss, /--dsw-alias-switch-thumb:/);
+  assert.match(css, /var\(--dsw-alias-switch-thumb\)/);
+  assert.match(css, /var\(--dsw-shadow-lv2\)/);
+  assert.match(css, /var\(--dsw-elevation-panel\)/);
+  assert.doesNotMatch(css, /--dsw-elevation-subtle/);
+  assert.match(css, /#bar-fill[\s\S]*?transform:\s*scaleX\(0\)/);
+
+  class El {
+    constructor(tag = 'div', id = '') {
+      this.tagName = tag.toUpperCase();
+      this.id = id;
+      this.children = [];
+      this.parentNode = null;
+      this.dataset = {};
+      this.style = {};
+      this.attrs = new Map();
+      this.listeners = new Map();
+      this.hidden = false;
+      this.disabled = false;
+      this.tabIndex = 0;
+      this._text = '';
+      const cls = new Set();
+      this.classList = {
+        add: (...names) => names.forEach((n) => cls.add(n)),
+        remove: (...names) => names.forEach((n) => cls.delete(n)),
+        toggle: (n, on) => (on ? cls.add(n) : cls.delete(n)),
+        contains: (n) => cls.has(n),
+      };
+    }
+    set className(v) { this._className = v; }
+    get className() { return this._className || ''; }
+    set textContent(v) { this._text = String(v); }
+    get textContent() { return this._text; }
+    setAttribute(k, v) { this.attrs.set(k, String(v)); }
+    getAttribute(k) { return this.attrs.get(k) ?? null; }
+    removeAttribute(k) { this.attrs.delete(k); }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    dispatch(type, event = {}) {
+      const ev = { target: this, preventDefault() { this.defaultPrevented = true; }, defaultPrevented: false, ...event };
+      for (const fn of this.listeners.get(type) || []) fn(ev);
+      return ev;
+    }
+    focus() { doc.activeElement = this; }
+    blur() { if (doc.activeElement === this) doc.activeElement = null; }
+    appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+    replaceChildren(...nodes) {
+      for (const c of this.children) c.parentNode = null;
+      this.children = [];
+      for (const n of nodes) this.appendChild(n);
+    }
+    closest(sel) {
+      let cur = this;
+      while (cur) {
+        if (sel === '[hidden]' && cur.hidden) return cur;
+        cur = cur.parentNode;
+      }
+      return null;
+    }
+    querySelector(sel) {
+      if (sel === '.bar') return this.children[0] || null;
+      return null;
+    }
+    querySelectorAll(sel) {
+      const all = [];
+      const walk = (n) => {
+        for (const c of n.children) { all.push(c); walk(c); }
+      };
+      walk(this);
+      if (sel === '[role="tab"]') return all.filter((c) => c.getAttribute('role') === 'tab');
+      if (sel === '[role="radio"]') return all.filter((c) => c.getAttribute('role') === 'radio');
+      return all.filter((c) => (c.tagName === 'BUTTON' || c.tagName === 'INPUT') && !c.disabled && c.tabIndex !== -1);
+    }
+  }
+  const byId = new Map();
+  const make = (id, tag = 'div') => {
+    const el = new El(tag, id);
+    byId.set(id, el);
+    return el;
+  };
+  const center = make('center', 'section');
+  center.tabIndex = -1;
+  const barWrap = new El('div');
+  barWrap.className = 'bar';
+  const progress = make('progress');
+  progress.appendChild(barWrap);
+  center.appendChild(progress);
+  for (const id of ['headline', 'badge', 'subline', 'bar-fill', 'progress-text', 'problem', 'problem-text',
+    'problem-actions', 'content', 'notes', 'notes-tabs', 'notes-body', 'routes', 'auto-download', 'proxy',
+    'proxy-error', 'actions', 'close']) {
+    const tag = (id === 'proxy' || id === 'auto-download') ? 'input' : (id === 'close' ? 'button' : 'div');
+    center.appendChild(make(id, tag));
+  }
+  const docListeners = new Map();
+  const docEl = new El('html');
+  docEl.toggleAttribute = (k, on) => { if (on) docEl.attrs.set(k, ''); else docEl.attrs.delete(k); };
+  const bodyEl = new El('body');
+  bodyEl.toggleAttribute = (k, on) => { if (on) bodyEl.attrs.set(k, ''); else bodyEl.attrs.delete(k); };
+  const doc = {
+    activeElement: null,
+    documentElement: docEl,
+    body: bodyEl,
+    getElementById: (id) => byId.get(id) || null,
+    createElement: (tag) => new El(tag),
+    addEventListener: (t, fn) => {
+      if (!docListeners.has(t)) docListeners.set(t, []);
+      docListeners.get(t).push(fn);
+    },
+  };
+  let onPush = null;
+  const calls = [];
+  const initial = {
+    ...base,
+    phase: 'downloading',
+    target: {
+      ...base.target,
+      notesTabs: [{ id: 'zh', label: '中文', text: '内容A' }, { id: 'en', label: 'EN', text: 'Body B' }],
+    },
+    progress: { received: 10 * MB, total: 100 * MB, bytesPerSecond: 2 * MB, etaSeconds: 45 },
+  };
+  const api = {
+    state: async () => initial,
+    subscribe: (fn) => { onPush = fn; return () => {}; },
+    onTheme: () => () => {},
+    onWindowState: () => () => {},
+    command: async (id, arg) => { calls.push([id, arg]); return initial; },
+    close: async () => {},
+  };
+  const sandbox = {
+    document: doc,
+    window: { whaleUpdateCenter: api },
+    location: { search: '' },
+    URLSearchParams,
+    console,
+    Date,
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'update-center.js'), 'utf8'), sandbox);
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(doc.activeElement, center, 'moves initial focus to dialog container');
+  const firstAction = byId.get('actions').children[0];
+  firstAction.focus();
+  onPush({
+    ...initial,
+    progress: { received: 50 * MB, total: 100 * MB, bytesPerSecond: 2 * MB, etaSeconds: 25 },
+  });
+  assert.equal(byId.get('actions').children[0], firstAction, 'reuses action buttons across progress ticks');
+  assert.equal(doc.activeElement, firstAction, 'preserves focus on action button');
+  assert.equal(byId.get('bar-fill').style.transform, 'scaleX(0.5)');
+
+  const tabs = byId.get('notes-tabs').children;
+  tabs[0].dispatch('keydown', { key: 'ArrowRight' });
+  assert.equal(doc.activeElement, tabs[1]);
+  assert.equal(tabs[1].getAttribute('aria-selected'), 'true');
+  assert.equal(tabs[1].tabIndex, 0);
+  assert.equal(tabs[0].tabIndex, -1);
+
+  const radios = byId.get('routes').children;
+  radios[0].dispatch('keydown', { key: 'ArrowRight' });
+  assert.equal(doc.activeElement, radios[1]);
+  assert.deepEqual(calls.at(-1), ['setRoute', 'github']);
+
+  const focusables = center.querySelectorAll('focusable');
+  focusables.at(-1).focus();
+  for (const fn of docListeners.get('keydown') || []) {
+    fn({ key: 'Tab', shiftKey: false, preventDefault() {} });
+  }
+  assert.equal(doc.activeElement, focusables[0], 'Tab wraps inside dialog');
+});

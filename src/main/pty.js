@@ -1,19 +1,16 @@
 const { randomUUID } = require('node:crypto');
-const { loadWorkspaceAuthority } = require('./workspace-authority');
+const { createCachedWorkspaceAuthority } = require('./workspace-authority');
 const { createRegisterIpc } = require('./ipc-register');
 
-let workspaceAuthority = null;
+const authorityCache = createCachedWorkspaceAuthority({ allowScratchCwd: true });
 
 /** Test seam: pin the trust root (node:test runs outside Electron). */
 function setWorkspaceAuthority(authority) {
-  workspaceAuthority = authority;
+  authorityCache.set(authority);
 }
 
 function asCwd(cwd) {
-  if (workspaceAuthority === null) {
-    workspaceAuthority = loadWorkspaceAuthority({ allowScratchCwd: true });
-  }
-  return workspaceAuthority.resolveAuthorizedCwd(cwd);
+  return authorityCache.get().resolveAuthorizedCwd(cwd);
 }
 
 // Copied from the external desktop `apps/server/src/terminal/Manager.ts`.

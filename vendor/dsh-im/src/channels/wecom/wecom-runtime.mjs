@@ -2,6 +2,7 @@ import { WSAuthFailureError, WSClient, WSReconnectExhaustedError } from '@wecom/
 
 import { createWecomBridgeStatus, WecomHarnessBridge } from './wecom-bridge.mjs';
 import { sendRememberedConnectionTest } from '../shared/connection-test.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 
 function timeoutError() {
@@ -33,6 +34,8 @@ export class WecomRuntime {
   #connectTimeoutMs;
   #maxReconnectAttempts;
   #createClient;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createWecomRuntimeStatus();
   #client = null;
   #bridge = null;
@@ -45,6 +48,7 @@ export class WecomRuntime {
     secret,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     connectTimeoutMs = 20_000,
@@ -58,6 +62,7 @@ export class WecomRuntime {
     this.#secret = secret;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#connectTimeoutMs = connectTimeoutMs;
@@ -129,16 +134,19 @@ export class WecomRuntime {
       this.#status.lastCheckedAt = now;
       this.#status.lastConnectedAt = now;
       this.#status.lastError = null;
+      this.#registerOutboundSender();
       readyResolve();
     };
     const onDisconnected = () => {
       if (this.#client !== client) return;
+      this.#unregisterOutbound();
       this.#status.ready = false;
       this.#status.wecomConnectionState = 'connecting';
       this.#status.lastCheckedAt = Date.now();
     };
     const onReconnecting = () => {
       if (this.#client !== client) return;
+      this.#unregisterOutbound();
       this.#status.ready = false;
       this.#status.wecomConnectionState = 'connecting';
       this.#status.lastCheckedAt = Date.now();
@@ -148,6 +156,7 @@ export class WecomRuntime {
       const terminal = error instanceof WSAuthFailureError || error instanceof WSReconnectExhaustedError;
       if (!authenticated && terminal) readyReject(error);
       if (terminal) {
+        this.#unregisterOutbound();
         this.#status.ready = false;
         this.#status.wecomConnectionState = 'failed';
       }
@@ -217,6 +226,7 @@ export class WecomRuntime {
   }
 
   async #stopActive() {
+    this.#unregisterOutbound();
     const client = this.#client;
     const bridge = this.#bridge;
     this.#client = null;
@@ -230,5 +240,28 @@ export class WecomRuntime {
     await bridge?.waitForIdle();
     this.#status.ready = false;
     this.#status.wecomConnectionState = 'idle';
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('wecom', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#client) {
+          throw Object.assign(new Error('Enterprise WeChat bot is not connected'), { code: 'channel_not_connected' });
+        }
+        const res = await this.#client.sendMessage(payload.targetId, {
+          msgtype: 'markdown',
+          markdown: { content: payload.card?.markdown || payload.text },
+        });
+        return { messageId: res?.msgid ?? res?.messageId ?? null };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

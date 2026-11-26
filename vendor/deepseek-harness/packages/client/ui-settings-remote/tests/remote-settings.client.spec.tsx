@@ -116,9 +116,9 @@ describe('GatewaySettingsTab', () => {
     expect(zh.modeRelay).toBe('服务器')
     expect(en.modeRelay).toBe('Server')
     renderGateway({ getRemote: vi.fn(async () => ({ relayConfigured: true, urls: [], devices: [] })) })
-    const server = await screen.findByRole('radio', { name: 'Server' })
-    await waitFor(() => { expect(server.getAttribute('aria-checked')).toBe('true') })
-    expect(screen.getByRole('radio', { name: en.modeLan }).getAttribute('aria-checked')).toBe('false')
+    const server = await screen.findByRole('tab', { name: 'Server' })
+    await waitFor(() => { expect(server.getAttribute('aria-selected')).toBe('true') })
+    expect(screen.getByRole('tab', { name: en.modeLan }).getAttribute('aria-selected')).toBe('false')
   })
 
   it('orders relay credentials before connection mode (T1)', async () => {
@@ -164,7 +164,7 @@ describe('GatewaySettingsTab', () => {
       })),
     })
     expect(await screen.findByText(en.relayNeedsBoth)).toBeTruthy()
-    const relay = await screen.findByRole('radio', { name: en.modeRelay }) as HTMLButtonElement
+    const relay = await screen.findByRole('tab', { name: en.modeRelay }) as HTMLButtonElement
     expect(relay.disabled).toBe(true)
   })
 
@@ -180,7 +180,7 @@ describe('GatewaySettingsTab', () => {
       saveRemote: blocked,
     })
     expect(await screen.findByText(en.relayNeedsToken)).toBeTruthy()
-    const relay = await screen.findByRole('radio', { name: en.modeRelay }) as HTMLButtonElement
+    const relay = await screen.findByRole('tab', { name: en.modeRelay }) as HTMLButtonElement
     expect(relay.disabled).toBe(true)
     fireEvent.click(relay)
     expect(blocked).not.toHaveBeenCalled()
@@ -194,10 +194,10 @@ describe('GatewaySettingsTab', () => {
     renderGateway({ saveRemote })
     // SNAP starts in LAN mode: the warning is already visible on entry.
     expect(await screen.findByText(en.lanPlaintextWarning)).toBeTruthy()
-    fireEvent.click(await screen.findByRole('radio', { name: en.modeRelay }))
+    fireEvent.click(await screen.findByRole('tab', { name: en.modeRelay }))
     await waitFor(() => { expect(saveRemote).toHaveBeenCalledWith({ remoteMode: 'relay' }) })
     await waitFor(() => { expect(screen.queryByText(en.lanPlaintextWarning)).toBeNull() })
-    fireEvent.click(await screen.findByRole('radio', { name: en.modeLan }))
+    fireEvent.click(await screen.findByRole('tab', { name: en.modeLan }))
     await waitFor(() => { expect(saveRemote).toHaveBeenCalledWith({ remoteMode: 'lan' }) })
     expect(await screen.findByText(en.lanPlaintextWarning)).toBeTruthy()
   })
@@ -214,10 +214,10 @@ describe('GatewaySettingsTab', () => {
       mode: patch.remoteMode ?? SNAP.mode,
     }))
     renderGateway({ saveRemote })
-    const group = await screen.findByRole('radiogroup', { name: en.mode })
-    const radios = within(group).getAllByRole('radio')
-    expect(radios).toHaveLength(2)
-    fireEvent.click(await screen.findByRole('radio', { name: en.modeRelay }))
+    const group = await screen.findByRole('tablist', { name: en.mode })
+    const tabs = within(group).getAllByRole('tab')
+    expect(tabs).toHaveLength(2)
+    fireEvent.click(await screen.findByRole('tab', { name: en.modeRelay }))
     await waitFor(() => { expect(saveRemote).toHaveBeenCalledWith({ remoteMode: 'relay' }) })
   })
 

@@ -1020,4 +1020,14 @@ describe('AppearanceSection', () => {
     const typography = screen.getByText(COPY['type.title'])
     expect(typography.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('pairs the selected theme card badge with primary-foreground so dark mode stays legible', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const css = readFileSync(resolve(import.meta.dirname, '../src/client/AppearanceSection.module.css'), 'utf8')
+    const match = css.match(/\.halfBadge\s*\{([^}]*)\}/)
+    expect(match).not.toBeNull()
+    expect(match![1]).toContain('color: var(--dsw-alias-label-primary-foreground)')
+    expect(match![1]).not.toContain('--dsw-alias-label-on-color')
+  })
 })

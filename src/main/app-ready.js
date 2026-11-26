@@ -558,11 +558,8 @@ async function runAppReady({
   const { pruneCrashReports } = require('./crash-report');
   void pruneCrashReports(crashLogDir()).catch((error) => console.warn('dshd: crash report prune failed', error));
 
-  session.defaultSession.on('will-download', (/** @type {any} */ event, /** @type {any} */ item) => {
-    const { downloadSavePath } = require('./download-path');
-    const dest = downloadSavePath(app.getPath('downloads'), item.getFilename());
-    item.setSavePath(dest);
-  });
+  const { createDownloadCollisionHandler } = require('./download-path');
+  session.defaultSession.on('will-download', createDownloadCollisionHandler(app));
 
   await yieldTurn();
   const launcherWin = await prepareLauncher();

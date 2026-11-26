@@ -8,7 +8,8 @@ import {
   safeHttpsIconUrl,
   copyTextToClipboard,
 } from '../client-src/utils.js';
-import { handlePickerKeyDown, computeMenuPos } from '../client-src/picker-data.js';
+import { handlePickerKeyDown, computeMenuPos, resolveOverlayTopMargin } from '../client-src/picker-data.js';
+import { PICKER_CSS } from '../client-src/styles-picker.js';
 import { injectCss } from '../client-src/styles.js';
 
 const bundleSource = fs.readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
@@ -221,6 +222,71 @@ test('computeMenuPos clamps to non-negative coordinates on narrow viewports', ()
     if (prevWin === undefined) delete globalThis.window;
     else globalThis.window = prevWin;
   }
+});
+
+test('computeMenuPos and PICKER_CSS respect --dsh-frame-overlay-top and --dsh-frame-top-clearance titlebar safe margin', () => {
+  const prevWin = globalThis.window;
+  const prevDoc = globalThis.document;
+  const prevGetComputedStyle = globalThis.getComputedStyle;
+  let cssVars = { '--dsh-frame-overlay-top': '68px', '--dsh-frame-top-clearance': '48px' };
+  let fullscreen = false;
+  globalThis.window = { innerWidth: 1441, innerHeight: 912 };
+  globalThis.document = {
+    documentElement: {
+      hasAttribute: (attr) => attr === 'data-fullscreen' && fullscreen,
+    },
+  };
+  globalThis.getComputedStyle = () => ({
+    getPropertyValue: (name) => cssVars[name] ?? '',
+  });
+  try {
+    // Reproduces 1441x912 where rect.top - 8 - 480 = 45 < 48px titlebar; must clamp to 68px.
+    const pos = computeMenuPos(
+      { getBoundingClientRect: () => ({ left: 809, right: 980, top: 533, bottom: 561 }) },
+      { offsetWidth: 620, offsetHeight: 480 },
+    );
+    assert.equal(pos.top, 68);
+    assert.equal(pos.left, 809);
+
+    // Fallback when --dsh-frame-overlay-top is an unresolved calc() and --dsh-frame-top-clearance is 48px.
+    cssVars = { '--dsh-frame-overlay-top': '', '--dsh-frame-top-clearance': '48px' };
+    assert.equal(resolveOverlayTopMargin(12), 68);
+    const posFallback = computeMenuPos(
+      { getBoundingClientRect: () => ({ left: 640, right: 800, top: 500, bottom: 528 }) },
+      { offsetWidth: 620, offsetHeight: 480 },
+    );
+    assert.equal(posFallback.top, 68);
+
+    // Fullscreen collapses titlebar clearance to 20px inset.
+    fullscreen = true;
+    cssVars = { '--dsh-frame-overlay-top': '20px', '--dsh-frame-top-clearance': '48px' };
+    assert.equal(resolveOverlayTopMargin(12), 20);
+  } finally {
+    if (prevWin === undefined) delete globalThis.window;
+    else globalThis.window = prevWin;
+    if (prevDoc === undefined) delete globalThis.document;
+    else globalThis.document = prevDoc;
+    if (prevGetComputedStyle === undefined) delete globalThis.getComputedStyle;
+    else globalThis.getComputedStyle = prevGetComputedStyle;
+  }
+
+  assert.match(
+    PICKER_CSS,
+    /max-height:\s*calc\(100vh - 12px - max\(12px, var\(--dsh-frame-overlay-top, 12px\)\)\);/,
+  );
+  assert.match(
+    PICKER_CSS,
+    /max-height:\s*calc\(100dvh - 12px - max\(12px, var\(--dsh-frame-overlay-top, 12px\)\)\);/,
+  );
+  assert.match(
+    PICKER_CSS,
+    /height:\s*min\(620px,\s*calc\(100vh - 12px - max\(12px, var\(--dsh-frame-overlay-top, 12px\)\)\)\);/,
+  );
+  assert.match(
+    PICKER_CSS,
+    /height:\s*min\(620px,\s*calc\(100dvh - 12px - max\(12px, var\(--dsh-frame-overlay-top, 12px\)\)\)\);/,
+  );
+  assert.doesNotMatch(PICKER_CSS, /calc\(100vh - 24px\)/);
 });
 
 test('injectCss reference-counts and removes injected <style> node on final dispose', () => {

@@ -91,8 +91,10 @@ test('unconfirmed installation clears activity and a retry restores the progress
   assert.equal(el('phases').hidden, true);
   paintProgress('test', { phase: 'download', percent: null });
   assert.equal(el('bar').parentElement.hidden, false);
-  assert.equal(el('bar').style.width, '0%');
+  assert.equal(el('bar').style.transform, 'scaleX(0)');
   assert.equal(el('phases').hidden, false);
+  paintProgress('test', { phase: 'download', percent: 50 });
+  assert.equal(el('bar').style.transform, 'scaleX(0.5)');
 });
 
 function buttons(n, disabled = []) {
@@ -263,4 +265,25 @@ test('route picker renders roving tabindex radios bound once via navBound', () =
   assert.ok(navBinds >= 2, 'both picker and seg must once-bind navBound');
   const focusins = (src.match(/addEventListener\('focusin'/g) || []).length;
   assert.ok(focusins >= 2, 'roving tabindex needs a focusin handler per group');
+});
+
+test('disable-suspects button visibility aligns with startupRecoveryGuidance kind', () => {
+  const { context, document } = kit.loadLauncherPage({ api: {} });
+  const btn = document.getElementById('btn-disable-suspects');
+  context.renderHomeRecovery({
+    lastStart: { ok: false },
+    forensics: {
+      pluginTreeFailure: true,
+      plugins: [{ name: 'demo-plugin', suspect: true, disabled: false, orphan: true }],
+    },
+  });
+  assert.equal(btn.hidden, true, 'kept hidden when guidance is skip rather than disable');
+  context.renderHomeRecovery({
+    lastStart: { ok: false },
+    forensics: {
+      plugins: [{ name: 'demo-plugin', suspect: true, disabled: false }],
+    },
+  });
+  assert.equal(btn.hidden, false, 'shown when startupRecoveryGuidance resolves to disable');
+  assert.equal(btn.dataset.names, 'demo-plugin');
 });

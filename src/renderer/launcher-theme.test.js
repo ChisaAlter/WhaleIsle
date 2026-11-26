@@ -167,3 +167,11 @@ test('launcher versions panel: current version on top, expandable release rows, 
   assert.match(css, /\.rel-detail/);
   assert.match(css, /\.route-pop/);
 });
+
+test('launcher.css uses shared tokens for radii/shadows, focus-visible on route-opt, and scaleX progress', () => {
+  assert.doesNotMatch(css, /border-radius:\s*6px/);
+  assert.match(css, /\.route-opt:focus-visible/);
+  assert.match(css, /box-shadow:\s*var\(--dsw-shadow-lv3\)/);
+  assert.match(css, /\.bar > i[\s\S]*?transform:\s*scaleX\(0\)/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*?\.bar > i/);
+});

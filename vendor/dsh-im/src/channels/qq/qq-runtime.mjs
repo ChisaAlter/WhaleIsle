@@ -4,6 +4,7 @@ import {
   connectionTestTarget,
   connectionTestTargetUnavailable,
 } from '../shared/connection-test.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 import { createQqBridgeStatus, QqHarnessBridge } from './qq-bridge.mjs';
 
@@ -36,6 +37,8 @@ export class QqRuntime {
   #connectTimeoutMs;
   #createBot;
   #typingMiddleware;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createQqRuntimeStatus();
   #bot = null;
   #bridge = null;
@@ -48,6 +51,7 @@ export class QqRuntime {
     appSecret,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     connectTimeoutMs = 20_000,
@@ -61,6 +65,7 @@ export class QqRuntime {
     this.#appSecret = appSecret;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#connectTimeoutMs = connectTimeoutMs;
@@ -169,6 +174,7 @@ export class QqRuntime {
       this.#status.lastCheckedAt = now;
       this.#status.lastConnectedAt = now;
       this.#status.lastError = null;
+      this.#registerOutboundSender();
       readyResolve();
     };
     const onError = (error) => {
@@ -199,6 +205,7 @@ export class QqRuntime {
     runTask.catch((error) => {
       if (controller.signal.aborted) return;
       readyReject(error);
+      this.#unregisterOutbound();
       this.#status.ready = false;
       this.#status.qqConnectionState = 'failed';
       this.#status.lastError = error?.message ?? String(error);
@@ -230,6 +237,7 @@ export class QqRuntime {
   }
 
   async stop() {
+    this.#unregisterOutbound();
     const bot = this.#bot;
     const bridge = this.#bridge;
     const runTask = this.#runTask;
@@ -251,5 +259,31 @@ export class QqRuntime {
     this.#status.ready = false;
     this.#status.qqConnectionState = 'idle';
     return this.status;
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('qq', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#bot) {
+          throw Object.assign(new Error('QQ bot is not connected'), { code: 'channel_not_connected' });
+        }
+        const raw = String(payload.targetId ?? '').trim();
+        const target = raw.startsWith('group:')
+          ? { scope: 'group', targetId: raw.slice('group:'.length) }
+          : raw.startsWith('c2c:')
+            ? { scope: 'c2c', targetId: raw.slice('c2c:'.length) }
+            : { scope: 'c2c', targetId: raw };
+        const res = await this.#bot.sendText(target, payload.text);
+        return { messageId: res?.id ?? res?.messageId ?? null };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

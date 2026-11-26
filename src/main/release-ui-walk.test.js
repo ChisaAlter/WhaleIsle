@@ -441,10 +441,9 @@ test('release walk helpers stay injectable into the harness page', () => {
 });
 
 test('release walk source clicks Mention and asserts the composer markdown link', () => {
-  const walk = require('node:fs').readFileSync(
-    require('node:path').join(__dirname, 'release-ui-walk.js'),
-    'utf8',
-  ) + require('node:fs').readFileSync(require('node:path').join(__dirname, 'release-ui-page-helpers.js'), 'utf8');
+  const walk = ['release-ui-walk.js', 'release-ui-page-helpers.js', 'release-ui-models-walk.js']
+    .map((name) => require('node:fs').readFileSync(require('node:path').join(__dirname, name), 'utf8'))
+    .join('\n');
   assert.match(walk, /files\.mentionAppended/);
   assert.match(walk, /mention in composer\|引用到输入框/);
   assert.match(walk, /typeIntoComposer\(wc, ''\)/);
@@ -498,10 +497,9 @@ test('release walk source clicks Mention and asserts the composer markdown link'
 });
 
 test('release walk types into Lexical composer and matches 0.1.2 chrome copy', () => {
-  const walk = require('node:fs').readFileSync(
-    require('node:path').join(__dirname, 'release-ui-walk.js'),
-    'utf8',
-  ) + require('node:fs').readFileSync(require('node:path').join(__dirname, 'release-ui-page-helpers.js'), 'utf8');
+  const walk = ['release-ui-walk.js', 'release-ui-page-helpers.js', 'release-ui-models-walk.js']
+    .map((name) => require('node:fs').readFileSync(require('node:path').join(__dirname, name), 'utf8'))
+    .join('\n');
   assert.match(PAGE_HELPERS, /function dshComposerInput/);
   assert.match(PAGE_HELPERS, /function dshComposerReady/);
   assert.match(PAGE_HELPERS, /function dshComposerText/);

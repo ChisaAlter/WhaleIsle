@@ -69,6 +69,7 @@ function windowChrome(overrides = {}) {
 
 // Feature: window-motion. Keep 20px alpha corners; attachIntegratedChrome
 // restores the native animation styles before either shell window is shown.
+/** @param {Electron.BrowserWindowConstructorOptions & { trafficLightPosition?: Electron.Point }} [overrides] */
 function shellWindowChrome(overrides = {}) {
   return windowChrome({
     ...overrides,
@@ -81,7 +82,7 @@ function shellWindowChrome(overrides = {}) {
       // corners makes Electron remove that style before creating the buttons.
       roundedCorners: true,
       titleBarStyle: 'hidden',
-      trafficLightPosition: { x: 16, y: 18 },
+      trafficLightPosition: overrides.trafficLightPosition || { x: 16, y: 18 },
     } : {}),
   });
 }
@@ -302,10 +303,14 @@ function bindChromeIpc() {
       if (!role || !windowsAcrylicSupported() || !isValidWindowMaterial(material)) return;
       const win = windowFromEvent(event, role);
       if (!win || win.isDestroyed()) return;
-      applyWindowMaterial(win, material, {
-        transparent: transparentWindows.has(win),
-        restoreColor: chromeBackgroundFor(win),
-      });
+      try {
+        applyWindowMaterial(win, material, {
+          transparent: transparentWindows.has(win),
+          restoreColor: chromeBackgroundFor(win),
+        });
+      } catch (error) {
+        console.warn('[chrome] Failed to apply window material:', error);
+      }
     },
   });
 }
@@ -357,6 +362,7 @@ function applyAppTheme() {
   const theme = currentTheme();
   const { getHarnessWebContents } = require('./window');
   require('./desktop-pet').getDesktopPet()?.setTheme(theme);
+  require('./magpie-window').syncMagpieTheme?.(theme);
   for (const win of BrowserWindow.getAllWindows()) {
     const harnessWc = getHarnessWebContents(win);
     if (harnessWc && isHarnessUrl(harnessWc.getURL())) {

@@ -1,5 +1,5 @@
 const { spawn: nodeSpawn, execFile: nodeExecFile } = require('node:child_process');
-const { loadWorkspaceAuthority } = require('./workspace-authority');
+const { createCachedWorkspaceAuthority } = require('./workspace-authority');
 
 const EDITORS = [
   { id: 'cursor', label: 'Cursor', commands: ['cursor'], launchStyle: 'goto' },
@@ -30,16 +30,15 @@ const EDITORS = [
   { id: 'file-manager', label: 'File Manager', commands: null, launchStyle: 'direct-path' },
 ];
 
-let workspaceAuthority = null;
+const authorityCache = createCachedWorkspaceAuthority();
 
 /** Test seam: pin the trust root (node:test runs outside Electron). */
 function setWorkspaceAuthority(authority) {
-  workspaceAuthority = authority;
+  authorityCache.set(authority);
 }
 
 function authority() {
-  if (workspaceAuthority === null) workspaceAuthority = loadWorkspaceAuthority();
-  return workspaceAuthority;
+  return authorityCache.get();
 }
 
 function resolveInside(cwd, relativePath) {

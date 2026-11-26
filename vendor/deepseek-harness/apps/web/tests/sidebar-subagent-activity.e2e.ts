@@ -180,7 +180,7 @@ describe('web e2e: sidebar subagent activity', () => {
       expect(await toggle.evaluate(element => element === document.activeElement)).toBe(true)
       await compareOrRefreshGolden(
         join(SNAPSHOT_DIR, 'compact-running.expected.md'),
-        await captureStableAria(page, 'header:has([data-session-panel-toggle])', scaffold.workspaceCwd),
+        await captureStableAria(page, 'header[data-dsh-header]', scaffold.workspaceCwd),
         MODE,
       )
       await saveFailureShot(page, 'web-e2e-compact-running-header')

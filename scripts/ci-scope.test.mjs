@@ -4,10 +4,9 @@ import { readFileSync } from 'node:fs'
 import { load } from 'js-yaml'
 import { selectChecks, versionChanged } from './ci-scope.mjs'
 
-test('external component QA and removed source/build paths do not build Harness', () => {
-  assert.deepEqual(selectChecks(['vendor/whalebridge/main.go', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge-models.mjs', 'scripts/qa-whalebridge-agents.cjs', '.github/workflows/whalebridge.yml']),
-    { product: false, vendor: false, tools: false, motion: false })
+test('desktop IPC changes select product and tools checks', () => {
   assert.equal(selectChecks(['src/main/ipc-components.js']).product, true)
+  assert.equal(selectChecks(['src/main/ipc-components.js']).tools, true)
 })
 
 test('documentation and retired governance records do not build the product', () => {
@@ -62,7 +61,7 @@ test('lint config and its suppression ledger select product and tools checks', (
     { product: true, vendor: false, tools: true, motion: false })
 })
 test('tool test edits run independently and manual builds have full scope', () => {
-  assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', 'scripts/sync-magpie-cnb.mjs', '.github/workflows/cnb-mirror.yml', '.github/workflows/magpie-cnb-mirror.yml']),
+  assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/lib/cnb-client.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', 'scripts/sync-magpie-cnb.mjs', '.github/workflows/cnb-mirror.yml', '.github/workflows/magpie-cnb-mirror.yml']),
     { product: false, tools: true, vendor: false, motion: false })
   assert.ok(Object.values(selectChecks([], { manual: true })).every(Boolean))
 })

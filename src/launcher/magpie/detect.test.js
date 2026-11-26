@@ -11,6 +11,7 @@ const {
   probeConcurrency,
   probeGateway,
   probeHttpReachable,
+  resolveGatewayCandidates,
   toLoopbackHostPort,
 } = require('./detect');
 
@@ -77,7 +78,7 @@ test('detectMagpieState covers external, external-ui-companion, managed-shared-c
   });
 });
 
-test('probeConcurrency normalizes active request/waiting/tool counters', async () => {
+test('probeConcurrency normalizes active request/waiting/tool counters and fails closed on invalid payloads', async () => {
   const res = await probeConcurrency('127.0.0.1:3425', {
     fetchJson: async () => ({ requests: 2, waiting: 1, tools: 0 }),
   });
@@ -86,12 +87,20 @@ test('probeConcurrency normalizes active request/waiting/tool counters', async (
     fetchJson: async () => { throw new Error('offline'); },
   });
   assert.equal(unreachable, null);
+  for (const invalid of [[], {}, { requests: '2', waiting: 0, tools: 0 }, { requests: -1, waiting: 0, tools: 0 }, { requests: 0, waiting: NaN, tools: 0 }]) {
+    assert.equal(
+      await probeConcurrency('127.0.0.1:3425', { fetchJson: async () => invalid }),
+      null,
+    );
+  }
 });
 
 test('toLoopbackHostPort enforces loopback whitelist and rejects non-loopback/userinfo/path', async () => {
   assert.equal(toLoopbackHostPort('127.0.0.1:3425'), '127.0.0.1:3425');
   assert.equal(toLoopbackHostPort('localhost:4000'), 'localhost:4000');
   assert.equal(toLoopbackHostPort('[::1]:3425'), '[::1]:3425');
+  assert.equal(toLoopbackHostPort('::1'), '[::1]:3425');
+  assert.equal(toLoopbackHostPort('::'), '127.0.0.1:3425');
   assert.equal(toLoopbackHostPort(':3425'), '127.0.0.1:3425');
   assert.equal(toLoopbackHostPort('0.0.0.0:3425'), '127.0.0.1:3425');
 
@@ -106,7 +115,7 @@ test('toLoopbackHostPort enforces loopback whitelist and rejects non-loopback/us
   assert.equal(fetched, 0);
 });
 
-test('hasSharedUserConfig recognizes non-ephemeral files and probeHttpReachable rejects 404', async () => {
+test('hasSharedUserConfig recognizes non-ephemeral files and probeHttpReachable enforces JS content-type on /boot.js', async () => {
   await withOwnedTempDir('magpie-shared-cfg-', async (configDir) => {
     fs.writeFileSync(path.join(configDir, 'gateway.json'), '{}');
     fs.writeFileSync(path.join(configDir, 'service.lock'), '');
@@ -118,6 +127,61 @@ test('hasSharedUserConfig recognizes non-ephemeral files and probeHttpReachable 
     fetchImpl: async () => new Response('not found', { status: 404 }),
   }), false);
   assert.equal(await probeHttpReachable('http://127.0.0.1:3430/boot.js', {
-    fetchImpl: async () => new Response('boot', { status: 200 }),
+    fetchImpl: async () => new Response('<html>spa</html>', { status: 200, headers: { 'content-type': 'text/html' } }),
+  }), false);
+  assert.equal(await probeHttpReachable('http://127.0.0.1:3430/boot.js', {
+    fetchImpl: async () => new Response('unauthorized', { status: 401, headers: { 'content-type': 'application/javascript' } }),
+  }), false);
+  assert.equal(await probeHttpReachable('http://127.0.0.1:3430/boot.js', {
+    fetchImpl: async () => new Response('boot', { status: 200, headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
   }), true);
+});
+
+test('detectMagpieState falls back across gateway candidates, requires matching PID, and filters draining gateways', async () => {
+  await withOwnedTempDir('magpie-detect-edge-', async (configDir) => {
+    // 1. Stale gateway.json with dead PID is skipped and probe falls back through settings.json -> 3425
+    fs.writeFileSync(path.join(configDir, 'gateway.json'), JSON.stringify({ addr: '127.0.0.1:19999', pid: 77777 }));
+    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ port: 4100 }));
+    const cands = resolveGatewayCandidates(configDir, { isPidAlive: (pid) => pid !== 77777 });
+    assert.deepEqual(cands.map((c) => c.addr), ['127.0.0.1:4100', '127.0.0.1:3425']);
+
+    // Even if gateway.json has live/unknown pid on dead port, multi-candidate probe falls back to 3425
+    fs.writeFileSync(path.join(configDir, 'gateway.json'), JSON.stringify({ addr: '127.0.0.1:19999' }));
+    const probedFallback = await detectMagpieState({
+      configDir,
+      fetchJson: async (url) => {
+        if (url === 'http://127.0.0.1:3425/') return { name: 'magpie', version: '0.1.4800', pid: 8888 };
+        throw new Error('ECONNREFUSED');
+      },
+      probeReachable: async () => false,
+    });
+    assert.equal(probedFallback.running, true);
+    assert.equal(probedFallback.gateway.addr, '127.0.0.1:3425');
+    assert.equal(probedFallback.ownership, 'external-ui-companion');
+
+    // 2. Gateway response without pid must NOT be claimed by liveManaged
+    const noPidGateway = await detectMagpieState({
+      configDir,
+      managedState: { pid: 4321, webUrl: 'http://127.0.0.1:3431/?k=mkey', port: 3431, key: 'mkey' },
+      isPidAlive: (pid) => pid === 4321,
+      fetchJson: async (url) => {
+        if (url === 'http://127.0.0.1:3425/') return { name: 'magpie', version: '0.1.4800' };
+        throw new Error('ECONNREFUSED');
+      },
+      probeReachable: async (url) => url === 'http://127.0.0.1:3431/boot.js',
+    });
+    assert.equal(noPidGateway.ownership, 'external-ui-companion');
+
+    // 3. Draining gateway is ignored as non-reusable
+    const draining = await detectMagpieState({
+      configDir,
+      fetchJson: async (url) => {
+        if (url === 'http://127.0.0.1:3425/') return { name: 'magpie', version: '0.1.4800', pid: 8888, draining: true };
+        throw new Error('ECONNREFUSED');
+      },
+      probeReachable: async () => false,
+    });
+    assert.equal(draining.running, false);
+    assert.equal(draining.gateway, null);
+  });
 });

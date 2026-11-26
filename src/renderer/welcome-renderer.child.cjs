@@ -25,7 +25,7 @@ app.whenReady().then(async () => {
         takeNotice: () => null, startSignIn: () => null, cancelSignIn: () => null,
         copySignInLink: () => null, saveApiKey: () => ({ ok: true }), skip: () => { skipped++; },
       });
-      await win.webContents.executeJavaScript('document.fonts.ready');
+      await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
       const inspect = async () => {
         const result = await win.webContents.executeJavaScript(`(() => {
           try { return (${assertWelcomePresentation.toString()})(); }

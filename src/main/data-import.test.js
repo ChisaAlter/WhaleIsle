@@ -70,12 +70,12 @@ test.afterEach(() => {
   clearDesktopDshHome();
 });
 
-test('scanImport lists sessions, skips sqlite, and flags dest conflicts', () => {
+test('scanImport lists sessions, skips sqlite, and flags dest conflicts', async () => {
   const tree = makeTree();
   fs.mkdirSync(path.join(tree.dest, 'sessions', 'proj', 'sess-a'), { recursive: true });
   fs.writeFileSync(path.join(tree.dest, 'sessions', 'proj', 'sess-a', 'session.jsonl'), '{"id":"old"}\n');
   const { scanImport } = require('./data-import');
-  const scan = scanImport({ sourceHome: tree.source, destHome: tree.dest });
+  const scan = await scanImport({ sourceHome: tree.source, destHome: tree.dest });
   assert.equal(scan.sourceHasData, true);
   assert.equal(scan.destEmpty, false);
   const byRel = Object.fromEntries(scan.sessions.map((row) => [row.rel, row]));
@@ -111,7 +111,7 @@ test('asynchronous import scan preserves full synchronous results and source fil
   const options = { sourceHome: tree.source, destHome: tree.dest,
     agentsSkillsRoot: path.join(tree.root, 'no-extra-skills') };
   try {
-    assert.deepEqual(await scanImportAsync(options), scanImport(options));
+    assert.deepEqual(await scanImportAsync(options), await scanImport(options));
     assert.equal(fs.readFileSync(malformed, 'utf8'), 'not valid json\n');
     assert.equal(fs.readFileSync(path.join(conflict, 'session.jsonl'), 'utf8'), '{"id":"old"}\n');
   } finally {
@@ -119,7 +119,7 @@ test('asynchronous import scan preserves full synchronous results and source fil
   }
 });
 
-test('scanImport enriches session display meta from jsonl header and title, fail-soft on bad logs', () => {
+test('scanImport enriches session display meta from jsonl header and title, fail-soft on bad logs', async () => {
   const tree = makeTree();
   const withMeta = path.join(tree.source, 'sessions', '_no-cwd', 'chat-1');
   fs.mkdirSync(withMeta, { recursive: true });
@@ -157,7 +157,7 @@ test('scanImport enriches session display meta from jsonl header and title, fail
   writeSkill(path.join(tree.source, 'skills'), 'named', '---\nname: Friendly Skill\n---\n# body\n');
 
   const { scanImport } = require('./data-import');
-  const scan = scanImport({ sourceHome: tree.source, destHome: tree.dest });
+  const scan = await scanImport({ sourceHome: tree.source, destHome: tree.dest });
   const byRel = Object.fromEntries(scan.sessions.map((row) => [row.rel, row]));
   assert.equal(byRel['_no-cwd/chat-1'].id, 'chat-1');
   assert.equal(byRel['_no-cwd/chat-1'].cwd, 'C:\\Users\\demo\\project');
@@ -176,7 +176,7 @@ test('scanImport enriches session display meta from jsonl header and title, fail
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
-test('scanImport reads display meta from session.jsonl.zstd via Node zlib', () => {
+test('scanImport reads display meta from session.jsonl.zstd via Node zlib', async () => {
   const zlib = require('node:zlib');
   if (typeof zlib.zstdCompressSync !== 'function') {
     return;
@@ -201,7 +201,7 @@ test('scanImport reads display meta from session.jsonl.zstd via Node zlib', () =
     : undefined;
   fs.writeFileSync(path.join(dir, 'session.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(plaintext), options));
   const { scanImport } = require('./data-import');
-  const scan = scanImport({ sourceHome: tree.source, destHome: tree.dest });
+  const scan = await scanImport({ sourceHome: tree.source, destHome: tree.dest });
   const row = scan.sessions.find((item) => item.rel === '_no-cwd/zstd-ok');
   assert.ok(row);
   assert.equal(row.id, 'zstd-ok');
@@ -211,7 +211,7 @@ test('scanImport reads display meta from session.jsonl.zstd via Node zlib', () =
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
-test('scanImport omits harness preset fixture sessions under _no-cwd/preset-*', () => {
+test('scanImport omits harness preset fixture sessions under _no-cwd/preset-*', async () => {
   const tree = makeTree();
   const preset = path.join(tree.source, 'sessions', '_no-cwd', 'preset-authored');
   const chat = path.join(tree.source, 'sessions', '_no-cwd', 'chat-1');
@@ -233,7 +233,7 @@ test('scanImport omits harness preset fixture sessions under _no-cwd/preset-*', 
     delegationDepth: 0,
   })}\n`);
   const { scanImport } = require('./data-import');
-  const scan = scanImport({ sourceHome: tree.source, destHome: tree.dest });
+  const scan = await scanImport({ sourceHome: tree.source, destHome: tree.dest });
   const rels = scan.sessions.map((row) => row.rel);
   assert.ok(rels.includes('_no-cwd/chat-1'));
   assert.ok(!rels.includes('_no-cwd/preset-authored'));
@@ -403,7 +403,7 @@ test('importPlugins never sends an unsupported spec to the installer, even when 
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
-test('scanImport lists skills and MCP without exposing secrets, and holds on skills-only homes', () => {
+test('scanImport lists skills and MCP without exposing secrets, and holds on skills-only homes', async () => {
   const tree = makeTree();
   writeSkill(path.join(tree.source, 'skills'), 'alpha');
   fs.mkdirSync(path.join(tree.source, 'skills', '.system'), { recursive: true });
@@ -414,7 +414,7 @@ test('scanImport lists skills and MCP without exposing secrets, and holds on ski
   const extraRoot = path.join(tree.root, 'extra-skills');
   writeSkill(extraRoot, 'gamma');
   const { scanImport, shouldHoldForImport } = require('./data-import');
-  const scan = scanImport({
+  const scan = await scanImport({
     sourceHome: tree.source,
     destHome: tree.dest,
     agentsSkillsRoot: agentsRoot,
@@ -434,7 +434,7 @@ test('scanImport lists skills and MCP without exposing secrets, and holds on ski
   const skillsOnly = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-skills-only-')));
   tempDirs.push(emptyDest, skillsOnly);
   writeSkill(path.join(skillsOnly, 'skills'), 'solo');
-  const skillsScan = scanImport({
+  const skillsScan = await scanImport({
     sourceHome: skillsOnly,
     destHome: emptyDest,
     agentsSkillsRoot: path.join(tree.root, 'missing-agents'),
@@ -559,7 +559,7 @@ records:
     apiKey: sk-oauth-ish
 `;
 
-test('scanImport lists whitelisted settings sections, presets, and home AGENTS.md — never secrets', () => {
+test('scanImport lists whitelisted settings sections, presets, and home AGENTS.md — never secrets', async () => {
   const tree = makeTree();
   fs.writeFileSync(path.join(tree.source, 'settings.yaml'), SETTINGS_FIXTURE);
   fs.writeFileSync(path.join(tree.source, '.credentials.yaml'), CREDENTIALS_FIXTURE);
@@ -569,7 +569,7 @@ test('scanImport lists whitelisted settings sections, presets, and home AGENTS.m
   fs.mkdirSync(path.join(tree.source, '.agent-presets', 'broken-one'), { recursive: true });
   fs.mkdirSync(path.join(tree.source, '.agent-presets', 'Bad Name'), { recursive: true });
   const { scanImport } = require('./data-import');
-  const scan = scanImport({ sourceHome: tree.source, destHome: tree.dest });
+  const scan = await scanImport({ sourceHome: tree.source, destHome: tree.dest });
   const settingIds = scan.settings.map((row) => row.id);
   assert.deepEqual(settingIds, ['llm-deepseek', 'llm-pi-ai', 'agent-default-model', 'ui-theme', 'agents-md']);
   assert.equal(settingIds.includes('shell'), false, 'non-whitelist sections never listed');
@@ -716,12 +716,12 @@ test('runImport copies selected presets by directory and rejects unsafe or broke
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
-test('probeImportHold matches shouldHoldForImport(scanImport()) without reading session meta', () => {
+test('probeImportHold matches shouldHoldForImport(scanImport()) without reading session meta', async () => {
   const tree = makeTree();
   const { probeImportHold, scanImport, shouldHoldForImport } = require('./data-import');
   const probe = probeImportHold({ sourceHome: tree.source, destHome: tree.dest, agentsSkillsRoot: path.join(tree.root, 'no-agents') });
   assert.equal(probe.hold, true);
-  assert.equal(probe.hold, shouldHoldForImport(scanImport({
+  assert.equal(probe.hold, shouldHoldForImport(await scanImport({
     sourceHome: tree.source,
     destHome: tree.dest,
     agentsSkillsRoot: path.join(tree.root, 'no-agents'),
@@ -894,7 +894,7 @@ test('runImport honours AbortSignal between session copies and stays resumable',
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
-test('a desktop home with v3 compressed sessions is not held for first-run import', () => {
+test('a desktop home with v3 compressed sessions is not held for first-run import', async () => {
   const tree = makeTree();
   const sessionDir = path.join(tree.dest, 'sessions', 'proj', 'existing');
   fs.mkdirSync(sessionDir, { recursive: true });
@@ -902,11 +902,11 @@ test('a desktop home with v3 compressed sessions is not held for first-run impor
   const { probeImportHold, scanImport } = require('./data-import');
   const probe = probeImportHold({ sourceHome: tree.source, destHome: tree.dest });
   assert.deepEqual(probe, { destEmpty: false, sourceHasData: false, hold: false });
-  assert.equal(scanImport({ sourceHome: tree.source, destHome: tree.dest }).destEmpty, false);
+  assert.equal((await scanImport({ sourceHome: tree.source, destHome: tree.dest })).destEmpty, false);
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
-test('scanImport includes v3 sessions from a selected source', () => {
+test('scanImport includes v3 sessions from a selected source', async () => {
   const tree = makeTree();
   const source = path.join(tree.root, 'v3-only');
   const sessionDir = path.join(source, 'sessions', 'proj', 'new-format');
@@ -918,7 +918,7 @@ test('scanImport includes v3 sessions from a selected source', () => {
   ].join('\n'));
   const { probeImportHold, scanImport } = require('./data-import');
   assert.equal(probeImportHold({ sourceHome: source, destHome: tree.dest, agentsSkillsRoot: path.join(tree.root, 'no-skills') }).hold, true);
-  const scan = scanImport({ sourceHome: source, destHome: tree.dest, agentsSkillsRoot: path.join(tree.root, 'no-skills') });
+  const scan = await scanImport({ sourceHome: source, destHome: tree.dest, agentsSkillsRoot: path.join(tree.root, 'no-skills') });
   assert.equal(scan.sessions.length, 1);
   assert.equal(scan.sessions[0].id, 'v3-id');
   assert.equal(scan.sessions[0].title, 'V3 title');
@@ -1353,5 +1353,39 @@ test('attachment merge aborts on staged-dir inspection failure without publishin
   // No published tree may exist under a tmp name: staging was aborted, not
   // renamed over the destination.
   assert.equal(fs.readdirSync(tree.dest).some((n) => n.includes('.import-tmp-') && n.includes('attachments')), false, 'no staged tree may be published');
+  fs.rmSync(tree.root, { recursive: true, force: true });
+});
+
+test('scanImport streams multi-chunk plain logs with >256B message lines and multi-frame zstd logs async', async () => {
+  const zlib = require('node:zlib');
+  const tree = makeTree();
+  const largeDir = path.join(tree.source, 'sessions', '_no-cwd', 'large-plain');
+  fs.mkdirSync(largeDir, { recursive: true });
+  const padding = 'x'.repeat(90_000);
+  const plainLines = [
+    JSON.stringify({ type: 'session', version: 3, id: 'large-id', cwd: 'C:\\big', createdAt: 1700 }),
+    JSON.stringify({ type: 'assistant/message', payload: padding }),
+    JSON.stringify({ type: 'session/title', data: { title: 'Large Streamed' } }),
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(largeDir, 'session.v3.jsonl'), plainLines);
+
+  if (typeof zlib.zstdCompressSync === 'function') {
+    const zstdDir = path.join(tree.source, 'sessions', '_no-cwd', 'multi-zstd');
+    fs.mkdirSync(zstdDir, { recursive: true });
+    const f1 = zlib.zstdCompressSync(Buffer.from(`${JSON.stringify({ type: 'session', id: 'mz-id', cwd: 'D:\\z', createdAt: 1800 })}\n`));
+    const f2 = zlib.zstdCompressSync(Buffer.from(`${JSON.stringify({ type: 'assistant/message', payload: 'y'.repeat(1000) })}\n${JSON.stringify({ type: 'session/title', data: { title: 'Multi Frame Zstd' } })}\n`));
+    fs.writeFileSync(path.join(zstdDir, 'session.v3.jsonl.zstd'), Buffer.concat([f1, f2]));
+  }
+
+  const { scanImport } = require('./data-import');
+  const scan = await scanImport({ sourceHome: tree.source, destHome: tree.dest });
+  const byRel = Object.fromEntries(scan.sessions.map((row) => [row.rel, row]));
+  assert.equal(byRel['_no-cwd/large-plain'].id, 'large-id');
+  assert.equal(byRel['_no-cwd/large-plain'].title, 'Large Streamed');
+  if (typeof zlib.zstdCompressSync === 'function') {
+    assert.equal(byRel['_no-cwd/multi-zstd'].id, 'mz-id');
+    assert.equal(byRel['_no-cwd/multi-zstd'].title, 'Multi Frame Zstd');
+  }
   fs.rmSync(tree.root, { recursive: true, force: true });
 });

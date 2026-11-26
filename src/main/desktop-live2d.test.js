@@ -328,11 +328,11 @@ test('pet protocol serves bundled renderer assets and rejects traversal', async 
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'pet-live2d.html'), '<html></html>');
   const handler = createPetProtocolHandler((name) => path.join(root, name));
-  const ok = handler({ url: 'pet://pet/pet-live2d.html' });
+  const ok = await handler({ url: 'pet://pet/pet-live2d.html' });
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get('Content-Type'), 'text/html');
-  assert.equal(handler({ url: 'pet://pet/../secret.txt' }).status, 404);
-  assert.equal(handler({ url: 'pet://pet/missing.png' }).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/../secret.txt' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/missing.png' })).status, 404);
 });
 
 test('pet protocol serves the shared tokens alias and nothing else outside root', async (t) => {
@@ -352,19 +352,19 @@ test('pet protocol serves the shared tokens alias and nothing else outside root'
   fs.writeFileSync(path.join(shared, 'secret.css'), 'body{display:none}');
   fs.writeFileSync(path.join(assets, 'whale-head.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   const handler = createPetProtocolHandler((name) => path.join(renderer, name));
-  const ok = handler({ url: 'pet://pet/dsh-webui-tokens.css' });
+  const ok = await handler({ url: 'pet://pet/dsh-webui-tokens.css' });
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get('Content-Type'), 'text/css');
   assert.equal(await ok.text(), ':root{--x:1}');
-  const head = handler({ url: 'pet://pet/pet-head.png' });
+  const head = await handler({ url: 'pet://pet/pet-head.png' });
   assert.equal(head.status, 200);
   assert.equal(head.headers.get('Content-Type'), 'image/png');
-  assert.equal(handler({ url: 'pet://pet/secret.css' }).status, 404);
-  assert.equal(handler({ url: 'pet://pet/../assets/whale-head.png' }).status, 404);
-  assert.equal(handler({ url: 'pet://pet/..%2Fassets%2Fwhale-head.png' }).status, 404);
-  assert.equal(handler({ url: 'pet://pet/../shared/secret.css' }).status, 404);
-  assert.equal(handler({ url: 'pet://pet/..%2Fshared%2Fsecret.css' }).status, 404);
-  assert.equal(handler({ url: 'pet://pet/dsh-webui-tokens.css/extra' }).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/secret.css' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/../assets/whale-head.png' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/..%2Fassets%2Fwhale-head.png' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/../shared/secret.css' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/..%2Fshared%2Fsecret.css' })).status, 404);
+  assert.equal((await handler({ url: 'pet://pet/dsh-webui-tokens.css/extra' })).status, 404);
 });
 
 test('configureLive2dPet returns a manager while the feature flag stays on', (t) => {

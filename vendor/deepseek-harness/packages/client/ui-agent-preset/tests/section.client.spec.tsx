@@ -319,3 +319,27 @@ it('renders descriptions and allows selection without resize observation', () =>
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')
 })
+it('omits hidden non-default presets including broken internal helpers while keeping hidden active defaults', () => {
+  view({
+    rows: [
+      { id: 'standard', name: en.presetStandardName, isDefault: false },
+      { id: 'dsh-bot-worker', name: 'Worker', isDefault: false, hidden: true, broken: 'missing prompt' },
+      { id: 'hidden-ok', name: 'Internal Helper', isDefault: false, hidden: true },
+      { id: 'hidden-default', name: 'Active Hidden', isDefault: true, hidden: true },
+    ],
+  })
+  expect(screen.queryByText('dsh-bot-worker')).toBeNull()
+  expect(screen.queryByText('Worker')).toBeNull()
+  expect(screen.queryByText('Internal Helper')).toBeNull()
+  expect(screen.getByText('Active Hidden')).toBeTruthy()
+})
+it('allows preset card identity and id to wrap instead of crushing narrow card titles', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { resolve } = await import('node:path')
+  const css = readFileSync(resolve(import.meta.dirname, '../src/client/AgentPresetSection.module.css'), 'utf8')
+  const cardHead = css.match(/\.cardHead\s*\{([^}]*)\}/)
+  const cardIdentity = css.match(/\.cardIdentity\s*\{([^}]*)\}/)
+  expect(cardHead?.[1]).toContain('flex-wrap: wrap')
+  expect(cardIdentity?.[1]).toContain('flex-wrap: wrap')
+  expect(cardIdentity?.[1]).toContain('flex: 1 1 180px')
+})

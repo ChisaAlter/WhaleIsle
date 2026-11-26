@@ -110,6 +110,7 @@ export function RemoteSettingsSection({ t }) {
 
   return (
     <div className="dshr-page">
+      <h2 className="dshr-pageTitle">{t('settings.nav')}</h2>
       <div className="dshr-caption">{t('settings.summary')}</div>
 
       {loading && !status ? <div role="status" className="dshr-caption">{t('settings.loading')}</div> : null}

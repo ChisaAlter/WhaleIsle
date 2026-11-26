@@ -3,22 +3,22 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-session-panel/README.md
 /:
-  en: 9cfd79fbc4ba3dcb
-  zh: e5e498e99e2bebd2
+  en: 0592ee558d8d5451
+  zh: d3d466cfb8015630
 /deepseek-ai-dsh-client-ui-session-panel:
   en: aff5b9d70836e810
   zh: 2cb8c75d3c82fba9
 /deepseek-ai-dsh-client-ui-session-panel/summary:
-  en: dffaf73a0d9c9f39
-  zh: cee2c2a16a33f3a2
+  en: a6a6beca1086376b
+  zh: b48dc124748242bd
 /deepseek-ai-dsh-client-ui-session-panel/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-client-ui-session-panel/use-this-package:
-  en: 6a4b6cec0c5a4e2a
-  zh: 8aaec4b24bed0151
+  en: 573987847e2526b0
+  zh: f6ba719e4699f801
 /deepseek-ai-dsh-client-ui-session-panel/use-this-package/docking-and-the-overlay:
-  en: 2287f52f2afc47ea
+  en: 4892b8286baac7f7
   zh: b26dbedb72e3ff18
 /deepseek-ai-dsh-client-ui-session-panel/use-this-package/section-order:
   en: a79443ad18500a6d
@@ -27,11 +27,11 @@
   en: 27fdd4ec3c830299
   zh: 0e70ac367e4176f8
 /deepseek-ai-dsh-client-ui-session-panel/understand-the-implementation:
-  en: a772926387782a82
+  en: f8cccbc613835176
   zh: 909966795290c52e
 /deepseek-ai-dsh-client-ui-session-panel/further-exploration:
-  en: decfa1b92e25ec6c
-  zh: 255c7862690a2f23
+  en: caf6280c1c5f7517
+  zh: 0a03ac264050164f
 /deepseek-ai-dsh-client-ui-session-panel/model-experience:
   en: 7e8bbe318a76fd54
   zh: c60e87da2a37642a

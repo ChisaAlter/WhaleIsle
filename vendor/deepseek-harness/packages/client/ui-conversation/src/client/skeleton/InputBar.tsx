@@ -14,7 +14,7 @@
  */
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties, FocusEvent, KeyboardEvent, MouseEvent, PointerEvent } from 'react'
+import type { ChangeEvent, CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import clsx from 'clsx'
 import { COMMAND_PRIORITY_HIGH, KEY_TAB_COMMAND } from 'lexical'
 import {
@@ -62,7 +62,7 @@ export const InputBar = memo(function InputBar({
   useAccess,
   useProjection, sessionId, variant, occurrence, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
-  placeholder, accessory, collapsed = false, onExpandCollapsed,
+  placeholder, accessory, collapsed = false,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
@@ -473,8 +473,7 @@ export const InputBar = memo(function InputBar({
   // typing continues seamlessly. Lexical's focus() carries preventScroll and
   // restores the previous selection, so no reveal is needed: the caret has
   // not moved, and the next keystroke gets the browser's native one.
-  // When collapsed into a pill, keep the editor unfocused so clicking Stop
-  // does not fire focus-capture expansion.
+  // When collapsed into a bar, prevent stealing focus without forcing editor focus.
   const keepFocus = (e: MouseEvent<HTMLButtonElement>): void => {
     if (isCollapsed) {
       e.preventDefault()
@@ -483,50 +482,19 @@ export const InputBar = memo(function InputBar({
     keepDraftFocus(e, editor)
   }
 
-  const isPrimaryTarget = (target: EventTarget | null): boolean =>
-    target instanceof Element && target.closest('[data-composer-primary]') !== null
-
-  const expandCollapsedCard = (): void => {
-    onExpandCollapsed?.()
-    if (editor !== null && !locked) {
-      queueMicrotask(() => {
-        focusDraftEditor(editor, revealSelection)
-      })
-    }
-  }
-
   const onCardPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
     if (workspaceTrigger) {
       e.stopPropagation()
-      return
     }
-    if (!isCollapsed || e.button !== 0 || isPrimaryTarget(e.target)) return
-    e.preventDefault()
-    expandCollapsedCard()
   }
 
-  const onCardClick = (e: MouseEvent<HTMLDivElement>): void => {
+  const onCardClick = (): void => {
     if (workspaceTrigger) {
       onRequestWorkspace()
-      return
-    }
-    if (!isCollapsed || isPrimaryTarget(e.target)) return
-    e.preventDefault()
-    expandCollapsedCard()
-  }
-
-  const onCardFocusCapture = (e: FocusEvent<HTMLDivElement>): void => {
-    if (!isCollapsed || isPrimaryTarget(e.target)) return
-    onExpandCollapsed?.()
-    if (editor !== null && !locked && e.target !== editor.getRootElement()) {
-      queueMicrotask(() => {
-        focusDraftEditor(editor, revealSelection)
-      })
     }
   }
 
   const onCardMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
-    if (isCollapsed) return
     if (!editable || editor === null || e.button !== 0 || e.defaultPrevented) return
     const target = e.target
     if (!(target instanceof Element) || !e.currentTarget.contains(target)) return
@@ -672,7 +640,6 @@ export const InputBar = memo(function InputBar({
         onClick={onCardClick}
         onPointerDown={onCardPointerDown}
         onMouseDown={onCardMouseDown}
-        onFocusCapture={onCardFocusCapture}
       >
         {composerResize && !workspaceTrigger && !isCollapsed && (
           <ComposerResizeHandles

@@ -1,5 +1,5 @@
 /**
- * Session panel plugin, browser half: a Session header toggle and a floating
+ * Session panel plugin, browser half: a titlebar toggle and a floating
  * panel in the Chat View's aside. The panel draws the titles of the sections
  * other plugins register, lays out the rows they mark, offers the fold control
  * their lists end with and the details their rows show on hover, and ships the
@@ -9,6 +9,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -60,11 +61,11 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.registerFactory({ name: 'conversation.session.panel.fold', scope: 'root' }, PanelFold)
   ctx.slots.registerFactory({ name: 'conversation.session.panel.details', scope: 'root' }, PanelDetails)
 
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
+  ctx.slots.inject('shell.titlebar.trailing', () => ctx.slots.register({
+    name: 'shell.titlebar.trailing',
     id: 'session-panel',
-    // The first utility: left of change requests, sharing, and the schedule catalog.
-    order: -10,
+    // Right of Git actions (20) and before the layout panel toggles (40).
+    order: 30,
     locale: NS,
     children: {
       'conversation.session.panel.indicator': { kind: 'list', scope: 'session', inline: true },

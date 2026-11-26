@@ -6,7 +6,14 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { directoryRemovalScript, directoryTransactionsScript, transactionalUninstallerScript, silentUninstallFailureScript } from './windows-directory-installer.cjs'
+import {
+  directoryRemovalScript,
+  directoryTransactionsScript,
+  transactionalUninstallerScript,
+  silentUninstallFailureScript,
+  cleanupDirectoryInstaller,
+  installWindowsDirectoryInstaller,
+} from './windows-directory-installer.cjs'
 
 const require = createRequire(import.meta.url)
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -378,3 +385,57 @@ SectionEnd
     assert.equal(readFileSync(join(final, 'old.txt'), 'utf8'), 'restored old application remains available')
     assert.equal(readFileSync(join(external, 'sentinel.txt'), 'utf8'), 'user data survives failed relocation')
   })
+
+test('installWindowsDirectoryInstaller reclaims .nsis-directory-installer on both success and failure', async (t) => {
+  require('app-builder-lib')
+  const { NsisTarget } = require('app-builder-lib/out/targets/nsis/NsisTarget.js')
+  const origHeader = NsisTarget.prototype.computeCommonInstallerScriptHeader
+  const origFinal = NsisTarget.prototype.computeFinalScript
+  const origExec = NsisTarget.prototype.executeMakensis
+  t.after(() => {
+    NsisTarget.prototype.computeCommonInstallerScriptHeader = origHeader
+    NsisTarget.prototype.computeFinalScript = origFinal
+    NsisTarget.prototype.executeMakensis = origExec
+  })
+
+  const directory = mkdtempSync(join(tmpdir(), 'whale-nsis-staging-cleanup-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const outDir = join(directory, 'dist')
+  mkdirSync(outDir, { recursive: true })
+  const staging = join(outDir, '.nsis-directory-installer')
+
+  let shouldFailMakensis = false
+  let sawStagingDuringMakensis = false
+  NsisTarget.prototype.computeCommonInstallerScriptHeader = async () => ''
+  NsisTarget.prototype.computeFinalScript = async (source) => source
+  NsisTarget.prototype.executeMakensis = async () => {
+    sawStagingDuringMakensis = existsSync(staging)
+    if (shouldFailMakensis) throw new Error('makensis failed')
+  }
+
+  await installWindowsDirectoryInstaller()
+  const fakeTarget = { outDir, packager: { signIf: async () => {} } }
+  const minimalScript = '!include "installSection.nsh"\n!include "allowOnlyOneInstallerInstance.nsh"\n!include "installUtil.nsh"\n!include "uninstaller.nsh"\n'
+
+  const finalScript = await NsisTarget.prototype.computeFinalScript.call(fakeTarget, minimalScript)
+  assert.equal(existsSync(staging), true)
+  await NsisTarget.prototype.executeMakensis.call(fakeTarget, {}, {}, finalScript)
+  assert.equal(sawStagingDuringMakensis, true)
+  assert.equal(existsSync(staging), false)
+
+  shouldFailMakensis = true
+  const finalScript2 = await NsisTarget.prototype.computeFinalScript.call(fakeTarget, minimalScript)
+  await assert.rejects(() => NsisTarget.prototype.executeMakensis.call(fakeTarget, {}, {}, finalScript2), /makensis failed/)
+  assert.equal(existsSync(staging), false)
+
+  // Also cleans up if computeFinalScript fails before executeMakensis runs.
+  await assert.rejects(() => NsisTarget.prototype.computeFinalScript.call(fakeTarget, 'missing-includes'), /NSIS template changed/)
+  assert.equal(existsSync(staging), false)
+
+  // cleanupDirectoryInstaller preserves unrelated files in outDir.
+  writeFileSync(join(outDir, 'keep.exe'), 'installer')
+  mkdirSync(staging, { recursive: true })
+  await cleanupDirectoryInstaller(outDir)
+  assert.equal(existsSync(staging), false)
+  assert.equal(existsSync(join(outDir, 'keep.exe')), true)
+})

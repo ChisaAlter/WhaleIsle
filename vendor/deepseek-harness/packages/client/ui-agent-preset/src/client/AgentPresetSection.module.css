@@ -227,8 +227,9 @@
 
 .cardHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 12px;
+  gap: 4px 12px;
   /* Anchors the broken badge's tooltip: the badge itself stays unpositioned so
      the tooltip resolves against the card's own width instead of against a
      badge that sits partway across it. A tooltip grown from the badge would
@@ -237,15 +238,17 @@
 }
 
 .cardIdentity {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 
 .cardName {
   min-width: 0;
+  max-width: 100%;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.4;
@@ -280,7 +283,7 @@
 
 .cardId {
   flex-shrink: 0;
-  max-width: 35%;
+  max-width: 100%;
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
   line-height: 21px;

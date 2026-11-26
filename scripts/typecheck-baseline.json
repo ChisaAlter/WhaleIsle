@@ -2788,8 +2788,6 @@
         "Parameter 'command' implicitly has an 'any' type.": 1,
         "Parameter 'cwd' implicitly has an 'any' type.": 1,
         "Parameter 'err' implicitly has an 'any' type.": 1,
-        "Parameter 'pkg' implicitly has an 'any' type.": 1,
-        "Parameter 'runtimeNodeModulesDir' implicitly has an 'any' type.": 1,
         "Parameter 'sqlitePackage' implicitly has an 'any' type.": 2,
         "Parameter 'target' implicitly has an 'any' type.": 2
       },
@@ -3599,9 +3597,6 @@
       }
     },
     "scripts/setup.mjs": {
-      "TS2339": {
-        "Property 'LEFTHOOK' does not exist on type '{ CI: string; }'.": 1
-      },
       "TS7006": {
         "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'command' implicitly has an 'any' type.": 1
@@ -3661,56 +3656,33 @@
     },
     "scripts/sync-cnb.mjs": {
       "TS18048": {
-        "'file' is possibly 'undefined'.": 7,
+        "'file' is possibly 'undefined'.": 5,
         "'mac' is possibly 'undefined'.": 4,
         "'sums' is possibly 'undefined'.": 4
-      },
-      "TS2339": {
-        "Property 'body' does not exist on type '{ method: string; redirect: string; signal: AbortSignal; headers: { Accept: string; Authorization: string; }; }'.": 1,
-        "Property 'body' does not exist on type '{ method?: string | undefined; }'.": 1,
-        "Property 'name' does not exist on type 'boolean | { file: string; name: any; size: number; sha512: string; }'.": 2
       },
       "TS2532": {
         "Object is possibly 'undefined'.": 1
       },
-      "TS2769": {
-        "No overload matches this call.": 1
-      },
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 2,
         "Parameter 'args' implicitly has an 'any' type.": 2,
-        "Parameter 'asset' implicitly has an 'any' type.": 5,
+        "Parameter 'asset' implicitly has an 'any' type.": 4,
         "Parameter 'bytes' implicitly has an 'any' type.": 1,
         "Parameter 'directory' implicitly has an 'any' type.": 1,
-        "Parameter 'expected' implicitly has an 'any' type.": 1,
-        "Parameter 'fetchImpl' implicitly has an 'any' type.": 1,
         "Parameter 'file' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'path' implicitly has an 'any' type.": 1,
         "Parameter 'release' implicitly has an 'any' type.": 1,
-        "Parameter 'row' implicitly has an 'any' type.": 2,
-        "Parameter 'token' implicitly has an 'any' type.": 1
-      },
-      "TS7016": {
-        "Could not find a declaration file for module 'semver'. '<node_modules>/semver/index.js' implicitly has an 'any' type.": 1
+        "Parameter 'row' implicitly has an 'any' type.": 1
       },
       "TS7031": {
         "Binding element 'directory' implicitly has an 'any' type.": 2,
         "Binding element 'expectedMacos' implicitly has an 'any' type.": 1,
-        "Binding element 'fetchImpl' implicitly has an 'any' type.": 1,
-        "Binding element 'file' implicitly has an 'any' type.": 1,
-        "Binding element 'overwrite' implicitly has an 'any' type.": 1,
-        "Binding element 'prefix' implicitly has an 'any' type.": 1,
         "Binding element 'release' implicitly has an 'any' type.": 2,
         "Binding element 'repo' implicitly has an 'any' type.": 3,
-        "Binding element 'request' implicitly has an 'any' type.": 3,
+        "Binding element 'request' implicitly has an 'any' type.": 2,
         "Binding element 'sha' implicitly has an 'any' type.": 2,
-        "Binding element 'targetId' implicitly has an 'any' type.": 1,
         "Binding element 'token' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type '\"Content-Type\"' can't be used to index type '{ Accept: string; Authorization: string; }'.": 1
       }
     },
     "scripts/verify-md-links.mjs": {
@@ -4121,18 +4093,14 @@
     },
     "src/launcher/launcher-service.js": {
       "TS18046": {
-        "'error' is of type 'unknown'.": 5
+        "'error' is of type 'unknown'.": 2
       },
       "TS2339": {
-        "Property 'code' does not exist on type 'Error'.": 1,
-        "Property 'code' does not exist on type '{}'.": 1,
-        "Property 'config' does not exist on type '{}'.": 1,
         "Property 'confirmUnverified' does not exist on type '{}'.": 3,
         "Property 'downloadMode' does not exist on type '{}'.": 2,
         "Property 'expectedCheck' does not exist on type '{}'.": 8,
         "Property 'extraSkillDirs' does not exist on type '{}'.": 6,
         "Property 'importAttachments' does not exist on type '{}'.": 2,
-        "Property 'lastStart' does not exist on type '{}'.": 1,
         "Property 'opId' does not exist on type '{}'.": 9,
         "Property 'overwrite' does not exist on type '{}'.": 1,
         "Property 'selectedMcpIds' does not exist on type '{}'.": 2,
@@ -4141,12 +4109,7 @@
         "Property 'selectedRels' does not exist on type '{}'.": 2,
         "Property 'selectedSettingIds' does not exist on type '{}'.": 2,
         "Property 'selectedSkillIds' does not exist on type '{}'.": 2,
-        "Property 'sourceHome' does not exist on type '{}'.": 6,
-        "Property 'summary' does not exist on type '{ genericCause: string | null; desktopRuntimeDamage: boolean; pluginTreeFailure: boolean; recovery: { skipUserPlugins: boolean; reason: any; at: any; appVersion: any; }; suspects: { name: string; }[]; orphanSuspects: { ...; }[]; evidence: { ...; }[]; plugins: { ...; }[]; }'.": 1
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'dsh' does not exist in type '{ startWhenIdle?: boolean | undefined; }'.": 3,
-        "Object literal may only specify known properties, and 'logs' does not exist in type '{ projectEnabled?: boolean | undefined; }'.": 1
+        "Property 'sourceHome' does not exist on type '{}'.": 6
       },
       "TS2698": {
         "Spread types may only be created from object types.": 1
@@ -4162,15 +4125,11 @@
         "Parameter 'deps' implicitly has an 'any' type.": 1,
         "Parameter 'expectedCheck' implicitly has an 'any' type.": 1,
         "Parameter 'info' implicitly has an 'any' type.": 1,
-        "Parameter 'item' implicitly has an 'any' type.": 1,
         "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 3,
-        "Parameter 'names' implicitly has an 'any' type.": 2,
-        "Parameter 'onProgress' implicitly has an 'any' type.": 6,
+        "Parameter 'onProgress' implicitly has an 'any' type.": 5,
         "Parameter 'options' implicitly has an 'any' type.": 1,
         "Parameter 'owner' implicitly has an 'any' type.": 1,
-        "Parameter 'ownerToken' implicitly has an 'any' type.": 1,
-        "Parameter 'patch' implicitly has an 'any' type.": 3,
+        "Parameter 'patch' implicitly has an 'any' type.": 1,
         "Parameter 'payload' implicitly has an 'any' type.": 1,
         "Parameter 'row' implicitly has an 'any' type.": 3,
         "Parameter 'signal' implicitly has an 'any' type.": 1,
@@ -4540,17 +4499,6 @@
         "Function implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.": 1
       }
     },
-    "src/main/data-import-session-meta.js": {
-      "TS7006": {
-        "Parameter 'buffer' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 2,
-        "Parameter 'meta' implicitly has an 'any' type.": 2,
-        "Parameter 'name' implicitly has an 'any' type.": 2,
-        "Parameter 'rel' implicitly has an 'any' type.": 1,
-        "Parameter 'row' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 1
-      }
-    },
     "src/main/data-import.js": {
       "TS18046": {
         "'cleanupError' is of type 'unknown'.": 1,
@@ -4559,17 +4507,17 @@
       "TS2339": {
         "Property 'agentsSkillsRoot' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'agentsSkillsRoot' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
-        "Property 'agentsSkillsRoot' does not exist on type '{}'.": 3,
+        "Property 'agentsSkillsRoot' does not exist on type '{}'.": 2,
         "Property 'code' does not exist on type '{}'.": 1,
         "Property 'destHome' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'destHome' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
-        "Property 'destHome' does not exist on type '{}'.": 3,
+        "Property 'destHome' does not exist on type '{}'.": 2,
         "Property 'dir' does not exist on type '{ dir: any; rel: string; } | undefined'.": 1,
         "Property 'extraSkillDirs' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'extraSkillDirs' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
-        "Property 'extraSkillDirs' does not exist on type '{}'.": 3,
+        "Property 'extraSkillDirs' does not exist on type '{}'.": 2,
         "Property 'headers' does not exist on type '{}'.": 4,
-        "Property 'id' does not exist on type '{}'.": 5,
+        "Property 'id' does not exist on type '{}'.": 4,
         "Property 'importAttachments' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'importAttachments' does not exist on type '{}'.": 1,
         "Property 'installPlugin' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
@@ -4603,7 +4551,7 @@
         "Property 'signal' does not exist on type '{}'.": 1,
         "Property 'sourceHome' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'sourceHome' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
-        "Property 'sourceHome' does not exist on type '{}'.": 3,
+        "Property 'sourceHome' does not exist on type '{}'.": 2,
         "Property 'userDataDir' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'userDataDir' does not exist on type '{}'.": 1
       },
@@ -4632,7 +4580,6 @@
         "Parameter 'b' implicitly has an 'any' type.": 1,
         "Parameter 'dest' implicitly has an 'any' type.": 1,
         "Parameter 'destDir' implicitly has an 'any' type.": 1,
-        "Parameter 'destEmpty' implicitly has an 'any' type.": 1,
         "Parameter 'destIds' implicitly has an 'any' type.": 1,
         "Parameter 'destSessions' implicitly has an 'any' type.": 1,
         "Parameter 'destSkills' implicitly has an 'any' type.": 1,
@@ -4658,11 +4605,10 @@
         "Parameter 'rel' implicitly has an 'any' type.": 3,
         "Parameter 'right' implicitly has an 'any' type.": 1,
         "Parameter 'root' implicitly has an 'any' type.": 5,
-        "Parameter 'row' implicitly has an 'any' type.": 7,
+        "Parameter 'row' implicitly has an 'any' type.": 6,
         "Parameter 'scan' implicitly has an 'any' type.": 1,
         "Parameter 'server' implicitly has an 'any' type.": 1,
         "Parameter 'servers' implicitly has an 'any' type.": 1,
-        "Parameter 'sessions' implicitly has an 'any' type.": 1,
         "Parameter 'sessionsRoot' implicitly has an 'any' type.": 5,
         "Parameter 'signal' implicitly has an 'any' type.": 1,
         "Parameter 'sourceDir' implicitly has an 'any' type.": 1,
@@ -4674,11 +4620,11 @@
         "Parameter 'value' implicitly has an 'any' type.": 2
       },
       "TS7031": {
-        "Binding element 'agentsSkillsRoot' implicitly has an 'any' type.": 2,
+        "Binding element 'agentsSkillsRoot' implicitly has an 'any' type.": 1,
         "Binding element 'blocks' implicitly has an 'any' type.": 1,
         "Binding element 'destSkills' implicitly has an 'any' type.": 1,
         "Binding element 'destTarget' implicitly has an 'any' type.": 1,
-        "Binding element 'extraSkillDirs' implicitly has an 'any' type.": 2,
+        "Binding element 'extraSkillDirs' implicitly has an 'any' type.": 1,
         "Binding element 'journalFile' implicitly has an 'any' type.": 2,
         "Binding element 'onProgress' implicitly has an 'any' type.": 2,
         "Binding element 'order' implicitly has an 'any' type.": 1,
@@ -4688,9 +4634,8 @@
         "Binding element 'scan' implicitly has an 'any' type.": 4,
         "Binding element 'selectedIds' implicitly has an 'any' type.": 4,
         "Binding element 'signal' implicitly has an 'any' type.": 2,
-        "Binding element 'source' implicitly has an 'any' type.": 2,
-        "Binding element 'sourceHome' implicitly has an 'any' type.": 1,
-        "Binding element 'target' implicitly has an 'any' type.": 1
+        "Binding element 'source' implicitly has an 'any' type.": 1,
+        "Binding element 'sourceHome' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'credentials' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
@@ -4988,12 +4933,10 @@
       "TS7006": {
         "Parameter 'args' implicitly has an 'any' type.": 3,
         "Parameter 'baseUrl' implicitly has an 'any' type.": 2,
-        "Parameter 'bin' implicitly has an 'any' type.": 1,
         "Parameter 'bindOn' implicitly has an 'any' type.": 4,
-        "Parameter 'candidates' implicitly has an 'any' type.": 1,
         "Parameter 'child' implicitly has an 'any' type.": 4,
         "Parameter 'code' implicitly has an 'any' type.": 3,
-        "Parameter 'command' implicitly has an 'any' type.": 5,
+        "Parameter 'command' implicitly has an 'any' type.": 4,
         "Parameter 'config' implicitly has an 'any' type.": 6,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
         "Parameter 'error' implicitly has an 'any' type.": 3,
@@ -5154,9 +5097,6 @@
         "Type '{}' is missing the following properties from type '{ cwd: string; relativePath: string; }': cwd, relativePath": 1,
         "Type '{}' is missing the following properties from type '{ editor: string; cwd: string; relativePath: string; line?: number | undefined; column?: number | undefined; }': editor, cwd, relativePath": 1
       },
-      "TS7005": {
-        "Variable 'workspaceAuthority' implicitly has an 'any' type.": 2
-      },
       "TS7006": {
         "Parameter 'absolutePath' implicitly has an 'any' type.": 1,
         "Parameter 'authority' implicitly has an 'any' type.": 1,
@@ -5169,9 +5109,6 @@
         "Parameter 'line' implicitly has an 'any' type.": 1,
         "Parameter 'message' implicitly has an 'any' type.": 1,
         "Parameter 'relativePath' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'workspaceAuthority' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
     "src/main/git-diff.js": {
@@ -5208,8 +5145,7 @@
       "TS7005": {
         "Variable 'probedGitExe' implicitly has an 'any' type.": 2,
         "Variable 'stderrChunks' implicitly has an 'any[]' type.": 1,
-        "Variable 'stdoutChunks' implicitly has an 'any[]' type.": 1,
-        "Variable 'workspaceAuthority' implicitly has an 'any' type.": 4
+        "Variable 'stdoutChunks' implicitly has an 'any[]' type.": 1
       },
       "TS7006": {
         "Parameter 'args' implicitly has an 'any' type.": 3,
@@ -5229,8 +5165,7 @@
       "TS7034": {
         "Variable 'probedGitExe' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'stderrChunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
-        "Variable 'stdoutChunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
-        "Variable 'workspaceAuthority' implicitly has type 'any' in some locations where its type cannot be determined.": 1
+        "Variable 'stdoutChunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       }
     },
     "src/main/git-generate.js": {
@@ -5899,7 +5834,7 @@
         "Parameter 'latest' implicitly has an 'any' type.": 1,
         "Parameter 'left' implicitly has an 'any' type.": 1,
         "Parameter 'lockCommits' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 2,
+        "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'plugin' implicitly has an 'any' type.": 6,
         "Parameter 'right' implicitly has an 'any' type.": 1,
         "Parameter 'row' implicitly has an 'any' type.": 2,
@@ -6743,8 +6678,7 @@
         "Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.": 1
       },
       "TS7005": {
-        "Variable 'resolveExit' implicitly has an 'any' type.": 1,
-        "Variable 'workspaceAuthority' implicitly has an 'any' type.": 2
+        "Variable 'resolveExit' implicitly has an 'any' type.": 1
       },
       "TS7006": {
         "Parameter '_event' implicitly has an 'any' type.": 6,
@@ -6795,8 +6729,7 @@
         "Binding element 'rows' implicitly has an 'any' type.": 2
       },
       "TS7034": {
-        "Variable 'resolveExit' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'workspaceAuthority' implicitly has type 'any' in some locations where its type cannot be determined.": 1
+        "Variable 'resolveExit' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 2
@@ -6815,20 +6748,20 @@
         "Cannot find name 'dshComposerSend'.": 4,
         "Cannot find name 'dshComposerText'.": 8,
         "Cannot find name 'dshCustomProviderCard'.": 6,
-        "Cannot find name 'dshDialog'.": 13,
+        "Cannot find name 'dshDialog'.": 11,
         "Cannot find name 'dshDialogNamed'.": 26,
-        "Cannot find name 'dshField'.": 2,
+        "Cannot find name 'dshField'.": 1,
         "Cannot find name 'dshFind'.": 50,
         "Cannot find name 'dshHeading'.": 4,
         "Cannot find name 'dshInputInventory'.": 1,
-        "Cannot find name 'dshLabel'.": 16,
+        "Cannot find name 'dshLabel'.": 15,
         "Cannot find name 'dshMcpSnapshot'.": 2,
         "Cannot find name 'dshModelsDiagnostic'.": 1,
         "Cannot find name 'dshQaPngFile'.": 1,
         "Cannot find name 'dshSavedCustomProvider'.": 2,
         "Cannot find name 'dshSelectComposerAll'.": 1,
         "Cannot find name 'dshSetValue'.": 1,
-        "Cannot find name 'dshShown'.": 40,
+        "Cannot find name 'dshShown'.": 38,
         "Cannot find name 'dshSkillsSnapshot'.": 2
       },
       "TS2339": {
@@ -7800,17 +7733,11 @@
         "Property 'startSignIn' does not exist on type 'object'.": 1,
         "Property 'takeNotice' does not exist on type 'object'.": 1
       },
-      "TS7005": {
-        "Variable 'disposeActiveHandlers' implicitly has an 'any' type.": 1
-      },
       "TS7006": {
         "Parameter '_event' implicitly has an 'any' type.": 3,
         "Parameter 'event' implicitly has an 'any' type.": 2,
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'value' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'disposeActiveHandlers' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
     "src/main/window.js": {
@@ -7906,8 +7833,7 @@
         "'error' is of type 'unknown'.": 10
       },
       "TS7005": {
-        "Variable 'chunks' implicitly has an 'any[]' type.": 1,
-        "Variable 'workspaceAuthority' implicitly has an 'any' type.": 2
+        "Variable 'chunks' implicitly has an 'any[]' type.": 1
       },
       "TS7006": {
         "Parameter 'authority' implicitly has an 'any' type.": 1,
@@ -7922,8 +7848,7 @@
         "Parameter 'text' implicitly has an 'any' type.": 1
       },
       "TS7034": {
-        "Variable 'chunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
-        "Variable 'workspaceAuthority' implicitly has type 'any' in some locations where its type cannot be determined.": 1
+        "Variable 'chunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ png: string; jpg: string; jpeg: string; gif: string; webp: string; svg: string; bmp: string; ico: string; avif: string; }'.": 1
@@ -7954,17 +7879,14 @@
       "TS18047": {
         "'actionsEl' is possibly 'null'.": 1,
         "'cancelRestartEl' is possibly 'null'.": 10,
-        "'drawerEl' is possibly 'null'.": 4,
         "'failureEl' is possibly 'null'.": 2,
-        "'logCloseEl' is possibly 'null'.": 1,
         "'logCountEl' is possibly 'null'.": 1,
-        "'logEl' is possibly 'null'.": 10,
+        "'logEl' is possibly 'null'.": 8,
         "'openLauncherEl' is possibly 'null'.": 8,
         "'saveLogEl' is possibly 'null'.": 7,
         "'statusEl' is possibly 'null'.": 4,
         "'statusTextEl' is possibly 'null'.": 4,
         "'tickerCountEl' is possibly 'null'.": 1,
-        "'tickerInnerEl' is possibly 'null'.": 2,
         "'tickerLineEl' is possibly 'null'.": 2
       },
       "TS2339": {
@@ -8182,31 +8104,16 @@
       }
     },
     "src/renderer/launcher-components.js": {
-      "TS18047": {
-        "'state.shell' is possibly 'null'.": 1
-      },
       "TS18048": {
         "'base' is possibly 'undefined'.": 2
       },
-      "TS2322": {
-        "Type 'Promise<void>' is not assignable to type 'null'.": 1
-      },
       "TS2339": {
         "Property '__launcherComponents' does not exist on type 'Window & typeof globalThis'.": 1,
-        "Property 'componentsList' does not exist on type 'never'.": 1,
-        "Property 'contains' does not exist on type 'never'.": 1,
         "Property 'dshdErrText' does not exist on type 'Window & typeof globalThis'.": 1,
-        "Property 'hidden' does not exist on type 'never'.": 1,
-        "Property 'onComponentsProgress' does not exist on type 'never'.": 1,
-        "Property 'querySelector' does not exist on type 'never'.": 1,
-        "Property 'querySelectorAll' does not exist on type 'never'.": 1,
         "Property 'whaleDom' does not exist on type 'Window & typeof globalThis'.": 1
       },
       "TS2345": {
         "Argument of type '{ title: string; body: string; }' is not assignable to parameter of type '{ title?: string | undefined; body: any; tone?: string | undefined; holdMs: any; }'.": 1
-      },
-      "TS2349": {
-        "This expression is not callable.": 1
       },
       "TS2531": {
         "Object is possibly 'null'.": 1
@@ -8216,7 +8123,7 @@
       },
       "TS7006": {
         "Parameter 'action' implicitly has an 'any' type.": 2,
-        "Parameter 'button' implicitly has an 'any' type.": 5,
+        "Parameter 'button' implicitly has an 'any' type.": 4,
         "Parameter 'cls' implicitly has an 'any' type.": 1,
         "Parameter 'el' implicitly has an 'any' type.": 2,
         "Parameter 'error' implicitly has an 'any' type.": 1,
@@ -8549,8 +8456,7 @@
     "src/renderer/launcher-plugins.js": {
       "TS18047": {
         "'board' is possibly 'null'.": 3,
-        "'btn' is possibly 'null'.": 3,
-        "'guidanceCard' is possibly 'null'.": 1
+        "'btn' is possibly 'null'.": 1
       },
       "TS2304": {
         "Cannot find name 'badge'.": 6
@@ -8567,7 +8473,7 @@
         "Property 'summaryText' does not exist on type '{}'.": 1
       },
       "TS2531": {
-        "Object is possibly 'null'.": 6
+        "Object is possibly 'null'.": 3
       },
       "TS7005": {
         "Variable 'lastStatus' implicitly has an 'any' type.": 2
@@ -8979,20 +8885,13 @@
       }
     },
     "src/renderer/pet-live2d-chat.js": {
-      "TS18047": {
-        "'chatFeedbackEl' is possibly 'null'.": 7
-      },
       "TS2339": {
         "Property 'focus' does not exist on type 'Element'.": 1
-      },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
       },
       "TS7005": {
         "Variable 'chatFlatModels' implicitly has an 'any[]' type.": 4,
         "Variable 'chatGroups' implicitly has an 'any[]' type.": 3,
         "Variable 'chatLog' implicitly has an 'any[]' type.": 6,
-        "Variable 'chatRect' implicitly has an 'any' type.": 2,
         "Variable 'chatTypingEl' implicitly has an 'any' type.": 2,
         "Variable 'homeRect' implicitly has an 'any' type.": 3
       },
@@ -9013,16 +8912,14 @@
         "Parameter 'sel' implicitly has an 'any' type.": 2,
         "Parameter 'selected' implicitly has an 'any' type.": 1,
         "Parameter 'src' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 3,
+        "Parameter 'text' implicitly has an 'any' type.": 2,
         "Parameter 'w' implicitly has an 'any' type.": 1
       },
       "TS7034": {
-        "Variable 'chatFeedbackRect' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'chatFlatModels' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'chatGroups' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'chatLog' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'chatPickerRect' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'chatRect' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'chatTypingEl' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
@@ -9055,9 +8952,7 @@
         "Variable 'bubble' implicitly has an 'any' type.": 3,
         "Variable 'bubbleCloseRect' implicitly has an 'any' type.": 1,
         "Variable 'charRect' implicitly has an 'any' type.": 9,
-        "Variable 'chatFeedbackRect' implicitly has an 'any' type.": 2,
         "Variable 'chatPickerRect' implicitly has an 'any' type.": 3,
-        "Variable 'chatRect' implicitly has an 'any' type.": 4,
         "Variable 'come' implicitly has an 'any' type.": 2,
         "Variable 'downClient' implicitly has an 'any' type.": 1,
         "Variable 'dragTrail' implicitly has an 'any[]' type.": 3,
@@ -9542,59 +9437,30 @@
     "src/renderer/update-center.js": {
       "TS18047": {
         "'bar' is possibly 'null'.": 2,
-        "'content' is possibly 'null'.": 1,
-        "'event.target' is possibly 'null'.": 1,
-        "'tabs' is possibly 'null'.": 2
-      },
-      "TS2322": {
-        "Type '{ id: string; label: string; kind: string; disabled: true; }' is not assignable to type 'never'.": 3,
-        "Type '{ id: string; label: string; kind: string; }' is not assignable to type 'never'.": 12,
-        "Type '{ percent: null; text: any; state: string; } | { percent: number; text: string; state: string; }' is not assignable to type 'null'.": 2,
-        "Type '{ percent: null; text: string; state: string; }' is not assignable to type 'null'.": 2,
-        "Type '{ state: string; percent: null; text: any; } | { state: string; percent: number; text: string; }' is not assignable to type 'null'.": 1,
-        "Type '{ text: string; tone: string; }' is not assignable to type 'null'.": 1,
-        "Type '{ tone: string; text: any; actions: never[]; }' is not assignable to type 'null'.": 1,
-        "Type '{ tone: string; text: string; actions: { id: string; arg: any; label: string; kind: string; }[]; }' is not assignable to type 'null'.": 1
+        "'event.target' is possibly 'null'.": 1
       },
       "TS2339": {
-        "Property 'actions' does not exist on type 'never'.": 1,
         "Property 'checked' does not exist on type 'EventTarget'.": 1,
         "Property 'checked' does not exist on type 'HTMLElement'.": 1,
         "Property 'disabled' does not exist on type 'HTMLElement'.": 1,
         "Property 'message' does not exist on type '{}'.": 1,
-        "Property 'percent' does not exist on type 'never'.": 4,
-        "Property 'state' does not exist on type 'never'.": 1,
-        "Property 'text' does not exist on type 'never'.": 3,
-        "Property 'tone' does not exist on type 'never'.": 2,
         "Property 'whaleUpdateCenter' does not exist on type 'Window & typeof globalThis'.": 2
       },
-      "TS2345": {
-        "Argument of type '{ id: string; label: string; kind: string; }' is not assignable to parameter of type 'never'.": 2
-      },
       "TS2531": {
-        "Object is possibly 'null'.": 23
+        "Object is possibly 'null'.": 18
       },
       "TS7006": {
-        "Parameter 'action' implicitly has an 'any' type.": 1,
         "Parameter 'arg' implicitly has an 'any' type.": 1,
         "Parameter 'bytes' implicitly has an 'any' type.": 1,
         "Parameter 'id' implicitly has an 'any' type.": 3,
-        "Parameter 'index' implicitly has an 'any' type.": 1,
         "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'next' implicitly has an 'any' type.": 2,
-        "Parameter 'prefix' implicitly has an 'any' type.": 1,
-        "Parameter 'route' implicitly has an 'any' type.": 2,
+        "Parameter 'route' implicitly has an 'any' type.": 1,
         "Parameter 'scheme' implicitly has an 'any' type.": 1,
         "Parameter 'seconds' implicitly has an 'any' type.": 1,
         "Parameter 'state' implicitly has an 'any' type.": 1,
-        "Parameter 'tab' implicitly has an 'any' type.": 3,
-        "Parameter 'target' implicitly has an 'any' type.": 1,
         "Parameter 'theme' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 1,
-        "Parameter 'view' implicitly has an 'any' type.": 3
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ check: string; download: string; install: string; }'.": 1
+        "Parameter 'view' implicitly has an 'any' type.": 2
       }
     },
     "src/renderer/update-dialog.js": {
@@ -9734,25 +9600,17 @@
       }
     },
     "vendor/dsh-deepseek-tools/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 3,
         "Parameter 'body' implicitly has an 'any' type.": 1,
         "Parameter 'config' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'details' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
         "Parameter 'key' implicitly has an 'any' type.": 1,
         "Parameter 'operation' implicitly has an 'any' type.": 1,
         "Parameter 'page' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 1,
         "Parameter 'summary' implicitly has an 'any' type.": 1,
-        "Parameter 'tool' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'tool' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-deepseek-tools/tests/ui-qa.mjs": {
@@ -9781,11 +9639,6 @@
       },
       "TS7034": {
         "Variable 'errors' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "vendor/dsh-platform-session/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-project/client/client.js": {
@@ -10077,9 +9930,6 @@
       }
     },
     "vendor/dsh-project/lib/bridge.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'code' does not exist on type 'Error'.": 1,
         "Property 'cwd' does not exist on type '{}'.": 2,
@@ -10185,9 +10035,6 @@
       }
     },
     "vendor/dsh-project/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'status' does not exist on type 'Error'.": 2
       },
@@ -10327,11 +10174,6 @@
       },
       "TS7034": {
         "Variable 'files' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "vendor/dsh-project/lib/runner-reports.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-project/lib/runner.js": {
@@ -10539,9 +10381,6 @@
       }
     },
     "vendor/dsh-project/lib/tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'appendBrief' does not exist on type '{}'.": 1,
         "Property 'artifacts' does not exist on type '{}'.": 1,
@@ -10640,30 +10479,9 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-task-control/lib/http.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 1
-      }
-    },
-    "vendor/dsh-task-control/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 1
-      }
-    },
-    "vendor/dsh-task-control/lib/inspection.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 2
-      }
-    },
     "vendor/dsh-whale/lib/bots/bot-tools-items.js": {
       "TS7006": {
         "Parameter 'caller' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/bot-tools-plugin.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/db.js": {
@@ -10913,9 +10731,6 @@
       }
     },
     "vendor/dsh-whale/lib/bots/tidy-up-service.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS7006": {
         "Parameter 'botId' implicitly has an 'any' type.": 4,
         "Parameter 'next' implicitly has an 'any' type.": 1
@@ -10954,53 +10769,31 @@
         "Binding element 'reason' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/worker-tools-plugin.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      }
-    },
     "vendor/dsh-whale/lib/desktop-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 8,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
         "Parameter 'p' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/discovery-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 4,
-        "Parameter 'args' implicitly has an 'any' type.": 3,
+        "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'card' implicitly has an 'any' type.": 1,
         "Parameter 'catalog' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 4,
         "Parameter 'e' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 4,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
+        "Parameter 'exec' implicitly has an 'any' type.": 1,
         "Parameter 'getSelfId' implicitly has an 'any' type.": 1,
         "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'm' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 1,
         "Parameter 'provider' implicitly has an 'any' type.": 1,
-        "Parameter 'sessionId' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 3,
-        "Parameter 'w' implicitly has an 'any' type.": 1
+        "Parameter 'sessionId' implicitly has an 'any' type.": 2
       }
     },
     "vendor/dsh-whale/lib/host-hooks.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'message' does not exist on type '{}'.": 1
       },
@@ -11044,10 +10837,6 @@
       }
     },
     "vendor/dsh-whale/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'composer' does not exist on type '{ owner: string; title: string; }'.": 1,
         "Property 'getRuntimeIfReady' does not exist on type 'never'.": 2,
@@ -11064,7 +10853,6 @@
       },
       "TS7006": {
         "Parameter 'assembleCtx' implicitly has an 'any' type.": 3,
-        "Parameter 'block' implicitly has an 'any' type.": 2,
         "Parameter 'c' implicitly has an 'any' type.": 1,
         "Parameter 'catalog' implicitly has an 'any' type.": 1,
         "Parameter 'controller' implicitly has an 'any' type.": 5,
@@ -11119,9 +10907,6 @@
       }
     },
     "vendor/dsh-whale/lib/memory-store.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'compactionThreshold' does not exist on type '{}'.": 1,
         "Property 'reservedCompletionTokens' does not exist on type '{}'.": 1,
@@ -11152,16 +10937,8 @@
       }
     },
     "vendor/dsh-whale/lib/memory-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 8,
-        "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 4,
-        "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'ctx' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/observe.js": {
@@ -11246,36 +11023,26 @@
       }
     },
     "vendor/dsh-whale/lib/profile-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 2,
-        "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 1
+        "Parameter 'ctx' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/project-bridge-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'scopeCeiling' does not exist on type '{ writePaths: string[]; error?: undefined; } | { projectId: string; cwd: string; goal: string; title: string; scopeCeiling: string; writePaths: string[]; constraints: string[]; conditions: string[]; sourceSummary: string; }'.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 2,
-        "Parameter 'args' implicitly has an 'any' type.": 5,
+        "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 3,
         "Parameter 'detail' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 6,
+        "Parameter 'exec' implicitly has an 'any' type.": 3,
         "Parameter 'getSelfId' implicitly has an 'any' type.": 3,
         "Parameter 'parsed' implicitly has an 'any' type.": 3,
         "Parameter 'part' implicitly has an 'any' type.": 1,
         "Parameter 'projects' implicitly has an 'any' type.": 1,
         "Parameter 'raw' implicitly has an 'any' type.": 1,
         "Parameter 'rawWritePaths' implicitly has an 'any' type.": 1,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 'scopeCeiling' implicitly has an 'any' type.": 1,
         "Parameter 'target' implicitly has an 'any' type.": 2
       }
@@ -11332,30 +11099,19 @@
       "TS18048": {
         "'s' is possibly 'undefined'.": 3
       },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'atSeq' does not exist on type '{ sessionId: string; }'.": 1,
         "Property 'beforeSeq' does not exist on type '{ sessionId: string; }'.": 1,
         "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 5,
-        "Parameter 'args' implicitly has an 'any' type.": 22,
         "Parameter 'controller' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'detail' implicitly has an 'any' type.": 1,
-        "Parameter 'e' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 12,
-        "Parameter 'i' implicitly has an 'any' type.": 2,
         "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'j' implicitly has an 'any' type.": 1,
         "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'q' implicitly has an 'any' type.": 1,
         "Parameter 's' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 5,
         "Parameter 'w' implicitly has an 'any' type.": 1
       },
       "TS7031": {
@@ -11378,9 +11134,6 @@
       }
     },
     "vendor/dsh-whale/lib/side-qa.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS7006": {
         "Parameter 'assembler' implicitly has an 'any' type.": 1,
         "Parameter 'block' implicitly has an 'any' type.": 2,
@@ -11444,24 +11197,17 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 1
       },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7005": {
         "Variable 'recent' implicitly has an 'any[]' type.": 2
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 2,
         "Parameter 'absPath' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 2,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
         "Parameter 'homeDir' implicitly has an 'any' type.": 2,
         "Parameter 'query' implicitly has an 'any' type.": 2,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 't' implicitly has an 'any' type.": 1,
-        "Parameter 'tag' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'tag' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'recent' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
@@ -11504,9 +11250,6 @@
       },
       "TS18047": {
         "'natural' is possibly 'null'.": 2
-      },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
       },
       "TS2322": {
         "Type 'Promise<void>' is not assignable to type 'null'.": 1
@@ -11583,8 +11326,7 @@
     },
     "vendor/dsh-whale/lib/task-session-runner.js": {
       "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-agent' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
+        "Cannot find module '@deepseek-ai/dsh-agent' or its corresponding type declarations.": 1
       },
       "TS2345": {
         "Argument of type 'any' is not assignable to parameter of type 'never'.": 3
@@ -11641,9 +11383,6 @@
       }
     },
     "vendor/dsh-whale/lib/task-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
         "Parameter '_args' implicitly has an 'any' type.": 1,
         "Parameter 'args' implicitly has an 'any' type.": 10,
@@ -11663,10 +11402,6 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 1
       },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7005": {
         "Variable 'handle' implicitly has an 'any' type.": 1
       },
@@ -11674,12 +11409,12 @@
         "Parameter '_input' implicitly has an 'any' type.": 2,
         "Parameter 'agent' implicitly has an 'any' type.": 1,
         "Parameter 'agentCtx' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 4,
+        "Parameter 'args' implicitly has an 'any' type.": 3,
         "Parameter 'control' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'description' implicitly has an 'any' type.": 1,
         "Parameter 'event' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
+        "Parameter 'exec' implicitly has an 'any' type.": 2,
         "Parameter 'execute' implicitly has an 'any' type.": 1,
         "Parameter 'i' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 2,
@@ -11776,11 +11511,6 @@
       }
     },
     "vendor/dsh-whale/lib/tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS2550": {
         "Property 'findLast' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2023' or later.": 1
       },
@@ -11788,21 +11518,17 @@
         "Type '() => string' is not assignable to type '() => string'. Two different types with this name exist, but they are unrelated.": 3
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 6,
-        "Parameter 'args' implicitly has an 'any' type.": 10,
-        "Parameter 'b' implicitly has an 'any' type.": 1,
+        "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'controller' implicitly has an 'any' type.": 2,
         "Parameter 'ctx' implicitly has an 'any' type.": 4,
         "Parameter 'events' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 6,
+        "Parameter 'exec' implicitly has an 'any' type.": 1,
         "Parameter 'getSelfId' implicitly has an 'any' type.": 1,
         "Parameter 'owner' implicitly has an 'any' type.": 2,
         "Parameter 'querySvc' implicitly has an 'any' type.": 1,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 'row' implicitly has an 'any' type.": 1,
         "Parameter 'sessionId' implicitly has an 'any' type.": 3,
-        "Parameter 'signal' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 5
+        "Parameter 'signal' implicitly has an 'any' type.": 2
       }
     },
     "vendor/dsh-whale/src/shared/bot-avatar-color.js": {

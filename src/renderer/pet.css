@@ -1,9 +1,9 @@
 :root {
   --pet-fill: var(--dsw-alias-button-info-fill);
-  --pet-surface: var(--dsw-alias-bg-l1);
+  --pet-surface: var(--dsw-alias-bg-layer-1);
   --pet-border: var(--dsw-alias-border-l2);
-  --pet-shadow: var(--dsw-alias-shadow-lv2);
-  --pet-motion: var(--ds-transition-duration-normal, 160ms);
+  --pet-shadow: var(--dsw-shadow-lv2);
+  --pet-motion: var(--ds-transition-duration);
 }
 
 * {
@@ -84,8 +84,7 @@ body {
 
 .pet.is-sleepy {
   opacity: .55;
-  filter: saturate(.6);
-  transition: opacity var(--pet-motion) ease, filter var(--pet-motion) ease;
+  transition: opacity var(--pet-motion) var(--ds-ease-in-out);
 }
 
 .pet__halo,
@@ -118,14 +117,9 @@ body {
   transition: opacity var(--pet-motion) ease, transform var(--pet-motion) ease;
 }
 
-html[data-theme="dark"] {
-  --pet-surface: var(--dsw-alias-bg-l2);
-  --pet-border: var(--dsw-alias-border-l2);
-  --pet-shadow: var(--dsw-alias-shadow-lv2);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .pet,
+  .pet.is-sleepy,
   .pet__spark {
     transition: none;
   }

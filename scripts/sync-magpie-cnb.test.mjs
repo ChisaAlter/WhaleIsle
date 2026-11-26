@@ -1,10 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { withOwnedTempDir } from '../src/shared/fs-safe.js'
-import { downloadUpstreamMagpieAssets, mirrorMagpieRelease, validateMagpieMirrorAssets } from './sync-magpie-cnb.mjs'
+import { downloadToFile, fetchWithRetry } from './lib/cnb-client.mjs'
+import {
+  downloadUpstreamMagpieAssets,
+  mirrorMagpieRelease,
+  validateMagpieMirrorAssets,
+  writeMagpieMirrorSummary,
+} from './sync-magpie-cnb.mjs'
 
 const PLATFORMS = [
   'magpie-cli-windows-amd64.exe',
@@ -133,5 +139,216 @@ test('mirrorMagpieRelease creates prerelease with make_latest false, uploads, ve
     assert.equal(out.assets, 7)
     assert.equal(releaseState.prerelease, false)
     assert.equal(releaseState.assets.length, 7)
+  })
+})
+
+test('manual MAGPIE_VERSION checks upstream draft/prerelease status and ALLOW_PRERELEASE keeps CNB prerelease', async () => {
+  const payloads = buildFixture()
+  const makeFetch = (meta) => async (url) => {
+    const str = String(url)
+    if (str === 'https://api.github.com/repos/yetone/magpie/releases/tags/v0.1.4708') {
+      return new Response(JSON.stringify(meta), { status: 200 })
+    }
+    const name = str.split('/').pop()
+    const buf = payloads.get(name)
+    return buf ? new Response(buf, { status: 200 }) : new Response('not found', { status: 404 })
+  }
+
+  await withOwnedTempDir('magpie-sync-manual-', async (dir) => {
+    await assert.rejects(
+      () => downloadUpstreamMagpieAssets({ version: '0.1.4708', directory: dir, fetchImpl: makeFetch({ draft: true, prerelease: false }), allowPrerelease: true }),
+      /draft/,
+    )
+    await assert.rejects(
+      () => downloadUpstreamMagpieAssets({ version: '0.1.4708', directory: dir, fetchImpl: makeFetch({ draft: false, prerelease: true }) }),
+      /ALLOW_PRERELEASE=1/,
+    )
+    const pre = await downloadUpstreamMagpieAssets({
+      version: '0.1.4708',
+      directory: dir,
+      fetchImpl: makeFetch({ draft: false, prerelease: true }),
+      allowPrerelease: true,
+    })
+    assert.equal(pre.prerelease, true)
+
+    let patched = false
+    let createdPrerelease = null
+    const uploaded = new Map()
+    let state = null
+    const request = async (path, options = {}) => {
+      if (path.endsWith('/releases/tags/magpie-v0.1.4708')) return state
+      if (path.endsWith('/releases') && options.method === 'POST') {
+        createdPrerelease = options.body.prerelease
+        state = { id: 201, tag_name: options.body.tag_name, prerelease: true, draft: false, assets: [] }
+        return state
+      }
+      if (path.endsWith('/releases/201') && options.method === 'PATCH') {
+        patched = true
+        return state
+      }
+      if (path.endsWith('/releases/201')) return state
+      if (path.endsWith('/asset-upload-url')) {
+        return {
+          upload_url: `https://upload.cnb.cool/${options.body.asset_name}`,
+          verify_url: `https://api.cnb.cool/ayasealter/WhaleIsle/-/releases/201/asset-upload-confirmation/${options.body.asset_name}`,
+        }
+      }
+      if (path.includes('/asset-upload-confirmation/')) {
+        const name = path.split('/').pop().split('?')[0]
+        state.assets.push({ name, size: uploaded.get(name).length, browser_download_url: `https://cnb.cool/dl/${name}` })
+        return { ok: true }
+      }
+      throw new Error('Unexpected CNB path: ' + path)
+    }
+    const fetchImpl = async (url, options = {}) => {
+      const name = String(url).split('/').pop()
+      if (options.method === 'PUT') {
+        uploaded.set(name, Buffer.from(await options.body.arrayBuffer()))
+        return new Response('', { status: 200 })
+      }
+      return new Response(uploaded.get(name), { status: 200 })
+    }
+    const res = await mirrorMagpieRelease({
+      version: '0.1.4708',
+      directory: dir,
+      request,
+      fetchImpl,
+      repo: 'ayasealter/WhaleIsle',
+      prerelease: true,
+      output: () => {},
+    })
+    assert.equal(createdPrerelease, true)
+    assert.equal(patched, false)
+    assert.equal(state.prerelease, true)
+    assert.equal(res.prerelease, true)
+  })
+})
+
+test('staged Magpie mirror self-heals corrupted assets via overwrite=true while published releases reject corruption', async () => {
+  const payloads = buildFixture()
+  const uploaded = new Map()
+  for (const [name, buf] of payloads) uploaded.set(name, buf)
+  uploaded.set('magpie-cli-linux-amd64', Buffer.from('corrupt-staged-bytes'))
+
+  const overwrites = []
+  const stagedState = {
+    id: 301,
+    tag_name: 'magpie-v0.1.4708',
+    prerelease: true,
+    draft: false,
+    assets: [...payloads.keys()].map((name) => ({
+      name,
+      size: uploaded.get(name).length,
+      browser_download_url: `https://cnb.cool/dl/${name}`,
+    })),
+  }
+  const request = async (path, options = {}) => {
+    if (path.endsWith('/releases/tags/magpie-v0.1.4708')) return stagedState
+    if (path.endsWith('/releases/301') && options.method === 'PATCH') {
+      stagedState.prerelease = false
+      return stagedState
+    }
+    if (path.endsWith('/releases/301')) return stagedState
+    if (path.endsWith('/asset-upload-url')) {
+      overwrites.push([options.body.asset_name, options.body.overwrite])
+      return {
+        upload_url: `https://upload.cnb.cool/${options.body.asset_name}`,
+        verify_url: `https://api.cnb.cool/ayasealter/WhaleIsle/-/releases/301/asset-upload-confirmation/${options.body.asset_name}`,
+      }
+    }
+    if (path.includes('/asset-upload-confirmation/')) {
+      const name = path.split('/').pop().split('?')[0]
+      const asset = stagedState.assets.find((row) => row.name === name)
+      asset.size = uploaded.get(name).length
+      return { ok: true }
+    }
+    throw new Error('Unexpected CNB path: ' + path)
+  }
+  const fetchImpl = async (url, options = {}) => {
+    const name = String(url).split('/').pop()
+    if (options.method === 'PUT') {
+      uploaded.set(name, Buffer.from(await options.body.arrayBuffer()))
+      return new Response('', { status: 200 })
+    }
+    return new Response(uploaded.get(name), { status: 200 })
+  }
+
+  await withOwnedTempDir('magpie-sync-heal-', async (dir) => {
+    for (const [name, buf] of payloads) await writeFile(join(dir, name), buf)
+    const out = await mirrorMagpieRelease({
+      version: '0.1.4708',
+      directory: dir,
+      request,
+      fetchImpl,
+      repo: 'ayasealter/WhaleIsle',
+      output: () => {},
+    })
+    assert.deepEqual(overwrites, [['magpie-cli-linux-amd64', true]])
+    assert.deepEqual(out.repaired, ['magpie-cli-linux-amd64'])
+    assert.equal(stagedState.prerelease, false)
+
+    // Published releases remain immutable if an asset fails verification.
+    uploaded.set('magpie-cli-linux-amd64', Buffer.from('corrupt-published'))
+    await assert.rejects(
+      () => mirrorMagpieRelease({ version: '0.1.4708', directory: dir, request, fetchImpl, repo: 'ayasealter/WhaleIsle', output: () => {} }),
+      /checksum mismatch|size mismatch/,
+    )
+  })
+})
+
+test('cnb-client enforces streaming byte cap and bounded Retry-After backoff, and writes step summary', async () => {
+  const sleepCalls = []
+  let attempts = 0
+  const retryResp = await fetchWithRetry(
+    'https://api.cnb.cool/test',
+    {},
+    {
+      maxAttempts: 3,
+      baseDelayMs: 50,
+      sleep: async (ms) => { sleepCalls.push(ms) },
+      fetchImpl: async () => {
+        attempts += 1
+        if (attempts === 1) return new Response('rate limited', { status: 429, headers: { 'Retry-After': '2' } })
+        if (attempts === 2) return new Response('unavailable', { status: 503 })
+        return new Response('ok', { status: 200 })
+      },
+    },
+  )
+  assert.equal(retryResp.status, 200)
+  assert.deepEqual(sleepCalls, [2000, 100])
+
+  await withOwnedTempDir('magpie-stream-cap-', async (dir) => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(64))
+        controller.enqueue(new Uint8Array(64))
+        controller.close()
+      },
+    })
+    await assert.rejects(
+      () => downloadToFile({
+        url: 'https://github.com/yetone/magpie/releases/download/v0.1.4708/bin',
+        dest: join(dir, 'oversized.bin'),
+        label: 'oversized.bin',
+        maxBytes: 100,
+        fetchImpl: async () => new Response(stream, { status: 200 }),
+        retryOptions: { baseDelayMs: 1 },
+      }),
+      /exceeds maxBytes/,
+    )
+
+    const summaryPath = join(dir, 'summary.md')
+    await writeMagpieMirrorSummary({
+      url: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/magpie-v0.1.4708',
+      tag: 'magpie-v0.1.4708',
+      version: '0.1.4708',
+      prerelease: false,
+      assets: 7,
+      uploaded: ['SHA256SUMS'],
+      repaired: ['magpie-cli-linux-amd64'],
+    }, summaryPath)
+    const summaryText = await readFile(summaryPath, 'utf8')
+    assert.match(summaryText, /magpie-v0\.1\.4708/)
+    assert.match(summaryText, /\*\*Repaired \(overwrite\)\*\*: magpie-cli-linux-amd64/)
   })
 })

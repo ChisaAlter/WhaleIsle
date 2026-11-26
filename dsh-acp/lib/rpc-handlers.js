@@ -556,26 +556,124 @@ export function createRpcHandler({
   };
 }
 
+async function handleMcpHttpRequest(manager, req, res) {
+  const contentType = String(req.headers['content-type'] ?? '')
+    .split(';', 1)[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== 'application/json') {
+    res.writeHead(415);
+    res.end('content type must be application/json');
+    return;
+  }
+  // Authenticate /mcp requests (loopback Host/Origin + per-session Bearer
+  // token) BEFORE reading the request body.
+  if (!isLoopbackHostHeader(req.headers['host']) || !isLoopbackOriginHeader(req.headers['origin'])) {
+    res.writeHead(403);
+    res.end('forbidden');
+    return;
+  }
+  const auth = String(req.headers['authorization'] || '');
+  const mcpSession = auth.startsWith('Bearer ') ? manager.whaleisleMcp.sessionFor(auth.slice(7)) : null;
+  if (!mcpSession) {
+    res.writeHead(401);
+    res.end('unauthorized');
+    return;
+  }
+  let body;
+  try {
+    body = await readBoundedJson(req, MAX_RPC_BODY_BYTES);
+  } catch (error) {
+    res.writeHead(error?.status ?? 400);
+    res.end(error?.message ?? 'bad request body');
+    return;
+  }
+  const out = await manager.whaleisleMcp.dispatch(body, mcpSession);
+  res.writeHead(out.status, { 'content-type': 'application/json' });
+  res.end(out.body === undefined ? '' : JSON.stringify(out.body));
+}
+
+export function createMcpHttpHandler(_ctx, manager) {
+  return async function mcpHandler(req, res) {
+    const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname;
+    if (req.method !== 'POST' || pathname !== '/dsh-acp-agents/mcp') {
+      res.writeHead(404);
+      res.end('not found');
+      return;
+    }
+    await handleMcpHttpRequest(manager, req, res);
+  };
+}
+
+export function createRpcDispatchHandler(manager) {
+  return async function rpcHandler(endpoint, payload, _signal, peer) {
+    if (peer?.principal?.kind !== 'owner') {
+      return {
+        ok: false,
+        error: { code: 'dsh-acp-agents/forbidden', message: 'forbidden', details: {} },
+      };
+    }
+    try {
+      const value = await manager.handleRpc(endpoint, payload ?? {});
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: 'dsh-acp-agents/rejected',
+          message: error instanceof Error ? error.message : String(error),
+          details: {},
+        },
+      };
+    }
+  };
+}
+
+function authorizeOwnerPeer(ctx, req, res, peer) {
+  let admittedPeer = peer;
+  if (admittedPeer === undefined) {
+    if (typeof ctx.connection?.admit !== 'function') {
+      res.writeHead(503);
+      res.end('service unavailable');
+      return false;
+    }
+    const admission = ctx.connection.admit(req);
+    if (admission && typeof admission === 'object' && 'rejection' in admission) {
+      res.writeHead(admission.rejection);
+      res.end(
+        admission.rejection === 401
+          ? 'unauthorized'
+          : admission.rejection === 503
+            ? 'authentication unavailable'
+            : 'forbidden',
+      );
+      return false;
+    }
+    admittedPeer = admission?.peer;
+  }
+  if (!admittedPeer || admittedPeer.signal?.aborted) {
+    res.writeHead(401);
+    res.end('unauthorized');
+    return false;
+  }
+  if (admittedPeer.principal?.kind !== 'owner') {
+    res.writeHead(403);
+    res.end('forbidden');
+    return false;
+  }
+  return true;
+}
+
 export function createHttpHandler(ctx, manager) {
-  return async function handler(req, res) {
+  return async function handler(req, res, peer) {
     const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname;
     const endpoint = pathname.startsWith('/dsh-acp-agents/')
       ? pathname.slice('/dsh-acp-agents/'.length)
       : '';
-    // Non-MCP routes require the host connection layer's cookie/auth guard;
-    // fail-closed (503) if the guard is unavailable.
-    if (endpoint !== 'mcp') {
-      if (typeof ctx.connection?.requestRejection !== 'function') {
-        res.writeHead(503);
-        res.end('service unavailable');
-        return;
-      }
-      const rejection = ctx.connection.requestRejection(req);
-      if (rejection !== undefined) {
-        res.writeHead(rejection);
-        res.end(rejection === 401 ? 'unauthorized' : 'forbidden');
-        return;
-      }
+    // Non-MCP routes require the host connection layer's peer or admit() guard;
+    // fail-closed (503) if neither is available.
+    if (endpoint !== 'mcp' && !authorizeOwnerPeer(ctx, req, res, peer)) {
+      return;
     }
     const badEndpoint =
       !endpoint
@@ -587,6 +685,10 @@ export function createHttpHandler(ctx, manager) {
       res.end('not found');
       return;
     }
+    if (endpoint === 'mcp') {
+      await handleMcpHttpRequest(manager, req, res);
+      return;
+    }
     const contentType = String(req.headers['content-type'] ?? '')
       .split(';', 1)[0]
       .trim()
@@ -595,23 +697,6 @@ export function createHttpHandler(ctx, manager) {
       res.writeHead(415);
       res.end('content type must be application/json');
       return;
-    }
-    // Authenticate /mcp requests (loopback Host/Origin + per-session Bearer
-    // token) BEFORE reading the request body.
-    let mcpSession = null;
-    if (endpoint === 'mcp') {
-      if (!isLoopbackHostHeader(req.headers['host']) || !isLoopbackOriginHeader(req.headers['origin'])) {
-        res.writeHead(403);
-        res.end('forbidden');
-        return;
-      }
-      const auth = String(req.headers['authorization'] || '');
-      mcpSession = auth.startsWith('Bearer ') ? manager.whaleisleMcp.sessionFor(auth.slice(7)) : null;
-      if (!mcpSession) {
-        res.writeHead(401);
-        res.end('unauthorized');
-        return;
-      }
     }
     const reply = (status, body) => {
       res.writeHead(status, { 'content-type': 'application/json' });
@@ -629,12 +714,6 @@ export function createHttpHandler(ctx, manager) {
     } catch (error) {
       res.writeHead(error?.status ?? 400);
       res.end(error?.message ?? 'bad request body');
-      return;
-    }
-    if (endpoint === 'mcp') {
-      const out = await manager.whaleisleMcp.dispatch(body, mcpSession);
-      res.writeHead(out.status, { 'content-type': 'application/json' });
-      res.end(out.body === undefined ? '' : JSON.stringify(out.body));
       return;
     }
     if (

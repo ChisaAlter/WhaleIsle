@@ -34,8 +34,8 @@ import { createBotsHttpHandler } from './rpc-router.js';
 import { installBotPromptAndTurnHooks } from './prompt-engine.js';
 import { setActiveBotsRuntime } from './bot-tools-registry.js';
 import { botPresetDefinition, botWorkerPresetDefinition } from '../preset.js';
+import { bindImNeedsYouActionHandler, resolveRawImOutboundBridge } from './im-needs-you.js';
 
-const IM_OUTBOUND_BRIDGE_SYMBOL = Symbol.for('whaleisle.dsh-im.bot-outbound-bridge');
 const SKILL_RECORDER_SYMBOL = Symbol.for('whaleisle.desktop.skill-recorder');
 const PET_VOICE_BRIDGE_SYMBOL = Symbol.for('whaleisle.desktop.pet-voice');
 
@@ -46,12 +46,7 @@ const PET_VOICE_BRIDGE_SYMBOL = Symbol.for('whaleisle.desktop.pet-voice');
  * @param {{ explicitBridge?: any, ctx?: any }} params
  */
 function createLazyImOutboundBridge({ explicitBridge = null, ctx = null }) {
-  const resolveRaw = () => (
-    explicitBridge
-    ?? ctx?.get?.('dshImOutboundBridge')
-    ?? /** @type {Record<symbol, any>} */ (globalThis)[IM_OUTBOUND_BRIDGE_SYMBOL]
-    ?? null
-  );
+  const resolveRaw = () => resolveRawImOutboundBridge({ explicitBridge, ctx });
 
   /** @param {any} raw */
   const adaptSend = (raw) => {
@@ -221,6 +216,7 @@ function createDesktopCapabilityBridges({ ctx = null, options = {} }) {
  *   recordSkillDraft?: any,
  *   voiceBridge?: any,
  *   onError?: (error: unknown, context?: Record<string, any>) => void,
+ *   _skipImActionBinding?: boolean,
  *   getRecentOwnerMessages?: (bot: any, opts?: any) => Promise<any[]> | any[],
  *   runLookAroundSweep?: (bot: any, prompt: string) => Promise<{ ok: boolean, summary?: string }>,
  *   runTidyUpModel?: (bot: any, prompt: string) => Promise<string | null>,
@@ -447,6 +443,14 @@ export function createBotsRuntime(options) {
 
   runtime.http = createBotsHttpHandler(runtime);
 
+  const disposeImActionBinding = options._skipImActionBinding === true
+    ? () => {}
+    : bindImNeedsYouActionHandler({
+        ctx,
+        explicitBridge: options.imOutboundBridge ?? null,
+        getRuntime: () => runtime,
+      });
+
   if (options.autoRecovery === false && options.reconcileMailOnStart !== false && typeof options.wakeBot === 'function' && itemsStore.owedMail().length > 0) {
     void Promise.resolve()
       .then(() => (closed ? null : runtime.mailReconciler.reconcileOwedMail()))
@@ -548,6 +552,7 @@ export function createBotsRuntime(options) {
   runtime.close = () => {
     if (closed) return;
     closed = true;
+    try { disposeImActionBinding(); } catch { /* Best-effort IM action teardown. */ }
     runtime.tidyUpService.stopScheduler();
     runtime.automationsService.close();
     runtime.lookAroundService.close();
@@ -582,7 +587,12 @@ export function mountBotsIntoHost(ctx, { home, allowLegacyMigration = true }) {
   const ensureRuntime = () => {
     if (disposed) return null;
     if (!instance) {
-      instance = createBotsRuntime({ ctx, dshHome: home, allowLegacyMigration });
+      instance = createBotsRuntime({
+        ctx,
+        dshHome: home,
+        allowLegacyMigration,
+        _skipImActionBinding: true,
+      });
     }
     return instance;
   };
@@ -598,9 +608,11 @@ export function mountBotsIntoHost(ctx, { home, allowLegacyMigration = true }) {
 
   setActiveBotsRuntime(() => ensureRuntime());
   const disposePrompt = installBotPromptAndTurnHooks(ctx, (hint) => getRuntimeIfReady(hint));
+  const disposeImActionBinding = bindImNeedsYouActionHandler({ ctx, getRuntime: () => ensureRuntime() });
 
   const disposeAll = () => {
     disposed = true;
+    try { disposeImActionBinding?.(); } catch { /* Best-effort IM action teardown. */ }
     try { disposePrompt?.(); } catch { /* Best-effort prompt hook teardown. */ }
     setActiveBotsRuntime(null);
     if (instance) {

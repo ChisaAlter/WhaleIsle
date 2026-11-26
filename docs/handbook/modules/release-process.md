@@ -77,7 +77,7 @@ Android 使用 `android-v<版本>` 独立标签，已发布的首版为 0.3.10 /
 
 - **GitHub 线路**：启动器通过上游 `/releases/latest` 重定向确定版本并下载 `SHA256SUMS` 与对应平台二进制，不依赖易受限的 REST API 配额；校验字节大小和 SHA256 后投入使用。
 - **CNB 国内镜像**：[Magpie CNB mirror](../../../.github/workflows/magpie-cnb-mirror.yml) 定时或手动运行 `scripts/sync-magpie-cnb.mjs`，从上游拉取 `SHA256SUMS` 与全部 6 平台二进制、逐个核验 SHA256，并以 `magpie-v<版本>` 标签上传至 CNB Release（保持 `make_latest: 'false'`，不覆盖桌面 latest）。
-- **版本约束**：桌面安装包仍不含组件二进制；旧版 `whalebridge-v*` 与桌面 `v*` 继续在 `scripts/publish-release.mjs` 与 `scripts/sync-cnb.mjs` 的 tag 过滤中被忽略或隔离保留历史兼容性。
+- **版本约束**：桌面安装包仍不含组件二进制；`scripts/publish-release.mjs` 仅按 `^v\d+\.\d+\.\d+$` 过滤并推进桌面版本（忽略 `magpie-v*`、`android-v*` 与历史 `whalebridge-v*`），`scripts/sync-cnb.mjs` 已移除 `whalebridge-v*` 镜像分支、仅同步桌面 `^v\d+\.\d+\.\d+$` 并分页扫描全部正式桌面发布计算最高版本以判定 `make_latest`（避免非桌面 `/releases/latest` 误覆写）。
 
 ## 失败处理
 

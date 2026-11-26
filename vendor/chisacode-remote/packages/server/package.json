@@ -103,7 +103,7 @@
     "vitest": "^4.1.6"
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.11.1"
+    "better-sqlite3": "^13.2.0"
   },
   "overrides": {
     "lightningcss": "1.30.1"

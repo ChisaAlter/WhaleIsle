@@ -1,15 +1,29 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWriteFileSync } = require('../../shared/fs-safe');
+const { isMap, isScalar, isSeq, parseDocument } = require('yaml');
+const { atomicWriteFileSync, safeRemoveSync } = require('../../shared/fs-safe');
 const { toLoopbackHostPort } = require('./detect');
 
 const WHALEBRIDGE_REF = 'WHALEBRIDGE_GATEWAY_KEY';
 const MAGPIE_REF = 'MAGPIE_GATEWAY_KEY';
 const MAGPIE_LEGACY_REF = 'MAGPIE_API_KEY';
 const PROFILE_PATCH = ['profiles', 'web', 'cordis.patch.yml'];
+const PROFILE_LOCK_TARGET = ['profiles', 'web', 'package.json'];
 const MAGPIE_CHANNEL_NAMES = ['magpie', 'magpie-responses', 'magpie-anthropic'];
+
+const LOCK_RETRY_INITIAL_MS = 20;
+const LOCK_RETRY_MAX_MS = 200;
+const DEFAULT_LOCK_WAIT_MS = 2000;
+
+const sleepSync = (() => {
+  const cell = new Int32Array(new SharedArrayBuffer(4));
+  return /** @param {number} ms */ (ms) => Atomics.wait(cell, 0, 0, ms);
+})();
+
+const sleepAsync = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * @param {string} file
@@ -24,64 +38,193 @@ function readText(file) {
   }
 }
 
-/** @param {string} line */
-function lineIndent(line) {
-  return /^[ \t]*/.exec(line)?.[0].length || 0;
-}
-
 /**
- * Whether the YAML mapping opened at `lines[index]` has no child keys left.
- * @param {string[]} lines
- * @param {number} index
+ * Check whether an `<target>.lock` holder PID (`<pid>\n`) has exited (`ESRCH`).
+ * @param {string} record
+ * @returns {boolean}
  */
-function mappingEmpty(lines, index) {
-  const indent = lineIndent(lines[index]);
-  for (let i = index + 1; i < lines.length; i += 1) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    return lineIndent(line) <= indent;
+function holderExited(record) {
+  if (!/^\d+\n$/.test(record)) return false;
+  const pid = Number(record.trim());
+  if (pid === 0 || pid > 0x7fffffff || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return /** @type {NodeJS.ErrnoException} */ (error).code === 'ESRCH';
   }
-  return true;
+}
+
+/** @param {string} lockPath */
+function readLockRecordSync(lockPath) {
+  try {
+    return fs.readFileSync(lockPath, 'utf8');
+  } catch {
+    return undefined;
+  }
 }
 
 /**
- * Locate a provider block under `- id: llm-pi-ai` -> `providers:` whose name is in
- * `names` and which carries one of the owned `apiKeyEnv` markers.
- * @param {string[]} lines
- * @param {string[]} names
- * @param {string[]} refs
+ * @param {unknown} error
+ * @param {string} lockPath
  */
-function findOwnedChannelBlock(lines, names, refs) {
-  const namePattern = new RegExp(`^[ \\t]*"?(?:${names.join('|')})"?\\s*:\\s*$`);
-  const refPattern = new RegExp(`apiKeyEnv:\\s*"?(?:${refs.join('|')})"?\\s*$`);
-  for (let start = 0; start < lines.length; start += 1) {
-    if (!namePattern.test(lines[start])) continue;
-    const indent = lineIndent(lines[start]);
-    let parent = -1;
-    for (let i = start - 1; i >= 0; i -= 1) {
-      const trimmed = lines[i].trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      if (lineIndent(lines[i]) < indent) { parent = i; break; }
-    }
-    if (parent === -1 || !/^[ \t]*providers\s*:\s*$/.test(lines[parent])) continue;
-    let entry = -1;
-    for (let i = parent - 1; i >= 0; i -= 1) {
-      if (/^[ \t]*- id\s*:/.test(lines[i])) { entry = i; break; }
-    }
-    if (entry === -1 || !/^[ \t]*- id\s*:\s*"?llm-pi-ai"?\s*$/.test(lines[entry])) continue;
-    let end = lines.length;
-    for (let i = start + 1; i < lines.length; i += 1) {
-      if (lines[i].trim() && lineIndent(lines[i]) <= indent) { end = i; break; }
-    }
-    if (!lines.slice(start, end).some((line) => refPattern.test(line))) continue;
-    return { start, end, parent };
+function isLockContentionSync(error, lockPath) {
+  const code = /** @type {NodeJS.ErrnoException | null} */ (error)?.code;
+  if (code === 'EEXIST') return true;
+  if (code !== 'EPERM') return false;
+  try {
+    fs.lstatSync(lockPath);
+    return true;
+  } catch {
+    return false;
   }
-  return null;
+}
+
+/** @param {string} lockPath */
+function takeOverExitedLockSync(lockPath) {
+  const record = readLockRecordSync(lockPath);
+  if (record === undefined || !holderExited(record)) return false;
+  const claim = `${lockPath}.takeover-${createHash('sha256').update(record).digest('hex').slice(0, 16)}`;
+  try {
+    fs.writeFileSync(claim, `${process.pid}\n`, { mode: 0o600, flag: 'wx' });
+  } catch (error) {
+    const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+    if (code === 'EEXIST' || code === 'EPERM') return false;
+    throw error;
+  }
+  try {
+    if (readLockRecordSync(lockPath) !== record || !holderExited(record)) return false;
+    return safeRemoveSync(lockPath).ok;
+  } finally {
+    safeRemoveSync(claim);
+  }
 }
 
 /**
- * Remove all owned provider blocks matching `names` & `refs`; null when untouched.
+ * Synchronous DSH-compatible `<target>.lock` (`wx` + `${process.pid}\n` + `ESRCH` takeover).
+ * @template T
+ * @param {string} targetFile
+ * @param {() => T} operation
+ * @param {{ waitMs?: number }} [options]
+ * @returns {T}
+ */
+function withFileLockSync(targetFile, operation, options = {}) {
+  const lockPath = `${targetFile}.lock`;
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const deadline = Date.now() + (options.waitMs ?? DEFAULT_LOCK_WAIT_MS);
+  let delayMs = LOCK_RETRY_INITIAL_MS;
+  let retriedPerm = false;
+  for (;;) {
+    try {
+      fs.writeFileSync(lockPath, `${process.pid}\n`, { mode: 0o600, flag: 'wx' });
+      break;
+    } catch (error) {
+      if (!isLockContentionSync(error, lockPath)) {
+        const code = /** @type {NodeJS.ErrnoException | null} */ (error)?.code;
+        if (process.platform !== 'win32' || code !== 'EPERM' || retriedPerm) throw error;
+        retriedPerm = true;
+      } else if (takeOverExitedLockSync(lockPath)) {
+        continue;
+      }
+    }
+    if (Date.now() >= deadline) {
+      const err = new Error(`dsh-sync: timed out waiting for writer lock at ${lockPath}`);
+      /** @type {any} */ (err).code = 'FILE_LOCK_TIMEOUT';
+      throw err;
+    }
+    sleepSync(delayMs);
+    delayMs = Math.min(delayMs * 2, LOCK_RETRY_MAX_MS);
+  }
+  try {
+    return operation();
+  } finally {
+    safeRemoveSync(lockPath);
+  }
+}
+
+/**
+ * Async DSH-compatible `<target>.lock` (`wx` + `${process.pid}\n` + `ESRCH` takeover).
+ * @template T
+ * @param {string} targetFile
+ * @param {() => Promise<T>} operation
+ * @param {{ waitMs?: number }} [options]
+ * @returns {Promise<T>}
+ */
+async function withFileLock(targetFile, operation, options = {}) {
+  const lockPath = `${targetFile}.lock`;
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const deadline = Date.now() + (options.waitMs ?? DEFAULT_LOCK_WAIT_MS);
+  let delayMs = LOCK_RETRY_INITIAL_MS;
+  let retriedPerm = false;
+  for (;;) {
+    try {
+      await fs.promises.writeFile(lockPath, `${process.pid}\n`, { mode: 0o600, flag: 'wx' });
+      break;
+    } catch (error) {
+      if (!isLockContentionSync(error, lockPath)) {
+        const code = /** @type {NodeJS.ErrnoException | null} */ (error)?.code;
+        if (process.platform !== 'win32' || code !== 'EPERM' || retriedPerm) throw error;
+        retriedPerm = true;
+      } else if (takeOverExitedLockSync(lockPath)) {
+        continue;
+      }
+    }
+    if (Date.now() >= deadline) {
+      const err = new Error(`dsh-sync: timed out waiting for writer lock at ${lockPath}`);
+      /** @type {any} */ (err).code = 'FILE_LOCK_TIMEOUT';
+      throw err;
+    }
+    await sleepAsync(delayMs);
+    delayMs = Math.min(delayMs * 2, LOCK_RETRY_MAX_MS);
+  }
+  try {
+    return await operation();
+  } finally {
+    safeRemoveSync(lockPath);
+  }
+}
+
+/**
+ * Parse YAML document strictly with `uniqueKeys: true`.
+ * Redacts value quotes in error messages when `redact` is true (for `.credentials.yaml`).
+ * @param {string} text
+ * @param {string} label
+ * @param {{ redact?: boolean }} [options]
+ * @returns {import('yaml').Document<any, true>}
+ */
+function parseYamlStrict(text, label, options = {}) {
+  const doc = /** @type {import('yaml').Document<any, true>} */ (parseDocument(text, { uniqueKeys: true }));
+  if (doc.errors.length > 0) {
+    const detail = options.redact
+      ? doc.errors.map((e) => e.code || 'YAML_PARSE_ERROR').join(', ')
+      : doc.errors[0].message;
+    throw new Error(`${label} YAML 解析失败：${detail}`);
+  }
+  return doc;
+}
+
+/**
+ * Serialize YAML AST and validate the resulting text has no parse errors or duplicate keys.
+ * @param {import('yaml').Document} doc
+ * @param {string} label
+ * @param {{ redact?: boolean, eol?: string }} [options]
+ * @returns {string}
+ */
+function serializeAndVerifyYaml(doc, label, options = {}) {
+  const eol = options.eol || '\n';
+  let out = doc.toString();
+  if (eol === '\r\n') {
+    out = out.replace(/\r?\n/g, '\r\n');
+  }
+  if (out && !out.endsWith(eol)) {
+    out += eol;
+  }
+  parseYamlStrict(out, label, { redact: options.redact });
+  return out;
+}
+
+/**
+ * Remove all owned provider blocks matching `names` & `refs`; returns null when untouched.
  * @param {string} text
  * @param {string[]} names
  * @param {string[]} refs
@@ -89,20 +232,30 @@ function findOwnedChannelBlock(lines, names, refs) {
  */
 function removeOwnedChannelBlocks(text, names, refs) {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  let lines = text.split(/\r?\n/);
+  const doc = parseYamlStrict(text, 'cordis.patch.yml');
+  if (!isSeq(doc.contents)) return null;
   let changed = false;
-  for (;;) {
-    const block = findOwnedChannelBlock(lines, names, refs);
-    if (!block) break;
-    changed = true;
-    lines = [...lines.slice(0, block.start), ...lines.slice(block.end)];
-    if (mappingEmpty(lines, block.parent)) {
-      lines[block.parent] = lines[block.parent].replace(/:\s*$/, ': {}');
+  for (const item of doc.contents.items) {
+    if (!isMap(item) || item.get('id') !== 'llm-pi-ai') continue;
+    const config = item.get('config', true);
+    if (!isMap(config)) continue;
+    const providers = config.get('providers', true);
+    if (!isMap(providers)) continue;
+    for (const name of names) {
+      if (!providers.has(name)) continue;
+      const chan = providers.get(name, true);
+      const apiKeyEnv = isMap(chan) ? chan.get('apiKeyEnv') : undefined;
+      if (typeof apiKeyEnv === 'string' && refs.includes(apiKeyEnv)) {
+        providers.delete(name);
+        changed = true;
+      }
+    }
+    if (changed && providers.items.length === 0) {
+      providers.flow = true;
     }
   }
   if (!changed) return null;
-  const joined = lines.join(eol);
-  return /\r?\n$/.test(text) && joined !== '' && !joined.endsWith(eol) ? joined + eol : joined;
+  return serializeAndVerifyYaml(doc, 'cordis.patch.yml', { eol });
 }
 
 /**
@@ -113,15 +266,29 @@ function removeOwnedChannelBlocks(text, names, refs) {
  */
 function removeGatewayRefs(text, refs) {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const lines = text.split(/\r?\n/);
-  const pattern = new RegExp(`^[ \\t]*(?:${refs.join('|')})\\s*:`);
-  const next = lines.filter((line) => !pattern.test(line));
-  if (next.length === lines.length) return null;
-  const refsIdx = next.findIndex((line) => /^[ \t]*refs\s*:\s*$/.test(line));
-  if (refsIdx !== -1 && mappingEmpty(next, refsIdx)) {
-    next[refsIdx] = next[refsIdx].replace(/:\s*$/, ': {}');
+  const doc = parseYamlStrict(text, '.credentials.yaml', { redact: true });
+  if (!isMap(doc.contents)) return null;
+  let changed = false;
+  const refsNode = doc.contents.get('refs', true);
+  if (isMap(refsNode)) {
+    for (const key of refs) {
+      if (refsNode.has(key)) {
+        refsNode.delete(key);
+        changed = true;
+      }
+    }
+    if (changed && refsNode.items.length === 0) {
+      refsNode.flow = true;
+    }
   }
-  return next.join(eol);
+  for (const key of refs) {
+    if (doc.contents.has(key)) {
+      doc.contents.delete(key);
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+  return serializeAndVerifyYaml(doc, '.credentials.yaml', { redact: true, eol });
 }
 
 /**
@@ -133,19 +300,33 @@ function removeGatewayRefs(text, refs) {
 function detachChannels(dshHome, names, refs) {
   if (typeof dshHome !== 'string' || !dshHome.trim()) return { changed: false };
   let changed = false;
-  for (const file of [path.join(dshHome, 'cordis.patch.yml'), path.join(dshHome, ...PROFILE_PATCH)]) {
-    const text = readText(file);
-    const next = text ? removeOwnedChannelBlocks(text, names, refs) : null;
-    if (next === null) continue;
-    atomicWriteFileSync(file, next);
-    changed = true;
+  const patchTargets = [
+    { file: path.join(dshHome, 'cordis.patch.yml'), lockTarget: path.join(dshHome, 'cordis.patch.yml') },
+    { file: path.join(dshHome, ...PROFILE_PATCH), lockTarget: path.join(dshHome, ...PROFILE_LOCK_TARGET) },
+  ];
+  for (const { file, lockTarget } of patchTargets) {
+    if (!fs.existsSync(file)) continue;
+    withFileLockSync(lockTarget, () => {
+      const text = readText(file);
+      const next = text ? removeOwnedChannelBlocks(text, names, refs) : null;
+      if (next !== null) {
+        atomicWriteFileSync(file, next);
+        changed = true;
+      }
+    });
   }
-  if (!changed) return { changed: false };
   const credentials = path.join(dshHome, '.credentials.yaml');
-  const text = readText(credentials);
-  const next = text ? removeGatewayRefs(text, refs) : null;
-  if (next !== null) atomicWriteFileSync(credentials, next, { mode: 0o600 });
-  return { changed: true };
+  if (fs.existsSync(credentials)) {
+    withFileLockSync(credentials, () => {
+      const text = readText(credentials);
+      const next = text ? removeGatewayRefs(text, refs) : null;
+      if (next !== null) {
+        atomicWriteFileSync(credentials, next, { mode: 0o600 });
+        changed = true;
+      }
+    });
+  }
+  return { changed };
 }
 
 /** Detach legacy WhaleBridge channel (`providers.whalebridge` + `WHALEBRIDGE_GATEWAY_KEY`). */
@@ -169,8 +350,11 @@ function ensureDshWebProfileExists(dshHome) {
   if (typeof dshHome !== 'string' || !dshHome.trim()) return;
   const patchFile = path.join(dshHome, ...PROFILE_PATCH);
   if (fs.existsSync(patchFile)) return;
-  fs.mkdirSync(path.dirname(patchFile), { recursive: true });
-  atomicWriteFileSync(patchFile, '[]\n');
+  withFileLockSync(path.join(dshHome, ...PROFILE_LOCK_TARGET), () => {
+    if (fs.existsSync(patchFile)) return;
+    fs.mkdirSync(path.dirname(patchFile), { recursive: true });
+    atomicWriteFileSync(patchFile, '[]\n');
+  });
 }
 
 /**
@@ -183,17 +367,20 @@ function readDshDefaultModel(dshHome) {
   for (const file of [path.join(dshHome, ...PROFILE_PATCH), path.join(dshHome, 'cordis.patch.yml')]) {
     const text = readText(file);
     if (!text) continue;
-    const lines = text.split(/\r?\n/);
-    const idx = lines.findIndex((line) => /^[ \t]*- id\s*:\s*"?agent-default-model"?\s*$/.test(line));
-    if (idx === -1) continue;
-    let end = lines.length;
-    for (let i = idx + 1; i < lines.length; i += 1) {
-      if (/^[ \t]*- id\s*:/.test(lines[i])) { end = i; break; }
+    let doc;
+    try {
+      doc = parseYamlStrict(text, file);
+    } catch {
+      continue;
     }
-    const slice = lines.slice(idx, end).join('\n');
-    const provider = /^\s*provider\s*:\s*"?([^"\r\n#]+)"?/m.exec(slice)?.[1]?.trim() || '';
-    const model = /^\s*model\s*:\s*"?([^"\r\n#]+)"?/m.exec(slice)?.[1]?.trim() || '';
-    const reasoningEffort = /^\s*reasoningEffort\s*:\s*"?([^"\r\n#]+)"?/m.exec(slice)?.[1]?.trim() || '';
+    if (!isSeq(doc.contents)) continue;
+    const entry = doc.contents.items.find((item) => isMap(item) && item.get('id') === 'agent-default-model');
+    if (!isMap(entry)) continue;
+    const config = entry.get('config', true);
+    const holder = isMap(config) ? config : entry;
+    const provider = String(holder.get('provider') ?? '').trim();
+    const model = String(holder.get('model') ?? '').trim();
+    const reasoningEffort = String(holder.get('reasoningEffort') ?? '').trim();
     if (provider || model) return { provider, model, reasoningEffort };
   }
   return null;
@@ -209,28 +396,45 @@ function readDshDefaultModel(dshHome) {
 function remapDshDefaultModel(dshHome, fromProvider, toProvider) {
   if (typeof dshHome !== 'string' || !dshHome.trim()) return false;
   let updated = false;
-  for (const file of [path.join(dshHome, ...PROFILE_PATCH), path.join(dshHome, 'cordis.patch.yml')]) {
-    const text = readText(file);
-    if (!text) continue;
-    const eol = text.includes('\r\n') ? '\r\n' : '\n';
-    const lines = text.split(/\r?\n/);
-    const idx = lines.findIndex((line) => /^[ \t]*- id\s*:\s*"?agent-default-model"?\s*$/.test(line));
-    if (idx === -1) continue;
-    let changed = false;
-    for (let i = idx + 1; i < lines.length; i += 1) {
-      if (/^[ \t]*- id\s*:/.test(lines[i])) break;
-      const match = /^([ \t]*provider\s*:\s*)"?([^"\r\n#]+)"?(.*)$/.exec(lines[i]);
-      if (match && match[2].trim() === fromProvider) {
-        lines[i] = `${match[1]}${toProvider}${match[3]}`;
-        changed = true;
+  const targets = [
+    { file: path.join(dshHome, ...PROFILE_PATCH), lockTarget: path.join(dshHome, ...PROFILE_LOCK_TARGET) },
+    { file: path.join(dshHome, 'cordis.patch.yml'), lockTarget: path.join(dshHome, 'cordis.patch.yml') },
+  ];
+  for (const { file, lockTarget } of targets) {
+    if (!fs.existsSync(file)) continue;
+    withFileLockSync(lockTarget, () => {
+      const text = readText(file);
+      if (!text) return;
+      const eol = text.includes('\r\n') ? '\r\n' : '\n';
+      const doc = parseYamlStrict(text, 'cordis.patch.yml');
+      if (!isSeq(doc.contents)) return;
+      let changed = false;
+      for (const item of doc.contents.items) {
+        if (!isMap(item) || item.get('id') !== 'agent-default-model') continue;
+        const config = item.get('config', true);
+        const holder = isMap(config) ? config : item;
+        if (holder.get('provider') === fromProvider) {
+          holder.set('provider', toProvider);
+          changed = true;
+        }
       }
-    }
-    if (changed) {
-      atomicWriteFileSync(file, lines.join(eol));
-      updated = true;
-    }
+      if (changed) {
+        atomicWriteFileSync(file, serializeAndVerifyYaml(doc, 'cordis.patch.yml', { eol }));
+        updated = true;
+      }
+    });
   }
   return updated;
+}
+
+/** @param {string} raw */
+function hasYamlDirectives(raw) {
+  return /^(?:(?:---|\.\.\.)(?=\s|$)|%(?:YAML|TAG)\b)/m.test(raw);
+}
+
+/** @param {import('yaml').YAMLMap} map */
+function isFlatScalarMap(map) {
+  return map.items.every((pair) => isScalar(pair.key) && isScalar(pair.value));
 }
 
 /**
@@ -241,20 +445,44 @@ function remapDshDefaultModel(dshHome, fromProvider, toProvider) {
  * @returns {{ text: string, migrated: boolean }}
  */
 function ensureVersionedCredentialsLayout(raw) {
-  if (/^[ \t]*version\s*:/m.test(raw)) {
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const doc = parseYamlStrict(raw, '.credentials.yaml', { redact: true });
+  const root = doc.contents;
+  if (root === null || (isMap(root) && root.items.length === 0)) {
+    const suffix = raw.endsWith('\n') || raw === '' ? '' : eol;
+    const out = `${raw}${suffix}version: 1${eol}refs:${eol}`;
+    parseYamlStrict(out, '.credentials.yaml', { redact: true });
+    return { text: out, migrated: true };
+  }
+  if (!isMap(root)) {
+    throw new Error('.credentials.yaml 顶层必须是 YAML 映射');
+  }
+  if (root.has('version')) {
+    if (root.get('version') !== 1) {
+      throw new Error(`.credentials.yaml version 不受支持：${JSON.stringify(root.get('version'))}`);
+    }
     return { text: raw, migrated: false };
   }
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
-  if (/^(?:refs|records)\s*:/m.test(raw)) {
-    return { text: `version: 1${eol}${raw}`, migrated: true };
+  if (root.has('refs') || root.has('records')) {
+    if (!hasYamlDirectives(raw)) {
+      const candidate = `version: 1${eol}${raw}`;
+      parseYamlStrict(candidate, '.credentials.yaml', { redact: true });
+      return { text: candidate, migrated: true };
+    }
+    root.items.unshift(doc.createPair('version', 1));
+    return { text: serializeAndVerifyYaml(doc, '.credentials.yaml', { redact: true, eol }), migrated: true };
   }
-  if (!/^\s*[^#\s]/m.test(raw)) {
-    const suffix = raw.endsWith('\n') || raw === '' ? '' : eol;
-    return { text: `${raw}${suffix}version: 1${eol}refs:${eol}`, migrated: true };
+  if (!hasYamlDirectives(raw) && !root.flow && isFlatScalarMap(root)) {
+    const trimmed = raw.replace(/\r?\n$/, '');
+    const indented = trimmed.split(/\r?\n/).map((line) => (line.length === 0 ? line : `  ${line}`)).join(eol);
+    const candidate = `version: 1${eol}refs:${eol}${indented}${eol}`;
+    parseYamlStrict(candidate, '.credentials.yaml', { redact: true });
+    return { text: candidate, migrated: true };
   }
-  const trimmed = raw.replace(/\r?\n$/, '');
-  const indented = trimmed.split(/\r?\n/).map((line) => (line.length === 0 ? line : `  ${line}`)).join(eol);
-  return { text: `version: 1${eol}refs:${eol}${indented}${eol}`, migrated: true };
+  root.flow = false;
+  const wrapped = /** @type {import('yaml').Document<any, true>} */ (parseDocument('version: 1\nrefs: {}\n', { uniqueKeys: true }));
+  wrapped.set('refs', root);
+  return { text: serializeAndVerifyYaml(wrapped, '.credentials.yaml', { redact: true, eol }), migrated: true };
 }
 
 /**
@@ -262,87 +490,107 @@ function ensureVersionedCredentialsLayout(raw) {
  * `<dshHome>/.credentials.yaml` without clobbering any non-Magpie value already
  * set by the user.
  * @param {string} dshHome
+ * @returns {boolean}
  */
 function ensureMagpieCredentialRef(dshHome) {
   const file = path.join(dshHome, '.credentials.yaml');
-  const raw = readText(file);
-  if (!raw.trim()) {
-    fs.mkdirSync(dshHome, { recursive: true });
-    atomicWriteFileSync(file, `version: 1\nrefs:\n  ${MAGPIE_REF}: magpie\n`, { mode: 0o600 });
-    return true;
-  }
-  const { text: base, migrated } = ensureVersionedCredentialsLayout(raw);
-  const existing = new RegExp(`^[ \\t]*${MAGPIE_REF}\\s*:\\s*(.+)$`, 'm').exec(base);
-  if (existing) {
-    if (migrated) {
-      atomicWriteFileSync(file, base.replace(/\r?\n?$/, '\n'), { mode: 0o600 });
+  return withFileLockSync(file, () => {
+    const raw = readText(file);
+    if (!raw.trim()) {
+      fs.mkdirSync(dshHome, { recursive: true });
+      const fresh = `version: 1\nrefs:\n  ${MAGPIE_REF}: magpie\n`;
+      parseYamlStrict(fresh, '.credentials.yaml', { redact: true });
+      atomicWriteFileSync(file, fresh, { mode: 0o600 });
+      return true;
     }
-    return existing[1].trim().replace(/^["']|["']$/g, '') === 'magpie';
-  }
-  const eol = base.includes('\r\n') ? '\r\n' : '\n';
-  const lines = base.split(/\r?\n/);
-  const refsIdx = lines.findIndex((line) => /^[ \t]*refs\s*:\s*(?:\{\})?\s*$/.test(line));
-  if (refsIdx !== -1) {
-    lines[refsIdx] = 'refs:';
-    lines.splice(refsIdx + 1, 0, `  ${MAGPIE_REF}: magpie`);
-  } else {
-    if (lines.length && lines.at(-1) !== '') lines.push('');
-    lines.push('refs:', `  ${MAGPIE_REF}: magpie`);
-  }
-  atomicWriteFileSync(file, lines.join(eol).replace(/\r?\n?$/, '\n'), { mode: 0o600 });
-  return true;
+    const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+    const { text: base, migrated } = ensureVersionedCredentialsLayout(raw);
+    const doc = parseYamlStrict(base, '.credentials.yaml', { redact: true });
+    if (!isMap(doc.contents)) {
+      throw new Error('.credentials.yaml 顶层必须是 YAML 映射');
+    }
+    /** @type {any} */
+    let refsNode = doc.contents.get('refs', true);
+    if (isMap(refsNode) && refsNode.has(MAGPIE_REF)) {
+      const val = String(refsNode.get(MAGPIE_REF) ?? '').trim();
+      if (migrated) {
+        atomicWriteFileSync(file, base.replace(/\r?\n?$/, '\n'), { mode: 0o600 });
+      }
+      return val === 'magpie';
+    }
+    if (isMap(refsNode)) {
+      refsNode.flow = false;
+      refsNode.items.unshift(doc.createPair(MAGPIE_REF, 'magpie'));
+    } else {
+      refsNode = doc.createNode({ [MAGPIE_REF]: 'magpie' });
+      doc.contents.set('refs', refsNode);
+    }
+    const nextText = serializeAndVerifyYaml(doc, '.credentials.yaml', { redact: true, eol });
+    atomicWriteFileSync(file, nextText, { mode: 0o600 });
+    return true;
+  });
 }
 
 /**
- * Build YAML block for `providers.<channelName>` inside `llm-pi-ai`.
- * @param {string} indent
- * @param {string} channelName
+ * Read the effective `MAGPIE_GATEWAY_KEY` from `<dshHome>/.credentials.yaml`, falling back to `'magpie'`.
+ * @param {string} dshHome
+ * @returns {string}
+ */
+function readMagpieGatewayKey(dshHome) {
+  if (typeof dshHome !== 'string' || !dshHome.trim()) return 'magpie';
+  const raw = readText(path.join(dshHome, '.credentials.yaml'));
+  if (!raw.trim()) return 'magpie';
+  try {
+    const doc = parseYamlStrict(raw, '.credentials.yaml', { redact: true });
+    if (!isMap(doc.contents)) return 'magpie';
+    const refVal = doc.getIn(['refs', MAGPIE_REF]) ?? doc.get(MAGPIE_REF);
+    if (typeof refVal === 'string' && refVal.trim()) return refVal.trim();
+  } catch {
+    // Fall back to default key when unreadable.
+  }
+  return 'magpie';
+}
+
+/**
+ * Build channel config object for `providers.<channelName>` inside `llm-pi-ai`.
  * @param {string} api
  * @param {string} baseUrl
  * @param {any[]} models
  */
-function formatChannelLines(indent, channelName, api, baseUrl, models) {
-  const inner = `${indent}  `;
-  const item = `${inner}  `;
-  const lines = [
-    `${indent}${channelName}:`,
-    `${inner}baseUrl: ${JSON.stringify(baseUrl)}`,
-    `${inner}api: ${api}`,
-    `${inner}apiKeyEnv: ${MAGPIE_REF}`,
-    `${inner}models:`,
-  ];
+function buildChannelSpec(api, baseUrl, models) {
+  /** @type {any[]} */
+  const entries = [];
   for (const model of models) {
     const id = typeof model?.id === 'string' ? model.id : '';
     if (!id) continue;
-    lines.push(`${item}- id: ${JSON.stringify(id)}`);
-    if (typeof model.name === 'string' && model.name) {
-      lines.push(`${item}  name: ${JSON.stringify(model.name)}`);
-    }
-    if (typeof model.context_window === 'number' && model.context_window > 0) {
-      lines.push(`${item}  contextWindow: ${model.context_window}`);
-    }
-    if (typeof model.max_tokens === 'number' && model.max_tokens > 0) {
-      lines.push(`${item}  maxTokens: ${model.max_tokens}`);
-    }
+    /** @type {Record<string, any>} */
+    const item = { id };
+    if (typeof model.name === 'string' && model.name) item.name = model.name;
+    if (typeof model.context_window === 'number' && model.context_window > 0) item.contextWindow = model.context_window;
+    if (typeof model.max_tokens === 'number' && model.max_tokens > 0) item.maxTokens = model.max_tokens;
     if (typeof model.compaction_threshold === 'number' && model.compaction_threshold > 0) {
-      lines.push(`${item}  compactionThreshold: ${model.compaction_threshold}`);
+      item.compactionThreshold = model.compaction_threshold;
     }
+    entries.push(item);
   }
-  if (lines.at(-1) === `${inner}models:`) {
-    lines[lines.length - 1] = `${inner}models: []`;
-  }
-  return lines;
+  return {
+    baseUrl,
+    api,
+    apiKeyEnv: MAGPIE_REF,
+    models: entries,
+  };
 }
 
 /**
  * @param {string} addr
  * @param {((url: string, init?: RequestInit) => Promise<any>) | undefined} fetchJson
- * @param {((url: string, init?: RequestInit) => Promise<Response>) | undefined} [fetchImpl]
+ * @param {((url: string, init?: RequestInit) => Promise<Response>) | undefined} fetchImpl
+ * @param {string} [apiKey]
  * @returns {Promise<any[]>}
  */
-async function fetchGatewayModels(addr, fetchJson, fetchImpl) {
+async function fetchGatewayModels(addr, fetchJson, fetchImpl, apiKey = 'magpie') {
   const safeAddr = toLoopbackHostPort(addr);
-  const headers = { Authorization: 'Bearer magpie' };
+  const headers = { Authorization: `Bearer ${apiKey}` };
   let data;
   if (fetchJson) {
     data = await fetchJson(`http://${safeAddr}/v1/models`, { headers });
@@ -361,33 +609,56 @@ async function fetchGatewayModels(addr, fetchJson, fetchImpl) {
 }
 
 /**
- * Insert Magpie channel blocks into the `llm-pi-ai` provider map in `cordis.patch.yml` lines.
- * @param {string[]} lines
- * @param {string[]} blocks
+ * Upsert Magpie channels into `cordis.patch.yml` YAML AST without clobbering foreign providers.
+ * @param {string} raw
+ * @param {Array<{ name: string, spec: Record<string, any> }>} channels
+ * @returns {string}
  */
-function insertProviderBlocks(lines, blocks) {
-  const llmIdx = lines.findIndex((line) => /^[ \t]*- id\s*:\s*"?llm-pi-ai"?\s*$/.test(line));
-  if (llmIdx === -1) {
-    lines.push('- id: llm-pi-ai', '  config:', '    providers:', ...blocks);
-    return;
+function upsertMagpieChannelsAst(raw, channels) {
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const cleaned = raw.trim()
+    ? (removeOwnedChannelBlocks(raw, MAGPIE_CHANNEL_NAMES, [MAGPIE_REF, MAGPIE_LEGACY_REF]) ?? raw)
+    : '[]\n';
+  const doc = parseYamlStrict(cleaned, 'cordis.patch.yml');
+  if (doc.contents === null) {
+    doc.contents = doc.createNode([]);
   }
-  let provIdx = -1;
-  let end = lines.length;
-  for (let i = llmIdx + 1; i < lines.length; i += 1) {
-    if (/^[ \t]*- id\s*:/.test(lines[i])) { end = i; break; }
-    if (/^[ \t]*providers\s*:/.test(lines[i])) { provIdx = i; break; }
+  if (!isSeq(doc.contents)) {
+    throw new Error('cordis.patch.yml 顶层必须是 YAML 序列');
   }
-  if (provIdx !== -1) {
-    lines[provIdx] = lines[provIdx].replace(/:\s*\{\}\s*$/, ':');
-    lines.splice(provIdx + 1, 0, ...blocks);
-    return;
+  doc.contents.flow = false;
+
+  /** @type {any} */
+  let llmEntry = doc.contents.items.find(
+    (/** @type {any} */ item) => isMap(item) && item.get('id') === 'llm-pi-ai' && !item.has('insert'),
+  );
+  if (!isMap(llmEntry)) {
+    llmEntry = doc.createNode({ id: 'llm-pi-ai', config: { providers: {} } });
+    doc.contents.add(llmEntry);
   }
-  const cfgIdx = lines.slice(llmIdx + 1, end).findIndex((l) => /^[ \t]*config\s*:/.test(l));
-  if (cfgIdx === -1) {
-    lines.splice(llmIdx + 1, 0, '  config:', '    providers:', ...blocks);
-  } else {
-    lines.splice(llmIdx + 2 + cfgIdx, 0, '    providers:', ...blocks);
+  /** @type {any} */
+  let configNode = llmEntry.get('config', true);
+  if (!isMap(configNode)) {
+    configNode = doc.createNode({ providers: {} });
+    llmEntry.set('config', configNode);
   }
+  configNode.flow = false;
+  /** @type {any} */
+  let providersNode = configNode.get('providers', true);
+  if (!isMap(providersNode)) {
+    providersNode = doc.createNode({});
+    configNode.set('providers', providersNode);
+  }
+  providersNode.flow = false;
+
+  for (const { name, spec } of channels) {
+    if (providersNode.has(name)) {
+      // Preserve channel with a foreign apiKeyEnv or user custom entry.
+      continue;
+    }
+    providersNode.set(name, doc.createNode(spec));
+  }
+  return serializeAndVerifyYaml(doc, 'cordis.patch.yml', { eol });
 }
 
 /**
@@ -399,11 +670,12 @@ function insertProviderBlocks(lines, blocks) {
 async function syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson, fetchImpl }) {
   if (typeof dshHome !== 'string' || !dshHome.trim()) return { synced: false };
   ensureDshWebProfileExists(dshHome);
-  if (!ensureMagpieCredentialRef(dshHome)) {
-    return { synced: false, reason: 'foreign-gateway-ref' };
-  }
+  ensureMagpieCredentialRef(dshHome);
+  const apiKey = readMagpieGatewayKey(dshHome);
   const addr = toLoopbackHostPort(gatewayAddr);
-  const models = await fetchGatewayModels(addr, fetchJson, fetchImpl);
+  // Fetch models BEFORE acquiring the file lock so network I/O never stalls DSH writers.
+  const models = await fetchGatewayModels(addr, fetchJson, fetchImpl, apiKey);
+
   const completions = [];
   const responses = [];
   const anthropic = [];
@@ -413,18 +685,32 @@ async function syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson, fetchIm
     else if (api === 'anthropic-messages') anthropic.push(m);
     else completions.push(m);
   }
-  const patchFile = path.join(dshHome, ...PROFILE_PATCH);
-  const raw = readText(patchFile);
-  const cleaned = removeOwnedChannelBlocks(raw, MAGPIE_CHANNEL_NAMES, [MAGPIE_REF, MAGPIE_LEGACY_REF]) ?? raw;
-  const eol = cleaned.includes('\r\n') ? '\r\n' : '\n';
-  const lines = cleaned.trim() === '[]' || !cleaned.trim() ? [] : cleaned.split(/\r?\n/);
-  const blocks = [
-    ...formatChannelLines('        ', 'magpie', 'openai-completions', `http://${addr}/v1`, completions),
-    ...(responses.length ? formatChannelLines('        ', 'magpie-responses', 'openai-responses', `http://${addr}/v1`, responses) : []),
-    ...(anthropic.length ? formatChannelLines('        ', 'magpie-anthropic', 'anthropic-messages', `http://${addr}`, anthropic) : []),
+  const channels = [
+    { name: 'magpie', spec: buildChannelSpec('openai-completions', `http://${addr}/v1`, completions) },
+    ...(responses.length ? [{ name: 'magpie-responses', spec: buildChannelSpec('openai-responses', `http://${addr}/v1`, responses) }] : []),
+    ...(anthropic.length ? [{ name: 'magpie-anthropic', spec: buildChannelSpec('anthropic-messages', `http://${addr}`, anthropic) }] : []),
   ];
-  insertProviderBlocks(lines, blocks);
-  atomicWriteFileSync(patchFile, `${lines.join(eol).replace(/\n?$/, '')}\n`);
+
+  const patchFile = path.join(dshHome, ...PROFILE_PATCH);
+  await withFileLock(path.join(dshHome, ...PROFILE_LOCK_TARGET), async () => {
+    const raw = readText(patchFile);
+    const next = upsertMagpieChannelsAst(raw, channels);
+    atomicWriteFileSync(patchFile, next);
+  });
+
+  // Clean managed Magpie blocks in home-level cordis.patch.yml so stale port overrides cannot shadow profile patch.
+  const homePatchFile = path.join(dshHome, 'cordis.patch.yml');
+  if (fs.existsSync(homePatchFile)) {
+    await withFileLock(homePatchFile, async () => {
+      const homeRaw = readText(homePatchFile);
+      const cleanedHome = homeRaw
+        ? removeOwnedChannelBlocks(homeRaw, MAGPIE_CHANNEL_NAMES, [MAGPIE_REF, MAGPIE_LEGACY_REF])
+        : null;
+      if (cleanedHome !== null) {
+        atomicWriteFileSync(homePatchFile, cleanedHome);
+      }
+    });
+  }
   return { synced: true, modelCount: models.length };
 }
 
@@ -436,4 +722,5 @@ module.exports = {
   readDshDefaultModel,
   remapDshDefaultModel,
   syncDshToMagpieGateway,
+  withFileLockSync,
 };

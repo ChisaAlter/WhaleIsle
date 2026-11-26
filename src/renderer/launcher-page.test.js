@@ -441,3 +441,158 @@ test('component manage dropdown toggles cleanly, closes on outside/Esc, enforces
   await flush();
   assert.equal(doc._listeners.length, listenerCountBefore, 'repeated mounts/refreshes do not duplicate document listeners');
 });
+
+test('components refresh coalesces in-flight requests, keeps post-action callbacks on the queued round, and handles confirm errors/cancel/focus/notices cleanly', async () => {
+  let listCalls = [];
+  let pendingListResolvers = [];
+  let rowState = 'stopped';
+  let rowPrevious = '1.0.0';
+  let uninstallInfoShouldFail = false;
+  const notices = [];
+  let progressHandler = null;
+
+  const makeRow = () => ({
+    id: 'magpie', name: 'Magpie', version: '1.0.2', installedVersion: '1.0.2',
+    previousVersion: rowPrevious, state: rowState, kind: 'service', source: 'official',
+    capabilities: { canStart: rowState !== 'running', canStop: rowState === 'running', canOpen: rowState === 'running', canRollback: Boolean(rowPrevious), canUninstall: true },
+  });
+
+  let holdStart = false;
+  let resolveStart = null;
+  const api = apiWith({
+    onComponentsProgress: (fn) => { progressHandler = fn; return () => {}; },
+    componentsList: (opts) => {
+      listCalls.push(opts || null);
+      return new Promise((resolve, reject) => {
+        pendingListResolvers.push({ resolve, reject });
+      });
+    },
+    componentsStart: async () => {
+      if (holdStart) {
+        await new Promise((resolve) => { resolveStart = resolve; });
+      }
+      rowState = 'running';
+      return { ok: true };
+    },
+    componentsStop: async () => {
+      await new Promise((resolve) => { resolveStart = resolve; });
+      rowState = 'stopped';
+      return { ok: true };
+    },
+    componentsRollback: async () => {
+      rowState = 'stopped';
+      rowPrevious = '1.0.2';
+      return { ok: true };
+    },
+    componentsUninstallInfo: async () => {
+      if (uninstallInfoShouldFail) throw new Error('无法读取卸载详情');
+      return { defaultModel: false, sharedConfig: false };
+    },
+    componentsUninstall: async () => ({ ok: true }),
+  });
+
+  const { document: doc, window: win, fireDOMContentLoaded } = kit.loadLauncherPage({ api });
+  const origNotice = win.appNotice;
+  win.appNotice = async (opts) => { notices.push(opts); return origNotice(opts); };
+
+  fireDOMContentLoaded();
+  await flush();
+  // Resolve initial mount list
+  pendingListResolvers.shift().resolve({ components: [makeRow()] });
+  await flush();
+
+  doc.querySelector('[data-tab="components"]').click();
+  await flush();
+  // Resolve tab-activation refresh (if triggered) or start a background refresh(false)
+  while (pendingListResolvers.length) {
+    pendingListResolvers.shift().resolve({ components: [makeRow()] });
+    await flush();
+  }
+
+  listCalls = [];
+  // 1. In-flight refresh(false) while componentsStart completes -> queued second refresh renders 'running', and releasePending runs only on the queued round
+  const staleRefresh = win.__launcherComponents.refresh(false);
+  const startBtn = doc.querySelector('#tab-components [data-comp-action="start"]');
+  startBtn.focus();
+  startBtn.click();
+  await flush();
+  assert.equal(listCalls.length, 1);
+  // Old refresh resolves with stale 'stopped' snapshot while action already mutated rowState to 'running'
+  pendingListResolvers.shift().resolve({
+    components: [{
+      id: 'magpie', name: 'Magpie', version: '1.0.2', installedVersion: '1.0.2',
+      previousVersion: '1.0.0', state: 'stopped', kind: 'service', source: 'official',
+      capabilities: { canStart: true, canRollback: true, canUninstall: true },
+    }],
+  });
+  await flush();
+  // Must have issued a second componentsList for the queued post-action refresh before staleRefresh settles
+  assert.equal(listCalls.length, 2);
+  pendingListResolvers.shift().resolve({ components: [makeRow()] });
+  await staleRefresh;
+  await flush();
+  assert.ok(doc.querySelector('#tab-components [data-comp-action="stop"]'), 'queued refresh renders updated running state');
+
+  // 2. In-flight refresh(false) + manual refresh(true) -> second round issues { refresh: true }
+  listCalls = [];
+  const bg = win.__launcherComponents.refresh(false);
+  const manual = win.__launcherComponents.refresh(true);
+  assert.equal(listCalls.length, 1);
+  pendingListResolvers.shift().resolve({ components: [makeRow()] });
+  await flush();
+  assert.equal(listCalls.length, 2);
+  assert.deepEqual(plain(listCalls[1]), { refresh: true });
+  // Manual refresh failure when rows already exist triggers appNotice
+  pendingListResolvers.shift().reject(new Error('network down'));
+  await Promise.all([bg, manual]);
+  await flush();
+  assert.ok(notices.some((n) => n.title === '刷新组件失败' && n.tone === 'error'));
+
+  // 3. promptUninstall rejection is caught in runAction (no unhandledRejection) and recorded on the row
+  uninstallInfoShouldFail = true;
+  const uninstallBtn = doc.querySelector('#tab-components [data-comp-action="uninstall"]');
+  uninstallBtn.click();
+  await flush();
+  assert.equal(listCalls.length, 3);
+  pendingListResolvers.shift().resolve({ components: [makeRow()] });
+  await flush();
+  assert.match(doc.querySelector('#tab-components [data-comp-failure]').textContent, /无法读取卸载详情/);
+
+  // 4. Cancelling rollback keeps existing failure line and issues NO backend refresh()
+  const listCountBeforeCancel = listCalls.length;
+  const rollbackBtn = doc.querySelector('#tab-components [data-comp-action="rollback"]');
+  rollbackBtn.click();
+  await flush();
+  doc.getElementById('app-confirm-cancel').click();
+  await flush();
+  assert.equal(listCalls.length, listCountBeforeCancel, 'cancelling confirm must not call componentsList');
+  assert.match(doc.querySelector('#tab-components [data-comp-failure]').textContent, /无法读取卸载详情/, 'cancelling confirm preserves prior failure');
+
+  // 5. Confirming rollback rebuilds DOM with closed <details> and restores focus to details.comp-manage > summary
+  const manageDetails = doc.querySelector('#tab-components details.comp-manage');
+  manageDetails.open = true;
+  rollbackBtn.focus();
+  rollbackBtn.click();
+  await flush();
+  doc.getElementById('app-confirm-ok').click();
+  await flush();
+  pendingListResolvers.shift().resolve({ components: [makeRow()] });
+  await flush();
+  assert.equal(doc.activeElement, doc.querySelector('#tab-components details.comp-manage > summary'));
+
+  // 6. buttonLabel omits trailing ellipsis for terminal 'done'/'error' progress phases
+  holdStart = true;
+  const startAgainBtn = doc.querySelector('#tab-components [data-comp-action="start"]');
+  startAgainBtn.click();
+  await flush();
+  progressHandler?.({ id: 'magpie', phase: 'done' });
+  assert.equal(startAgainBtn.querySelector('.shell-button-label-text')?.textContent, '完成');
+  progressHandler?.({ id: 'magpie', phase: 'error' });
+  assert.equal(startAgainBtn.querySelector('.shell-button-label-text')?.textContent, '失败');
+  resolveStart?.();
+  await flush();
+  while (pendingListResolvers.length) {
+    pendingListResolvers.shift().resolve({ components: [makeRow()] });
+    await flush();
+  }
+});

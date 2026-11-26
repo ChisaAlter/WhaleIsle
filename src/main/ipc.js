@@ -12,6 +12,7 @@ const { getMainWindow, getLauncherWindow, getHarnessWebContents, openHarnessSett
 const { applyAppTheme } = require('./chrome');
 const { currentVersion } = require('./update');
 const { registerLauncherChannels, configPayload } = require('./ipc-launcher');
+const { registerLauncherBridges } = require('../shared/launcher-bridges');
 const ipcComponents = require('./ipc-components');
 const ipcDelta = require('./ipc-delta');
 const { getTaskProtection } = require('./task-protection');
@@ -565,6 +566,10 @@ function registerIpc({
   // Every launcher-renderer channel (status / config / import / releases /
   // runtime install / forensics / start-stop) registers through the shared
   // table so the slim launcher package binds the identical surface.
+  registerLauncherBridges({
+    ensureMagpieRuntime: () => require('../launcher/magpie').ensureMagpieRuntime(),
+    flushBootLogs: () => require('../launcher/forensics-log').flushBootLogs(),
+  });
   registerLauncherChannels({
     launcher,
     dsh,

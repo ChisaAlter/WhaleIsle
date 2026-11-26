@@ -2,12 +2,12 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // 范围：只扫自有代码，单 workspace 模型（不配 workspaces——一旦声明，
   // knip 会把 vendor 嵌套 package.json 自动检测成 workspace 并全量扫描）。
-  // project 只含：src/、scripts/、mobile/web/、tools/、dsh-acp/，以及
+  // project 只含：src/、scripts/、mobile/web/、tools/，以及
   // vendor/provenance.json 中 kind=source 且未被任务排除的自有插件目录。
-  // 排除：vendor/deepseek-harness（pinned）、vendor/chisacode-remote 与
-  // vendor/open-intelligent-ui（任务显式排除）、kind 为 rebuild/hashed/
-  // artifacts 的 vendor（dsh-im、dsh-pad、dsh-remote、dsh-usage-panel，
-  // lib/ 为生成 bundle）、vendor/dshmarket（无代码署名桩）、
+  // 排除：dsh-acp（自有 .gitignore 全量忽略且独立维护）、vendor/deepseek-harness（pinned）、
+  // vendor/chisacode-remote 与 vendor/open-intelligent-ui（任务显式排除）、
+  // kind 为 rebuild/hashed/artifacts 的 vendor（dsh-im、dsh-pad、dsh-remote、
+  // dsh-usage-panel，lib/ 为生成 bundle）、vendor/dshmarket（无代码署名桩）、
   // mobile/android、docs/、构建产物。
   "entry": [
     // 按路径 spawn/fork 的子进程入口（index.js / dshd-remote.js / smoke 等）
@@ -62,8 +62,6 @@
     // 手动 UI QA 入口（不挂 npm script）
     "vendor/dsh-deepseek-tools/tests/**",
     "vendor/dsh-project/tests/**",
-    // ACP 插件包入口与手动 runner
-    "dsh-acp/{lib,client,client-src,tests,tools}/**",
     // 所有脚本都是 npm script 或手动运行的入口点
     "scripts/**/*.{js,cjs,mjs}",
     // QA/调试工具同样是手动入口
@@ -77,16 +75,12 @@
     "scripts/**/*.{js,cjs,mjs}",
     "mobile/web/**/*.{js,cjs,mjs}",
     "tools/**/*.{js,cjs,mjs}",
-    "dsh-acp/**/*.{js,cjs,mjs,ts,tsx}",
     "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-shared,dsh-task-control,dsh-whale}/**/*.{js,cjs,mjs,ts,tsx}"
   ],
   "ignore": [
-    // 生成产物
-    "dsh-acp/client/client.js",
     // knip 会把嵌套 package.json 自动检测成 workspace；这些树在任务范围外，
     // 必须按文件级 ignore 兜底，否则其测试/源码依赖会混入报告
     "vendor/{deepseek-harness,chisacode-remote,open-intelligent-ui,dsh-im,dsh-pad,dsh-remote,dsh-usage-panel,dshmarket}/**",
-    "dsh-acp/tools/runtime-build/upstream/**",
     "mobile/android/**"
   ],
   "ignoreFiles": [
@@ -99,8 +93,6 @@
   ],
   "ignoreBinaries": [
     // Windows / Linux 系统命令与 Android SDK 工具，非 npm 二进制
-    "rundll32",
-    "xdg-open",
     "tasklist",
     "adb"
   ],
@@ -109,7 +101,7 @@
     // 不在 knip 的使用跟踪内。下列文件的导出均由这类消费方（components/index.js 聚合、
     // main-launcher、主进程 ipc.js/dsh.js/app-ready.js/release-ui-walk.js、测试）使用；
     // 已逐项确认，按文件保留。
-    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client,whalebridge}.js": ["exports"],
+    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client}.js": ["exports"],
     "src/main/{dsh-im-desktop,dsh-whale-desktop,editors,git-exec,html-preview,import-guard,ipc-components,ipc-delta,marketplace-updates,pet-settings,pet-stats,marketplace-install,platform-session-overlay,plugins,release-ui-window-controls,update-dialog,whale-ui-host}.js": ["exports"],
     "src/main/approval-monitor/index.js": ["exports"],
     // module.exports 本体在 knip 中记为 default 导出，CJS 单导出模块属误报
@@ -153,7 +145,6 @@
     // js-yaml：CI/release 脚本实际使用但未声明（待用户补声明）
     "scripts/{check-release-assets,check-release-assets.test,ci-scope.test,sync-cnb.test}.mjs": ["unlisted"],
     // QA 驱动使用的 playwright*/puppeteer-core 由 harness vendor 运行时提供
-    "scripts/qa-whalebridge-community.mjs": ["unlisted"],
     "tools/**/*.mjs": ["unlisted"]
   }
 }

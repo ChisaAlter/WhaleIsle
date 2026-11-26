@@ -28,6 +28,11 @@ test('resolveMagpieConfigDir honors absolute XDG_CONFIG_HOME and falls back to h
   assert.equal(resolveMagpieConfigDir({ XDG_CONFIG_HOME: absXdg }, '/home/tester'), path.join(absXdg, 'magpie'));
   assert.equal(resolveMagpieConfigDir({ XDG_CONFIG_HOME: 'relative/xdg' }, '/home/tester'), path.join('/home/tester', '.config', 'magpie'));
   assert.equal(resolveMagpieConfigDir({}, '/home/tester'), path.join('/home/tester', '.config', 'magpie'));
+  // Windows drive-relative paths like \foo or /foo must fall back like Go filepath.IsAbs
+  assert.equal(resolveMagpieConfigDir({ XDG_CONFIG_HOME: '\\foo' }, 'C:\\Users\\tester', 'win32'), path.join('C:\\Users\\tester', '.config', 'magpie'));
+  assert.equal(resolveMagpieConfigDir({ XDG_CONFIG_HOME: '/foo' }, 'C:\\Users\\tester', 'win32'), path.join('C:\\Users\\tester', '.config', 'magpie'));
+  assert.equal(resolveMagpieConfigDir({ XDG_CONFIG_HOME: 'D:\\xdg' }, 'C:\\Users\\tester', 'win32'), path.join('D:\\xdg', 'magpie'));
+  assert.equal(resolveMagpieConfigDir({ XDG_CONFIG_HOME: '\\\\fileserver\\share\\xdg' }, 'C:\\Users\\tester', 'win32'), path.join('\\\\fileserver\\share\\xdg', 'magpie'));
 });
 
 test('assertNoPortableMarkers rejects data/ and .portable markers inside version directory', async () => {
@@ -38,6 +43,25 @@ test('assertNoPortableMarkers rejects data/ and .portable markers inside version
     fs.rmSync(path.join(dir, '.portable'));
     fs.mkdirSync(path.join(dir, 'data'));
     assert.throws(() => assertNoPortableMarkers(dir), /便携模式标记 data/);
+    fs.rmSync(path.join(dir, 'data'), { recursive: true });
+
+    // Dangling symlink / junction must still be rejected by lstatSync
+    const missingTarget = path.join(dir, 'nonexistent-target');
+    let linked = false;
+    try {
+      fs.symlinkSync(missingTarget, path.join(dir, '.portable'), 'file');
+      linked = true;
+    } catch {
+      try {
+        fs.symlinkSync(missingTarget, path.join(dir, 'data'), 'junction');
+        linked = true;
+      } catch {
+        // Ignore if environment forbids symlinks and junctions.
+      }
+    }
+    if (linked) {
+      assert.throws(() => assertNoPortableMarkers(dir), /便携模式标记/);
+    }
   });
 });
 

@@ -73,7 +73,7 @@ test('drag frames write the unified user width on the conversation content conta
   const source = readRel(UI_CONVERSATION, 'skeleton/ComposerResizeHandles.tsx');
   assert.match(source, /const CONTENT_SELECTOR = '\[data-conversation-content\]'/);
   assert.match(source, /const USER_WIDTH_VAR = '--dsh-chat-user-width'/);
-  assert.match(source, /content\.style\.setProperty\(USER_WIDTH_VAR,\s*`\$\{contentWidth\}px`\)/);
+  assert.match(source, /content\.style\.setProperty\(USER_WIDTH_VAR,\s*`\$\{clampedContentWidth\}px`\)/);
   assert.match(source, /content\.dataset\.composerUserWidth = `\$\{contentWidth\}`/);
   assert.match(source, /content\.style\.removeProperty\(USER_WIDTH_VAR\)/);
 });

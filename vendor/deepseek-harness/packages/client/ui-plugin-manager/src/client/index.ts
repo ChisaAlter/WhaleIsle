@@ -179,7 +179,7 @@ export function apply(ctx: ClientContext): void {
         id: PANEL_ID,
         order: 15,
         label: () => t('settingsEntry'),
-        inject: (): PluginsSettingsLinkInjected => ({ openPlugins: openList }),
+        inject: (): PluginsSettingsLinkInjected => ({ openPlugins: openList, t }),
       }, PluginsSettingsLink))
     })
     yield ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({

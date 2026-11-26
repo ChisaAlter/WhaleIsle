@@ -4,6 +4,7 @@ import {
   InboundFileError,
   stageInboundFiles,
 } from '../../src/channels/shared/inbound-file.mjs';
+import { readSessionEvents } from '../../src/channels/shared/semantic/artifact.mjs';
 
 function agentsFromContext(ctx) {
   if (typeof ctx?.get !== 'function') return undefined;
@@ -22,7 +23,7 @@ function agentsFromContext(ctx) {
 
 function currentOwnedTurn(agent, expectedTurn, promptRpcId) {
   if (agent?.status !== 'running') return false;
-  const events = agent?.session?.events;
+  const events = readSessionEvents(agent?.session);
   if (!Array.isArray(events)) return false;
 
   let openTurn = null;

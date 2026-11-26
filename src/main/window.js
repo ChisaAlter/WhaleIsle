@@ -833,7 +833,7 @@ function openHarnessSession(sessionId) {
 
 function sendToBoot(channel, payload) {
   const win = getMainWindow();
-  if (!win) {
+  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed?.()) {
     return;
   }
   const url = win.webContents.getURL();
@@ -847,8 +847,15 @@ function getLauncherWindow() {
 }
 
 function isLauncherLoaded(win) {
-  const url = win?.webContents.getURL() || '';
-  return isLauncherNavigationUrl(url);
+  if (!win || win.isDestroyed?.() || !win.webContents || win.webContents.isDestroyed?.()) {
+    return false;
+  }
+  try {
+    const url = win.webContents.getURL() || '';
+    return isLauncherNavigationUrl(url);
+  } catch {
+    return false;
+  }
 }
 
 function createLauncherWindow() {
@@ -892,6 +899,7 @@ function createLauncherWindow() {
 
 function showLauncher({ activate = true } = {}) {
   const win = createLauncherWindow();
+  if (win.isDestroyed()) return Promise.resolve(win);
   const ready = isLauncherLoaded(win) && !win._dshLauncherLoad
     ? Promise.resolve()
     : (win._dshLauncherLoad ||= Promise.resolve(win.loadFile(rendererFile('launcher.html'))).then(() => {
@@ -925,7 +933,7 @@ function prepareLauncher() { return Promise.resolve(createLauncherWindow()); }
 
 function sendToLauncher(channel, payload) {
   const win = getLauncherWindow();
-  if (!win || win.isDestroyed()) return;
+  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed?.()) return;
   if (!win._dshLauncherLoad && isLauncherNavigationUrl(win.webContents.getURL())) {
     win.webContents.send(channel, payload); return;
   }

@@ -91,6 +91,13 @@
   --dsh-frame-chrome-top: var(--dsh-windows-titlebar-height);
 }
 
+/* Desktop shells that inject --dshd-wco-caption without data-windows-titlebar
+   still need portalled overlays and anchored menus to clear the caption strip. */
+:global(html:not([data-platform='darwin']):not([data-windows-titlebar])) {
+  --dsh-frame-top-clearance: var(--dshd-wco-caption);
+  --dsh-frame-overlay-top: calc(var(--dshd-wco-caption) + 20px);
+}
+
 /* Portalled overlays share a viewport inset without adding space to entry pages. */
 :global(html[data-platform='darwin']),
 :global(html[data-windows-titlebar]) {
@@ -98,7 +105,8 @@
 }
 
 :global(html[data-platform='darwin'][data-fullscreen]),
-:global(html[data-windows-titlebar][data-fullscreen]) {
+:global(html[data-windows-titlebar][data-fullscreen]),
+:global(html:not([data-platform='darwin']):not([data-windows-titlebar])[data-fullscreen]) {
   --dsh-frame-overlay-top: 20px;
   --dsh-frame-chrome-top: 0px;
 }

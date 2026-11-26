@@ -320,7 +320,7 @@
   height: 16px;
   border-radius: 999px;
   background: var(--dsw-alias-brand-primary);
-  color: var(--dsw-alias-label-on-color);
+  color: var(--dsw-alias-label-primary-foreground);
   font-size: 10px;
   line-height: 1;
   corner-shape: round;

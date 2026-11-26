@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseDocument } = require('yaml');
 const { withOwnedTempDir } = require('../../shared/fs-safe');
 const {
   detachWhaleBridgeDshChannel,
@@ -170,5 +171,139 @@ test('ensureMagpieCredentialRef writes version: 1 and losslessly migrates legacy
     assert.equal(ensureMagpieCredentialRef(dshHome), false);
     const text = fs.readFileSync(file, 'utf8');
     assert.equal(text, 'version: 1\nrefs:\n  MAGPIE_GATEWAY_KEY: "custom-val"\n  OTHER_KEY: keep\n');
+  });
+
+  // 5. Flow mapping refs: { OTHER: "x" } + comment containing version: + --- directive
+  await withOwnedTempDir('magpie-creds-flow-', async (dshHome) => {
+    const file = path.join(dshHome, '.credentials.yaml');
+    fs.writeFileSync(file, '---\n# version: 99\nrefs: { OTHER: "x" } # keep comment\n');
+    assert.equal(ensureMagpieCredentialRef(dshHome), true);
+    const text = fs.readFileSync(file, 'utf8');
+    const parsed = parseDocument(text, { uniqueKeys: true });
+    assert.equal(parsed.errors.length, 0);
+    assert.equal(parsed.get('version'), 1);
+    assert.equal(parsed.getIn(['refs', 'MAGPIE_GATEWAY_KEY']), 'magpie');
+    assert.equal(parsed.getIn(['refs', 'OTHER']), 'x');
+  });
+
+  // 6. Flat layout with --- and comment containing version:
+  await withOwnedTempDir('magpie-creds-directive-flat-', async (dshHome) => {
+    const file = path.join(dshHome, '.credentials.yaml');
+    fs.writeFileSync(file, '---\n# version: 1\nOPENAI_API_KEY: "sk-flat"\n');
+    assert.equal(ensureMagpieCredentialRef(dshHome), true);
+    const text = fs.readFileSync(file, 'utf8');
+    const parsed = parseDocument(text, { uniqueKeys: true });
+    assert.equal(parsed.errors.length, 0);
+    assert.equal(parsed.get('version'), 1);
+    assert.equal(parsed.getIn(['refs', 'MAGPIE_GATEWAY_KEY']), 'magpie');
+    assert.equal(parsed.getIn(['refs', 'OPENAI_API_KEY']), 'sk-flat');
+  });
+});
+
+test('syncDshToMagpieGateway handles config: {}, 4-space indent, custom gateway key, home patch cleanup, and lock contention', async () => {
+  await withOwnedTempDir('magpie-dsh-ast-', async (dshHome) => {
+    const profilePatch = path.join(dshHome, 'profiles', 'web', 'cordis.patch.yml');
+    const homePatch = path.join(dshHome, 'cordis.patch.yml');
+    const credsFile = path.join(dshHome, '.credentials.yaml');
+    fs.mkdirSync(path.dirname(profilePatch), { recursive: true });
+    // config: {} flow mapping + foreign custom-provider
+    fs.writeFileSync(profilePatch, '- name: "LLM"\n  id: \'llm-pi-ai\' # tail comment\n  config: {}\n');
+    // Stale home-level magpie block overriding port
+    fs.writeFileSync(homePatch, [
+      '- id: llm-pi-ai',
+      '  config:',
+      '      providers:',
+      '          \'magpie\': # stale',
+      '              api: openai-completions',
+      '              baseUrl: http://127.0.0.1:19999/v1',
+      '              apiKeyEnv: MAGPIE_GATEWAY_KEY',
+      '          keep-me:',
+      '              api: openai-completions',
+    ].join('\n'));
+    fs.writeFileSync(credsFile, 'version: 1\nrefs:\n  MAGPIE_GATEWAY_KEY: "rotated-secret"\n');
+
+    const authHeaders = [];
+    let fetchFinishedBeforeLock = false;
+    const lockPath = path.join(dshHome, 'profiles', 'web', 'package.json.lock');
+
+    const res = await syncDshToMagpieGateway({
+      dshHome,
+      gatewayAddr: '127.0.0.1:4555',
+      fetchJson: async (_url, init) => {
+        authHeaders.push(init?.headers?.Authorization);
+        // Must NOT hold profile lock during network fetch
+        fetchFinishedBeforeLock = !fs.existsSync(lockPath);
+        return { data: [{ id: 'gpt-5', api: 'openai-completions' }] };
+      },
+    });
+    assert.equal(res.synced, true);
+    assert.equal(fetchFinishedBeforeLock, true);
+    assert.deepEqual(authHeaders, ['Bearer rotated-secret']);
+
+    const profileDoc = parseDocument(fs.readFileSync(profilePatch, 'utf8'), { uniqueKeys: true });
+    assert.equal(profileDoc.errors.length, 0);
+    assert.equal(profileDoc.getIn([0, 'config', 'providers', 'magpie', 'baseUrl']), 'http://127.0.0.1:4555/v1');
+
+    const homeDoc = parseDocument(fs.readFileSync(homePatch, 'utf8'), { uniqueKeys: true });
+    assert.equal(homeDoc.errors.length, 0);
+    assert.equal(homeDoc.getIn([0, 'config', 'providers', 'magpie']), undefined);
+    assert.ok(homeDoc.getIn([0, 'config', 'providers', 'keep-me']));
+    assert.equal(fs.existsSync(lockPath), false);
+  });
+
+  // detachChannels cleans .credentials.yaml even when cordis.patch.yml is already clean,
+  // and handles single quotes / comments / name-before-id blocks
+  await withOwnedTempDir('magpie-dsh-detach-indep-', async (dshHome) => {
+    const profilePatch = path.join(dshHome, 'profiles', 'web', 'cordis.patch.yml');
+    const credsFile = path.join(dshHome, '.credentials.yaml');
+    fs.mkdirSync(path.dirname(profilePatch), { recursive: true });
+    fs.writeFileSync(profilePatch, '[]\n');
+    fs.writeFileSync(credsFile, 'version: 1\nrefs:\n  WHALEBRIDGE_GATEWAY_KEY: old-key\n  KEEP_KEY: ok\n');
+
+    const res1 = detachWhaleBridgeDshChannel(dshHome);
+    assert.equal(res1.changed, true);
+    const credsDoc = parseDocument(fs.readFileSync(credsFile, 'utf8'), { uniqueKeys: true });
+    assert.equal(credsDoc.errors.length, 0);
+    assert.equal(credsDoc.getIn(['refs', 'WHALEBRIDGE_GATEWAY_KEY']), undefined);
+    assert.equal(credsDoc.getIn(['refs', 'KEEP_KEY']), 'ok');
+
+    // Single quotes, comments, name before id, and list items aligned at same indent under models:
+    fs.writeFileSync(profilePatch, [
+      "- name: 'LLM'",
+      "  id: 'llm-pi-ai' # comment",
+      '  config:',
+      '    providers:',
+      "      'whalebridge': # tail",
+      '        apiKeyEnv: WHALEBRIDGE_GATEWAY_KEY # key',
+      '        models:',
+      '        - id: m1',
+      '      other:',
+      '        api: openai-completions',
+    ].join('\n'));
+    const res2 = detachWhaleBridgeDshChannel(dshHome);
+    assert.equal(res2.changed, true);
+    const patchDoc = parseDocument(fs.readFileSync(profilePatch, 'utf8'), { uniqueKeys: true });
+    assert.equal(patchDoc.errors.length, 0);
+    assert.equal(patchDoc.getIn([0, 'config', 'providers', 'whalebridge']), undefined);
+    assert.ok(patchDoc.getIn([0, 'config', 'providers', 'other']));
+  });
+
+  // Dead-PID takeover + active-PID contention on .credentials.yaml.lock
+  await withOwnedTempDir('magpie-dsh-lock-', async (dshHome) => {
+    const credsFile = path.join(dshHome, '.credentials.yaml');
+    const lockFile = `${credsFile}.lock`;
+    // 1. Dead PID (99999999) lock is taken over automatically
+    fs.writeFileSync(lockFile, '99999999\n');
+    assert.equal(ensureMagpieCredentialRef(dshHome), true);
+    assert.equal(fs.existsSync(lockFile), false);
+
+    // 2. Live PID (process.pid) contention causes timeout
+    const { withFileLockSync } = require('./dsh-sync');
+    fs.writeFileSync(lockFile, `${process.pid}\n`);
+    assert.throws(
+      () => withFileLockSync(credsFile, () => {}, { waitMs: 60 }),
+      /FILE_LOCK_TIMEOUT|timed out/,
+    );
+    fs.rmSync(lockFile, { force: true });
   });
 });

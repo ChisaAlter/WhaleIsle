@@ -27,6 +27,9 @@ export interface ToolProvider {
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
+const MIN_REFRESH_INTERVAL_MS = 1000;
+const MAX_REFRESH_INTERVAL_MS = 0x7fffffff;
+
 export interface QueryNode {
   statementId: string;
   toolName: string;
@@ -371,22 +374,25 @@ export function createQueryManager(toolProvider: ToolProvider | null): QueryMana
       }
 
       // Configure auto-refresh timer
-      const newInterval = node.refreshInterval ?? 0;
-      if (newInterval !== q.refreshInterval) {
+      const rawInterval = node.refreshInterval;
+      const intervalMs = typeof rawInterval === 'number' && Number.isFinite(rawInterval) && rawInterval > 0
+        ? Math.min(Math.max(Math.round(rawInterval * 1000), MIN_REFRESH_INTERVAL_MS), MAX_REFRESH_INTERVAL_MS)
+        : 0;
+      if (intervalMs !== q.refreshInterval) {
         if (q.timer) {
           clearInterval(q.timer);
           q.timer = undefined;
         }
-        if (newInterval > 0) {
+        if (intervalMs > 0) {
           q.timer = setInterval(() => {
             if (disposed || !toolProvider) return;
             const entry = cache.get(q.cacheKey);
             if (!entry?.inFlight) {
               executeFetch(q.cacheKey, node.statementId);
             }
-          }, newInterval * 1000);
+          }, intervalMs);
         }
-        q.refreshInterval = newInterval;
+        q.refreshInterval = intervalMs;
       }
     }
 

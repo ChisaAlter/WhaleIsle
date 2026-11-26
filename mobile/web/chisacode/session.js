@@ -164,11 +164,15 @@ function loadSecrets() {
 
 function saveSecret(serverId, record) {
   const all = loadSecrets();
-  all[serverId] = {
+  const next = {
     ...all[serverId],
     ...record,
     savedAt: Date.now(),
   };
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined) delete next[key];
+  }
+  all[serverId] = next;
   localStorage.setItem(SECRET_KEY, JSON.stringify(all));
 }
 
@@ -504,8 +508,9 @@ function createPairAuthResultHandler(offer, relayDeviceAuth, meta, setAuthError,
         daemonPublicKeyB64: offer.daemonPublicKeyB64,
         relayEndpoint: meta.relayEndpoint,
         useTls: meta.useTls,
-        ...(meta.lanEndpoints.length ? { lanEndpoints: meta.lanEndpoints, lanUseTls: meta.lanUseTls } : {}),
-        ...(meta.offerIceServers.length ? { iceServers: meta.offerIceServers } : {}),
+        lanEndpoints: meta.lanEndpoints.length ? meta.lanEndpoints : undefined,
+        lanUseTls: meta.lanEndpoints.length ? meta.lanUseTls : undefined,
+        iceServers: meta.offerIceServers.length ? meta.offerIceServers : undefined,
       });
     } catch {
       setAuthError(new Error('无法保存配对密钥，请检查浏览器存储权限后重试'));

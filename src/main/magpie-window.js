@@ -35,6 +35,33 @@ function buildMagpieTargetUrl(rawUrl, theme) {
 }
 
 /**
+ * Keep the embedded WebContentsView inside the 1px outer shell hairline and
+ * 20px transparent corner radius when windowed on Windows/Linux, expanding to
+ * full edge-to-edge bounds when maximized, fullscreen, or on macOS.
+ * @param {Electron.BrowserWindow} win
+ * @param {Electron.WebContentsView} view
+ * @param {any} nativeMotion
+ */
+function applyViewBounds(win, view, nativeMotion) {
+  if (!win || win.isDestroyed() || !view) return;
+  const [w, h] = win.getContentSize();
+  const maximized = Boolean(nativeMotion?.isNativeWindowMaximized(win) ?? win.isMaximized?.());
+  const fullscreen = Boolean(win.isFullScreen?.());
+  if (maximized || fullscreen || process.platform === 'darwin') {
+    view.setBounds({ x: 0, y: TOPBAR_HEIGHT, width: Math.max(0, w), height: Math.max(0, h - TOPBAR_HEIGHT) });
+    view.setBorderRadius?.(0);
+    return;
+  }
+  view.setBounds({
+    x: 1,
+    y: TOPBAR_HEIGHT,
+    width: Math.max(0, w - 2),
+    height: Math.max(0, h - TOPBAR_HEIGHT - 1),
+  });
+  view.setBorderRadius?.(19);
+}
+
+/**
  * Reuse existing Magpie shell window and reload its view if origin changed.
  * @param {any} state
  * @param {any} deps
@@ -83,8 +110,17 @@ function attachShellIpc(win, deps) {
   };
   contents.on('will-navigate', guardShellNavigation);
   contents.on('will-redirect', guardShellNavigation);
-  const isMaximized = () => deps.nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized();
-  const windowState = () => ({ maximized: isMaximized(), minimizable: win.minimizable, maximizable: win.maximizable });
+  contents.on('will-frame-navigate', (/** @type {any} */ event) => {
+    if (!isPackagedRendererFileUrl(event?.url, 'magpie-shell.html')) event?.preventDefault?.();
+  });
+  const isMaximized = () => Boolean(deps.nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized?.());
+  const isFullScreen = () => Boolean(win.isFullScreen?.());
+  const windowState = () => ({
+    maximized: isMaximized(),
+    fullscreen: isFullScreen(),
+    minimizable: win.minimizable,
+    maximizable: win.maximizable,
+  });
 
   contents.ipc.on('magpie:window', (event, action) => {
     if (!isOwnedSender(event)) return;
@@ -109,7 +145,28 @@ function attachShellIpc(win, deps) {
   contents.ipc.on('magpie:reload', (event) => {
     const view = deps.getView();
     if (!isOwnedSender(event) || !view || view.webContents.isDestroyed()) return;
-    view.webContents.reload();
+    const targetUrl = deps.getTargetUrl?.();
+    if (targetUrl) {
+      let nextUrl = targetUrl;
+      try {
+        const currentRaw = typeof view.webContents.getURL === 'function' ? view.webContents.getURL() : '';
+        if (currentRaw) {
+          const cur = new URL(currentRaw);
+          const tgt = new URL(targetUrl);
+          if (cur.origin === tgt.origin) {
+            for (const [k, v] of tgt.searchParams.entries()) {
+              cur.searchParams.set(k, v);
+            }
+            nextUrl = cur.href;
+          }
+        }
+      } catch {
+        nextUrl = targetUrl;
+      }
+      void view.webContents.loadURL(nextUrl);
+      return;
+    }
+    view.webContents.reload?.();
   });
   contents.ipc.handle('magpie:open-external-update', async (event) => {
     if (!isOwnedSender(event)) throw new Error('Unauthorized Magpie shell sender');
@@ -117,11 +174,12 @@ function attachShellIpc(win, deps) {
     return isHttpOrHttpsUrl(url) ? deps.openExternalHttp(url) : false;
   });
 
-  /** @type {boolean | undefined} */
-  let lastMaximized;
+  let lastStateKey = '';
   const syncState = () => {
-    if (win.isDestroyed() || isMaximized() === lastMaximized) return;
-    lastMaximized = isMaximized();
+    if (win.isDestroyed()) return;
+    const nextKey = `${isMaximized()}:${isFullScreen()}`;
+    if (nextKey === lastStateKey) return;
+    lastStateKey = nextKey;
     contents.send('magpie:window-state', windowState());
   };
   return { syncState };
@@ -165,7 +223,11 @@ function openMagpieWindow(options) {
         targetUrl,
         activate: options.activate,
         onClose: options.onClose,
-        remount: () => mountMagpieView(/** @type {Electron.BrowserWindow} */ (activeWindow), targetUrl, origin, WebContentsView, session, openExternalHttp),
+        remount: () => {
+          const view = mountMagpieView(/** @type {Electron.BrowserWindow} */ (activeWindow), targetUrl, origin, WebContentsView, session, openExternalHttp);
+          applyViewBounds(/** @type {Electron.BrowserWindow} */ (activeWindow), view, nativeMotion);
+          return view;
+        },
       },
     );
     activeView = updated.activeView;
@@ -179,7 +241,7 @@ function openMagpieWindow(options) {
   activeTargetUrl = targetUrl;
   activeOnClose = typeof options.onClose === 'function' ? options.onClose : null;
 
-  const chromeOptions = chrome.windowChrome({
+  const chromeOptions = chrome.shellWindowChrome({
     title: 'Magpie',
     width: 1120,
     height: 780,
@@ -201,6 +263,7 @@ function openMagpieWindow(options) {
 
   const win = new BrowserWindow(chromeOptions);
   activeWindow = win;
+  chrome.markWindowTransparent?.(win);
   nativeMotion.enableNativeWindowMotion(win);
   if (process.platform === 'darwin') {
     win.setWindowButtonPosition?.({ x: 16, y: 11 });
@@ -212,18 +275,17 @@ function openMagpieWindow(options) {
     openExternalHttp,
     getMeta: () => activeMeta,
     getView: () => activeView,
+    getTargetUrl: () => activeTargetUrl,
   });
   const syncBounds = () => {
-    if (win.isDestroyed() || !activeView) return;
-    const [w, h] = win.getContentSize();
-    activeView.setBounds({ x: 0, y: TOPBAR_HEIGHT, width: Math.max(0, w), height: Math.max(0, h - TOPBAR_HEIGHT) });
+    applyViewBounds(win, /** @type {Electron.WebContentsView} */ (activeView), nativeMotion);
   };
-  win.on('maximize', syncState);
-  win.on('unmaximize', syncState);
-  win.on('resize', () => {
-    syncState();
-    syncBounds();
-  });
+  for (const event of ['maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen', 'resize']) {
+    win.on(/** @type {any} */ (event), () => {
+      syncState();
+      syncBounds();
+    });
+  }
 
   activeView = mountMagpieView(win, targetUrl, origin, WebContentsView, session, openExternalHttp);
   syncBounds();
@@ -280,7 +342,16 @@ function mountMagpieView(win, targetUrl, origin, WebContentsView, session, openE
     }
     return { action: 'deny' };
   });
-  const guardNavigation = (/** @type {Electron.Event} */ event, /** @type {string} */ target) => {
+  const isAllowedFrameUrl = (/** @type {string} */ target) => {
+    if (!target) return false;
+    if (target === 'about:blank' || target === 'about:srcdoc') return true;
+    try {
+      return new URL(target).origin === origin;
+    } catch {
+      return false;
+    }
+  };
+  contents.on('will-navigate', (/** @type {Electron.Event} */ event, /** @type {string} */ target) => {
     try {
       if (new URL(target).origin !== origin) {
         event.preventDefault();
@@ -289,21 +360,56 @@ function mountMagpieView(win, targetUrl, origin, WebContentsView, session, openE
     } catch {
       event.preventDefault();
     }
-  };
-  contents.on('will-navigate', guardNavigation);
-  contents.on('will-redirect', guardNavigation);
+  });
+  contents.on('will-redirect', (/** @type {Electron.Event} */ event, /** @type {string} */ target) => {
+    try {
+      if (new URL(target).origin !== origin) {
+        event.preventDefault();
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
+  contents.on('will-frame-navigate', (/** @type {any} */ event) => {
+    if (!isAllowedFrameUrl(event?.url)) {
+      event?.preventDefault?.();
+    }
+  });
   void contents.loadURL(targetUrl);
   return view;
 }
 
-function closeMagpieWindow() {
-  if (activeWindow && !activeWindow.isDestroyed()) {
-    activeWindow.destroy();
+/**
+ * Push an updated theme to the currently open Magpie shell window.
+ * @param {{ scheme?: string } | null | undefined} theme
+ * @returns {boolean}
+ */
+function syncMagpieTheme(theme) {
+  if (!theme || typeof theme !== 'object') return false;
+  activeMeta = { ...activeMeta, theme };
+  if (activeTargetUrl && (theme.scheme === 'dark' || theme.scheme === 'light')) {
+    try {
+      activeTargetUrl = buildMagpieTargetUrl(activeTargetUrl, theme);
+    } catch {
+      // Keep activeTargetUrl untouched if it is malformed.
+    }
   }
+  if (!activeWindow || activeWindow.isDestroyed() || activeWindow.webContents.isDestroyed()) {
+    return false;
+  }
+  activeWindow.webContents.send('magpie:shell-meta', activeMeta);
+  return true;
+}
+
+function closeMagpieWindow() {
+  const win = activeWindow;
   activeWindow = null;
   activeView = null;
   activeTargetUrl = '';
   activeOnClose = null;
+  if (win && !win.isDestroyed()) {
+    win.destroy();
+  }
 }
 
 module.exports = {
@@ -311,5 +417,6 @@ module.exports = {
   MAGPIE_PARTITION,
   buildMagpieTargetUrl,
   openMagpieWindow,
+  syncMagpieTheme,
   closeMagpieWindow,
 };

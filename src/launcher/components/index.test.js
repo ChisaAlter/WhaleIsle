@@ -909,3 +909,114 @@ test('ipc-components before-quit waits for stopCompanion before re-invoking app.
   appMock.emit('before-quit', { preventDefault() { preventedAgain = true; } });
   assert.equal(preventedAgain, false);
 });
+
+test('start marks component error if process exits during waitForStateFile window', async (t) => {
+  const env = fakeEnv(t);
+  makeSample(env.samplesRoot, 'toy', '1.0.0');
+  const svc = createComponentsService({ ...env.deps, stateWaitMs: 300 });
+  await svc.install('toy');
+  const starting = svc.start('toy');
+  await waitFor(() => env.spawned.length === 1);
+  // Wait past startGraceMs (30ms) so the process exits inside waitForStateFile, not grace.
+  await sleep(60);
+  const { child, pid } = env.spawned[0];
+  env.alive.delete(pid);
+  child.exitCode = 1;
+  child.emit('exit', 1);
+  const result = await starting;
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'early-exit');
+  assert.equal(result.state, 'error');
+  const row = svc.list().components.find((item) => item.id === 'toy');
+  assert.equal(row.state, 'error');
+  assert.equal(row.pid, null);
+});
+
+test('start resets stale running record before spawn so early exit clears any restart timer across quick retry', async (t) => {
+  const env = fakeEnv(t);
+  makeSample(env.samplesRoot, 'toy', '1.0.0');
+  const svc = createComponentsService({ ...env.deps, restartBaseMs: 30, startGraceMs: 20 });
+  await svc.install('toy');
+
+  // Seed stale 'running' state with a dead PID before calling start() directly (no list() reconcile).
+  const reg = store.loadRegistry(env.root);
+  reg.components.toy.state = 'running';
+  reg.components.toy.pid = 99999;
+  store.saveRegistry(env.root, reg);
+
+  let failFirst = true;
+  const origSpawn = env.deps.spawn;
+  env.deps.spawn = (bin, args, options) => {
+    if (failFirst) {
+      failFirst = false;
+      const child = new EventEmitter();
+      child.pid = 6200;
+      child.stdout = null;
+      child.stderr = null;
+      child.unref = () => {};
+      child.kill = () => true;
+      child.exitCode = 1;
+      env.spawned.push({ pid: 6200, bin, args, options, child });
+      setImmediate(() => child.emit('exit', 1));
+      return child;
+    }
+    return origSpawn(bin, args, options);
+  };
+  const svc2 = createComponentsService({ ...env.deps, restartBaseMs: 30, startGraceMs: 20 });
+
+  const first = await svc2.start('toy');
+  assert.equal(first.ok, false);
+  assert.equal(first.state, 'error');
+
+  // Immediately retry and wait past restartBaseMs: no orphan timer from first attempt may spawn a duplicate.
+  const second = await svc2.start('toy');
+  assert.equal(second.ok, true);
+  await sleep(100);
+  assert.equal(env.spawned.length, 2, 'no duplicate spawn from stale restart timer');
+});
+
+test('ipc-components skips redundant reconcile after refreshCatalog and drops legacy whaleBridge fallback', async (t) => {
+  const env = fakeEnv(t);
+  let refreshCalls = 0;
+  let reconcileCalls = 0;
+  const bridge = {
+    id: 'magpie',
+    refreshCatalog: async () => { refreshCalls += 1; },
+    reconcile: async () => { reconcileCalls += 1; },
+    row: () => ({ id: 'magpie', state: 'available' }),
+  };
+  ipcComponents._configureForTest({ ...env.deps, magpie: bridge });
+  t.after(() => ipcComponents._configureForTest());
+  const channels = new Map();
+  ipcComponents.register({
+    IPC_ROLES,
+    handle: (channel, listener) => channels.set(channel, { listener }),
+    send() {},
+    onQuitCommit() {},
+  });
+  const listListener = channels.get('shell:components-list').listener;
+
+  await listListener({}, undefined);
+  assert.equal(refreshCalls, 1);
+  assert.equal(reconcileCalls, 0, 'first list uses refreshCatalog without redundant reconcile');
+
+  await listListener({}, undefined);
+  assert.equal(refreshCalls, 1);
+  assert.equal(reconcileCalls, 1, 'subsequent non-refresh list reconciles without refreshCatalog');
+
+  await listListener({}, { refresh: true });
+  assert.equal(refreshCalls, 2);
+  assert.equal(reconcileCalls, 1, 'explicit refresh skips redundant reconcile');
+
+  // Legacy serviceDeps.whaleBridge is no longer read as a fallback
+  const channelsNoMagpie = new Map();
+  ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
+  ipcComponents.register({
+    IPC_ROLES,
+    handle: (channel, listener) => channelsNoMagpie.set(channel, { listener }),
+    send() {},
+    onQuitCommit() {},
+  });
+  const withoutMagpie = await channelsNoMagpie.get('shell:components-list').listener({});
+  assert.equal(withoutMagpie.components.some((c) => c.id === 'magpie'), false);
+});

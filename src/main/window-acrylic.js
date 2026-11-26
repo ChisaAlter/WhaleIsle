@@ -8,7 +8,7 @@ const { isNativeWindowMaximized } = require('./native-window-motion');
 const FRAME_RADIUS_DIP = 20;
 const GEOMETRY_EVENTS = ['resize', 'moved', 'maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen'];
 
-/** @typedef {{ setVisible: (visible: boolean) => void }} AcrylicBackdrop */
+/** @typedef {{ setVisible: (visible: boolean) => boolean }} AcrylicBackdrop */
 /** @type {WeakMap<Electron.BrowserWindow, AcrylicBackdrop>} */
 const backdrops = new WeakMap();
 
@@ -52,27 +52,55 @@ function prepareWindowAcrylic(win) {
     const backdrop = result[0];
     const events = /** @type {NodeJS.EventEmitter} */ (win);
     let visible = false;
+    const detachListeners = () => {
+      for (const event of GEOMETRY_EVENTS) events.removeListener(event, refresh);
+    };
     const refresh = () => {
-      const square = win.isFullScreen() || (isNativeWindowMaximized(win) ?? win.isMaximized());
-      checkResult(api.update(backdrop, 1, square ? 0 : FRAME_RADIUS_DIP), 'update');
+      if (win.isDestroyed()) {
+        detachListeners();
+        visible = false;
+        return;
+      }
+      try {
+        const square = win.isFullScreen() || (isNativeWindowMaximized(win) ?? win.isMaximized());
+        checkResult(api.update(backdrop, 1, square ? 0 : FRAME_RADIUS_DIP), 'update');
+      } catch (error) {
+        console.warn('[window-acrylic] Failed to refresh window material:', error);
+        detachListeners();
+        visible = false;
+      }
     };
     const state = {
       setVisible(/** @type {boolean} */ next) {
-        if (visible === next) return;
-        if (next) {
-          refresh();
-          for (const event of GEOMETRY_EVENTS) events.on(event, refresh);
-        } else {
-          for (const event of GEOMETRY_EVENTS) events.removeListener(event, refresh);
-          checkResult(api.update(backdrop, 0, 0), 'hide');
+        if (visible === next) return true;
+        try {
+          if (next) {
+            if (win.isDestroyed()) return false;
+            const square = win.isFullScreen() || (isNativeWindowMaximized(win) ?? win.isMaximized());
+            checkResult(api.update(backdrop, 1, square ? 0 : FRAME_RADIUS_DIP), 'update');
+            for (const event of GEOMETRY_EVENTS) events.on(event, refresh);
+          } else {
+            detachListeners();
+            checkResult(api.update(backdrop, 0, 0), 'hide');
+          }
+          visible = next;
+          return true;
+        } catch (error) {
+          console.warn('[window-acrylic] Failed to toggle window material:', error);
+          detachListeners();
+          visible = false;
+          return false;
         }
-        visible = next;
       },
     };
     win.once('closed', () => {
-      for (const event of GEOMETRY_EVENTS) events.removeListener(event, refresh);
+      detachListeners();
       backdrops.delete(win);
-      api.destroy(backdrop);
+      try {
+        api.destroy(backdrop);
+      } catch (error) {
+        console.warn('[window-acrylic] Failed to destroy window material:', error);
+      }
     });
     backdrops.set(win, state);
     return true;
@@ -86,8 +114,7 @@ function prepareWindowAcrylic(win) {
 function setWindowAcrylic(win, visible) {
   const backdrop = backdrops.get(win);
   if (!backdrop) return false;
-  backdrop.setVisible(visible);
-  return true;
+  return backdrop.setVisible(visible) !== false;
 }
 
 module.exports = { prepareWindowAcrylic, setWindowAcrylic };

@@ -265,3 +265,31 @@ test('evaluator array member pluck ignores prototype properties', () => {
   const lenAst = core.parseExpression(core.tokenize('$rows.length'));
   assert.equal(core.evaluate(lenAst, ctx), 2);
 });
+
+test('queryManager ignores non-finite refreshInterval and clamps valid intervals to [1s, MAX_TIMEOUT_MS]', () => {
+  const intervals = [];
+  const origSetInterval = globalThis.setInterval;
+  const origClearInterval = globalThis.clearInterval;
+  let nextId = 1;
+  globalThis.setInterval = (_fn, ms) => {
+    const id = nextId++;
+    intervals.push({ id, ms });
+    return id;
+  };
+  globalThis.clearInterval = () => {};
+  try {
+    const qm = core.createQueryManager({ callTool: async () => ({ ok: true }) });
+    qm.evaluateQueries([
+      { statementId: 'q_inf', toolName: 't', args: {}, defaults: null, complete: true, refreshInterval: Infinity },
+      { statementId: 'q_nan', toolName: 't', args: {}, defaults: null, complete: true, refreshInterval: NaN },
+      { statementId: 'q_neg', toolName: 't', args: {}, defaults: null, complete: true, refreshInterval: -5 },
+      { statementId: 'q_tiny', toolName: 't', args: {}, defaults: null, complete: true, refreshInterval: 0.001 },
+      { statementId: 'q_huge', toolName: 't', args: {}, defaults: null, complete: true, refreshInterval: 1e12 },
+    ]);
+    assert.deepEqual(intervals.map((entry) => entry.ms), [1000, 0x7fffffff]);
+    qm.dispose();
+  } finally {
+    globalThis.setInterval = origSetInterval;
+    globalThis.clearInterval = origClearInterval;
+  }
+});

@@ -660,34 +660,45 @@
 }
 
 .dsh-bots-subrow-tail {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 0;
   flex-shrink: 0;
-  min-width: 24px;
 }
 
 .dsh-bots-subrow-more-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  background: var(--dsw-alias-bg-layer-2);
+  background: transparent;
+  flex-shrink: 0;
 }
 
 .dsh-bots-subrow:hover .dsh-bots-subrow-more-btn,
 .dsh-bots-subrow:focus-within .dsh-bots-subrow-more-btn,
-.dsh-bots-subrow[data-menu-open='true'] .dsh-bots-subrow-more-btn {
+.dsh-bots-subrow[data-menu-open='true'] .dsh-bots-subrow-more-btn,
+.dsh-bots-worker-row:hover .dsh-bots-subrow-more-btn,
+.dsh-bots-worker-row:focus-within .dsh-bots-subrow-more-btn,
+.dsh-bots-worker-row[data-menu-open='true'] .dsh-bots-subrow-more-btn {
+  width: 22px;
+  height: 22px;
   opacity: 1;
   pointer-events: auto;
 }
 
-.dsh-bots-subrow:hover .dsh-bots-subrow-meta,
-.dsh-bots-subrow[data-menu-open='true'] .dsh-bots-subrow-meta {
-  opacity: 0;
+.dsh-bots-subrow:hover .dsh-bots-subrow-fold-meta + .dsh-bots-subrow-more-btn,
+.dsh-bots-subrow:focus-within .dsh-bots-subrow-fold-meta + .dsh-bots-subrow-more-btn,
+.dsh-bots-subrow[data-menu-open='true'] .dsh-bots-subrow-fold-meta + .dsh-bots-subrow-more-btn,
+.dsh-bots-subrow:hover .dsh-bots-subrow-meta + .dsh-bots-subrow-more-btn,
+.dsh-bots-subrow:focus-within .dsh-bots-subrow-meta + .dsh-bots-subrow-more-btn,
+.dsh-bots-subrow[data-menu-open='true'] .dsh-bots-subrow-meta + .dsh-bots-subrow-more-btn {
+  margin-left: 2px;
 }
 
 .dsh-bots-menu-item-danger {
@@ -698,59 +709,72 @@
   background: var(--dsw-alias-interactive-bg-hover-danger);
 }
 
-.dsh-bots-worker-tail {
-  position: relative;
+.dsh-bots-worker-row .dsh-bots-worker-tail {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 0;
   margin-left: auto;
   flex-shrink: 0;
-  min-width: 44px;
 }
 
-.dsh-bots-worker-elapsed {
+.dsh-bots-worker-row:hover .dsh-bots-worker-tail,
+.dsh-bots-worker-row:focus-within .dsh-bots-worker-tail,
+.dsh-bots-worker-row[data-menu-open='true'] .dsh-bots-worker-tail {
+  gap: 2px;
+}
+
+.dsh-bots-worker-row .dsh-bots-worker-elapsed {
   font-size: 11px;
   line-height: 15px;
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary);
+  flex-shrink: 0;
 }
 
-.dsh-bots-worker-stop-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+.dsh-bots-worker-row .dsh-bots-worker-stop-btn {
+  position: static;
+  transform: none;
   display: inline-flex;
   align-items: center;
   gap: 3px;
   height: 20px;
-  padding: 0 6px;
+  width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
   border-radius: var(--dsw-radius-xs);
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent);
   background: var(--dsw-alias-bg-panel-solid);
   color: var(--dsw-alias-state-error-primary);
   font-family: inherit;
   font-size: 11px;
   line-height: 14px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
+  flex-shrink: 0;
 }
 
-.dsh-bots-worker-stop-btn:hover:not(:disabled) {
+.dsh-bots-worker-row .dsh-bots-worker-stop-btn:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
 }
 
 .dsh-bots-worker-row:hover .dsh-bots-worker-stop-btn,
-.dsh-bots-worker-row:focus-within .dsh-bots-worker-stop-btn {
+.dsh-bots-worker-row:focus-within .dsh-bots-worker-stop-btn,
+.dsh-bots-worker-row[data-menu-open='true'] .dsh-bots-worker-stop-btn {
+  width: auto;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent);
   opacity: 1;
   pointer-events: auto;
 }
 
-.dsh-bots-worker-row:hover .dsh-bots-worker-elapsed,
-.dsh-bots-worker-row:focus-within .dsh-bots-worker-elapsed {
-  opacity: 0;
+.dsh-bots-worker-row[data-active-worker='true']:hover .dsh-bots-worker-elapsed,
+.dsh-bots-worker-row[data-active-worker='true']:focus-within .dsh-bots-worker-elapsed,
+.dsh-bots-worker-row[data-active-worker='true'][data-menu-open='true'] .dsh-bots-worker-elapsed {
+  display: none;
 }
 
 /* ---- Share / Import Security Scan & File Review ---- */

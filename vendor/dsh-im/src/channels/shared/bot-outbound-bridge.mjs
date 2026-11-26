@@ -218,13 +218,33 @@ function attachBridgeToContext(ctx, bridge) {
   }
 }
 
+const BOT_OUTBOUND_BRIDGE_LISTENERS_SYMBOL = Symbol.for('whaleisle.dsh-im.bot-outbound-bridge.listeners');
+
+function getBridgeListeners() {
+  let listeners = globalThis[BOT_OUTBOUND_BRIDGE_LISTENERS_SYMBOL];
+  if (!(listeners instanceof Set)) {
+    listeners = new Set();
+    globalThis[BOT_OUTBOUND_BRIDGE_LISTENERS_SYMBOL] = listeners;
+  }
+  return listeners;
+}
+
 export function setActiveBotOutboundBridge(bridge) {
   if (bridge) {
     globalThis[BOT_OUTBOUND_BRIDGE_SYMBOL] = bridge;
   } else {
     delete globalThis[BOT_OUTBOUND_BRIDGE_SYMBOL];
   }
-  return bridge ?? null;
+  const active = bridge ?? null;
+  for (const listener of [...getBridgeListeners()]) {
+    if (typeof listener !== 'function') continue;
+    try {
+      listener(active);
+    } catch {
+      // Best-effort notification for host-level action subscribers.
+    }
+  }
+  return active;
 }
 
 export function getActiveBotOutboundBridge(ctx = null) {
@@ -251,12 +271,17 @@ export function getActiveBotOutboundBridge(ctx = null) {
 export function createBotOutboundBridge(ctx = null, options = {}) {
   /** @type {Map<string, any>} */
   const senders = new Map();
+  /** @type {Set<Function>} */
+  const actionHandlers = new Set();
   const logger = options.logger ?? (typeof ctx?.logger === 'function' ? ctx.logger('dsh-im:bot-outbound') : console);
 
   if (options.senders && typeof options.senders === 'object') {
     for (const [key, handler] of Object.entries(options.senders)) {
       if (handler) senders.set(String(key).toLowerCase(), handler);
     }
+  }
+  if (typeof options.actionHandler === 'function') {
+    actionHandlers.add(options.actionHandler);
   }
 
   function registerSender(channel, sender, { accountId = null } = {}) {
@@ -281,13 +306,108 @@ export function createBotOutboundBridge(ctx = null, options = {}) {
   }
 
   function resolveSender(channel, accountId) {
-    if (accountId) {
-      const exact = senders.get(senderKey(channel, accountId));
-      if (exact) return { key: senderKey(channel, accountId), sender: exact };
+    const normAccount = cleanStr(accountId);
+    if (normAccount) {
+      const exact = senders.get(senderKey(channel, normAccount));
+      if (exact) return { key: senderKey(channel, normAccount), sender: exact };
     }
     const byChannel = senders.get(channel);
     if (byChannel) return { key: channel, sender: byChannel };
+    if (!normAccount) {
+      const prefix = `${channel}:`;
+      for (const [key, sender] of senders) {
+        if (key.startsWith(prefix) && sender) return { key, sender };
+      }
+    }
     return null;
+  }
+
+  function registerActionHandler(handler) {
+    if (typeof handler !== 'function') {
+      throw Object.assign(new Error('Needs You action handler must be a function'), { code: 'invalid_argument' });
+    }
+    actionHandlers.add(handler);
+    return () => {
+      actionHandlers.delete(handler);
+    };
+  }
+
+  function normalizeNeedsYouAction(action) {
+    const raw = cleanStr(action).toLowerCase();
+    if (raw === 'needs_you_approve' || raw === 'approve') return 'needs_you_approve';
+    if (raw === 'needs_you_snooze' || raw === 'snooze') return 'needs_you_snooze';
+    return null;
+  }
+
+  async function dispatchNeedsYouAction({
+    action,
+    botId = null,
+    itemUid = null,
+    channel = null,
+    accountId = null,
+    operatorId = null,
+    chatId = null,
+    messageId = null,
+  } = {}) {
+    const normAction = normalizeNeedsYouAction(action);
+    if (!normAction) {
+      return {
+        ok: false,
+        handled: false,
+        code: 'unsupported_action',
+        error: `Unsupported Needs You action: ${String(action ?? '')}`,
+      };
+    }
+    const normItemUid = cleanStr(itemUid);
+    if (!normItemUid) {
+      return {
+        ok: false,
+        handled: false,
+        code: 'missing_item_uid',
+        action: normAction,
+        error: 'itemUid is required for Needs You callback action',
+      };
+    }
+    const event = {
+      action: normAction,
+      kind: normAction === 'needs_you_approve' ? 'approve' : 'snooze',
+      botId: cleanStr(botId) || null,
+      itemUid: normItemUid,
+      channel: normalizeChannel(channel) || cleanStr(channel) || null,
+      accountId: cleanStr(accountId) || null,
+      operatorId: cleanStr(operatorId) || null,
+      chatId: cleanStr(chatId) || null,
+      messageId: cleanStr(messageId) || null,
+    };
+    const handlers = [...actionHandlers].reverse();
+    for (const handler of handlers) {
+      try {
+        const result = await handler(event);
+        if (result === undefined || result === null || result?.handled === false) continue;
+        return {
+          ok: result?.ok !== false,
+          handled: true,
+          ...event,
+          ...(typeof result === 'object' ? result : {}),
+        };
+      } catch (error) {
+        logger?.warn?.(`[dsh-im:bot-outbound] Needs You action handler failed (${normAction}):`, error?.message ?? error);
+        return {
+          ok: false,
+          handled: true,
+          ...event,
+          code: cleanStr(error?.code) || 'action_failed',
+          error: error?.message || String(error),
+        };
+      }
+    }
+    return {
+      ok: false,
+      handled: false,
+      ...event,
+      code: 'no_action_handler',
+      error: 'No Needs You action handler registered',
+    };
   }
 
   async function deliverReply({
@@ -417,6 +537,8 @@ export function createBotOutboundBridge(ctx = null, options = {}) {
     sendNeedsYouCard,
     registerSender,
     unregisterSender,
+    registerActionHandler,
+    dispatchNeedsYouAction,
     listSenders: () => [...senders.keys()],
     hasSender: (channel, accountId = null) => Boolean(resolveSender(normalizeChannel(channel), accountId)),
     buildNeedsYouCardPayload,

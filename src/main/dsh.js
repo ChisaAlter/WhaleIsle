@@ -1,10 +1,11 @@
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
-const { spawn, execFile, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const EventEmitter = require('events');
 const { loadConfig, configPath } = require('./config');
 const { DESKTOP_PACKAGES } = require('../shared/harness-desktop-forks');
+const { ensureMagpieRuntime } = require('../shared/launcher-bridges');
 const { missingDeclaredEntries } = require('./plugin-runtime-files');
 const { harnessRoot } = require('./paths');
 const { ensurePackagedHarness, harnessArchivePath } = require('./harness-extract');
@@ -38,106 +39,86 @@ function yieldIfSlow(since) {
     : Promise.resolve();
 }
 
+const whichCache = new Map();
+/** @param {string} cmd */
+const whichKey = (cmd) => `${process.platform}\0${process.env.PATH || ''}\0${process.env.PATHEXT || ''}\0${cmd}`;
+
+/** @param {string} command */
+function whichCandidates(command) {
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const exts = process.platform === 'win32' && !path.extname(command)
+    ? (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean) : [''];
+  return dirs.flatMap((dir) => exts.map((ext) => path.join(dir, `${command}${ext}`)));
+}
+
+/** @param {string} command */
 function whichAll(command) {
-  try {
-    const bin = process.platform === 'win32' ? 'where.exe' : 'which';
-    const out = execFileSync(bin, [command], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
-    return out
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
+  const key = whichKey(command);
+  if (whichCache.has(key)) return whichCache.get(key);
+  const matches = whichCandidates(command).filter((c) => { try { return fs.statSync(c).isFile(); } catch { return false; } });
+  whichCache.set(key, matches);
+  return matches;
 }
 
+/** @param {string} command */
+async function whichAllAsync(command) {
+  const key = whichKey(command);
+  if (whichCache.has(key)) return whichCache.get(key);
+  const stats = await Promise.all(whichCandidates(command).map(async (c) => {
+    try { return (await fs.promises.stat(c)).isFile() ? c : null; } catch { return null; }
+  }));
+  const matches = stats.filter(Boolean);
+  whichCache.set(key, matches);
+  return matches;
+}
+
+/** @param {Array<string | null | undefined>} candidates */
 function firstExisting(candidates) {
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || null;
 }
 
+/** @param {unknown} bin */
 function isUsableNode(bin) {
-  if (!bin || !fs.existsSync(bin)) {
-    return false;
-  }
+  if (typeof bin !== 'string' || !bin || !fs.existsSync(bin)) return false;
   const normalized = path.normalize(bin);
-  if (/electron/i.test(normalized)) {
-    return false;
-  }
-  if (process.execPath && path.normalize(process.execPath) === normalized) {
-    return false;
-  }
-  return true;
+  if (/electron/i.test(normalized)) return false;
+  return !(process.execPath && path.normalize(process.execPath) === normalized);
 }
 
 function bundledNodeBin() {
   try {
     const { app } = require('electron');
-    if (!app.isPackaged) {
-      return null;
-    }
+    if (!app.isPackaged) return null;
     return firstExisting([
       path.join(process.resourcesPath, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe'),
       path.join(process.resourcesPath, 'node.exe'),
       path.join(process.resourcesPath, 'node'),
     ]);
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function resolveNodeBin(config) {
-  if (isUsableNode(config.nodeBin)) {
-    return config.nodeBin;
-  }
+  if (isUsableNode(config.nodeBin)) return config.nodeBin;
   const bundled = bundledNodeBin();
-  if (isUsableNode(bundled)) {
-    return bundled;
-  }
-  const preferred = firstExisting([
-    'C:\\Program Files\\nodejs\\node.exe',
-    'C:\\Program Files (x86)\\nodejs\\node.exe',
-  ]);
-  if (preferred) {
-    return preferred;
-  }
-  const fromPath = whichAll(process.platform === 'win32' ? 'node.exe' : 'node')
-    .concat(whichAll('node'))
-    .find(isUsableNode);
-  return fromPath || null;
+  if (isUsableNode(bundled)) return bundled;
+  const preferred = firstExisting(['C:\\Program Files\\nodejs\\node.exe', 'C:\\Program Files (x86)\\nodejs\\node.exe']);
+  if (preferred) return preferred;
+  return whichAll(process.platform === 'win32' ? 'node.exe' : 'node').concat(whichAll('node')).find(isUsableNode) || null;
 }
 
 function resolveNpx(nodeBin) {
-  if (!nodeBin) {
-    return null;
-  }
+  if (!nodeBin) return null;
   const dir = path.dirname(nodeBin);
-  const npx = firstExisting([
-    path.join(dir, 'npx.cmd'),
-    path.join(dir, 'npx'),
-    path.join(dir, 'npx.exe'),
-  ]);
-  return npx;
+  return firstExisting([path.join(dir, 'npx.cmd'), path.join(dir, 'npx'), path.join(dir, 'npx.exe')]);
 }
 
 function resolveDshBin(config) {
   const source = sourceHarnessStatus();
-  if (source.present) {
-    return source.bin;
-  }
-  if (config.dshBin && fs.existsSync(config.dshBin)) {
-    return config.dshBin;
-  }
+  if (source.present) return source.bin;
+  if (config.dshBin && fs.existsSync(config.dshBin)) return config.dshBin;
   const npmGlobal = process.env.APPDATA
-    ? path.join(process.env.APPDATA, 'npm', process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
-    : null;
-  const fromPath = whichAll(process.platform === 'win32' ? 'dsh.cmd' : 'dsh')[0]
-    || whichAll('dsh')[0];
-  return firstExisting([fromPath, npmGlobal]);
+    ? path.join(process.env.APPDATA, 'npm', process.platform === 'win32' ? 'dsh.cmd' : 'dsh') : null;
+  return firstExisting([whichAll(process.platform === 'win32' ? 'dsh.cmd' : 'dsh')[0] || whichAll('dsh')[0], npmGlobal]);
 }
 
 function sourceHarnessStatus() {
@@ -162,58 +143,71 @@ function sourceHarnessStatus() {
   };
 }
 
-/**
- * Registered desktop fork packages the shipped web composition mounts but the
- * harness install cannot load. The dsh Loader imports every composed row
- * with the profile directory as parent and relies on the healed
- * `profiles/node_modules` fallback, which silently skips unresolvable names —
- * a missing in-box package then dies deep in Node's ESM loader
- * (`ERR_MODULE_NOT_FOUND … imported from …profiles/web/`) on every start,
- * including --skip-user-plugins recovery starts. A resolvable manifest whose
- * declared entries were never built (vendor pull without setup:harness) dies
- * the same way, so the probe checks entries too via the same predicate as the
- * packaging gate. Probing before spawn turns that loop into one actionable
- * startup error. Resolution mirrors the runtime's anchors: the CLI install
- * anchor first, then each shipped bundle's own manifest (pnpm's isolated
- * layout keeps bundle dependencies beside the bundle, not beside the CLI).
- * @param {string} root - harness root (source tree or extracted runtime).
- * @returns {string[]} unloadable package names or `name/entry` paths; empty when the anchor itself is absent.
- */
-function missingDesktopForkPackages(root) {
+/** @param {string} root */
+function resolveForkProbeState(root) {
   const cliAnchor = path.join(root, 'apps', 'cli', 'package.json');
-  if (!fs.existsSync(cliAnchor)) {
-    return [];
-  }
+  if (!fs.existsSync(cliAnchor)) return null;
   const findPackageDir = createPackageDirFinder();
   const anchors = [cliAnchor];
   for (const bundle of ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']) {
     const dir = findPackageDir(cliAnchor, bundle);
     if (dir) anchors.push(path.join(dir, 'package.json'));
   }
+  return { findPackageDir, anchors };
+}
+
+/** @param {{ findPackageDir: Function, anchors: string[] }} state @param {string} pkgName */
+function locateForkDir(state, pkgName) {
+  for (const anchor of state.anchors) {
+    const dir = state.findPackageDir(anchor, pkgName);
+    if (dir) return dir;
+  }
+  return '';
+}
+
+/** @param {{ name: string }} pkg @param {string} dir @param {string} raw */
+function collectForkMissing(pkg, dir, raw) {
+  if (!dir) return [pkg.name];
+  let manifest = null;
+  try { manifest = JSON.parse(raw); } catch { /* reported below */ }
+  return manifest ? missingDeclaredEntries(dir, manifest).map((rel) => `${pkg.name}/${rel}`) : [`${pkg.name}/package.json`];
+}
+
+/**
+ * Registered desktop fork packages the shipped web composition mounts but the
+ * harness install cannot load. Probing before spawn turns ESM loader crashes
+ * into one actionable startup error across CLI and bundle anchors.
+ * @param {string} root - harness root (source tree or extracted runtime).
+ * @returns {string[]} unloadable package names or `name/entry` paths; empty when the anchor itself is absent.
+ */
+function missingDesktopForkPackages(root) {
+  const state = resolveForkProbeState(root);
+  if (!state) return [];
+  return DESKTOP_PACKAGES.flatMap((pkg) => {
+    const dir = locateForkDir(state, pkg.name);
+    let raw = '';
+    try { if (dir) raw = fs.readFileSync(path.join(dir, 'package.json'), 'utf8'); } catch { /* reported below */ }
+    return collectForkMissing(pkg, dir, raw);
+  });
+}
+
+/**
+ * Async non-blocking equivalent of {@link missingDesktopForkPackages}.
+ * @param {string} root
+ */
+async function missingDesktopForkPackagesAsync(root) {
+  try { await fs.promises.access(path.join(root, 'apps', 'cli', 'package.json')); } catch { return []; }
+  const state = resolveForkProbeState(root);
+  if (!state) return [];
   const missing = [];
+  let sliceStart = Date.now();
   for (const pkg of DESKTOP_PACKAGES) {
-    let dir = '';
-    for (const anchor of anchors) {
-      dir = findPackageDir(anchor, pkg.name);
-      if (dir) break;
-    }
-    if (!dir) {
-      missing.push(pkg.name);
-      continue;
-    }
-    let manifest = null;
-    try {
-      manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    } catch {
-      // An unreadable manifest cannot declare entries; reported as the manifest itself below.
-    }
-    if (!manifest) {
-      missing.push(`${pkg.name}/package.json`);
-      continue;
-    }
-    for (const rel of missingDeclaredEntries(dir, manifest)) {
-      missing.push(`${pkg.name}/${rel}`);
-    }
+    await yieldIfSlow(sliceStart);
+    if (Date.now() - sliceStart >= YIELD_BUDGET_MS) sliceStart = Date.now();
+    const dir = locateForkDir(state, pkg.name);
+    let raw = '';
+    try { if (dir) raw = await fs.promises.readFile(path.join(dir, 'package.json'), 'utf8'); } catch { /* reported below */ }
+    missing.push(...collectForkMissing(pkg, dir, raw));
   }
   return missing;
 }
@@ -737,6 +731,8 @@ class DshManager extends EventEmitter {
     this.inFlight = null;
     this._stopPromise = null;
     this._shellPids = new Map();
+    this._ensureMagpieRuntime = (/** @type {any} */ (options)).ensureMagpieRuntime;
+    this._defaultBuildLaunch = (/** @type {any} */ config) => this.buildLaunch(config);
     this._deps = {
       loadConfig: options.loadConfig || loadConfig,
       ensurePackagedHarness: options.ensurePackagedHarness || ensurePackagedHarness,
@@ -749,7 +745,7 @@ class DshManager extends EventEmitter {
       clearPidFile: options.clearPidFile || clearPidFile,
       killTree: options.killTree || killTree,
       processStartTime: options.processStartTime || processStartTime,
-      buildLaunch: options.buildLaunch || ((config) => this.buildLaunch(config)),
+      buildLaunch: options.buildLaunch || this._defaultBuildLaunch,
       sourceHarnessStatus: options.sourceHarnessStatus || sourceHarnessStatus,
       resolveDshBin: options.resolveDshBin || resolveDshBin,
       resolveNpx: options.resolveNpx || resolveNpx,
@@ -1032,7 +1028,7 @@ class DshManager extends EventEmitter {
     // Start Magpie concurrently with packaged harness preparation.
     const magpieReady = (async () => {
       try {
-        await require('../launcher/magpie').ensureMagpieRuntime();
+        await (this._ensureMagpieRuntime || ensureMagpieRuntime)();
       } catch (error) {
         if (isCurrent()) this.log(`Magpie 不可用：${error.message}`, 'app');
       }
@@ -1063,7 +1059,7 @@ class DshManager extends EventEmitter {
     options = await applyPreparedPluginOverlays(options, { harnessRoot: preparedHarnessRoot, isCurrent, cancelledError });
     const launchPrepStart = Date.now();
     const port = Number(options.port) || Number(config.port) || 3080;
-    const launch = this._buildLaunch({ ...config, ...options, port });
+    const launch = await this._buildLaunchAsync({ ...config, ...options, port });
     await yieldIfSlow(launchPrepStart);
     if (!isCurrent()) throw cancelledError();
     const expectedUrl = `http://${connectHost(launch.host)}:${launch.port}`;
@@ -1305,48 +1301,18 @@ class DshManager extends EventEmitter {
   }
 
   // 依赖访问器（默认即生产实现，测试可注入）
-  _loadConfig() {
-    return this._deps.loadConfig();
-  }
-
-  _ensurePackagedHarness(log, options) {
-    return this._deps.ensurePackagedHarness(log, options);
-  }
-
-  _spawnHarness(command, args, options) {
-    return this._deps.spawnHarness(command, args, options);
-  }
-
-  _isReachable(url, guard) {
-    return this._deps.isReachable(url, guard);
-  }
-
-  _sleep(ms) {
-    return this._deps.sleep(ms);
-  }
-
-  _readPidFile() {
-    return this._deps.readPidFile();
-  }
-
+  _loadConfig() { return this._deps.loadConfig(); }
+  _ensurePackagedHarness(log, options) { return this._deps.ensurePackagedHarness(log, options); }
+  _spawnHarness(command, args, options) { return this._deps.spawnHarness(command, args, options); }
+  _isReachable(url, guard) { return this._deps.isReachable(url, guard); }
+  _sleep(ms) { return this._deps.sleep(ms); }
+  _readPidFile() { return this._deps.readPidFile(); }
   /** @param {boolean} [shell] */
-  _writePidFile(pid, port, startTime, shell) {
-    return this._deps.writePidFile(pid, port, startTime, shell);
-  }
-
-  _processStartTime(pid) {
-    return this._deps.processStartTime(pid);
-  }
-
-  _clearPidFile() {
-    return this._deps.clearPidFile();
-  }
-
+  _writePidFile(pid, port, startTime, shell) { return this._deps.writePidFile(pid, port, startTime, shell); }
+  _processStartTime(pid) { return this._deps.processStartTime(pid); }
+  _clearPidFile() { return this._deps.clearPidFile(); }
   /** @param {import('./dsh-win-process').WindowsShellContext} [context] */
-  _killTree(pid, context) {
-    return this._deps.killTree(pid, context);
-  }
-
+  _killTree(pid, context) { return this._deps.killTree(pid, context); }
   async _stopOwnedProcess(pid) {
     const stopped = await this._killTree(pid, managedShellStopContext(this._shellPids, pid));
     if (stopped === false && processAlive(pid)) {
@@ -1355,9 +1321,20 @@ class DshManager extends EventEmitter {
       throw error;
     }
   }
-
-  _buildLaunch(config) {
-    return this._deps.buildLaunch(config);
+  _buildLaunch(config) { return this._deps.buildLaunch(config); }
+  async _buildLaunchAsync(config) {
+    if (this._deps.buildLaunch !== this._defaultBuildLaunch) return this._deps.buildLaunch(config);
+    const source = this._deps.sourceHarnessStatus();
+    if (!source.present) {
+      if (this._deps.resolveDshBin === resolveDshBin) await whichAllAsync(process.platform === 'win32' ? 'dsh.cmd' : 'dsh');
+      return this.buildLaunch(config);
+    }
+    if (this._deps.resolveNodeBin === resolveNodeBin) await whichAllAsync(process.platform === 'win32' ? 'node.exe' : 'node');
+    if (this._deps.missingDesktopForkPackages !== missingDesktopForkPackages) return this.buildLaunch(config);
+    const prechecked = await missingDesktopForkPackagesAsync(source.root);
+    const originalForks = this._deps.missingDesktopForkPackages;
+    this._deps.missingDesktopForkPackages = () => prechecked;
+    try { return this.buildLaunch(config); } finally { this._deps.missingDesktopForkPackages = originalForks; }
   }
 }
 

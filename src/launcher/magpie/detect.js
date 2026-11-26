@@ -69,26 +69,59 @@ function readWebPageAccess(configDir) {
 }
 
 /**
- * Resolve candidate gateway address from `gateway.json`, `settings.json`, or default 3425.
+ * Resolve deduplicated candidate gateway addresses in priority order:
+ * `[gateway.json (when pid absent or alive), settings.json.port, DEFAULT_GATEWAY_PORT]`.
  * @param {string} configDir
- * @returns {{ addr: string, gatewayFilePid: number | null }}
+ * @param {{ isPidAlive?: (pid: number) => boolean }} [options]
+ * @returns {Array<{ addr: string, gatewayFilePid: number | null }>}
  */
-function resolveGatewayCandidate(configDir) {
+function resolveGatewayCandidates(configDir, options = {}) {
+  /** @type {Array<{ addr: string, gatewayFilePid: number | null }>} */
+  const raw = [];
   const gw = readJsonSafe(path.join(configDir, 'gateway.json'));
   if (gw && typeof gw.addr === 'string' && gw.addr.trim()) {
     const pid = Number.isInteger(gw.pid) ? gw.pid : null;
-    return { addr: gw.addr.trim(), gatewayFilePid: pid };
+    const pidAlive = pid === null || typeof options.isPidAlive !== 'function' || options.isPidAlive(pid);
+    if (pidAlive) {
+      raw.push({ addr: gw.addr.trim(), gatewayFilePid: pid });
+    }
   }
   const settings = readJsonSafe(path.join(configDir, 'settings.json'));
   const port = Number(settings?.port);
   if (Number.isInteger(port) && port > 0 && port <= 65535) {
-    return { addr: `127.0.0.1:${port}`, gatewayFilePid: null };
+    raw.push({ addr: `127.0.0.1:${port}`, gatewayFilePid: null });
   }
-  return { addr: `127.0.0.1:${DEFAULT_GATEWAY_PORT}`, gatewayFilePid: null };
+  raw.push({ addr: `127.0.0.1:${DEFAULT_GATEWAY_PORT}`, gatewayFilePid: null });
+
+  const seen = new Set();
+  /** @type {Array<{ addr: string, gatewayFilePid: number | null }>} */
+  const out = [];
+  for (const item of raw) {
+    let key;
+    try {
+      key = toLoopbackHostPort(item.addr);
+    } catch {
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out.length > 0 ? out : [{ addr: `127.0.0.1:${DEFAULT_GATEWAY_PORT}`, gatewayFilePid: null }];
 }
 
 /**
- * Normalize a listen address such as `0.0.0.0:3425` or `:3425` to loopback connect host.
+ * Resolve primary candidate gateway address from `gateway.json`, `settings.json`, or default 3425.
+ * @param {string} configDir
+ * @param {{ isPidAlive?: (pid: number) => boolean }} [options]
+ * @returns {{ addr: string, gatewayFilePid: number | null }}
+ */
+function resolveGatewayCandidate(configDir, options = {}) {
+  return resolveGatewayCandidates(configDir, options)[0];
+}
+
+/**
+ * Normalize a listen address such as `0.0.0.0:3425`, `::1`, or `:3425` to loopback connect host.
  * Rejects non-loopback hosts, userinfo, paths, queries, and fragments.
  * @param {string} addr
  * @returns {string}
@@ -97,9 +130,16 @@ function toLoopbackHostPort(addr) {
   const raw = String(addr || '').trim();
   if (!raw) return `127.0.0.1:${DEFAULT_GATEWAY_PORT}`;
   const stripped = raw.replace(/^https?:\/\//i, '');
-  const normalized = stripped.startsWith(':')
-    ? `127.0.0.1${stripped}`
-    : stripped.replace(/^0\.0\.0\.0(?=:|$)/, '127.0.0.1').replace(/^\[::\](?=:|$)/, '127.0.0.1');
+  let normalized = stripped;
+  if (stripped === '::1') {
+    normalized = '[::1]';
+  } else if (stripped === '::') {
+    normalized = '127.0.0.1';
+  } else if (stripped.startsWith(':')) {
+    normalized = `127.0.0.1${stripped}`;
+  } else {
+    normalized = stripped.replace(/^0\.0\.0\.0(?=:|$)/, '127.0.0.1').replace(/^\[::\](?=:|$)/, '127.0.0.1');
+  }
   let parsed;
   try {
     parsed = new URL(`http://${normalized}`);
@@ -152,8 +192,14 @@ async function probeGateway(addr, options = {}) {
   }
 }
 
+/** @param {unknown} value */
+function isFiniteNonNegativeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
 /**
  * Probe `GET http://<addr>/v1/magpie/concurrency` for active streams / waiting tool calls.
+ * Fails closed (`null`) if the payload is an array or lacks finite non-negative counters.
  * @param {string} addr
  * @param {{ fetchJson?: (url: string, init?: RequestInit) => Promise<any>, fetchImpl?: (url: string, init?: RequestInit) => Promise<Response> }} [options]
  * @returns {Promise<{ requests: number, waiting: number, tools: number } | null>}
@@ -164,19 +210,21 @@ async function probeConcurrency(addr, options = {}) {
     const data = options.fetchJson
       ? await options.fetchJson(`http://${target}/v1/magpie/concurrency`, { signal: AbortSignal.timeout(2500) })
       : await defaultFetchJson(`http://${target}/v1/magpie/concurrency`, options.fetchImpl || fetch);
-    if (!data || typeof data !== 'object') return null;
-    return {
-      requests: Number(data.requests) || 0,
-      waiting: Number(data.waiting) || 0,
-      tools: Number(data.tools) || 0,
-    };
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    const { requests, waiting, tools } = data;
+    if (!isFiniteNonNegativeNumber(requests) || !isFiniteNonNegativeNumber(waiting) || !isFiniteNonNegativeNumber(tools)) {
+      return null;
+    }
+    return { requests, waiting, tools };
   } catch {
     return null;
   }
 }
 
 /**
- * Check whether a loopback HTTP endpoint responds (2xx/3xx/401/403, rejecting 404).
+ * Check whether a loopback HTTP endpoint responds.
+ * For `/boot.js`, requires `status === 200` and a `javascript` Content-Type to prevent
+ * unrelated local SPAs or auth-gated services from triggering false positives.
  * @param {string} url
  * @param {{ fetchImpl?: (url: string, init?: RequestInit) => Promise<Response> }} [options]
  */
@@ -184,6 +232,17 @@ async function probeHttpReachable(url, options = {}) {
   const doFetch = options.fetchImpl || fetch;
   try {
     const response = await doFetch(url, { signal: AbortSignal.timeout(2000) });
+    let pathname = '';
+    try {
+      pathname = new URL(url).pathname;
+    } catch {
+      pathname = '';
+    }
+    if (pathname.endsWith('/boot.js')) {
+      if (response.status !== 200) return false;
+      const contentType = response.headers?.get?.('content-type') || '';
+      return /javascript/i.test(contentType);
+    }
     return (response.status >= 200 && response.status < 400)
       || response.status === 401
       || response.status === 403;
@@ -276,14 +335,21 @@ async function detectMagpieState(options) {
     probeReachable,
   });
 
-  const candidate = resolveGatewayCandidate(configDir);
-  const gateway = await probeGateway(candidate.addr, {
-    fetchJson: options.fetchJson,
-    fetchImpl: options.fetchImpl,
-  });
+  const candidates = resolveGatewayCandidates(configDir, { isPidAlive: options.isPidAlive });
+  let gateway = null;
+  for (const candidate of candidates) {
+    const probed = await probeGateway(candidate.addr, {
+      fetchJson: options.fetchJson,
+      fetchImpl: options.fetchImpl,
+    });
+    if (probed && !probed.draining) {
+      gateway = probed;
+      break;
+    }
+  }
 
   if (gateway) {
-    const ownedByManaged = Boolean(liveManaged && (!gateway.pid || gateway.pid === liveManaged.pid));
+    const ownedByManaged = Boolean(liveManaged && gateway.pid && gateway.pid === liveManaged.pid);
     if (!ownedByManaged) {
       return classifyExternalGateway(configDir, gateway, liveCompanion, probeReachable);
     }
@@ -314,6 +380,7 @@ module.exports = {
   hasSharedUserConfig,
   toLoopbackHostPort,
   resolveGatewayCandidate,
+  resolveGatewayCandidates,
   probeGateway,
   probeConcurrency,
   probeHttpReachable,

@@ -1,36 +1,27 @@
 'use strict';
 
 const { execFile, spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
 const { safeRemoveSync } = require('../../shared/fs-safe');
-const { killProcessTree } = require('../../shared/process-tree');
+const { killProcessTree, sameProcessStartTime, windowsProcessStartTime } = require('../../shared/process-tree');
 const { isPidAlive, killPid } = require('../components/lifecycle');
 const { compareVersions } = require('../components/registry');
 const {
-  MAGPIE_ID,
-  platformAssetName,
-  resolveMagpieConfigDir,
+  MAGPIE_ID, platformAssetName, resolveMagpieConfigDir,
 } = require('./platform');
 const { resolveLatestMagpieRelease } = require('./release');
 const { EPHEMERAL_RUNTIME_ENTRIES, detectMagpieState, hasSharedUserConfig, probeConcurrency } = require('./detect');
 const {
-  detachMagpieDshChannels,
-  readDshDefaultModel,
-  remapDshDefaultModel,
-  syncDshToMagpieGateway,
+  detachMagpieDshChannels, readDshDefaultModel, remapDshDefaultModel, syncDshToMagpieGateway,
 } = require('./dsh-sync');
-const { detectLegacyWhaleBridge, migrateWhaleBridgeToMagpie } = require('./migrate');
+const migrate = require('./migrate');
+const { detectLegacyWhaleBridge, migrateWhaleBridgeToMagpie } = migrate;
 const {
-  pickWebPort,
-  pruneVersions,
-  quitWebProcess,
-  readJsonSafe,
-  removeDirWithRetry,
-  spawnMagpieWeb,
-  stageMagpieBinary,
-  writeJsonSafe,
+  pickWebPort, pruneVersions, quitWebProcess, readJsonSafe,
+  removeDirWithRetry, spawnMagpieWeb, stageMagpieBinary, writeJsonSafe,
 } = require('./runtime');
 
 function defaultPaths() {
@@ -79,23 +70,27 @@ function buildUnsupportedRow(platform, arch) {
   };
 }
 
-/**
- * @param {any} opts
- */
+/** @param {any} opts */
 function buildCapabilities({ rec, detected, rel, supported, isExternal, updateAvailable }) {
-  const canManage = !isExternal;
   const hasRec = Boolean(rec);
   const running = Boolean(detected.running);
+  if (isExternal) {
+    return {
+      canInstall: false, canStart: false, canStop: false, canOpen: true,
+      canUpdate: false, canRollback: false, canUninstall: false, canDeleteData: false,
+      externalUpdateUrl: updateAvailable ? (rel?.releaseUrl || '') : '',
+    };
+  }
   return {
-    canInstall: !hasRec && !isExternal && supported,
-    canStart: canManage && hasRec && !running,
-    canStop: canManage && hasRec && running,
-    canOpen: hasRec || isExternal,
-    canUpdate: canManage && hasRec && updateAvailable,
-    canRollback: canManage && Boolean(rec?.previous),
-    canUninstall: canManage && hasRec,
-    canDeleteData: canManage && hasRec && !detected.sharedConfig,
-    externalUpdateUrl: isExternal && updateAvailable ? (rel?.releaseUrl || '') : '',
+    canInstall: !hasRec && supported,
+    canStart: hasRec && !running,
+    canStop: hasRec && running,
+    canOpen: hasRec,
+    canUpdate: hasRec && updateAvailable,
+    canRollback: Boolean(rec?.previous),
+    canUninstall: hasRec,
+    canDeleteData: hasRec && (!detected.sharedConfig || Boolean(rec?.managedOnly)),
+    externalUpdateUrl: '',
   };
 }
 
@@ -147,6 +142,7 @@ function buildComponentRow(ctx) {
     source: 'official',
     kind: 'service',
     pid: gwPid ?? detected.managedPid ?? null,
+    companionPid: detected.companionPid ?? null,
     url: detected.webUrl || '',
     updateAvailable,
     configurable: Boolean(rec || isExternal),
@@ -188,26 +184,8 @@ function resolveServiceConfig(deps) {
 }
 
 /**
- * @param {{
- *   desktopStateDir?: string,
- *   root?: string,
- *   dshHome?: string,
- *   configDir?: string,
- *   devPackage?: string,
- *   platform?: NodeJS.Platform,
- *   arch?: string,
- *   isPidAlive?: (pid: number) => boolean,
- *   killPid?: (pid: number, opts?: { force?: boolean }) => boolean,
- *   killProcessTree?: (pid: number, opts?: any) => Promise<boolean>,
- *   spawn?: typeof spawn,
- *   execFile?: Function,
- *   fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>,
- *   fetchJson?: (url: string, init?: RequestInit) => Promise<any>,
- *   downloadFile?: (url: string, dest: string, onProgress?: (p: any) => void) => Promise<void>,
- *   pickPort?: (preferred?: number) => Promise<number>,
- *   readyTimeoutMs?: number,
- *   exitTimeoutMs?: number,
- * }} [deps]
+ * Create the Magpie runtime lifecycle service.
+ * @param {Record<string, any>} [deps]
  */
 function createMagpieService(deps = {}) {
   const {
@@ -224,7 +202,11 @@ function createMagpieService(deps = {}) {
 
   let catalog = readJsonSafe(catalogFile);
   let catalogError = '';
+  let catalogGen = 0;
+  let inspectGen = 0;
   let pending = false;
+  /** @type {Promise<void> | null} */
+  let activeLockPromise = null;
   let lastNotice = '';
   /** @type {any} */
   let cachedDetected = null;
@@ -236,7 +218,8 @@ function createMagpieService(deps = {}) {
 
   /** @returns {Promise<any>} */
   async function inspect() {
-    cachedDetected = await detectMagpieState({
+    const gen = ++inspectGen;
+    const detected = await detectMagpieState({
       configDir,
       managedState: readJsonSafe(managedStateFile),
       companionState: readJsonSafe(companionStateFile),
@@ -245,12 +228,20 @@ function createMagpieService(deps = {}) {
       fetchImpl: deps.fetchImpl,
       isPidAlive: alive,
     });
-    return cachedDetected;
+    if (gen === inspectGen) {
+      cachedDetected = detected;
+      return detected;
+    }
+    return cachedDetected || detected;
   }
 
-  async function refreshCatalog() {
-    catalogError = '';
-    if (!supported) return row();
+  /** @returns {Promise<{ release: any, error: string }>} */
+  async function fetchLatestCatalog() {
+    const gen = ++catalogGen;
+    if (!supported) {
+      if (gen === catalogGen) catalogError = '';
+      return { release: null, error: '' };
+    }
     try {
       const release = await resolveLatestMagpieRelease({
         route: resolveDownloadRoute(),
@@ -259,23 +250,82 @@ function createMagpieService(deps = {}) {
         devPackage,
         fetchImpl: deps.fetchImpl,
       });
-      catalog = { release, checkedAt: new Date().toISOString() };
-      writeJsonSafe(catalogFile, catalog);
+      if (gen === catalogGen) {
+        catalog = { release, checkedAt: new Date().toISOString() };
+        catalogError = '';
+        writeJsonSafe(catalogFile, catalog);
+      }
+      return { release, error: '' };
     } catch (error) {
-      catalogError = error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
+      if (gen === catalogGen) catalogError = message;
+      return { release: null, error: message };
     }
+  }
+
+  async function reconcileLegacyDirSafe() {
+    try {
+      const legacyRoot = path.join(desktopState, 'components', 'whalebridge');
+      await migrate.reconcileLegacyWhaleBridgeDir?.({ legacyRoot, desktopStateDir: desktopState });
+    } catch {
+      // Legacy WhaleBridge cleanup must never block main Magpie flows.
+    }
+  }
+
+  async function refreshCatalog() {
+    if (!supported) {
+      catalogError = '';
+      return row();
+    }
+    await fetchLatestCatalog();
     await inspect();
+    await reconcileLegacyDirSafe();
     return row();
   }
 
-  function row() {
-    const detected = cachedDetected || {
-      ownership: 'managed', running: false, sharedConfig: false,
-      gateway: null, webUrl: '', managedPid: null, companionPid: null,
+  function liveManagedFallback(/** @type {any} */ managed, /** @type {boolean} */ managedAlive, /** @type {any} */ companion, /** @type {boolean} */ companionAlive) {
+    const sharedConfig = hasSharedUserConfig(configDir);
+    return {
+      ownership: sharedConfig && !installed()?.managedOnly ? 'managed-shared-config' : 'managed',
+      running: managedAlive,
+      sharedConfig,
+      gateway: null,
+      webUrl: managedAlive ? (managed.webUrl || '') : '',
+      managedPid: managedAlive ? managed.pid : null,
+      companionPid: companionAlive ? companion.pid : null,
     };
+  }
+
+  function liveCompanionDetected(/** @type {any} */ base, /** @type {any} */ companion, /** @type {boolean} */ companionAlive) {
+    const compPid = companionAlive
+      ? companion.pid
+      : (base.companionPid && alive(base.companionPid) ? base.companionPid : null);
+    return { ...base, companionPid: compPid, webUrl: compPid ? (companion?.webUrl || base.webUrl || '') : '' };
+  }
+
+  function liveRowDetected() {
+    const managed = readJsonSafe(managedStateFile);
+    const companion = readJsonSafe(companionStateFile);
+    const managedAlive = Boolean(managed?.pid && alive(managed.pid));
+    const companionAlive = Boolean(companion?.pid && alive(companion.pid));
+    const base = cachedDetected;
+    if (!base) return liveManagedFallback(managed, managedAlive, companion, companionAlive);
+    if (base.ownership === 'external') return base;
+    if (base.ownership === 'external-ui-companion') return liveCompanionDetected(base, companion, companionAlive);
+    const knownPid = base.gateway?.pid ?? base.managedPid;
+    if (base.running && knownPid && !alive(knownPid) && !managedAlive) {
+      return { ...base, running: false, gateway: null, webUrl: '', managedPid: null, companionPid: null };
+    }
+    if (!base.running && managedAlive) {
+      return { ...base, running: true, webUrl: managed.webUrl || base.webUrl || '', managedPid: managed.pid };
+    }
+    return base;
+  }
+
+  function row() {
     return buildComponentRow({
       rec: installed(),
-      detected,
+      detected: liveRowDetected(),
       rel: catalog?.release,
       platform,
       arch,
@@ -286,9 +336,22 @@ function createMagpieService(deps = {}) {
     });
   }
 
+  function isLockOwnerAlive(/** @type {any} */ owner) {
+    if (!owner?.pid || !alive(owner.pid)) return false;
+    if (owner.startTime) {
+      const currentStartTime = windowsProcessStartTime(owner.pid);
+      if (currentStartTime && !sameProcessStartTime(currentStartTime, owner.startTime)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   async function locked(/** @type {() => Promise<any>} */ fn) {
     if (pending) return { ok: false, error: 'busy' };
     pending = true;
+    let resolveLock = /** @type {(() => void) | undefined} */ (undefined);
+    activeLockPromise = new Promise((resolve) => { resolveLock = resolve; });
     let held = false;
     const lock = path.join(root, 'operation.lock');
     try {
@@ -299,12 +362,24 @@ function createMagpieService(deps = {}) {
         try { owner = readJsonSafe(lock); } catch { /* ignore half-written lock */ }
         try { stat = fs.statSync(lock); } catch { /* removed concurrently */ }
         if (stat) {
-          if (owner?.pid && alive(owner.pid)) return { ok: false, error: 'busy' };
+          if (isLockOwnerAlive(owner)) return { ok: false, error: 'busy' };
           if (!owner?.pid && Date.now() - stat.mtimeMs < 10_000) return { ok: false, error: 'busy' };
-          safeRemoveSync(lock);
+          const staleLock = path.join(root, `lock.stale.${process.pid}.${randomBytes(4).toString('hex')}`);
+          try {
+            fs.renameSync(lock, staleLock);
+            safeRemoveSync(staleLock);
+          } catch (renameErr) {
+            if (/** @type {NodeJS.ErrnoException} */ (renameErr)?.code !== 'ENOENT') {
+              return { ok: false, error: 'busy' };
+            }
+          }
         }
       }
-      fs.writeFileSync(lock, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
+      fs.writeFileSync(lock, JSON.stringify({
+        pid: process.pid,
+        startTime: windowsProcessStartTime(process.pid),
+        createdAt: new Date().toISOString(),
+      }), { flag: 'wx' });
       held = true;
       return await fn();
     } catch (error) {
@@ -313,6 +388,8 @@ function createMagpieService(deps = {}) {
     } finally {
       if (held) safeRemoveSync(lock);
       pending = false;
+      activeLockPromise = null;
+      resolveLock?.();
     }
   }
 
@@ -329,9 +406,8 @@ function createMagpieService(deps = {}) {
 
   /** @param {Function | undefined} progress @param {{ allowSameOrOlder?: boolean }} [options] */
   async function stage(progress, options = {}) {
-    await refreshCatalog();
-    if (catalogError) throw new Error(catalogError);
-    const rel = catalog?.release;
+    const { release: rel, error } = await fetchLatestCatalog();
+    if (error) throw new Error(error);
     if (!rel?.version || !rel?.asset || !/^[a-f0-9]{64}$/.test(rel.sha256 || '')) {
       throw new Error('Magpie 发布清单无效');
     }
@@ -396,25 +472,55 @@ function createMagpieService(deps = {}) {
     }
   }
 
+  async function ensureIdleForManagedStop(/** @type {any} */ current, /** @type {any} */ managed) {
+    const managedAlive = Boolean(managed?.pid && alive(managed.pid));
+    const stopGatewayAddr = current?.gateway?.addr || (managedAlive ? managed?.gatewayAddr : '');
+    if (current?.running || managedAlive) {
+      if (!stopGatewayAddr) {
+        throw new Error('无法确认 Magpie 并发状态（网关地址缺失），已拒绝停机');
+      }
+      await assertIdleBeforeStop(stopGatewayAddr);
+    }
+  }
+
   /** @param {Function} [progress] */
   function install(progress) {
     return locked(async () => {
       if (installed()) throw new Error('Magpie 已安装');
       if (!supported) throw new Error(`Magpie 暂不支持当前平台（${platform}-${arch}）`);
       const pre = await inspect();
+      const preSharedConfig = Boolean(pre.sharedConfig || hasSharedUserConfig(configDir));
       const migration = await runPendingMigrationIfNeeded(pre);
-      const managedOnly = !pre.sharedConfig && !migration?.migrated;
+      const managedOnly = !preSharedConfig && !migration?.migrated;
       const version = await stage(progress, { allowSameOrOlder: true });
-      writeJsonSafe(installedFile, { version, previous: null, managedOnly });
+      writeJsonSafe(installedFile, { version, previous: null, managedOnly, sharedConfig: preSharedConfig });
       const post = await inspect();
       if (post.ownership === 'external' || post.ownership === 'external-ui-companion') {
-        await syncDshAndRemap(post.gateway.addr, migration);
+        try {
+          await syncDshAndRemap(post.gateway.addr, migration);
+        } catch (syncError) {
+          const msg = syncError instanceof Error ? syncError.message : String(syncError);
+          await inspect();
+          throw new Error(`Magpie 已安装，但桌面端模型渠道同步失败：${msg}`);
+        }
+        await reconcileLegacyDirSafe();
         emit(progress, 'done', 100);
         return { ok: true, component: row() };
       }
       const rec = await spawnWeb(version, true, progress);
-      await syncDshAndRemap(rec.gatewayAddr || '', migration);
+      try {
+        await syncDshAndRemap(rec.gatewayAddr || '', migration);
+      } catch (syncError) {
+        const msg = syncError instanceof Error ? syncError.message : String(syncError);
+        const liveManaged = readJsonSafe(managedStateFile);
+        if (liveManaged) {
+          await quitProcess(liveManaged, managedStateFile).catch(() => { /* Preserve original DSH sync error if stop cleanup fails. */ });
+        }
+        await inspect();
+        throw new Error(`Magpie 已安装，但桌面端模型渠道同步失败（已停止刚启动的进程，请重试启动）：${msg}`);
+      }
       await inspect();
+      await reconcileLegacyDirSafe();
       emit(progress, 'done', 100);
       return { ok: true, component: row() };
     });
@@ -422,44 +528,42 @@ function createMagpieService(deps = {}) {
 
   /** @param {Function} [progress] */
   function start(progress) {
+    const finishStart = async (/** @type {string} */ url, /** @type {string} */ ownership, /** @type {string} */ version) => {
+      await reconcileLegacyDirSafe();
+      emit(progress, 'done', 100);
+      return { ok: true, url, ownership, version };
+    };
     return locked(async () => {
       const pre = await inspect();
       const migration = await runPendingMigrationIfNeeded(pre);
       const afterMig = await inspect();
       if (afterMig.ownership === 'external') {
         await syncDshAndRemap(afterMig.gateway.addr, migration);
-        emit(progress, 'done', 100);
-        return { ok: true, url: afterMig.webUrl, ownership: afterMig.ownership, version: afterMig.gateway.version };
+        return finishStart(afterMig.webUrl, afterMig.ownership, afterMig.gateway.version);
       }
       if (afterMig.ownership === 'external-ui-companion') {
         await syncDshAndRemap(afterMig.gateway.addr, migration);
-        if (afterMig.webUrl) {
-          emit(progress, 'done', 100);
-          return { ok: true, url: afterMig.webUrl, ownership: afterMig.ownership, version: afterMig.gateway.version };
-        }
+        if (afterMig.webUrl) return finishStart(afterMig.webUrl, afterMig.ownership, afterMig.gateway.version);
         let rec = installed();
         if (!rec) {
           const version = await stage(progress, { allowSameOrOlder: true });
-          writeJsonSafe(installedFile, { version, previous: null, managedOnly: false });
+          writeJsonSafe(installedFile, { version, previous: null, managedOnly: false, sharedConfig: true });
           rec = installed();
         }
         const comp = await spawnWeb(rec.version, false, progress);
         await inspect();
-        emit(progress, 'done', 100);
-        return { ok: true, url: comp.webUrl, ownership: 'external-ui-companion', version: afterMig.gateway.version };
+        return finishStart(comp.webUrl, 'external-ui-companion', afterMig.gateway.version);
       }
       const rec = installed();
       if (!rec) throw new Error('请先安装 Magpie');
       if (afterMig.running && afterMig.webUrl) {
         await syncDshAndRemap(afterMig.gateway.addr, migration);
-        emit(progress, 'done', 100);
-        return { ok: true, url: afterMig.webUrl, ownership: afterMig.ownership, version: rec.version };
+        return finishStart(afterMig.webUrl, afterMig.ownership, rec.version);
       }
       const started = await spawnWeb(rec.version, true, progress);
       await syncDshAndRemap(started.gatewayAddr || '', migration);
       await inspect();
-      emit(progress, 'done', 100);
-      return { ok: true, url: started.webUrl, ownership: cachedDetected.ownership, version: rec.version };
+      return finishStart(started.webUrl, cachedDetected.ownership, rec.version);
     });
   }
 
@@ -471,9 +575,7 @@ function createMagpieService(deps = {}) {
         throw new Error('正在复用本机外部 Magpie，请在原 Magpie 应用中停止');
       }
       const managed = readJsonSafe(managedStateFile);
-      if (current.running && current.gateway?.addr) {
-        await assertIdleBeforeStop(current.gateway.addr);
-      }
+      await ensureIdleForManagedStop(current, managed);
       emit(progress, 'stop', 40);
       await quitProcess(managed, managedStateFile);
       await inspect();
@@ -488,21 +590,43 @@ function createMagpieService(deps = {}) {
     });
   }
 
-  async function switchManagedVersion(/** @type {string} */ nextVersion, /** @type {string | null} */ previousVersion, /** @type {Function | undefined} */ progress) {
-    const oldRec = installed();
-    const detected = await inspect();
-    const wasRunning = detected.running && (detected.ownership === 'managed' || detected.ownership === 'managed-shared-config');
+  async function stopProcessesForSwitch(/** @type {any} */ detected, /** @type {Function | undefined} */ progress) {
     const managed = readJsonSafe(managedStateFile);
     const companion = readJsonSafe(companionStateFile);
+    const managedAlive = Boolean(managed?.pid && alive(managed.pid));
+    const companionAlive = Boolean(companion?.pid && alive(companion.pid));
+    const wasRunning = (detected.running && (detected.ownership === 'managed' || detected.ownership === 'managed-shared-config')) || managedAlive;
+    await ensureIdleForManagedStop(detected, managed);
+    if (wasRunning || managedAlive || companionAlive) emit(progress, 'stop', 70);
+    if (managed) await quitProcess(managed, managedStateFile);
+    if (companion) await quitProcess(companion, companionStateFile);
+    return wasRunning;
+  }
 
-    if (wasRunning && detected.gateway?.addr) {
-      await assertIdleBeforeStop(detected.gateway.addr);
-      emit(progress, 'stop', 70);
-      await quitProcess(managed, managedStateFile);
-    } else if (companion) {
-      await quitProcess(companion, companionStateFile);
+  async function restoreSwitchFallback(/** @type {any} */ oldRec, /** @type {boolean} */ wasRunning) {
+    const liveManaged = readJsonSafe(managedStateFile);
+    if (liveManaged) await quitProcess(liveManaged, managedStateFile);
+    writeJsonSafe(installedFile, oldRec);
+    if (!wasRunning || !oldRec?.version) return '';
+    try {
+      const restored = await spawnWeb(oldRec.version, true);
+      await syncDshAndRemap(restored.gatewayAddr || '', null);
+      return '';
+    } catch (rollbackError) {
+      return `（恢复原版本失败：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}）`;
     }
+  }
 
+  async function switchManagedVersion(
+    /** @type {string} */ nextVersion,
+    /** @type {string | null} */ previousVersion,
+    /** @type {Function | undefined} */ progress,
+    /** @type {'update' | 'rollback'} */ op = 'update',
+  ) {
+    const oldRec = installed();
+    const detected = await inspect();
+    const wasRunning = await stopProcessesForSwitch(detected, progress);
+    const opLabel = op === 'rollback' ? '回滚' : '更新';
     try {
       writeJsonSafe(installedFile, { ...oldRec, version: nextVersion, previous: previousVersion });
       if (wasRunning) {
@@ -510,20 +634,9 @@ function createMagpieService(deps = {}) {
         await syncDshAndRemap(started.gatewayAddr || '', null);
       }
     } catch (error) {
-      const liveManaged = readJsonSafe(managedStateFile);
-      if (liveManaged) await quitProcess(liveManaged, managedStateFile);
-      writeJsonSafe(installedFile, oldRec);
-      let rollbackNote = '';
-      if (wasRunning && oldRec?.version) {
-        try {
-          const restored = await spawnWeb(oldRec.version, true);
-          await syncDshAndRemap(restored.gatewayAddr || '', null);
-        } catch (rollbackError) {
-          rollbackNote = `（回滚恢复失败：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}）`;
-        }
-      }
+      const rollbackNote = await restoreSwitchFallback(oldRec, wasRunning);
       await inspect();
-      throw new Error(`更新未生效，已恢复原版本${rollbackNote}：${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`${opLabel}未生效，已恢复原版本${rollbackNote}：${error instanceof Error ? error.message : String(error)}`);
     }
     pruneVersions(root, [nextVersion, ...(previousVersion ? [previousVersion] : [])]);
     await inspect();
@@ -541,7 +654,7 @@ function createMagpieService(deps = {}) {
       const rec = installed();
       if (!rec) throw new Error('请先安装 Magpie');
       const nextVersion = await stage(progress);
-      return switchManagedVersion(nextVersion, rec.version, progress);
+      return switchManagedVersion(nextVersion, rec.version, progress, 'update');
     });
   }
 
@@ -554,7 +667,11 @@ function createMagpieService(deps = {}) {
       }
       const rec = installed();
       if (!rec?.previous) throw new Error('没有可回滚版本');
-      return switchManagedVersion(rec.previous, rec.version, progress);
+      const prevDir = path.join(root, 'versions', rec.previous);
+      if (!fs.existsSync(path.join(prevDir, assetName)) || !fs.existsSync(path.join(prevDir, 'manifest.json'))) {
+        throw new Error(`回滚版本 ${rec.previous} 文件缺失，无法回滚`);
+      }
+      return switchManagedVersion(rec.previous, rec.version, progress, 'rollback');
     });
   }
 
@@ -568,18 +685,17 @@ function createMagpieService(deps = {}) {
       }
       const rec = installed();
       if (!rec) throw new Error('Magpie 未安装');
-      if (current.running && current.gateway?.addr) {
-        await assertIdleBeforeStop(current.gateway.addr);
-      }
+      const managed = readJsonSafe(managedStateFile);
+      await ensureIdleForManagedStop(current, managed);
       emit(progress, 'stop', 25);
-      await quitProcess(readJsonSafe(managedStateFile), managedStateFile);
+      await quitProcess(managed, managedStateFile);
       await quitProcess(readJsonSafe(companionStateFile), companionStateFile);
       emit(progress, 'remove', 65);
-      detachMagpieDshChannels(dshHome);
-      safeRemoveSync(installedFile);
       const versionsDir = path.join(root, 'versions');
       removeDirWithRetry(versionsDir);
-      if (options.removeData === true && !current.sharedConfig && !hasSharedUserConfig(configDir)) {
+      detachMagpieDshChannels(dshHome);
+      safeRemoveSync(installedFile);
+      if (options.removeData === true && ((!current.sharedConfig && !hasSharedUserConfig(configDir)) || rec.managedOnly)) {
         for (const name of EPHEMERAL_RUNTIME_ENTRIES) {
           safeRemoveSync(path.join(configDir, name));
         }
@@ -606,11 +722,17 @@ function createMagpieService(deps = {}) {
   }
 
   async function stopCompanion() {
-    const companion = readJsonSafe(companionStateFile);
-    if (companion) {
-      await quitProcess(companion, companionStateFile);
-      await inspect();
+    while (pending && activeLockPromise) {
+      await activeLockPromise.catch(() => { /* Wait for in-flight lock release; caller owns its error. */ });
     }
+    return locked(async () => {
+      const companion = readJsonSafe(companionStateFile);
+      if (companion) {
+        await quitProcess(companion, companionStateFile);
+        await inspect();
+      }
+      return { ok: true };
+    });
   }
 
   return {

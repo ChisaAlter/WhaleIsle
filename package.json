@@ -64,19 +64,19 @@
     "node": "^24.22.3 || >=26.13.1"
   },
   "optionalDependencies": {
-    "node-pty": "1.2.0-beta.15"
+    "node-pty": "1.2.0-beta.18"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/ws": "^8.18.2",
-    "electron": "^44.9.1",
+    "electron": "^45.0.0",
     "electron-builder": "^26.17.0",
     "esbuild": "0.28.2",
     "eslint": "^10.15.0",
     "fast-check": "4.10.2",
     "globals": "^17.14.0",
-    "knip": "6.42.1",
-    "pnpm": "12.14.0",
+    "knip": "6.43.0",
+    "pnpm": "12.16.0",
     "semver": "^7.8.5",
     "typescript": "6.0.3",
     "undici-types": "8.12.3"
@@ -265,8 +265,9 @@
     }
   },
   "dependencies": {
-    "electron-updater": "6.8.10",
+    "electron-updater": "6.8.11",
     "koffi": "3.3.3",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "yaml": "2.9.1"
   }
 }

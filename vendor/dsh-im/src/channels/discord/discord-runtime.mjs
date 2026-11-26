@@ -1,6 +1,7 @@
 import { createEditableMessageStream, splitMessageText } from '../shared/editable-message-stream.mjs';
 import { fetchFileStream } from '../shared/file-download.mjs';
 import { fetchImageBuffer } from '../shared/image-prompt.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 import { DiscordApi } from './discord-api.mjs';
 import { createDiscordBridgeStatus, DiscordHarnessBridge } from './discord-bridge.mjs';
@@ -433,6 +434,8 @@ export class DiscordRuntime {
   #createApi;
   #createWebSocket;
   #random;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createDiscordRuntimeStatus();
   #api = null;
   #bridge = null;
@@ -457,6 +460,7 @@ export class DiscordRuntime {
     token,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     connectTimeoutMs = 20_000,
@@ -472,6 +476,7 @@ export class DiscordRuntime {
     this.#token = token;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#connectTimeoutMs = connectTimeoutMs;
@@ -578,6 +583,7 @@ export class DiscordRuntime {
         this.#status.lastCheckedAt = now;
         this.#status.lastConnectedAt = now;
         this.#status.lastError = null;
+        this.#registerOutboundSender();
         resolve();
       };
       addSocketListener(socket, 'message', (event) => {
@@ -677,6 +683,7 @@ export class DiscordRuntime {
           return;
         }
         const error = gatewayCloseError(Number(event.code) || 0);
+        this.#unregisterOutbound();
         this.#status.ready = false;
         this.#status.connectionState = 'connecting';
         this.#status.lastError = error.message;
@@ -794,6 +801,7 @@ export class DiscordRuntime {
   async stop() {
     this.#stopped = true;
     this.#generation += 1;
+    this.#unregisterOutbound();
     this.#abortController?.abort();
     this.#abortController = null;
     if (this.#reconnectTimer !== null) clearTimeout(this.#reconnectTimer);
@@ -817,5 +825,30 @@ export class DiscordRuntime {
     this.#status.ready = false;
     this.#status.connectionState = 'idle';
     return this.status;
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('discord', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#api) {
+          throw Object.assign(new Error('Discord bot is not connected'), { code: 'channel_not_connected' });
+        }
+        const res = await this.#api.createMessage({
+          channelId: payload.targetId,
+          content: payload.text,
+          replyToMessageId: payload.replyTo,
+          signal: payload.signal ?? this.#abortController?.signal,
+        });
+        return { messageId: typeof res?.id === 'string' && res.id ? res.id : null };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

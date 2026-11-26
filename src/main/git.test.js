@@ -26,6 +26,7 @@ const { resetReadContexts } = require('./git-read-context.js');
 const { fetchForStatus } = require('./git-fetch.js');
 const { parseRepositoryNameWithOwnerFromNormalized } = require('./git-pullrequest');
 const { setTextGenerator } = require('./git-generate.js');
+const { requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 // Isolate every git child (direct spawns and module-spawned via gitChildEnv)
 // from the developer's global/system config: url.*.insteadOf rewrites,
@@ -2467,7 +2468,7 @@ test('gitCheckLargeFiles skips ignored paths', async () => {
   }
 });
 
-test('gitCheckLargeFiles does not follow symlinks and never stages', async () => {
+test('gitCheckLargeFiles does not follow symlinks and never stages', async (t) => {
   const cwd = makeTempDir();
   try {
     initRepoWithBase(cwd);
@@ -2475,15 +2476,23 @@ test('gitCheckLargeFiles does not follow symlinks and never stages', async () =>
     let linked = true;
     try {
       fs.symlinkSync(path.join(cwd, 'real.bin'), path.join(cwd, 'link.bin'));
-    } catch {
-      // Windows may require Developer Mode for symlinks; the size rule below
-      // is still pinned by the real file.
-      linked = false;
+    } catch (error) {
+      if (error.code === 'EPERM' || error.code === 'ENOTSUP') {
+        // Windows may require Developer Mode for file symlinks; the size rule
+        // below is still pinned by the real file.
+        linked = false;
+      } else {
+        throw error;
+      }
     }
     const result = await gitCheckLargeFiles(cwd);
     assert.equal(result.ok, true, result.message);
     // A link is skipped by lstat even when it points at an oversized target.
     assert.deepEqual(result.files, [{ path: 'real.bin', size: 101 * MIB }]);
+    if (!linked) {
+      requirePrerequisite(t, false, 'file-symlink creation unavailable (EPERM)');
+      return;
+    }
     assert.equal(linked, true, 'symlink fixture unavailable on this host');
     const staged = git(cwd, ['diff', '--cached', '--name-only']).trim();
     assert.equal(staged, '');

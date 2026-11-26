@@ -587,7 +587,7 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false, stallRange 
   wrongContentRange = false, wrongContentLength = false, oversizedRange = false,
   oldAssetName = 'Whale-Isle-Setup-1.0.0.exe', fragmentedRanges = false } = {}) {
   const { NsisUpdater } = require('electron-updater');
-  assert.equal(require('electron-updater/package.json').version, '6.8.10', 'protected seam is tested against the pinned library');
+  assert.equal(require('electron-updater/package.json').version, '6.8.11', 'protected seam is tested against the pinned library');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-strict-delta-'));
   const blockSize = fragmentedRanges ? 64 : 32 * 1024;
   const same = Buffer.alloc(blockSize, 'a');
