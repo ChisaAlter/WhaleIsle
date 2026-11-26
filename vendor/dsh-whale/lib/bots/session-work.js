@@ -347,13 +347,103 @@ function loadCreateUserMessage() {
 }
 
 /** @param {string} text @param {Record<string, any>} source */
-async function buildInternalUserMessage(text, source) {
+export async function buildInternalUserMessage(text, source) {
   const createUserMessage = await loadCreateUserMessage();
   const content = [{ type: 'text', text }];
   if (createUserMessage) {
     return Object.freeze({ ...createUserMessage({ source, content }) });
   }
   return { id: crypto.randomUUID(), ts: Date.now(), role: 'user', source, content };
+}
+
+/** @param {any} ctx @param {any} controller @param {string} sessionId */
+export async function resolveLiveAgent(ctx, controller, sessionId) {
+  const directAgent = ctx?.get?.('agents')?.get?.(sessionId);
+  if (directAgent && typeof directAgent.followup === 'function') return directAgent;
+  if (typeof controller?.resolveAgent === 'function') {
+    const resolved = await controller.resolveAgent(sessionId).catch(() => {
+      /* Best-effort agent lookup for internal dispatch. */
+      return null;
+    });
+    const candidate = resolved && !resolved.error ? resolved.agent : null;
+    if (candidate && typeof candidate.followup === 'function') return candidate;
+  }
+  return null;
+}
+
+/** @param {any} msg */
+function extractMessageText(msg) {
+  const content = msg?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((block) => (block && block.type === 'text' ? String(block.text ?? '') : ''))
+    .join('\n');
+}
+
+/** @param {any} msg @param {Array<{ uid: string, number?: number }>} targets */
+function isPendingItemMailMessage(msg, targets) {
+  const source = msg?.source;
+  if (!source || typeof source !== 'object') return false;
+  if (source.kind === 'dsh-bots:mail') {
+    const msgUids = new Set();
+    if (typeof source.itemUid === 'string' && source.itemUid) msgUids.add(source.itemUid);
+    if (Array.isArray(source.itemUids)) {
+      for (const uid of source.itemUids) {
+        if (typeof uid === 'string' && uid) msgUids.add(uid);
+      }
+    }
+    if (msgUids.size > 0) return targets.some((t) => msgUids.has(t.uid));
+  } else if (typeof source.rpcId !== 'string' || !source.rpcId.startsWith('bot-item-mail-')) {
+    return false;
+  }
+  const text = extractMessageText(msg);
+  if (!text) return false;
+  return targets.some((t) => {
+    if (t.uid && text.includes(t.uid)) return true;
+    return Number.isInteger(t.number) && new RegExp(`#${t.number}(?!\\d)`).test(text);
+  });
+}
+
+/**
+ * Remove unconsumed queued item-mail notifications for `items` from `liveAgent.inbox.nextTurn`.
+ * @param {any} liveAgent
+ * @param {Array<{ uid: string, number?: number }>} items
+ */
+export function prunePendingItemMailFromInbox(liveAgent, items) {
+  const nextTurn = liveAgent?.inbox?.nextTurn;
+  const remove = liveAgent?.inbox?.remove;
+  if (!Array.isArray(nextTurn) || nextTurn.length === 0 || typeof remove !== 'function') return 0;
+  const targets = (Array.isArray(items) ? items : [items]).filter((item) => item && typeof item.uid === 'string' && item.uid);
+  if (targets.length === 0) return 0;
+  let removed = 0;
+  for (const msg of [...nextTurn]) {
+    if (!isPendingItemMailMessage(msg, targets)) continue;
+    if (remove.call(liveAgent.inbox, msg.id)) removed += 1;
+  }
+  return removed;
+}
+
+/**
+ * Remove stale unconsumed item-mail messages for a closed item from active agent inboxes.
+ * @param {{ ctx: any, controller: any, botsStore: any, item: any }} params
+ */
+export async function pruneClosedItemInbox({ ctx, controller, botsStore, item }) {
+  if (!item?.uid) return 0;
+  const agentsMap = ctx?.get?.('agents');
+  if (agentsMap && typeof agentsMap.values === 'function') {
+    let removed = 0;
+    for (const agent of agentsMap.values()) removed += prunePendingItemMailFromInbox(agent, [item]);
+    return removed;
+  }
+  const bot = item.ownerBotId ? botsStore?.getBot?.(item.ownerBotId) : null;
+  const sids = [...new Set([item.chatId, bot?.chatSessionId].filter(Boolean))];
+  let removed = 0;
+  for (const sid of sids) {
+    const liveAgent = await resolveLiveAgent(ctx, controller, sid);
+    if (liveAgent) removed += prunePendingItemMailFromInbox(liveAgent, [item]);
+  }
+  return removed;
 }
 
 /** @param {any} source @param {string | null} sourceKind @param {string} requestId */
@@ -441,13 +531,7 @@ export function executeControllerTurn(params) {
       return;
     }
     const dispatchInternalTurn = async () => {
-      const directAgent = ctx?.get?.('agents')?.get?.(sessionId);
-      let liveAgent = directAgent && typeof directAgent.followup === 'function' ? directAgent : null;
-      if (!liveAgent && typeof controller.resolveAgent === 'function') {
-        const resolved = await controller.resolveAgent(sessionId).catch(() => null);
-        const candidate = resolved && !resolved.error ? resolved.agent : null;
-        if (candidate && typeof candidate.followup === 'function') liveAgent = candidate;
-      }
+      const liveAgent = await resolveLiveAgent(ctx, controller, sessionId);
       if (settled || ac.signal.aborted) return;
       if (liveAgent) {
         const msg = await buildInternalUserMessage(promptText, effectiveSource);

@@ -25,7 +25,7 @@ import { botsRootDir, readSoul } from './fs-home.js';
 import { resolveBotLaunchRoute } from './launch-route.js';
 import { BOT_PRESET_ID } from './prompt-engine.js';
 import { createOwedMailDrainer } from './session-mail.js';
-import { buildSideChatSpec, createSessionWorkOps, executeControllerTurn, resolveTurnSource } from './session-work.js';
+import { buildSideChatSpec, createSessionWorkOps, executeControllerTurn, pruneClosedItemInbox, resolveTurnSource } from './session-work.js';
 
 export const BOT_OWNER_HOME = 'dsh-bots:home';
 export const BOT_OWNER_CHAT = 'dsh-bots:chat';
@@ -608,22 +608,21 @@ export function createSessionRuntime(deps) {
     });
   }
 
-  const mailDrainer = createOwedMailDrainer({
-    itemsStore,
-    botsStore,
-    controllerOf,
-    openHomeChat,
-    buildControllerUnavailableRefusal,
-  });
-
-  /** @param {{ itemsStore?: any, botsStore?: any }} [opts] */
-  function deliverOwedMail(opts = {}) {
-    return mailDrainer.deliverOwedMail(opts);
-  }
-
-  function sendOwedMail() {
-    return mailDrainer.deliverOwedMail({ itemsStore, botsStore });
-  }
+  const mailDrainer = createOwedMailDrainer({ ctx, itemsStore, botsStore, controllerOf, openHomeChat, buildControllerUnavailableRefusal });
+  /** @type {(() => Promise<any>) | null} */
+  let customMailReconciler = null;
+  /** @param {(() => Promise<any>) | null} fn */
+  const registerCustomMailReconciler = (fn) => { customMailReconciler = typeof fn === 'function' ? fn : null; };
+  const deliverOwedMail = (opts = {}) => mailDrainer.deliverOwedMail(opts);
+  const sendOwedMail = () => mailDrainer.deliverOwedMail({ itemsStore, botsStore });
+  const triggerOwedMail = () => (customMailReconciler ? customMailReconciler() : sendOwedMail());
+  const offItemClosed = typeof itemsStore?.onItemClosed === 'function'
+    ? itemsStore.onItemClosed((/** @type {any} */ item) => {
+      void pruneClosedItemInbox({ ctx, controller: controllerOf(), botsStore, item }).catch(() => {
+        /* Best-effort closed-item inbox cleanup. */
+      });
+    })
+    : null;
 
   const {
     deleteChat,
@@ -742,6 +741,8 @@ export function createSessionRuntime(deps) {
 
   function close() {
     try { offEvents?.(); } catch { /* Ignore cleanup error. */ }
+    try { offItemClosed?.(); } catch { /* Ignore item close listener cleanup error. */ }
+    customMailReconciler = null;
     for (const entries of inFlightTurns.values()) {
       for (const entry of entries) {
         try { entry.abort(); } catch { /* Ignore abort error on close. */ }
@@ -765,6 +766,8 @@ export function createSessionRuntime(deps) {
     cancelSession,
     deliverOwedMail,
     sendOwedMail,
+    triggerOwedMail,
+    registerCustomMailReconciler,
     deleteChat,
     stopWork,
     applyLaunchModel,

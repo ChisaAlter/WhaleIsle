@@ -249,6 +249,13 @@ export function applyStatusAndQuestion(item, parsed, next, tx, actor, mail, now)
 }
 
 /** @param {any} params */
+function parseOptionalQuestionRef(params) {
+  const rawRef = params?.questionEventId ?? params?.answers;
+  if (rawRef === undefined || rawRef === null) return null;
+  return parseEventId(rawRef);
+}
+
+/** @param {any} params */
 export function parseOwnerCommentParams(params) {
   const images = normalizeAttachmentList(params?.images, 'images', 20);
   const files = normalizeAttachmentList(params?.files, 'files', 10);
@@ -258,9 +265,7 @@ export function parseOwnerCommentParams(params) {
   }
   const requestId = params?.requestId ? requireString(params.requestId, 'requestId', 128) : null;
   const plain = params?.plain === true;
-  const expectedQuestionId = params?.questionEventId !== undefined && params?.questionEventId !== null
-    ? parseEventId(params.questionEventId)
-    : null;
+  const expectedQuestionId = parseOptionalQuestionRef(params);
   const askedInConversation = params?.askedInConversation !== undefined && params?.askedInConversation !== null
     ? normalizeOptionalText(params.askedInConversation, 'askedInConversation', 256)
     : null;
