@@ -5,23 +5,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { atomicWriteFileSync, renameWithRetrySync, safeRemoveSync } = require('../../shared/fs-safe');
 const { detachWhaleBridgeDshChannel, readDshDefaultModel } = require('./dsh-sync');
+const {
+  ACCOUNT_SUBDIRS, EXCLUDED_TOP_ENTRIES, isSensitiveTarget, shouldSkipEntry, snapshotTargets, restoreSnapshot,
+} = require('./migration-backup');
 
-const EXCLUDED_TOP_ENTRIES = new Set([
-  'gateway.key', 'agents.json', 'state.json', 'component.log',
-  'cache', 'applied.json', 'stash.json', 'aside-account.json', 'cursor-local.env',
-]);
-const SENSITIVE_FILES = new Set([
-  'logins.json', 'plugin-auth.json', 'sync.json', 'redact.key',
-  'qoder.json', 'stepfun-auth.json', 'kiro-auth-token.json', 'usage-computer.json',
-]);
 const KEEP_EXISTING_TARGET_FILES = new Set(['settings.json', 'sync.json', 'redact.key', 'plugins.yml']);
 const DATA_PROBES = [
   'providers.json', 'logins.json', 'plugin-auth.json', 'plugins.json',
   'migrations.json', 'settings.json', 'usage.jsonl', 'agents.json',
 ];
-const ACCOUNT_SUBDIRS = ['claude-accounts', 'grok', 'devin', 'kiro', 'grok-homes'];
+const DEFERRED_MERGE_IN_PROGRESS = 'deferred_data_merging';
 const BLOCKED_RECONCILE_STAGES = new Set([
-  'backed_up', 'data_migrated', 'agents_disconnected', 'rolled_back', 'deferred_data_merge',
+  'backed_up', 'data_migrated', 'agents_disconnected', 'rolled_back', 'deferred_data_merge', DEFERRED_MERGE_IN_PROGRESS,
 ]);
 const CACHE_ONLY_TOP_ENTRIES = new Set(['catalog.json', 'logs', 'data']);
 const SPECIAL_JSON_FILES = new Set([
@@ -51,13 +46,6 @@ function readTextOrEmpty(file) {
 
 /** @param {unknown} value */
 function isPlainObject(value) { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
-
-/** @param {string} filePath */
-function isSensitiveTarget(filePath) {
-  const base = path.basename(filePath);
-  return SENSITIVE_FILES.has(base) || base === '.credentials.yaml'
-    || filePath.replace(/\\/g, '/').split('/').some((p) => ACCOUNT_SUBDIRS.includes(p));
-}
 
 /** @param {string} root @param {string} target */
 function isPathInside(root, target) {
@@ -107,6 +95,7 @@ function detectLegacyWhaleBridge(desktopStateDir) {
   const migrationState = readJsonBestEffort(path.join(root, 'migration-state.json'));
   const hasData = fs.existsSync(dataDir) && DATA_PROBES.some((name) => fs.existsSync(path.join(dataDir, name)));
   const needsDataMerge = migrationState?.stage === 'deferred_data_merge'
+    || migrationState?.stage === DEFERRED_MERGE_IN_PROGRESS
     || (migrationState?.dataMergeSkipped === 'external-running' && migrationState?.stage !== 'completed');
   const needsMigration = needsDataMerge
     || ((hasData || Boolean(installed)) && !installed?.migratedToMagpieAt && migrationState?.stage !== 'completed');
@@ -154,13 +143,6 @@ function rewriteHomeFields(node, legacyDataDir, targetConfigDir) {
       : rewriteHomeFields(v, legacyDataDir, targetConfigDir);
   }
   return out;
-}
-
-/** @param {fs.Dirent} entry @param {string} srcDir @param {string} legacyDataDir @param {boolean} skipNodeModules */
-function shouldSkipEntry(entry, srcDir, legacyDataDir, skipNodeModules) {
-  if (entry.isSymbolicLink()) return true;
-  if (srcDir === legacyDataDir && (entry.name.endsWith('.lock') || EXCLUDED_TOP_ENTRIES.has(entry.name))) return true;
-  return Boolean(skipNodeModules && entry.name === 'node_modules');
 }
 
 /**
@@ -416,73 +398,6 @@ function mergeUsageJsonl(targetText, sourceText) {
   return entries.length ? `${entries.map((e) => e.line).join('\n')}\n` : '';
 }
 
-/** @param {string} dir @param {string} prefix @param {Array<{ src: string, dst: string }>} out */
-function collectExistingFiles(dir, prefix, out) {
-  if (!fs.existsSync(dir)) return;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isSymbolicLink()) continue;
-    const src = path.join(dir, entry.name);
-    const dst = path.join(prefix, entry.name);
-    if (entry.isDirectory()) collectExistingFiles(src, dst, out);
-    else if (entry.isFile()) out.push({ src, dst });
-  }
-}
-
-/** @param {string} srcDir @param {string} dstDir @param {string} legacyDataDir @param {boolean} skipNodeModules @param {string[]} createdPaths */
-function collectCreatedPaths(srcDir, dstDir, legacyDataDir, skipNodeModules, createdPaths) {
-  if (!fs.existsSync(srcDir)) return;
-  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
-    if (shouldSkipEntry(entry, srcDir, legacyDataDir, skipNodeModules)) continue;
-    const src = path.join(srcDir, entry.name);
-    const dst = path.join(dstDir, entry.name);
-    if (!fs.existsSync(dst)) createdPaths.push(dst);
-    else if (entry.isDirectory()) collectCreatedPaths(src, dst, legacyDataDir, entry.name === 'plugins' || skipNodeModules, createdPaths);
-  }
-}
-
-/** @param {string} backupDir @param {{ dshHome: string, targetConfigDir: string, legacyDataDir?: string }} options */
-function snapshotTargets(backupDir, { dshHome, targetConfigDir, legacyDataDir }) {
-  fs.mkdirSync(backupDir, { recursive: true });
-  const copies = [
-    { src: path.join(dshHome, 'cordis.patch.yml'), dst: path.join(backupDir, 'dsh-home-cordis.patch.yml'), kind: 'dsh' },
-    { src: path.join(dshHome, 'profiles', 'web', 'cordis.patch.yml'), dst: path.join(backupDir, 'dsh-web-cordis.patch.yml'), kind: 'dsh' },
-    { src: path.join(dshHome, '.credentials.yaml'), dst: path.join(backupDir, 'dsh-credentials.yaml'), kind: 'dsh' },
-  ];
-  /** @type {Array<{ src: string, dst: string }>} */
-  const existingTargetFiles = [];
-  collectExistingFiles(targetConfigDir, path.join(backupDir, 'magpie'), existingTargetFiles);
-  for (const file of existingTargetFiles) copies.push({ ...file, kind: 'magpie' });
-  const recorded = copies.map(({ src, dst, kind }) => {
-    const existed = fs.existsSync(src);
-    if (existed) { fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.copyFileSync(src, dst); }
-    return { src, dst, existed, kind };
-  });
-  /** @type {string[]} */
-  const createdPaths = [];
-  if (legacyDataDir && fs.existsSync(legacyDataDir)) {
-    if (!fs.existsSync(targetConfigDir)) createdPaths.push(targetConfigDir);
-    else collectCreatedPaths(legacyDataDir, targetConfigDir, legacyDataDir, true, createdPaths);
-  }
-  const manifest = { recorded, createdPaths };
-  atomicWriteFileSync(path.join(backupDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  return manifest;
-}
-
-/** @param {{ recorded: Array<{ src: string, dst: string, existed: boolean }>, createdPaths?: string[] } | Array<{ src: string, dst: string, existed: boolean }>} snapshot */
-function restoreSnapshot(snapshot) {
-  const recorded = Array.isArray(snapshot) ? snapshot : (snapshot?.recorded || []);
-  const createdPaths = Array.isArray(snapshot) ? [] : (snapshot?.createdPaths || []);
-  for (const item of recorded) {
-    if (!item.existed) { safeRemoveSync(item.src); continue; }
-    if (!item.dst || !fs.existsSync(item.dst)) { console.warn(`Magpie 迁移回滚跳过缺失备份文件：${item.dst}`); continue; }
-    fs.mkdirSync(path.dirname(item.src), { recursive: true });
-    try { if (fs.existsSync(item.src)) fs.chmodSync(item.src, 0o644); } catch { /* ignore */ }
-    const mode = isSensitiveTarget(item.src) ? 0o600 : undefined;
-    atomicWriteFileSync(item.src, fs.readFileSync(item.dst), mode ? { mode } : undefined);
-  }
-  for (const created of createdPaths) safeRemoveSync(created);
-}
-
 /** @param {{ legacyDataDir: string, targetConfigDir: string, externalRunning?: boolean }} options */
 function migrateDataDirectory({ legacyDataDir, targetConfigDir, externalRunning = false }) {
   if (!fs.existsSync(legacyDataDir)) return { mode: 'empty', dataMergeSkipped: '', notice: '' };
@@ -609,6 +524,39 @@ function markInstalledMigrated(legacy) {
   }
 }
 
+/** @param {any} legacy @param {any} existing @param {string} targetConfigDir @param {string} stateFile @param {Record<string, any>} fields */
+function beginDeferredDataMerge(legacy, existing, targetConfigDir, stateFile, fields) {
+  const target = path.resolve(targetConfigDir);
+  if (existing.stage === DEFERRED_MERGE_IN_PROGRESS) {
+    const { backupDir, targetConfigDir: originalTarget } = existing;
+    if (typeof originalTarget !== 'string' || path.relative(originalTarget, target)) {
+      throw new Error(`Magpie 配置目录已变更。请恢复原配置目录后重试：${originalTarget}`);
+    }
+    if (typeof backupDir !== 'string' || !isPathInside(tryRealpath(legacy.root), tryRealpath(backupDir))) {
+      throw new Error('Magpie 延迟迁移的备份目录无效');
+    }
+    const snapshot = readJsonOrNull(path.join(backupDir, 'manifest.json'));
+    if (!Array.isArray(snapshot?.recorded) || !Array.isArray(snapshot.createdPaths)) {
+      throw new Error(`Magpie 延迟迁移缺少可恢复的备份清单：${backupDir}`);
+    }
+    restoreSnapshot(snapshot);
+    return { backupDir, snapshot };
+  }
+  const backupDir = fs.mkdtempSync(path.join(legacy.root, 'migration-backup-'));
+  try {
+    const snapshot = snapshotTargets(backupDir, {
+      targetConfigDir: target, legacyDataDir: legacy.dataDir, legacyInstalledFile: legacy.installedFile,
+    });
+    createStageWriter(stateFile, fingerprintLegacyData(legacy.dataDir, legacy.installedFile), backupDir)(
+      DEFERRED_MERGE_IN_PROGRESS, { ...fields, targetConfigDir: target },
+    );
+    return { backupDir, snapshot };
+  } catch (error) {
+    safeRemoveSync(backupDir);
+    throw error;
+  }
+}
+
 /** Complete deferred Scenario B data merge once external Magpie is no longer running.
  * @param {any} legacy @param {any} existing @param {any} options @param {string} stateFile */
 function completeDeferredDataMerge(legacy, existing, options, stateFile) {
@@ -626,8 +574,11 @@ function completeDeferredDataMerge(legacy, existing, options, stateFile) {
       ...baseFields,
     };
   }
-  const backupDir = path.join(legacy.root, `migration-backup-${Date.now()}`);
-  const snapshot = snapshotTargets(backupDir, { dshHome: options.dshHome, targetConfigDir: options.targetConfigDir, legacyDataDir: legacy.dataDir });
+  const fields = {
+    ...baseFields, agentsDisconnected: true,
+    dataMode: existing.dataMode, dataMergeSkipped: existing.dataMergeSkipped, notice: existing.notice,
+  };
+  const { backupDir, snapshot } = beginDeferredDataMerge(legacy, existing, options.targetConfigDir, stateFile, fields);
   try {
     const dataResult = migrateDataDirectory({ legacyDataDir: legacy.dataDir, targetConfigDir: options.targetConfigDir, externalRunning: false });
     markInstalledMigrated(legacy);
@@ -642,7 +593,12 @@ function completeDeferredDataMerge(legacy, existing, options, stateFile) {
     }
     return result;
   } catch (error) {
-    restoreSnapshot(snapshot);
+    try {
+      restoreSnapshot(snapshot);
+      createStageWriter(stateFile, fingerprintLegacyData(legacy.dataDir, legacy.installedFile), '')('deferred_data_merge', fields);
+    } catch (restoreError) {
+      throw new AggregateError([error, restoreError], `Magpie 延迟迁移未能回滚，已保留备份：${backupDir}`);
+    }
     safeRemoveSync(backupDir);
     throw error;
   }
@@ -657,7 +613,8 @@ async function migrateWhaleBridgeToMagpie(options) {
   if (!legacy.needsMigration) return { migrated: false, reason: 'nothing-to-migrate' };
   const stateFile = path.join(legacy.root, 'migration-state.json');
   const existing = readJsonBestEffort(stateFile);
-  if (existing?.stage === 'deferred_data_merge' || (existing?.stage === 'agents_disconnected' && existing?.dataMergeSkipped === 'external-running')) {
+  if (existing?.stage === 'deferred_data_merge' || existing?.stage === DEFERRED_MERGE_IN_PROGRESS
+      || (existing?.stage === 'agents_disconnected' && existing?.dataMergeSkipped === 'external-running')) {
     return completeDeferredDataMerge(legacy, existing, options, stateFile);
   }
   restorePriorMigrationBackup(existing);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 import { stageAndPromoteRuntime } from './prepare-dshd-remote.mjs';
 
 test('stageAndPromoteRuntime cleans staging on failure without publishing an unverified runtime', async (t) => {
@@ -44,4 +45,49 @@ test('stageAndPromoteRuntime preserves existing verified runtime on failure and 
   });
   assert.equal(fs.readFileSync(path.join(destination, 'version.txt'), 'utf8'), 'v2-ok');
   assert.deepEqual(fs.readdirSync(dir), ['desktop-runtime']);
+});
+
+test('failed runtime promotion restores the old runtime or retains its backup if restoration also fails', async () => {
+  await withOwnedTempDir('whale-dshd-runtime-recovery-', async (dir) => {
+    const destination = path.join(dir, 'desktop-runtime');
+    const readVersion = (root) => fs.readFileSync(path.join(root, 'version.txt'), 'utf8');
+    const build = (root) => fs.writeFileSync(path.join(root, 'version.txt'), 'v2');
+    fs.mkdirSync(destination);
+    fs.writeFileSync(path.join(destination, 'version.txt'), 'v1');
+    const rename = fs.renameSync;
+    const promotionError = new Error('could not promote staging');
+    const restorationError = new Error('could not move backup back');
+    let rejectRestore = false;
+    const mock = test.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === destination && path.basename(from).includes('.staging-')) throw promotionError;
+      if (to === destination && rejectRestore) throw restorationError;
+      rename(from, to);
+    });
+    let backup = '';
+    try {
+      await assert.rejects(stageAndPromoteRuntime(destination, build), (error) => error === promotionError);
+      assert.equal(readVersion(destination), 'v1');
+      assert.deepEqual(fs.readdirSync(dir), ['desktop-runtime']);
+
+      rejectRestore = true;
+      await assert.rejects(stageAndPromoteRuntime(destination, build), (error) => {
+        const [backupName] = fs.readdirSync(dir);
+        assert.match(backupName, /^desktop-runtime\.old-/);
+        backup = path.join(dir, backupName);
+        assert.ok(error instanceof AggregateError);
+        assert.deepEqual(error.errors, [promotionError, restorationError]);
+        assert.ok(error.message.includes(backup));
+        return true;
+      });
+      assert.equal(fs.existsSync(destination), false);
+      assert.equal(readVersion(backup), 'v1');
+    } finally {
+      mock.mock.restore();
+    }
+
+    await stageAndPromoteRuntime(destination, build);
+    assert.equal(readVersion(destination), 'v2');
+    assert.equal(readVersion(backup), 'v1');
+    assert.deepEqual(fs.readdirSync(dir), ['desktop-runtime', path.basename(backup)]);
+  });
 });

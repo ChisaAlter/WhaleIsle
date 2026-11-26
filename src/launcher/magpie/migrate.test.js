@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { withOwnedTempDir } = require('../../shared/fs-safe');
@@ -299,6 +300,84 @@ test('Scenario B defers data merge while external Magpie runs and completes once
     const mergedProviders = JSON.parse(fs.readFileSync(path.join(targetConfigDir, 'providers.json'), 'utf8'));
     assert.ok(mergedProviders.providers.ext);
     assert.ok(mergedProviders.providers.legacyOnly);
+  });
+});
+
+test('an interrupted deferred merge recovers its snapshot before merging again', async () => {
+  await withOwnedTempDir('magpie-deferred-restart-', async (sandbox) => {
+    const desktopStateDir = path.join(sandbox, 'state');
+    const dshHome = path.join(sandbox, 'dsh');
+    const targetConfigDir = path.join(sandbox, 'magpie');
+    const wbRoot = path.join(desktopStateDir, 'components', 'whalebridge');
+    const wbData = path.join(wbRoot, 'data');
+    const installed = path.join(wbRoot, 'installed.json');
+    const providers = path.join(targetConfigDir, 'providers.json');
+    const dshPatch = path.join(dshHome, 'cordis.patch.yml');
+    for (const dir of [wbData, targetConfigDir, dshHome]) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(wbData, 'providers.json'), '{"providers":{"shared":{"name":"WhaleBridge"}}}');
+    fs.writeFileSync(providers, '{"providers":{"shared":{"name":"Magpie"}}}');
+    fs.writeFileSync(installed, '{"version":"1.2.0"}');
+    fs.writeFileSync(dshPatch, '[]\n');
+    const options = { desktopStateDir, dshHome, targetConfigDir };
+    const crashAfterRename = (target) => {
+      const child = spawnSync(process.execPath, ['-e', `
+        const fs = require('node:fs');
+        const [modulePath, rawOptions, target, markerPath] = process.argv.slice(1);
+        const { migrateWhaleBridgeToMagpie } = require(modulePath);
+        const rename = fs.renameSync;
+        fs.renameSync = (from, to) => {
+          rename(from, to);
+          if (to === target && (to !== markerPath || JSON.parse(fs.readFileSync(to, 'utf8')).migratedToMagpieAt)) {
+            process.exit(87);
+          }
+        };
+        migrateWhaleBridgeToMagpie(JSON.parse(rawOptions)).catch((error) => {
+          console.error(error);
+          process.exitCode = 1;
+        });
+      `, require.resolve('./migrate'), JSON.stringify(options), target, installed], { encoding: 'utf8', timeout: 10_000 });
+      assert.equal(child.status, 87, child.stderr || String(child.error || child.signal));
+    };
+    const merged = {
+      shared: { name: 'Magpie' },
+      'shared-whalebridge': { name: 'WhaleBridge' },
+    };
+    const readProviders = () => JSON.parse(fs.readFileSync(providers, 'utf8')).providers;
+
+    assert.equal((await migrateWhaleBridgeToMagpie({ ...options, externalRunning: true })).deferred, true);
+    crashAfterRename(providers);
+    assert.deepEqual(readProviders(), merged);
+    const journal = readMigrationState(wbRoot);
+    assert.equal(journal.stage, 'deferred_data_merging');
+    assert.ok(fs.existsSync(path.join(journal.backupDir, 'manifest.json')));
+    assert.equal((await migrateWhaleBridgeToMagpie({ ...options, externalRunning: true })).migrated, false);
+    assert.deepEqual(readProviders(), merged);
+    assert.deepEqual(readMigrationState(wbRoot), journal);
+    const otherConfigDir = path.join(sandbox, 'other-magpie');
+    await assert.rejects(migrateWhaleBridgeToMagpie({ ...options, targetConfigDir: otherConfigDir }), /配置目录已变更/);
+    assert.equal(fs.existsSync(otherConfigDir), false);
+    assert.deepEqual(readProviders(), merged);
+    fs.writeFileSync(dshPatch, '# Updated independently\n[]\n');
+
+    crashAfterRename(installed);
+    assert.deepEqual(readProviders(), merged);
+    assert.ok(JSON.parse(fs.readFileSync(installed, 'utf8')).migratedToMagpieAt);
+    assert.equal(detectLegacyWhaleBridge(desktopStateDir).needsMigration, true);
+
+    const legacyLogins = path.join(wbData, 'logins.json');
+    fs.writeFileSync(legacyLogins, '{');
+    await assert.rejects(migrateWhaleBridgeToMagpie(options), SyntaxError);
+    assert.deepEqual(readProviders(), { shared: { name: 'Magpie' } });
+    assert.equal(JSON.parse(fs.readFileSync(installed, 'utf8')).migratedToMagpieAt, undefined);
+    assert.equal(readMigrationState(wbRoot).stage, 'deferred_data_merge');
+    fs.unlinkSync(legacyLogins);
+
+    assert.equal((await migrateWhaleBridgeToMagpie(options)).migrated, true);
+    assert.deepEqual(readProviders(), merged);
+    assert.equal(fs.readFileSync(dshPatch, 'utf8'), '# Updated independently\n[]\n');
+    assert.equal(readMigrationState(wbRoot).stage, 'completed');
+    assert.equal((await migrateWhaleBridgeToMagpie(options)).migrated, false);
+    assert.equal(fs.readdirSync(wbRoot).some((name) => name.startsWith('migration-backup-')), false);
   });
 });
 
