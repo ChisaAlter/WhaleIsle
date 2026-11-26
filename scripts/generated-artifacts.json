@@ -84,7 +84,7 @@
           "src/renderer/assets/welcome-brand.svg",
           "src/renderer/assets/window-material.css"
         ],
-        "sourceHash": "59c2f19545e69514444dec4bd18434f741abbf0b49d7b5b775d823d96bde08ed",
+        "sourceHash": "1224016e09b782df32575e660086ee94e57d0803f64ce04d30a6fc9744ec9bc6",
         "artifactHash": "b267dbf316e3b254d48037b025e530d32006922627b15ade110509a50111517e"
       }
     },
@@ -104,7 +104,7 @@
         "artifacts": [
           "dsh-acp/lib/vendor"
         ],
-        "sourceHash": "1c00725b83003aceb96fafb120a006e856deb00fa237553b26febd63114688be",
+        "sourceHash": "ddb5e2f9561f6fb6da7562c65a7ba342e314ad8e8fc4663a667bcfef4847cf58",
         "artifactHash": "e64fd26ad25025675251b173567bd0bb6bb45ad191374a4d466a7ce634dff180",
         "recordCommands": [
           [
