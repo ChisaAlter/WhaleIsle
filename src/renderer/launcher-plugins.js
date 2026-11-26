@@ -137,19 +137,37 @@ function renderPlugins(forensics) {
   });
 }
 
+/** @param {any} guidance */
+function renderHomeRecoveryGuidance(guidance) {
+  const guidanceCard = $('home-plugin-guidance');
+  if (!guidanceCard) return;
+  guidanceCard.hidden = desktopActionBusy() || !guidance;
+  if (!guidance) return;
+  const titleEl = $('home-plugin-guidance-title');
+  const bodyEl = $('home-plugin-guidance-body');
+  const confirmEl = $('btn-recover-plugins');
+  if (titleEl) titleEl.textContent = guidance.title;
+  if (bodyEl) bodyEl.textContent = guidance.body;
+  if (confirmEl) confirmEl.textContent = guidance.confirmText;
+}
+
+/** @param {any} guidance */
+function renderHomeRecoverySuspects(guidance) {
+  const canDisableSuspects = guidance?.kind === 'disable' && Array.isArray(guidance.names) && guidance.names.length > 0;
+  const suspects = canDisableSuspects ? guidance.names : [];
+  const btn = $('btn-disable-suspects');
+  if (!btn) return;
+  btn.hidden = !canDisableSuspects;
+  btn.dataset.names = suspects.join('\0');
+}
+
 function renderHomeRecovery(status) {
   const board = $('home-recovery');
   const forensics = status?.forensics;
   const recovery = status?.recovery || forensics?.recovery || status?.desktop?.pluginRecovery;
   const recoveryApi = window.launcherRecovery;
   const guidance = recoveryApi.startupRecoveryGuidance(status);
-  const guidanceCard = $('home-plugin-guidance');
-  guidanceCard.hidden = desktopActionBusy() || !guidance;
-  if (guidance) {
-    $('home-plugin-guidance-title').textContent = guidance.title;
-    $('home-plugin-guidance-body').textContent = guidance.body;
-    $('btn-recover-plugins').textContent = guidance.confirmText;
-  }
+  renderHomeRecoveryGuidance(guidance);
   const show = !desktopActionBusy() && Boolean(desktopActionError || recovery?.skipUserPlugins
     || recoveryApi?.skippedBuiltins?.(status?.lastStart)?.length
     || (!desktopIsRunning(status?.desktop)
@@ -169,10 +187,7 @@ function renderHomeRecovery(status) {
     listId: 'home-recovery-list',
     sortSuspectsFirst: true,
   });
-  const suspects = disableableSuspectNames(forensics);
-  const btn = $('btn-disable-suspects');
-  btn.hidden = suspects.length === 0;
-  btn.dataset.names = suspects.join('\0');
+  renderHomeRecoverySuspects(guidance);
 }
 
 async function actPlugin(method, name, button) {

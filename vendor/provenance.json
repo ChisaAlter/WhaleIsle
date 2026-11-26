@@ -82,8 +82,8 @@
         "artifacts": [
           "lib/client.js"
         ],
-        "sourceHash": "6076264b9853d38ecc62dd13cc40d8c43ac7bca72f2884e72b5dfc0d405bfe1d",
-        "artifactHash": "68dcc779272c94cbd08b32c625ec0e03d12d549e11b116fc5588f6ffb429d98d"
+        "sourceHash": "8998e2235619252a547b7a960042b71135e3c1b676934be48ad9165293b68bb4",
+        "artifactHash": "fd7a2ddb032f9a6e5d93224e5929e002d0c16cde8135627dbef014160e5dd50b"
       },
       "recordCommands": [
         [
@@ -137,8 +137,8 @@
           "lib/host",
           "lib/shared"
         ],
-        "sourceHash": "9378b9ddcc6a5b588ee2b9de153a6438fa8e027fefb211dd50cd93604e23b422",
-        "artifactHash": "765ce234c1ca08471698d10c3873084d10db0f23f83135c77cf0e1173018acf8"
+        "sourceHash": "9fec518b9ba09809b05193a99aebb1fb440fdcd45470c8639395d6e264408d5c",
+        "artifactHash": "16b590c8dc537c4380e129587891a8b514ab32b6fe8b6f3bf756430e0746424b"
       }
     },
     "dsh-whale": {

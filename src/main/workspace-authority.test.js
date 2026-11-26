@@ -729,3 +729,62 @@ test('loadWorkspaceAuthority authorizes v2 project.json workspaces and task work
     fs.rmSync(outsider, { recursive: true, force: true });
   }
 });
+
+test('createCachedWorkspaceAuthority invalidates on revision or epoch and never caches loadConfig errors', () => {
+  const wsA = makeRoot();
+  const wsB = makeRoot();
+  const configPath = require.resolve('./config');
+  const prevConfig = require.cache[configPath];
+  const authPath = require.resolve('./workspace-authority');
+  const prevAuth = require.cache[authPath];
+
+  let revision = 1;
+  let workspace = wsA;
+  let failLoad = true;
+  let loadCalls = 0;
+
+  require.cache[configPath] = {
+    id: configPath,
+    filename: configPath,
+    loaded: true,
+    exports: {
+      configRevision: () => revision,
+      loadConfig: () => {
+        loadCalls++;
+        if (failLoad) throw new Error('transient config read error');
+        return { workspace };
+      },
+    },
+  };
+  delete require.cache[authPath];
+  try {
+    const { createCachedWorkspaceAuthority, invalidateWorkspaceAuthorities } = require('./workspace-authority');
+    const cached = createCachedWorkspaceAuthority();
+
+    assert.deepEqual(cached.get().authorizedRoots(), [], 'transient loadConfig error returns empty authority');
+    assert.equal(loadCalls, 1);
+
+    failLoad = false;
+    assert.deepEqual(cached.get().authorizedRoots(), [canonical(wsA)], 'transient error was not cached');
+    assert.equal(loadCalls, 2);
+
+    assert.deepEqual(cached.get().authorizedRoots(), [canonical(wsA)], 'second call within same epoch and revision hits cache');
+    assert.equal(loadCalls, 2);
+
+    workspace = wsB;
+    revision = 2;
+    assert.deepEqual(cached.get().authorizedRoots(), [canonical(wsB)], 'config revision bump invalidates cache');
+    assert.equal(loadCalls, 3);
+
+    invalidateWorkspaceAuthorities();
+    assert.deepEqual(cached.get().authorizedRoots(), [canonical(wsB)], 'explicit invalidation forces rebuild');
+    assert.equal(loadCalls, 4);
+  } finally {
+    if (prevConfig) require.cache[configPath] = prevConfig;
+    else delete require.cache[configPath];
+    if (prevAuth) require.cache[authPath] = prevAuth;
+    else delete require.cache[authPath];
+    fs.rmSync(wsA, { recursive: true, force: true });
+    fs.rmSync(wsB, { recursive: true, force: true });
+  }
+});

@@ -12,23 +12,18 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { assertNodeVersion } from './lib/node-version.mjs';
+import { harnessInstallReason, officialBuildReason, pnpmInstallEnv } from './prestart-ensure.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const { harnessHasGhosttyAssets } = require('../src/shared/ghostty-assets.js');
+const { missingPluginRuntimeClosure } = require('./after-pack.js');
 
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const harness = path.join(root, 'vendor', 'deepseek-harness');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-/**
- * The vendored lefthook postinstall (`lefthook install -f`) would write hooks
- * into the developer's outer repository. It only stands down when CI is
- * truthy and LEFTHOOK is unset, so every install child below inherits that
- * exact environment.
- */
-const childEnv = { ...process.env, CI: 'true' };
-delete childEnv.LEFTHOOK;
+const childEnv = pnpmInstallEnv();
 
 function run(command, args, cwd = root) {
   console.log(`> ${command} ${args.join(' ')}`);
@@ -72,13 +67,13 @@ function electronDistBinary() {
   return path.join(dist, 'electron');
 }
 
-function harnessReady() {
-  return fs.existsSync(path.join(harness, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'))
-    && fs.existsSync(path.join(harness, '.dsh-build', 'client-build-environment.json'))
-    && fs.existsSync(path.join(root, 'src', 'main', 'preview-guest-preload.bundle.js'))
-    && fs.existsSync(path.join(root, 'vendor', 'dsh-usage-panel', 'node_modules'))
-    && fs.existsSync(path.join(root, 'vendor', 'dsh-im', 'node_modules'))
-    && harnessHasGhosttyAssets(harness);
+async function harnessReady() {
+  if (harnessInstallReason(harness)) return false;
+  if (await officialBuildReason(harness, root)) return false;
+  if (!fs.existsSync(path.join(root, 'src', 'main', 'preview-guest-preload.bundle.js'))) return false;
+  if (missingPluginRuntimeClosure(path.join(root, 'vendor', 'dsh-usage-panel')).length > 0) return false;
+  if (missingPluginRuntimeClosure(path.join(root, 'vendor', 'dsh-im')).length > 0) return false;
+  return harnessHasGhosttyAssets(harness);
 }
 
 assertNodeVersion(process.versions.node, manifest.engines?.node);
@@ -93,7 +88,7 @@ if (!fs.existsSync(electronDistBinary())) {
   run(process.execPath, [path.join('node_modules', 'electron', 'install.js')]);
 }
 
-if (harnessReady()) {
+if (await harnessReady()) {
   console.log('[setup] Harness 依赖与官方客户端构建已就绪，跳过 setup:harness');
 } else {
   run(process.execPath, [path.join('scripts', 'setup-harness.js')]);

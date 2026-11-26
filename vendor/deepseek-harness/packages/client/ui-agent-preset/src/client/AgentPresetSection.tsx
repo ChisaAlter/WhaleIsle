@@ -112,6 +112,7 @@ export function AgentPresetSection({
       onDone={() => { setDismissedError(state.error) }} /> : null}
     {([true, false] as const).map((builtIn) => {
       const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn
+        && (!row.hidden || row.isDefault)
         && (developerTools || !requiresCodingTools(row)))
       const entry = builtIn ? null : creatorButton
       if (rows.length === 0 && entry === null) return null

@@ -74,3 +74,59 @@ test('createShellDialogs.confirmDialog serializes concurrent confirmations and f
   showCalls[1].resolve({ response: 0 });
   assert.deepEqual(await updateAsk, { response: 0 });
 });
+
+test('createShellDialogs.confirmDialog unblocks queue when an active native fallback is aborted', async () => {
+  const showCalls = [];
+  const fakeParent = { isDestroyed: () => false, isVisible: () => true };
+  class FakeShellConfirmDialog {
+    showQueued(parent, options) {
+      showCalls.push({ parent, options });
+      return Promise.resolve({ response: 0 });
+    }
+  }
+  let messageBoxCalls = 0;
+  const module = { exports: {} };
+  const stubs = {
+    electron: {
+      clipboard: { writeText() {} },
+      dialog: {
+        showMessageBox: () => {
+          messageBoxCalls++;
+          return new Promise(() => {});
+        },
+      },
+    },
+    './window': { getMainWindow: () => null, getLauncherWindow: () => null },
+    './config': { loadConfig: () => ({ locale: 'en' }) },
+    './desktop-locale': { resolveDesktopLocale: () => ({ id: 'en', messages: {} }) },
+    './model-action-dialog': require('./model-action-dialog'),
+    '../shared/model-tool-effects': require('../shared/model-tool-effects'),
+    './update-overlay': { UpdateOverlays: class {} },
+    './update-dialog': { ShellConfirmDialog: FakeShellConfirmDialog },
+    './paths': { rendererFile: (name) => path.join(__dirname, '..', 'renderer', name) },
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'app-dialogs.js'), 'utf8'), {
+    require: (id) => stubs[id] || require(id),
+    module,
+    exports: module.exports,
+    __dirname,
+    __filename: path.join(__dirname, 'app-dialogs.js'),
+    console,
+    Promise,
+  });
+
+  const dialogs = module.exports.createShellDialogs();
+  const abort = new AbortController();
+  const hungNative = dialogs.confirmDialog(null, { buttons: ['OK', 'Cancel'], cancelId: 1, signal: abort.signal });
+  await new Promise(setImmediate);
+  assert.equal(messageBoxCalls, 1);
+
+  abort.abort();
+  assert.equal((await hungNative).response, 1);
+
+  // A subsequent shell-overlay prompt must not deadlock behind the unresolvable native dialog.
+  const followUp = await dialogs.confirmDialog(fakeParent, { buttons: ['Yes', 'No'], cancelId: 1, title: 'FollowUp' });
+  assert.equal(followUp.response, 0);
+  assert.equal(showCalls.length, 1);
+  assert.equal(showCalls[0].options.title, 'FollowUp');
+});

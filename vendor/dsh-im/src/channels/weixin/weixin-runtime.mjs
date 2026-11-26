@@ -4,6 +4,7 @@ import {
   connectionTestTarget,
   connectionTestTargetUnavailable,
 } from '../shared/connection-test.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 
 const DEFAULT_START_RETRY_DELAYS_MS = Object.freeze([250, 1_000, 3_000]);
@@ -112,6 +113,8 @@ export class WeixinRuntime {
   #replyTimeoutMs;
   #maxMessageChars;
   #startRetryDelaysMs;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createWeixinRuntimeStatus();
   #bridge = null;
   #abortController = null;
@@ -124,6 +127,7 @@ export class WeixinRuntime {
     token,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     maxMessageChars = DEFAULT_WEIXIN_MAX_MESSAGE_CHARS,
@@ -137,6 +141,7 @@ export class WeixinRuntime {
     this.#token = token;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#maxMessageChars = maxMessageChars;
@@ -187,8 +192,10 @@ export class WeixinRuntime {
       this.#status.ready = true;
       this.#status.weixinConnectionState = 'connected';
       this.#status.lastCheckedAt = Date.now();
+      this.#registerOutboundSender();
       this.#monitor = this.#runMonitor(signal).catch((error) => {
         if (signal.aborted) return;
+        this.#unregisterOutbound();
         this.#status.ready = false;
         this.#status.weixinConnectionState = 'failed';
         this.#status.lastError = error?.message ?? String(error);
@@ -279,6 +286,7 @@ export class WeixinRuntime {
   }
 
   async stop() {
+    this.#unregisterOutbound();
     const monitor = this.#monitor;
     const bridge = this.#bridge;
     const wasStarted = Boolean(this.#abortController || monitor || this.#status.ready);
@@ -324,5 +332,31 @@ export class WeixinRuntime {
       signal: this.#abortController.signal,
     });
     return { sent: true };
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('weixin', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#abortController) {
+          throw Object.assign(new Error('Weixin bot is not connected'), { code: 'channel_not_connected' });
+        }
+        await this.#api.sendText({
+          baseUrl: this.#config.baseUrl,
+          token: this.#token,
+          toUserId: payload.targetId,
+          text: payload.text,
+          signal: payload.signal ?? this.#abortController.signal,
+        });
+        return { delivered: true };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

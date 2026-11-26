@@ -23,6 +23,8 @@ const { createTaskControlPeer } = require('./task-control-peer');
 const { showClosingOverlay } = require('./closing-overlay');
 const { getLive2dPet } = require('./desktop-live2d');
 const { stopDesktopInstallControl } = require('./desktop-install-control');
+const { invalidateWorkspaceAuthorities } = require('./workspace-authority');
+const { flushBootLogs } = require('../shared/launcher-bridges');
 
 /**
  * Desktop lifecycle phase extracted from index.js (#439 P3-4): the task-
@@ -200,6 +202,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
       return null;
     }
     saveConfig({ workspace: result.filePaths[0] });
+    invalidateWorkspaceAuthorities?.();
     await restartWithCleanup();
     return result.filePaths[0];
   }
@@ -209,11 +212,19 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
    * Returns a promise that settles only after the preview close has completed —
    * restart/reload/quit must not proceed while a BrowserView teardown is still
    * in flight, or a raced detach leaves a half-removed view behind.
+   * @param {{ stopWatchers?: boolean }} [options]
    */
-  async function cleanupDesktopResources() {
+  async function cleanupDesktopResources(options = {}) {
     if (!state.desktopResources) {
-      await require('../launcher/forensics-log').flushBootLogs();
+      await flushBootLogs();
       return;
+    }
+    if (options.stopWatchers || state.stoppingForQuit) {
+      try {
+        state.desktopResources.stopWorkspaceWatch?.();
+      } catch (error) {
+        dsh.log(`工作区监听清理失败：${/** @type {any} */ (error).message}`, 'app');
+      }
     }
     try {
       await state.desktopResources.pty.killAll();
@@ -223,7 +234,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
     await Promise.resolve(state.desktopResources.preview.closeAll()).catch((error) => {
       dsh.log(`预览清理失败：${/** @type {any} */ (error).message}`, 'app');
     });
-    await require('../launcher/forensics-log').flushBootLogs();
+    await flushBootLogs();
   }
 
   /**
@@ -274,6 +285,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
       return taskProtection.coordinate('restart', /** @type {Record<string, any>} */ ({
         preConfirmed,
         commit: async () => {
+          invalidateWorkspaceAuthorities?.();
           await cleanupDesktopResources();
           return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options),
             () => kernelLogTail(dsh), () => harness.skippedBuiltins);
@@ -329,7 +341,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
           state.stoppingForQuit = true;
           shutdownPromise = Promise.allSettled([
             Promise.resolve().then(() => harness.shutdown()),
-            Promise.resolve().then(() => cleanupDesktopResources()),
+            Promise.resolve().then(() => cleanupDesktopResources({ stopWatchers: true })),
             Promise.resolve().then(() => getLive2dPet()?.dispose()),
             Promise.resolve().then(() => state.approvalMonitor?.dispose()),
             Promise.resolve().then(() => stopDesktopInstallControl()),

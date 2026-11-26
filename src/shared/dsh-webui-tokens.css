@@ -75,6 +75,7 @@
   --dsw-alias-state-warn-primary: rgb(245, 158, 11);
   --dsw-alias-state-warn-secondary: rgb(247, 173, 49);
   --dsw-alias-state-warn-tertiary: rgb(254, 245, 231);
+  --dsw-alias-switch-thumb: rgb(255, 255, 255);
   --dsw-static-amber-400: rgb(247, 173, 49);
   --dsw-specific-bubble: rgb(237, 243, 254);
   --dsw-specific-input-major: color-mix(in srgb, rgb(255, 255, 255) 80%, transparent);
@@ -142,6 +143,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-state-warn-primary: rgb(245, 158, 11);
   --dsw-alias-state-warn-secondary: rgb(247, 173, 49);
   --dsw-alias-state-warn-tertiary: rgb(39, 36, 31);
+  --dsw-alias-switch-thumb: rgb(173, 178, 184);
   --dsw-specific-bubble: rgb(44, 44, 46);
   --dsw-specific-input-major: color-mix(in srgb, rgb(44, 44, 46) 80%, transparent);
   --dsw-specific-menu: color-mix(in srgb, rgb(53, 54, 56) 80%, transparent);

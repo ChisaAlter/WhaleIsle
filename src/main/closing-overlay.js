@@ -1,7 +1,7 @@
 const OVERLAY_ID = 'dshd-shell-closing';
 let closingGeneration = 0;
 
-/** @param {{ bg: string, fg: string, scheme?: string, line: string, field: string, accent: string, muted: string }} theme */
+/** @param {{ bg: string, fg: string, scheme?: string, line: string, field: string, accent: string, muted: string, minimalMode?: boolean }} theme */
 function overlayCss(theme) {
   return `
 #${OVERLAY_ID} {
@@ -23,7 +23,8 @@ function overlayCss(theme) {
   pointer-events: all;
   user-select: none;
 }
-html[data-window-maximized] #${OVERLAY_ID} {
+html[data-window-maximized] #${OVERLAY_ID},
+html[data-fullscreen] #${OVERLAY_ID} {
   border-radius: 0;
 }
 #${OVERLAY_ID} .dshd-shell-closing-card {
@@ -36,7 +37,7 @@ html[data-window-maximized] #${OVERLAY_ID} {
   border: 1px solid ${theme.line};
   border-radius: 24px;
   background: ${theme.field};
-  box-shadow: 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
+  box-shadow: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 12px 32px 0 rgba(0, 0, 0, 0.08));
 }
 #${OVERLAY_ID} .dshd-shell-closing-spinner {
   width: 36px;
@@ -44,7 +45,7 @@ html[data-window-maximized] #${OVERLAY_ID} {
   border: 2px solid ${theme.line};
   border-top-color: ${theme.accent};
   border-radius: 50%;
-  animation: dshd-shell-closing-spin 0.85s linear infinite;
+  animation: ${theme?.minimalMode ? 'none' : 'dshd-shell-closing-spin 0.85s linear infinite'};
 }
 #${OVERLAY_ID} .dshd-shell-closing-title {
   margin: 8px 0 0;
@@ -60,6 +61,14 @@ html[data-window-maximized] #${OVERLAY_ID} {
 }
 @keyframes dshd-shell-closing-spin {
   to { transform: rotate(360deg); }
+}
+html[data-dsh-minimal] #${OVERLAY_ID} .dshd-shell-closing-spinner {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  #${OVERLAY_ID} .dshd-shell-closing-spinner {
+    animation: none;
+  }
 }
 `;
 }
@@ -151,7 +160,9 @@ async function showClosingOverlay(win, locale, contents = win?.webContents) {
     return;
   }
   const { currentTheme } = require('./chrome');
-  const theme = currentTheme();
+  const { getMinimalMode } = require('./render-mode');
+  const minimalMode = typeof getMinimalMode === 'function' ? Boolean(getMinimalMode()) : false;
+  const theme = { ...currentTheme(), minimalMode };
   /** @type {NodeJS.Timeout | undefined} */
   let paintTimeout;
   /** @type {string | undefined} */

@@ -283,11 +283,17 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     const mockScript = createMockAcpServerScript(tmpHome);
     const registeredAdapters = [];
     const routes = new Map();
+    const rpcHandlers = new Map();
     const waterfalls = new Map();
     const approvalCalls = [];
     const fakeDshAgent = {
       id: 'dsh_agent_1',
       session: { id: 'dsh_sess_1', header: { cwd: tmpHome } },
+    };
+    const ownerPeer = {
+      id: 'owner-peer',
+      principal: { kind: 'owner' },
+      signal: new AbortController().signal,
     };
 
     const mockCtx = {
@@ -327,13 +333,16 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       },
       webServer: {
         register(spec) {
-          routes.set(spec.path, spec.handler);
-          return () => routes.delete(spec.path);
+          routes.set(`${spec.kind}:${spec.path}`, spec);
+          return () => routes.delete(`${spec.kind}:${spec.path}`);
         },
       },
       connection: {
-        requestRejection() {
-          return undefined;
+        rpc: {
+          handle(channel, fn) {
+            rpcHandlers.set(channel, fn);
+            return () => rpcHandlers.delete(channel);
+          },
         },
       },
       approval: {
@@ -372,39 +381,23 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     applyAcpAgentsPlugin(strictCordisCtx, { storeFile: path.join(tmpHome, 'acp-agents.json') });
     assert.equal(registeredAdapters.length, 0, 'disabled agents must not register provider routes');
 
-    const routeHandler = routes.get('/dsh-acp-agents');
-    assert.equal(typeof routeHandler, 'function');
+    const rpcHandler = rpcHandlers.get('/dsh-acp-agents');
+    assert.equal(typeof rpcHandler, 'function');
+    const mcpRoute = routes.get('exact:/dsh-acp-agents/mcp');
+    assert.equal(mcpRoute?.auth, 'anonymous');
+    assert.equal(typeof mcpRoute?.handler, 'function');
+
+    const deniedRes = await rpcHandler('catalog', {}, new AbortController().signal, {
+      principal: { kind: 'guest' },
+      signal: new AbortController().signal,
+    });
+    assert.equal(deniedRes.ok, false);
+    assert.equal(deniedRes.error.code, 'dsh-acp-agents/forbidden');
 
     async function callRpc(subpath, body = {}) {
-      let statusCode = 200;
-      let responseBody = '';
-      const envelope = {
-        type: 'client-request',
-        rpcId: 'test-rpc-1',
-        method: subpath,
-        payload: body,
-      };
-      const req = {
-        method: 'POST',
-        url: `/dsh-acp-agents/${subpath}`,
-        headers: { 'content-type': 'application/json' },
-        async *[Symbol.asyncIterator]() {
-          yield Buffer.from(JSON.stringify(envelope), 'utf8');
-        },
-      };
-      const res = {
-        writeHead(code) {
-          statusCode = code;
-        },
-        end(payload) {
-          responseBody = payload;
-        },
-      };
-      await routeHandler(req, res);
-      const parsed = JSON.parse(responseBody);
-      assert.equal(parsed.type, 'server-response');
-      assert.equal(parsed.result.ok, true, parsed.result?.error?.message);
-      return { statusCode, data: parsed.result.value };
+      const result = await rpcHandler(subpath, body, new AbortController().signal, ownerPeer);
+      assert.equal(result.ok, true, result?.error?.message);
+      return { statusCode: 200, data: result.value };
     }
 
     // 1. Query catalog

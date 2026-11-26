@@ -128,7 +128,7 @@ function paintProgress(prefix, payload) {
     bar.parentElement.hidden = unsettled;
     const fill = percent === null ? (phase === 'download' ? 0 : PHASE_FILL[phase] ?? null) : percent;
     if (fill !== null) {
-      bar.style.width = `${fill}%`;
+      bar.style.transform = `scaleX(${fill / 100})`;
     }
   }
   const kind = $(`${prefix}-kind`);

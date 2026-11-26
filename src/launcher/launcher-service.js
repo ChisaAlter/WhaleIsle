@@ -17,52 +17,7 @@ const forensicsLog = require('./forensics-log');
 const { isLauncherPackage, runtimeTarget, desktopStateDir, desktopUserDataDir } = require('./product');
 const importGuard = require('../main/import-guard');
 const { startupRecoveryGuidance } = require('../shared/launcher-recovery');
-
-// In the slim package this process's config.json is the LAUNCHER's own file —
-// desktop-owned keys (disabledPlugins, pluginRecovery) live in the runtime's
-// userData. Plain JSON merge there: the desktop normalizes on its own boot.
-function desktopConfigFile() {
-  const path = require('path');
-  return path.join(desktopUserDataDir(app), 'config.json');
-}
-
-function loadPluginConfig(strict = false) {
-  if (!isLauncherPackage()) {
-    return loadConfig();
-  }
-  try {
-    const fs = require('fs');
-    const config = JSON.parse(fs.readFileSync(desktopConfigFile(), 'utf8'));
-    if (strict && (typeof config !== 'object' || config === null || Array.isArray(config))) {
-      throw new Error('config-unreadable');
-    }
-    return config || {};
-  } catch (error) {
-    if (strict && error.code !== 'ENOENT') {
-      const failure = new Error('config-unreadable');
-      failure.code = 'CONFIG_UNREADABLE';
-      throw failure;
-    }
-    return {};
-  }
-}
-
-function savePluginConfig(patch, strict = false) {
-  if (!isLauncherPackage()) {
-    return saveConfig(patch);
-  }
-  const fs = require('fs');
-  const path = require('path');
-  const file = desktopConfigFile();
-  const next = { ...loadPluginConfig(strict), ...patch };
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
-  return next;
-}
-
-const pluginConfigIO = { load: loadPluginConfig, save: savePluginConfig };
+const { createPluginConfigIO, createLauncherPluginService } = require('./launcher-plugin-service');
 
 function configLocale(config = loadConfig()) {
   return config.locale === 'en' ? 'en' : 'zh';
@@ -88,40 +43,13 @@ function createLauncherService(deps) {
     taskProtection,
   } = deps;
   const protection = taskProtection || getTaskProtection();
-
-  async function collectForensics(snapshot = {}) {
-    const listed = listProfilePlugins();
-    const config = snapshot.config || loadPluginConfig();
-    const stateDir = desktopStateDir(app);
-    const lastStart = snapshot.lastStart || readLastDesktopStart(stateDir);
-    const recovery = harness?.pluginRecovery && typeof harness.pluginRecovery === 'object'
-      ? { ...harness.pluginRecovery }
-      : (config.pluginRecovery || {});
-    // Historical logs remain available for export, but must never authorize
-    // disabling a plugin. Sticky recovery retains the failed full attempt,
-    // not the subsequent skip boot or an earlier unrelated failure.
-    const currentLogs = typeof dsh?.currentStartLogs === 'function' ? dsh.currentStartLogs() : [];
-    const failedLogs = currentLogs.length ? currentLogs : (lastStart.logTail || []);
-    const logs = recovery.skipUserPlugins
-      ? (recovery.logTail || []).concat(lastStart.ok === false ? failedLogs : [])
-      : (lastStart.ok === false ? failedLogs : currentLogs);
-    if (isLauncherPackage() && lastStart.ok === null && !recovery.skipUserPlugins) {
-      logs.push(...await forensicsLog.readBootLogTailAsync(forensicsLog.bootLogPath(stateDir)));
-    }
-    const lastStartError = lastStart.ok === false ? lastStart.error : '';
-    const recoveryReason = typeof recovery.reason === 'string' ? recovery.reason : '';
-    const corpus = [logs.join('\n'), lastStartError, recoveryReason].filter(Boolean).join('\n');
-    return inspectPlugins({
-      logs,
-      lastStartError,
-      pluginTreeFailure: isPluginTreeFailure(corpus),
-      recovery,
-      plugins: listed.plugins || [],
-      bundles: listed.bundles || [],
-      disabledPlugins: config.disabledPlugins,
-      projectEnabled: config.projectEnabled !== false,
-    });
-  }
+  const pluginConfigIO = createPluginConfigIO({
+    app,
+    loadConfig,
+    saveConfig,
+    isLauncherPackage,
+    desktopUserDataDir,
+  });
 
   async function stopKernelIfRunning() {
     if (!dsh || typeof dsh.stop !== 'function') {
@@ -626,55 +554,51 @@ function createLauncherService(deps) {
     };
   }
 
-  async function removePluginOp(name, onProgress) {
-    // Persistent recovery admission BEFORE any removal side effect: a
-    // blocked/unreadable import journal must refuse the uninstall before the
-    // kernel stops or the config mutates — acquiring the slot alone is not
-    // equivalent to honoring the persistent verdict.
-    const blocked = blockedStartError();
-    if (blocked) {
-      return blocked;
-    }
-    // Removal is a mutating operation: it must ACQUIRE the shared slot, not
-    // merely check it. An uninstall admitted first then overlapping a later
-    // import is exactly the one-way-exclusion gap the slot exists to close.
-    const guard = acquireMaintenanceSlot('plugin-remove');
-    if (!guard) {
-      return { ok: false, error: 'maintenance-in-progress' };
-    }
-    try {
-    const raw = String(name || '').trim();
-    if (!raw) {
-      return { ok: false, error: 'missing-name' };
-    }
-    if (isPresetPlugin(raw) || OFFICIAL_TEMPLATE_BUNDLES.has(raw)) {
-      return { ok: false, error: 'preset' };
-    }
-    if (isLauncherPackage()) {
-      // The slim package ships no vendored `dsh plugin` toolchain — removal
-      // lives in the installed desktop app; never pretend to uninstall.
-      return { ok: false, error: 'desktop-only' };
-    }
-    const kernelStopped = await stopKernelIfRunning();
-    const result = await marketInstall.uninstallPlugin(raw, { onProgress });
-    // Only drop the disabledPlugins entry once the package is really gone —
-    // otherwise a failed uninstall would silently re-enable a disabled plugin.
-    // Slim mode must write the desktop runtime's config, not the launcher's.
-    if (result && result.ok !== false) {
-      const disabled = (pluginConfigIO.load().disabledPlugins || []).filter((item) => item !== raw);
-      pluginConfigIO.save({ disabledPlugins: disabled });
-    }
-    return { ...result, kernelStopped, forensics: await collectForensics() };
-    } finally {
-      releaseMaintenanceSlot(guard);
-    }
-  }
+  const pluginService = createLauncherPluginService({
+    app,
+    dsh,
+    harness,
+    startHarness,
+    startDesktop,
+    runtimeInstall,
+    marketInstall,
+    listProfilePlugins,
+    OFFICIAL_TEMPLATE_BUNDLES,
+    disablePlugins,
+    enablePlugin,
+    inspectPlugins,
+    isPresetPlugin,
+    isPluginTreeFailure,
+    readLastDesktopStart,
+    loadConfig,
+    forensicsLog,
+    isLauncherPackage,
+    desktopStateDir,
+    importGuard,
+    startupRecoveryGuidance,
+    pluginConfigIO,
+    blockedStartError,
+    acquireMaintenanceSlot,
+    releaseMaintenanceSlot,
+    stopKernelIfRunning,
+    desktopSnapshot,
+    setImportSlotKind: (/** @type {any} */ kind, /** @type {any} */ opId) => {
+      importAbortKind = kind;
+      currentImportOpId = opId;
+    },
+    clearImportSlotKind: (/** @type {any} */ expectedKind) => {
+      if (importAbortKind === expectedKind) {
+        importAbortKind = '';
+        currentImportOpId = '';
+      }
+    },
+  });
 
   return {
     async status() {
       const config = loadConfig();
       const lastStart = readLastDesktopStart(desktopStateDir(app));
-      const forensics = collectForensics({ config: isLauncherPackage() ? loadPluginConfig() : config, lastStart });
+      const forensics = pluginService.collectForensics({ config: isLauncherPackage() ? pluginConfigIO.load() : config, lastStart });
       // Peek only: status is also requested by the pre-created hidden launcher,
       // and the previous drain-on-status lost a late result before the user
       // ever saw the window. The main process drains it when the window is
@@ -813,188 +737,24 @@ function createLauncherService(deps) {
 
     stopDesktop: stopOp,
 
-    pluginForensics: collectForensics,
+    pluginForensics: pluginService.collectForensics,
 
-    async disablePlugins(names) {
-      if (importGuard.isMaintenanceHeld()) {
-        return { ok: false, error: 'import-in-progress' };
-      }
-      const result = await disablePlugins(names, { dsh, startHarness, configIO: pluginConfigIO });
-      return result.ok === true ? { ...result, forensics: await collectForensics() } : result;
-    },
+    disablePlugins: pluginService.disablePlugins,
 
-    async disableSuspectsAndStart(names) {
-      const blocked = blockedStartError();
-      if (blocked) {
-        return blocked;
-      }
-      if (importGuard.isMaintenanceHeld()) {
-        return { ok: false, error: 'operation-in-progress' };
-      }
-      const forensics = await collectForensics();
-      const guidance = startupRecoveryGuidance({
-        forensics,
-        desktop: desktopSnapshot(),
-        lastStart: readLastDesktopStart(desktopStateDir(app)),
-        recovery: forensics.recovery,
-      });
-      const suspects = guidance?.kind === 'disable' ? guidance.names : [];
-      const requested = Array.isArray(names) && names.every((name) => typeof name === 'string' && name.trim())
-        ? [...new Set(names.map((name) => name.trim()))]
-        : [];
-      if (!requested.length || requested.length !== suspects.length
-        || requested.some((name) => !suspects.includes(name))) {
-        return { ok: false, error: 'suspects-changed', forensics };
-      }
-      try {
-        const result = await disablePlugins(requested, {
-          dsh,
-          configIO: isLauncherPackage() ? {
-            load: () => loadPluginConfig(true),
-            save: (patch) => savePluginConfig(patch, true),
-          } : pluginConfigIO,
-          startWhenIdle: true,
-          startHarness: async (ownerToken) => {
-            if (isLauncherPackage()) {
-              return retryFullPluginsSlim();
-            }
-            return startDesktop({ forceRestart: true, fullPluginRetry: true, recoveryLaunch: true, maintenanceToken: ownerToken });
-          },
-        });
-        return result.ok === true ? { ...result, forensics: await collectForensics() } : result;
-      } catch (error) {
-        if (error.code === 'CONFIG_UNREADABLE') {
-          return { ok: false, error: 'config-unreadable' };
-        }
-        throw error;
-      }
-    },
+    disableSuspectsAndStart: pluginService.disableSuspectsAndStart,
 
-    async disablePlugin(name) {
-      if (importGuard.isMaintenanceHeld()) {
-        return { ok: false, error: 'import-in-progress' };
-      }
-      const raw = String(name || '').trim();
-      if (!raw) {
-        return { ok: false, error: 'missing-name' };
-      }
-      const result = await disablePlugins([raw], { dsh, startHarness, configIO: pluginConfigIO });
-      return result.ok === true ? { ...result, forensics: await collectForensics() } : result;
-    },
+    disablePlugin: pluginService.disablePlugin,
 
-    async enablePlugin(name) {
-      if (importGuard.isMaintenanceHeld()) {
-        return { ok: false, error: 'import-in-progress' };
-      }
-      const raw = String(name || '').trim();
-      if (!raw) {
-        return { ok: false, error: 'missing-name' };
-      }
-      const result = await enablePlugin(raw, { dsh, startHarness, configIO: pluginConfigIO });
-      return { ...result, forensics: await collectForensics() };
-    },
+    enablePlugin: pluginService.enablePlugin,
 
-    removePlugin: removePluginOp,
+    removePlugin: pluginService.removePlugin,
 
     startDesktop: startOp,
 
     startDesktopSkipped: startSkippedOp,
 
-    retryFullPlugins() {
-      const blocked = blockedStartError();
-      if (blocked) {
-        return Promise.resolve(blocked);
-      }
-      const guard = acquireMaintenanceSlot('retry');
-      if (!guard) {
-        return Promise.resolve({ ok: false, error: 'operation-in-progress' });
-      }
-      try {
-      if (isLauncherPackage()) {
-        return Promise.resolve()
-          .then(() => retryFullPluginsSlim())
-          .finally(() => releaseMaintenanceSlot(guard));
-      }
-      return Promise.resolve()
-        .then(() => startDesktop({ recoveryLaunch: true, forceRestart: true, fullPluginRetry: true, maintenanceToken: guard }))
-        .finally(() => releaseMaintenanceSlot(guard));
-      } catch (error) {
-        // Release the owner if delegation throws before returning a promise.
-        releaseMaintenanceSlot(guard);
-        throw error;
-      }
-    },
+    retryFullPlugins: pluginService.retryFullPlugins,
   };
-
-  /**
-   * Slim "restore full plugins": the sticky skip flag lives in the
-   * DESKTOP's config.json (not this launcher's). Stop the managed desktop,
-   * clear only `pluginRecovery` in that file (preserving `disabledPlugins`
-   * and unrelated keys), persist atomically, then launch once. A failure at
-   * any step must leave the config untouched and not spawn.
-   */
-  async function retryFullPluginsSlim() {
-    // Single maintenance owner: stop → config rewrite → launch must serialize
-    // against a concurrent retry, a Start, or an in-flight import. Reuse the
-    // shared maintenance slot — the outer `retryFullPlugins` already holds
-    // it, so this body must not re-acquire. `importAbortKind` only marks the
-    // slot's kind so cancelImport can refuse to abort non-import work.
-    importAbortKind = 'retry';
-    currentImportOpId = '';
-    try {
-    const fs = require('fs');
-    const path = require('path');
-    const configFile = desktopConfigFile();
-    const stopped = await runtimeInstall.stopExternalDesktop();
-    if (stopped && stopped.ok === false) {
-      return { ok: false, error: stopped.error || 'stop-failed' };
-    }
-    let config;
-    try {
-      const raw = fs.readFileSync(configFile, 'utf8');
-      config = JSON.parse(raw);
-      if (typeof config !== 'object' || config === null || Array.isArray(config)) {
-        return { ok: false, error: 'config-unreadable' };
-      }
-    } catch (error) {
-      if (error && error.code === 'ENOENT') {
-        config = {};
-      } else {
-        return { ok: false, error: 'config-unreadable' };
-      }
-    }
-    const next = {
-      ...config,
-      pluginRecovery: { skipUserPlugins: false, reason: '', at: '', appVersion: '' },
-    };
-    try {
-      fs.mkdirSync(path.dirname(configFile), { recursive: true });
-      const tmp = `${configFile}.tmp`;
-      fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-      fs.renameSync(tmp, configFile);
-    } catch (error) {
-      return { ok: false, error: error.message || 'config-write-failed' };
-    }
-    // Verify the persisted state before launching.
-    try {
-      const verify = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-      if (verify.pluginRecovery && verify.pluginRecovery.skipUserPlugins === true) {
-        return { ok: false, error: 'verify-failed' };
-      }
-    } catch {
-      return { ok: false, error: 'verify-failed' };
-    }
-    // `await` keeps the single-op slot held until the spawn settles; a bare
-    // `return` inside try/finally releases it while startup is still in
-    // flight and a following op could interleave with the boot.
-    return await runtimeInstall.startExternalDesktop();
-    } finally {
-      if (importAbortKind === 'retry') {
-        importAbortKind = '';
-        currentImportOpId = '';
-      }
-    }
-  }
 }
 
 module.exports = { createLauncherService };

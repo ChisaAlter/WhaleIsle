@@ -90,6 +90,7 @@ import {
   workspaceListCard,
 } from './feishu-cards.mjs';
 import { t } from '../shared/i18n.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { MAX_WATCHES_PER_KEY } from './state-store.mjs';
 import {
   FEISHU_GROUP_RESPONSE_MODES,
@@ -457,6 +458,7 @@ export class FeishuHarnessBridge {
   #failedWatchSeqs = new Map();
   #cardDataTimeoutMs;
   #taskAdapter;
+  #outboundBridge;
 
   constructor({
     client,
@@ -478,6 +480,7 @@ export class FeishuHarnessBridge {
     logger = console,
     signal,
     accessGate = null,
+    outboundBridge = undefined,
   }) {
     if (!client || !harness || !state || !status) {
       throw new TypeError('Feishu bridge dependencies are required');
@@ -517,6 +520,7 @@ export class FeishuHarnessBridge {
     this.#logger = logger;
     this.#approvals = new HarnessApprovalQueue({ label: 'Feishu', logger });
     this.#signal = signal;
+    this.#outboundBridge = outboundBridge;
     ensureStatus(this.#status);
     // Persisted watches must resume at runtime start, not on the first
     // message. Older hosts without the mux watcher simply skip this.
@@ -1606,6 +1610,62 @@ export class FeishuHarnessBridge {
     const messageId = nonEmptyString(event?.context?.open_message_id)
       ?? nonEmptyString(event?.open_message_id)
       ?? nonEmptyString(event?.message_id);
+    const eventId = nonEmptyString(event?.event_id)
+      ?? nonEmptyString(event?.header?.event_id)
+      ?? nonEmptyString(event?.uuid)
+      ?? nonEmptyString(event?.header?.uuid);
+    if (action === 'needs_you_approve' || action === 'needs_you_snooze') {
+      const chatId = nonEmptyString(event?.context?.open_chat_id)
+        ?? nonEmptyString(event?.open_chat_id)
+        ?? nonEmptyString(event?.chat_id);
+      const chatType = nonEmptyString(event?.context?.chat_type)
+        ?? nonEmptyString(event?.chat_type);
+      if (whaleEnforced && chatType && chatType !== 'p2p') {
+        this.#logger.warn?.('[dsh-feishu] blocked group card action in Whale single-owner mode');
+        return Promise.resolve();
+      }
+      const itemUid = nonEmptyString(actionValue.itemUid ?? actionValue.item_uid);
+      const cardBotId = nonEmptyString(actionValue.botId) ?? this.#botId;
+      const entry = {
+        key: chatId ? `p2p:${chatId}` : `needs_you:${messageId ?? itemUid ?? 'card'}`,
+        chatId,
+        messageId,
+        operatorOpenId,
+      };
+      const identity = JSON.stringify({ messageId, action, botId: cardBotId, itemUid });
+      return this.#queueCardAction(entry, identity, async () => {
+        if (!itemUid) {
+          if (chatId) await this.#send(chatId, t('⚠️ 无法识别待确认事项编号。'));
+          return;
+        }
+        const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+        const outcome = typeof bridge?.dispatchNeedsYouAction === 'function'
+          ? await bridge.dispatchNeedsYouAction({
+              action,
+              botId: cardBotId,
+              itemUid,
+              channel: 'feishu',
+              accountId: this.#botId,
+              operatorId: operatorOpenId,
+              chatId,
+              messageId,
+            })
+          : { ok: false, handled: false, code: 'no_action_handler' };
+        if (!chatId) return;
+        if (outcome?.handled && outcome.ok) {
+          await this.#send(
+            chatId,
+            action === 'needs_you_approve' ? t('✅ 已批准并处理该事项。') : t('⏰ 已延后提醒该事项。'),
+          );
+          return;
+        }
+        if (outcome?.handled) {
+          await this.#send(chatId, outcome.error || t('⚠️ 处理失败，请稍后重试。'));
+          return;
+        }
+        await this.#send(chatId, t('⚠️ 桌面端未注册 Needs You 回调处理器，请在桌面端确认处理。'));
+      }, { eventId, operatorOpenId });
+    }
     const route = messageId ? this.#cardKeys.get(messageId) : null;
     if (whaleEnforced && route?.key && !route.key.startsWith('p2p:')) {
       this.#logger.warn?.('[dsh-feishu] blocked group card action in Whale single-owner mode');
@@ -1628,10 +1688,6 @@ export class FeishuHarnessBridge {
     const entry = { ...route, messageId, selections: multiValues, operatorOpenId };
     const source = nonEmptyString(actionValue.source);
     const formText = nonEmptyString(formValue.steer_text);
-    const eventId = nonEmptyString(event?.event_id)
-      ?? nonEmptyString(event?.header?.event_id)
-      ?? nonEmptyString(event?.uuid)
-      ?? nonEmptyString(event?.header?.uuid);
     const identity = JSON.stringify({
       messageId,
       resolvedAction,

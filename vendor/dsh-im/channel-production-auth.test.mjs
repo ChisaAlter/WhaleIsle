@@ -9,10 +9,22 @@ for (const channel of ['weixin', 'feishu', 'dingtalk', 'wecom', 'qq', 'slack', '
       async load() { return this; }
       list() { return []; }
     }
-    const ctx = { credentials: {}, webServer: { port: 3080 }, connection: {
-      authenticatedUrl: (url) => `${url}?token=test`,
-      authorizeIndex(req, res) { res.writeHead(303, { 'set-cookie': 'session=test; HttpOnly' }); res.end(); },
-    } };
+    const peer = { id: 'owner-peer', principal: { kind: 'owner' }, signal: new AbortController().signal };
+    const ctx = {
+      credentials: {},
+      webServer: { port: 3080 },
+      connection: {
+        createPeer: () => peer,
+        createSharedFetchHandler: () => ({ fetch: async () => new Response('{}') }),
+      },
+      typertGateway: {
+        invoke: async () => ({}),
+        wireStream: {
+          open: async () => [],
+          failure: (err) => ({ code: 'gateway/internal', message: err.message, details: {} }),
+        },
+      },
+    };
     let options;
     await assert.rejects(createProductionController(ctx, {}, {
       ConfigStore: Store,

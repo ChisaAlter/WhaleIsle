@@ -4,7 +4,7 @@ const { atomicWriteFile } = require('../shared/fs-safe');
 const { logicalRealpathSync } = require('./logical-realpath');
 const { spawn } = require('node:child_process');
 const {
-  loadWorkspaceAuthority,
+  createCachedWorkspaceAuthority,
   hasGitDirSegment,
   hasGitMetadataTarget,
   isPathInside,
@@ -28,18 +28,15 @@ const IMAGE_MIME = {
   avif: 'image/avif',
 };
 
-let workspaceAuthority = null;
+const authorityCache = createCachedWorkspaceAuthority({ allowScratchCwd: true });
 
 /** Test seam: pin the trust root (node:test runs outside Electron). */
 function setWorkspaceAuthority(authority) {
-  workspaceAuthority = authority;
+  authorityCache.set(authority);
 }
 
 function authority() {
-  if (workspaceAuthority === null) {
-    workspaceAuthority = loadWorkspaceAuthority({ allowScratchCwd: true });
-  }
-  return workspaceAuthority;
+  return authorityCache.get();
 }
 
 function asCwd(cwd) {

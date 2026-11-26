@@ -1,4 +1,5 @@
-import { es, fr, de, ru, pt } from '../src/client/locales.ts'
+import { en, es, fr, de, ru, pt, zh } from '../src/client/locales.ts'
+import { localizeProviderError } from '../src/client/provider-error.ts'
 // @vitest-environment jsdom
 /** Section, setup-card, and hand-written editor behavior over a scripted wire face. */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -30,7 +31,6 @@ import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import { createModelsOperations } from '../src/client/operations.ts'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import type { ProviderRow } from '../src/client/store.ts'
-import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
@@ -636,7 +636,7 @@ describe('ModelsSection', () => {
       { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], error: failure },
     ]))
     await mountFace(scripted)
-    expect(screen.getByRole('alert').textContent).toBe(failure)
+    expect(screen.getByRole('alert').textContent).toBe(localizeProviderError(failure, t))
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     expect(await screen.findByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
@@ -2917,4 +2917,33 @@ it.each([es, fr, de, ru, pt])('keeps capacity examples in translated validation 
       expect(parseCapacity(token!)).toBeGreaterThan(0)
     }
   }
+})
+
+it('localizes known llm-pi-ai route diagnostics while preserving unknown error strings', () => {
+  const raw = 'llm-pi-ai: provider "magpie" model "auto/gpt-6-astra" needs a baseURL; the installed catalog does not describe this route'
+  expect(localizeProviderError(raw, key => zh[key])).toBe(
+    '提供商“magpie”的模型“auto/gpt-6-astra”缺少 API 地址（baseURL）：内置目录未包含该路由，请补充 API 地址。',
+  )
+  expect(localizeProviderError(raw, t)).toContain('magpie')
+  expect(localizeProviderError(raw, t)).toContain('auto/gpt-6-astra')
+  expect(localizeProviderError(raw, t)).not.toContain('llm-pi-ai:')
+  expect(localizeProviderError('custom failure from proxy', key => zh[key])).toBe('custom failure from proxy')
+})
+
+it('renders localized catalog error copy on broken provider rows', async () => {
+  const scripted = scriptedFace()
+  const raw = 'llm-pi-ai: provider "magpie" model "auto/gpt-6-astra" needs a baseURL; the installed catalog does not describe this route'
+  scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+    {
+      provider: 'openai',
+      displayName: 'magpie',
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'openai'],
+      error: raw,
+    },
+  ]))
+  await mountFace(scripted)
+  const alert = screen.getByRole('alert')
+  expect(alert.textContent).toBe(localizeProviderError(raw, t))
+  expect(alert.textContent).not.toContain('llm-pi-ai:')
 })

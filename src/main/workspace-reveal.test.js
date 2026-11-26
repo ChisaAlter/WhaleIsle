@@ -7,6 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { createWorkspaceAuthority } = require('./workspace-authority');
 const { openWorkspacePath, setWorkspaceAuthority } = require('./git');
+const { requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 test('Finder opens the authorized workspace root, including a non-Git workspace, but rejects escapes', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-reveal-'));
@@ -15,7 +16,15 @@ test('Finder opens the authorized workspace root, including a non-Git workspace,
   const active = path.join(dir, 'active');
   const outside = path.join(dir, 'outside');
   for (const folder of [boot, active, outside, path.join(active, '.git')]) fs.mkdirSync(folder);
-  fs.symlinkSync(outside, path.join(active, 'escape'), 'dir');
+  try {
+    fs.symlinkSync(outside, path.join(active, 'escape'), 'junction');
+  } catch (error) {
+    if (error.code === 'EPERM' || error.code === 'ENOTSUP') {
+      requirePrerequisite(t, false, `directory-link creation unavailable (${error.code}): ${error.message}`);
+      return;
+    }
+    throw error;
+  }
   setWorkspaceAuthority(createWorkspaceAuthority({ workspace: boot, extraWorkspaces: [active] }));
   t.after(() => setWorkspaceAuthority(null));
   const opened = [];

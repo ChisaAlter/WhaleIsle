@@ -15,6 +15,27 @@ import { encodeConnKey } from './catalog-models.js';
 const execFileAsync = promisify(execFile);
 const MAX_GIT_REPO_CACHE = 256;
 
+function readSessionEvents(session) {
+  if (typeof session?.snapshotEvents === 'function') return session.snapshotEvents() || [];
+  if (typeof session?.events === 'function') return session.events() || [];
+  return Array.isArray(session?.events) ? session.events : [];
+}
+
+function listRegisteredAgents(agentsSvc) {
+  if (typeof agentsSvc.list === 'function') return agentsSvc.list();
+  if (typeof agentsSvc.values === 'function') return [...agentsSvc.values()];
+  return [];
+}
+
+function resolveLastMessageId(options) {
+  if (!Array.isArray(options?.messages)) return null;
+  for (let i = options.messages.length - 1; i >= 0; i -= 1) {
+    const msg = options.messages[i];
+    if (msg && typeof msg.id === 'string') return msg.id;
+  }
+  return null;
+}
+
 export function resolveActiveDshAgent(ctx, options) {
   const agentsSvc = safeGetService(ctx, 'agents');
   if (!agentsSvc) return null;
@@ -33,20 +54,15 @@ export function resolveActiveDshAgent(ctx, options) {
     // ignore
   }
   try {
-    const list = typeof agentsSvc.list === 'function' ? agentsSvc.list()
-      : typeof agentsSvc.values === 'function' ? [...agentsSvc.values()]
-      : [];
+    const list = listRegisteredAgents(agentsSvc);
     if (list.length > 0) {
-      const lastMsgId = Array.isArray(options?.messages)
-        ? options.messages.findLast((m) => m && typeof m.id === 'string')?.id
-        : null;
-      for (const agent of list) {
-        if (!lastMsgId) return agent;
-        const events = agent?.session?.events?.() || [];
-        if (events.some((ev) => ev?.data?.message?.id === lastMsgId || ev?.data?.id === lastMsgId)) {
-          return agent;
-        }
-      }
+      const lastMsgId = resolveLastMessageId(options);
+      if (!lastMsgId) return list[0];
+      return list.find((agent) =>
+        readSessionEvents(agent?.session).some(
+          (ev) => ev?.data?.message?.id === lastMsgId || ev?.data?.id === lastMsgId,
+        ),
+      ) ?? null;
     }
   } catch {
     // ignore

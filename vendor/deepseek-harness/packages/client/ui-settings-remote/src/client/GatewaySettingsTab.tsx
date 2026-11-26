@@ -1,7 +1,7 @@
 /** Settings → Remote → Gateway: offer v2 connections and local daemon settings. */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, DisclosureRow, IconWarningOutline16, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconWarningOutline16, SegmentedControl, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteIceServer, RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
 import { ipcErrorMessage } from './relay-copy.ts'
@@ -107,6 +107,7 @@ export function GatewaySettingsTab({
   const [relayTokenDraft, setRelayTokenDraft] = useState('')
   const [iceServersDraft, setIceServersDraft] = useState('')
   const [legacyOpen, setLegacyOpen] = useState(false)
+  const modeId = useId()
   const [notice, setNotice] = useState<Notice | null>(null)
   const noticeId = useRef(0)
   const busy = pending !== null
@@ -257,18 +258,31 @@ export function GatewaySettingsTab({
       </div>
 
       {snap.protocol === 'chisacode-v2' ? (
-        <DisclosureRow className={css.legacy} icon={null} title={t('legacyConfiguration')}
-          open={legacyOpen} expandable expandOnRowClick previewChevron={false}
-          onToggle={() => { setLegacyOpen(value => !value) }}>
-          <p className={css.desc}>{t('relayTokenHint')}</p>
-          {snap.legacyRelayTokenSet ? (
-            <Button size="sm" variant="ghost" disabled={busy}
-              loading={pending === 'relayClear'}
-              onClick={() => { void save({ remoteRelayToken: '' }, 'relayClear') }}>
-              {t('relayTokenClear')}
-            </Button>
-          ) : <p className={css.desc}>{t('legacyEmpty')}</p>}
-        </DisclosureRow>
+        <div className={css.legacy}>
+          <button
+            type="button"
+            className={css.legacyToggle}
+            aria-expanded={legacyOpen}
+            onClick={() => { setLegacyOpen(value => !value) }}
+          >
+            <span className={css.legacyTitle}>{t('legacyConfiguration')}</span>
+            {legacyOpen
+              ? <IconChevronUpOutlineRegular size={14} className={css.legacyChevron} aria-hidden="true" />
+              : <IconChevronDownOutlineRegular size={14} className={css.legacyChevron} aria-hidden="true" />}
+          </button>
+          {legacyOpen ? (
+            <div className={css.legacyBody}>
+              <p className={css.desc}>{t('relayTokenHint')}</p>
+              {snap.legacyRelayTokenSet ? (
+                <Button size="sm" variant="ghost" disabled={busy}
+                  loading={pending === 'relayClear'}
+                  onClick={() => { void save({ remoteRelayToken: '' }, 'relayClear') }}>
+                  {t('relayTokenClear')}
+                </Button>
+              ) : <p className={css.desc}>{t('legacyEmpty')}</p>}
+            </div>
+          ) : null}
+        </div>
       ) : <div className={css.row}>
         <div className={css.rowText}>
           <div className={css.title}>{t('relayToken')}</div>
@@ -320,32 +334,27 @@ export function GatewaySettingsTab({
           <div className={css.title}>{t('mode')}</div>
           <div className={css.desc}>{modeHint}</div>
         </div>
-        <div className={`${css.control} ${css.modes}`} role="radiogroup" aria-label={t('mode')}>
-          <Button
-            size="sm"
-            variant={mode === 'lan' ? 'primary' : 'ghost'}
-            className={css.modeButton}
-            role="radio"
-            aria-checked={mode === 'lan'}
+        <div className={css.control}>
+          <SegmentedControl
+            id={modeId}
+            value={mode}
+            label={t('mode')}
             disabled={busy}
-            loading={pending === 'modeLan'}
-            onClick={() => { if (mode !== 'lan') void save({ remoteMode: 'lan' }, 'modeLan') }}
-          >
-            {t('modeLan')}
-          </Button>
-          <Button
-            size="sm"
-            variant={mode === 'relay' ? 'primary' : 'ghost'}
-            className={css.modeButton}
-            role="radio"
-            aria-checked={mode === 'relay'}
-            disabled={busy || !relayReady}
-            loading={pending === 'modeRelay'}
-            title={relayReady ? undefined : modeHint}
-            onClick={() => { if (relayReady && mode !== 'relay') void save({ remoteMode: 'relay' }, 'modeRelay') }}
-          >
-            {t('modeRelay')}
-          </Button>
+            className={css.modeControl}
+            options={[
+              { value: 'lan', label: t('modeLan') },
+              {
+                value: 'relay',
+                label: t('modeRelay'),
+                disabled: !relayReady,
+                ...relayReady ? {} : { title: modeHint },
+              },
+            ]}
+            onChange={(next) => {
+              if (next === 'relay' && !relayReady) return
+              if (next !== mode) void save({ remoteMode: next }, next === 'lan' ? 'modeLan' : 'modeRelay')
+            }}
+          />
         </div>
       </div>
 

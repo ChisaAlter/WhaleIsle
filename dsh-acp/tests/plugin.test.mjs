@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createAcpAgentsManager, conversationPrompt, extractLatestUserPromptBlocks } from '../lib/index.js';
+import { resolveActiveDshAgent } from '../lib/llm-adapter.js';
 import { saveAgentsConfig } from '../lib/presets.js';
 import { runtimeBundle } from '../lib/agent-runtime.js';
 import { registerDelegation, DELEGATION_PROVIDER } from '../lib/delegation.js';
@@ -334,4 +335,19 @@ test('configured agents share one discovery/delegation catalog and preserve pare
     // Only this test-created, absolute temporary directory is removed.
     fs.rmSync(dir, { recursive: true });
   }
+});
+
+test('resolveActiveDshAgent matches lastMsgId via Session.snapshotEvents() without .events()', () => {
+  const first = {
+    id: 'sess-a',
+    session: { snapshotEvents: () => [{ type: 'user/message', data: { message: { id: 'msg-a' } } }] },
+  };
+  const second = {
+    id: 'sess-b',
+    session: { snapshotEvents: () => [{ type: 'user/message', data: { message: { id: 'msg-b' } } }] },
+  };
+  const ctx = {
+    get: (name) => (name === 'agents' ? { list: () => [first, second] } : undefined),
+  };
+  assert.equal(resolveActiveDshAgent(ctx, { messages: [{ id: 'msg-b', role: 'user', content: 'hi' }] }), second);
 });

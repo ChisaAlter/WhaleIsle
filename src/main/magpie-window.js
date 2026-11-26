@@ -35,6 +35,33 @@ function buildMagpieTargetUrl(rawUrl, theme) {
 }
 
 /**
+ * Keep the embedded WebContentsView inside the 1px outer shell hairline and
+ * 20px transparent corner radius when windowed on Windows/Linux, expanding to
+ * full edge-to-edge bounds when maximized, fullscreen, or on macOS.
+ * @param {Electron.BrowserWindow} win
+ * @param {Electron.WebContentsView} view
+ * @param {any} nativeMotion
+ */
+function applyViewBounds(win, view, nativeMotion) {
+  if (!win || win.isDestroyed() || !view) return;
+  const [w, h] = win.getContentSize();
+  const maximized = Boolean(nativeMotion?.isNativeWindowMaximized(win) ?? win.isMaximized?.());
+  const fullscreen = Boolean(win.isFullScreen?.());
+  if (maximized || fullscreen || process.platform === 'darwin') {
+    view.setBounds({ x: 0, y: TOPBAR_HEIGHT, width: Math.max(0, w), height: Math.max(0, h - TOPBAR_HEIGHT) });
+    view.setBorderRadius?.(0);
+    return;
+  }
+  view.setBounds({
+    x: 1,
+    y: TOPBAR_HEIGHT,
+    width: Math.max(0, w - 2),
+    height: Math.max(0, h - TOPBAR_HEIGHT - 1),
+  });
+  view.setBorderRadius?.(19);
+}
+
+/**
  * Reuse existing Magpie shell window and reload its view if origin changed.
  * @param {any} state
  * @param {any} deps
@@ -83,8 +110,14 @@ function attachShellIpc(win, deps) {
   };
   contents.on('will-navigate', guardShellNavigation);
   contents.on('will-redirect', guardShellNavigation);
-  const isMaximized = () => deps.nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized();
-  const windowState = () => ({ maximized: isMaximized(), minimizable: win.minimizable, maximizable: win.maximizable });
+  const isMaximized = () => Boolean(deps.nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized?.());
+  const isFullScreen = () => Boolean(win.isFullScreen?.());
+  const windowState = () => ({
+    maximized: isMaximized(),
+    fullscreen: isFullScreen(),
+    minimizable: win.minimizable,
+    maximizable: win.maximizable,
+  });
 
   contents.ipc.on('magpie:window', (event, action) => {
     if (!isOwnedSender(event)) return;
@@ -117,11 +150,12 @@ function attachShellIpc(win, deps) {
     return isHttpOrHttpsUrl(url) ? deps.openExternalHttp(url) : false;
   });
 
-  /** @type {boolean | undefined} */
-  let lastMaximized;
+  let lastStateKey = '';
   const syncState = () => {
-    if (win.isDestroyed() || isMaximized() === lastMaximized) return;
-    lastMaximized = isMaximized();
+    if (win.isDestroyed()) return;
+    const nextKey = `${isMaximized()}:${isFullScreen()}`;
+    if (nextKey === lastStateKey) return;
+    lastStateKey = nextKey;
     contents.send('magpie:window-state', windowState());
   };
   return { syncState };
@@ -165,7 +199,11 @@ function openMagpieWindow(options) {
         targetUrl,
         activate: options.activate,
         onClose: options.onClose,
-        remount: () => mountMagpieView(/** @type {Electron.BrowserWindow} */ (activeWindow), targetUrl, origin, WebContentsView, session, openExternalHttp),
+        remount: () => {
+          const view = mountMagpieView(/** @type {Electron.BrowserWindow} */ (activeWindow), targetUrl, origin, WebContentsView, session, openExternalHttp);
+          applyViewBounds(/** @type {Electron.BrowserWindow} */ (activeWindow), view, nativeMotion);
+          return view;
+        },
       },
     );
     activeView = updated.activeView;
@@ -179,7 +217,7 @@ function openMagpieWindow(options) {
   activeTargetUrl = targetUrl;
   activeOnClose = typeof options.onClose === 'function' ? options.onClose : null;
 
-  const chromeOptions = chrome.windowChrome({
+  const chromeOptions = chrome.shellWindowChrome({
     title: 'Magpie',
     width: 1120,
     height: 780,
@@ -201,6 +239,7 @@ function openMagpieWindow(options) {
 
   const win = new BrowserWindow(chromeOptions);
   activeWindow = win;
+  chrome.markWindowTransparent?.(win);
   nativeMotion.enableNativeWindowMotion(win);
   if (process.platform === 'darwin') {
     win.setWindowButtonPosition?.({ x: 16, y: 11 });
@@ -214,16 +253,14 @@ function openMagpieWindow(options) {
     getView: () => activeView,
   });
   const syncBounds = () => {
-    if (win.isDestroyed() || !activeView) return;
-    const [w, h] = win.getContentSize();
-    activeView.setBounds({ x: 0, y: TOPBAR_HEIGHT, width: Math.max(0, w), height: Math.max(0, h - TOPBAR_HEIGHT) });
+    applyViewBounds(win, /** @type {Electron.WebContentsView} */ (activeView), nativeMotion);
   };
-  win.on('maximize', syncState);
-  win.on('unmaximize', syncState);
-  win.on('resize', () => {
-    syncState();
-    syncBounds();
-  });
+  for (const event of ['maximize', 'unmaximize', 'restore', 'enter-full-screen', 'leave-full-screen', 'resize']) {
+    win.on(/** @type {any} */ (event), () => {
+      syncState();
+      syncBounds();
+    });
+  }
 
   activeView = mountMagpieView(win, targetUrl, origin, WebContentsView, session, openExternalHttp);
   syncBounds();

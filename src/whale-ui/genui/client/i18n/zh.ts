@@ -359,6 +359,14 @@ export const ZH: Record<keyof typeof EN, string> = {
   'block.chart.linePoints': '折线图，{count} 个点，范围 {min} 到 {max}',
   'block.chart.donutSummary': '环形图，{count} 项，合计 {total}',
   'block.chart.node': '节点',
+  'diagram.legend.title': '图例',
+  'diagram.legend.focal': '核心节点',
+  'diagram.legend.backend': '后端服务',
+  'diagram.legend.store': '存储',
+  'diagram.legend.external': '外部系统',
+  'diagram.legend.optional': '可选组件',
+  'diagram.legend.security': '安全域',
+  'diagram.desc': '{kind} 架构图，包含 {nodes} 个节点和 {edges} 条连接',
   'err.unsupportedComponent': '不支持的组件“{type}”（{path}）：未注册对应渲染器。',
 
   // ------------------------------------------------------ action prompt

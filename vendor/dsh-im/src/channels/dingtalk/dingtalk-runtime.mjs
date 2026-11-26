@@ -3,7 +3,11 @@ import {
   createDingtalkBridgeStatus,
   DingtalkHarnessBridge,
 } from './dingtalk-bridge.mjs';
-import { sendRememberedConnectionTest } from '../shared/connection-test.mjs';
+import {
+  connectionTestTarget,
+  sendRememberedConnectionTest,
+} from '../shared/connection-test.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 
 function nonEmptyString(value) {
@@ -135,6 +139,8 @@ export class DingtalkRuntime {
   #connectPollIntervalMs;
   #api;
   #streamFactory;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status;
   #client = null;
   #bridge = null;
@@ -149,6 +155,7 @@ export class DingtalkRuntime {
     clientSecret,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     maxMessageChars = 4_000,
@@ -166,6 +173,7 @@ export class DingtalkRuntime {
     this.#clientSecret = clientSecret.trim();
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#maxMessageChars = maxMessageChars;
@@ -302,12 +310,18 @@ export class DingtalkRuntime {
       this.#status.lastConnectedAt = Date.now();
       this.#status.lastCheckedAt = Date.now();
       this.#status.lastError = null;
+      this.#registerOutboundSender();
       this.#connectionMonitor = setInterval(() => {
         const connected = streamIsOpen(client);
         this.#status.ready = connected;
         this.#status.dingtalkStreamState = connected ? 'connected' : 'reconnecting';
         this.#status.lastCheckedAt = Date.now();
-        if (connected) this.#status.lastError = null;
+        if (connected) {
+          this.#status.lastError = null;
+          if (!this.#unregisterOutboundSender) this.#registerOutboundSender();
+        } else {
+          this.#unregisterOutbound();
+        }
       }, 1_000);
       this.#connectionMonitor.unref?.();
       return this.status;
@@ -322,6 +336,7 @@ export class DingtalkRuntime {
   }
 
   async stop({ preserveError = false } = {}) {
+    this.#unregisterOutbound();
     const lastError = preserveError ? this.#status.lastError : null;
     const abortController = this.#abortController;
     this.#abortController = null;
@@ -373,6 +388,41 @@ export class DingtalkRuntime {
     return typeof this.#state.pendingSenders === 'function'
       ? this.#state.pendingSenders()
       : [];
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('dingtalk', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#abortController) {
+          throw Object.assign(new Error('DingTalk bot is not connected'), { code: 'channel_not_connected' });
+        }
+        const rawTarget = nonEmptyString(payload.targetId);
+        const sessionWebhook = rawTarget?.startsWith('https://')
+          ? rawTarget
+          : nonEmptyString(connectionTestTarget(this.#state)?.sessionWebhook);
+        if (!sessionWebhook) {
+          throw Object.assign(new Error('DingTalk sessionWebhook is unavailable for outbound delivery'), {
+            code: 'missing_target',
+          });
+        }
+        await this.#api.sendText({
+          clientId: this.#config.clientId,
+          clientSecret: this.#clientSecret,
+          sessionWebhook,
+          text: payload.card?.markdown || payload.text,
+          signal: payload.signal ?? this.#abortController.signal,
+        });
+        return { delivered: true };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }
 

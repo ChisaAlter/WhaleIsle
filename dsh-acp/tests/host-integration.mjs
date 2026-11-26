@@ -87,7 +87,9 @@ try {
   await ctx.plugin(SessionQuery.default);
   await ctx.plugin(AgentLoop, { agents: [] });
   await ctx.plugin(Subagents);
-  ctx.provide('connection', { requestRejection: () => undefined });
+  ctx.provide('connection', {
+    admit: () => ({ peer: { id: 'owner-peer', principal: { kind: 'owner' }, signal: new AbortController().signal } }),
+  });
   const imageBytes = Buffer.from('fixture-image-bytes');
   ctx.provide('attachments', { readImage: async ref => ({ ref, data: imageBytes }) });
   ctx.provide('webServer', {

@@ -568,3 +568,87 @@ test('custom STUN/TURN servers persist in localStorage and merge with offer iceS
   saveCustomIceServers([]);
   assert.deepEqual(loadCustomIceServers(), []);
 });
+
+test('re-pairing same serverId clears stale lanEndpoints, lanUseTls, iceServers, and relayEndpoint', async () => {
+  localStorage.removeItem('dsh-chisacode-device-secrets');
+  localStorage.removeItem('dsh-chisacode-ice-servers');
+
+  const pairWith = async (offer) => {
+    let clientOpts;
+    class MockDaemonClient {
+      constructor(opts) { clientOpts = opts; }
+      setReconnectEnabled() {}
+      async connect() {
+        clientOpts.onRelayDeviceAuthResult?.({
+          ok: true,
+          deviceId: clientOpts.relayDeviceAuth.deviceId,
+          deviceSecret: 's'.repeat(64),
+        });
+      }
+      getLastServerInfoMessage() { return { hostname: 'Studio-PC' }; }
+    }
+    await pairFromOfferUrl({
+      parseConnectionOfferFromUrl: () => offer,
+      createRelayDeviceId: () => 'dev_repair_1',
+      buildRelayWebSocketUrl: ({ endpoint, useTls, serverId }) =>
+        `${useTls ? 'wss' : 'ws'}://${endpoint}/ws?serverId=${serverId}`,
+      DaemonClient: MockDaemonClient,
+    }, 'http://example.invalid/#offer=encoded');
+  };
+
+  // 1. Initial pairing includes LAN endpoints + custom ICE + relay.
+  await pairWith({
+    v: 2,
+    serverId: 'srv_repair',
+    daemonPublicKeyB64: 'pk_repair',
+    authBootstrap: { pairingToken: 'tok_1' },
+    relay: { endpoint: 'old.relay:443', useTls: true },
+    lan: { endpoints: ['192.168.1.55:3180'], useTls: true },
+    iceServers: [{ urls: 'turn:old.turn:3478', username: 'u', credential: 'p' }],
+  });
+
+  // 2. Re-pair the same serverId using a relay-only offer without LAN or ICE servers.
+  await pairWith({
+    v: 2,
+    serverId: 'srv_repair',
+    daemonPublicKeyB64: 'pk_repair',
+    authBootstrap: { pairingToken: 'tok_2' },
+    relay: { endpoint: 'ayase.cn:443', useTls: true },
+  });
+
+  const savedAfterRelayRepair = JSON.parse(localStorage.getItem('dsh-chisacode-device-secrets'));
+  assert.equal(savedAfterRelayRepair.srv_repair.relayEndpoint, 'ayase.cn:443');
+  assert.equal(savedAfterRelayRepair.srv_repair.useTls, true);
+  assert.equal('lanEndpoints' in savedAfterRelayRepair.srv_repair, false);
+  assert.equal('lanUseTls' in savedAfterRelayRepair.srv_repair, false);
+  assert.equal('iceServers' in savedAfterRelayRepair.srv_repair, false);
+
+  let reconnectOpts;
+  await reconnectSticky({
+    buildRelayWebSocketUrl: () => 'wss://ayase.cn:443/ws',
+    DaemonClient: class {
+      constructor(opts) { reconnectOpts = opts; }
+      setReconnectEnabled() {}
+      async connect() {}
+      getLastServerInfoMessage() { return { hostname: 'Studio-PC' }; }
+    },
+  }, 'srv_repair');
+  assert.equal(reconnectOpts.lanEndpoints, undefined);
+  assert.equal(reconnectOpts.lanUseTls, undefined);
+  assert.equal(reconnectOpts.iceServers, undefined);
+
+  // 3. Re-pair the same serverId using a LAN-only offer -> clears stale relayEndpoint/useTls.
+  await pairWith({
+    v: 2,
+    serverId: 'srv_repair',
+    daemonPublicKeyB64: 'pk_repair',
+    authBootstrap: { pairingToken: 'tok_3' },
+    lan: { endpoints: ['10.0.0.5:3180'], useTls: false },
+  });
+
+  const savedAfterLanRepair = JSON.parse(localStorage.getItem('dsh-chisacode-device-secrets'));
+  assert.equal(savedAfterLanRepair.srv_repair.relayEndpoint, '');
+  assert.equal(savedAfterLanRepair.srv_repair.useTls, false);
+  assert.deepEqual(savedAfterLanRepair.srv_repair.lanEndpoints, ['10.0.0.5:3180']);
+  assert.equal(savedAfterLanRepair.srv_repair.lanUseTls, false);
+});

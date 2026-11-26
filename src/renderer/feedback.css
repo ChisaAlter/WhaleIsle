@@ -31,11 +31,8 @@ button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-labe
   animation: shell-feedback-spin 700ms linear infinite;
 }
 button.primary[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label])::after { border-color: var(--dsw-alias-label-primary-foreground); border-right-color: transparent; }
-/* Include the measurement state: a color transition would otherwise return
-   the previous transparent caption color when progress replaces an overlay. */
-button[data-button-label] { position: relative; transition: none; }
-button[data-button-label]:not([data-button-label='measure']) { color: transparent !important; }
-button[data-button-label]:not([data-button-label='measure']) > :not(.shell-button-overlay) { visibility: hidden; }
+button[data-button-label] { position: relative; transition: none; color: transparent !important; }
+button[data-button-label] > :not(.shell-button-overlay) { visibility: hidden; }
 .shell-button-overlay {
   position: absolute;
   inset: 0;
@@ -47,7 +44,11 @@ button[data-button-label]:not([data-button-label='measure']) > :not(.shell-butto
   overflow: hidden;
   white-space: nowrap;
   pointer-events: none;
+  color: var(--dsw-alias-label-primary);
 }
+button.primary > .shell-button-overlay { color: var(--dsw-alias-label-primary-foreground); }
+button.danger > .shell-button-overlay { color: var(--dsw-alias-state-error-primary); }
+.shell-feedback-pane button > .shell-button-overlay { color: var(--dsw-alias-toast-label); }
 .shell-button-label { display: block; min-width: 0; overflow: hidden; }
 .shell-button-label-text { display: inline-block; white-space: nowrap; }
 .shell-button-label.is-scrolling .shell-button-label-text {

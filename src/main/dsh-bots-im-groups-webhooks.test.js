@@ -296,6 +296,214 @@ test('dsh-im bot-outbound-bridge mounts on host startup, builds Needs You cards,
   setActiveBotOutboundBridge(null);
 });
 
+test('dsh-whale BotsRuntime registers Needs You action handler on dsh-im outbound bridge for approve and snooze across mount orders', async () => {
+  const { createBotsRuntime, mountBotsIntoHost } = await importBots('runtime.js');
+  const { createBotOutboundBridge, setActiveBotOutboundBridge } = await importImShared('bot-outbound-bridge.mjs');
+  const { FeishuHarnessBridge } = await import(
+    pathToFileURL(path.resolve(__dirname, '../../vendor/dsh-im/src/channels/feishu/bridge.mjs')).href
+  );
+  const { SingleOwnerAccessGate } = await importImShared('single-owner-gate.mjs');
+
+  // Case 1: explicit imOutboundBridge on createBotsRuntime handles approve (questionEvent & status-only) + snooze + closed/missing guards.
+  await withTempDir('needs-you-rt', async ({ root, onClose }) => {
+    const bridge = createBotOutboundBridge(null, { logger: { warn: () => {} } });
+    const woken = [];
+    const rt = createBotsRuntime({
+      dshHome: root,
+      allowLegacyMigration: false,
+      enableSchedulers: false,
+      enableFolderWatcher: false,
+      autoRecovery: false,
+      imOutboundBridge: bridge,
+      wakeBot: async (payload) => {
+        woken.push(payload);
+        return { ok: true };
+      },
+    });
+    onClose(() => rt.close());
+
+    const bot = (await rt.http.invokeRpc('bots.create', { name: 'NeedsYouBot' })).bot;
+    const itemWithAsk = rt.itemsStore.add({
+      ownerBotId: bot.id,
+      chatId: 'chat-home',
+      source: { kind: 'home', title: null },
+      title: 'Confirm deployment',
+      status: 'needs_you',
+      ask: { questions: [{ prompt: 'Deploy now?', options: [{ label: 'Approve' }, { label: 'Later' }] }] },
+    }, { kind: 'bot', botId: bot.id, chatId: 'chat-home' }).item;
+
+    const itemNoAsk = rt.itemsStore.add({
+      ownerBotId: bot.id,
+      chatId: 'chat-home',
+      source: { kind: 'home', title: null },
+      title: 'Confirm cleanup',
+      status: 'needs_you',
+    }, { kind: 'bot', botId: bot.id, chatId: 'chat-home' }).item;
+
+    const itemToSnooze = rt.itemsStore.add({
+      ownerBotId: bot.id,
+      chatId: 'chat-home',
+      source: { kind: 'home', title: null },
+      title: 'Review weekly digest',
+      status: 'needs_you',
+    }, { kind: 'bot', botId: bot.id, chatId: 'chat-home' }).item;
+
+    const approveAskRes = await bridge.dispatchNeedsYouAction({
+      action: 'needs_you_approve',
+      botId: bot.id,
+      itemUid: itemWithAsk.uid,
+      channel: 'feishu',
+      operatorId: 'ou_owner',
+      messageId: 'om-ask-1',
+    });
+    assert.equal(approveAskRes.ok, true);
+    assert.equal(approveAskRes.handled, true);
+    assert.equal(rt.itemsStore.get(itemWithAsk.uid).status, 'working');
+
+    const approveStatusRes = await bridge.dispatchNeedsYouAction({
+      action: 'needs_you_approve',
+      botId: bot.id,
+      itemUid: itemNoAsk.uid,
+      channel: 'feishu',
+      operatorId: 'ou_owner',
+      messageId: 'om-status-1',
+    });
+    assert.equal(approveStatusRes.ok, true);
+    assert.equal(rt.itemsStore.get(itemNoAsk.uid).status, 'working');
+
+    const snoozeRes = await bridge.dispatchNeedsYouAction({
+      action: 'needs_you_snooze',
+      botId: bot.id,
+      itemUid: itemToSnooze.uid,
+      channel: 'feishu',
+      operatorId: 'ou_owner',
+    });
+    assert.equal(snoozeRes.ok, true);
+    assert.equal(snoozeRes.handled, true);
+    const snoozedItem = rt.itemsStore.get(itemToSnooze.uid);
+    assert.equal(snoozedItem.status, 'needs_you');
+    assert.ok(Number.isInteger(snoozedItem.snoozedUntil) && snoozedItem.snoozedUntil > Date.now());
+
+    // Wait one microtask tick for owed-mail reconcile wakeBot callback.
+    await new Promise((r) => setTimeout(r, 30));
+    assert.ok(woken.length >= 1, 'Approving needs_you item should trigger owed-mail wake');
+
+    // Missing and closed items fail cleanly as handled errors.
+    const missingRes = await bridge.dispatchNeedsYouAction({
+      action: 'needs_you_approve',
+      itemUid: 'missing-uid-999',
+      channel: 'feishu',
+    });
+    assert.equal(missingRes.ok, false);
+    assert.equal(missingRes.handled, true);
+    assert.equal(missingRes.code, 'not_found');
+
+    rt.itemsStore.close(itemWithAsk.uid, { status: 'done' }, { kind: 'owner' });
+    const closedRes = await bridge.dispatchNeedsYouAction({
+      action: 'needs_you_approve',
+      itemUid: itemWithAsk.uid,
+      channel: 'feishu',
+    });
+    assert.equal(closedRes.ok, false);
+    assert.equal(closedRes.handled, true);
+    assert.equal(closedRes.code, 'item_closed');
+
+    // Closing runtime unregisters its Needs You action handler.
+    rt.close();
+    const afterClose = await bridge.dispatchNeedsYouAction({
+      action: 'needs_you_snooze',
+      itemUid: itemToSnooze.uid,
+      channel: 'feishu',
+    });
+    assert.equal(afterClose.handled, false);
+    assert.equal(afterClose.code, 'no_action_handler');
+  });
+
+  // Case 2: mountBotsIntoHost mounted BEFORE dsh-im sets active bridge still wires Feishu card callbacks end-to-end.
+  await withTempDir('needs-you-e2e', async ({ root, onClose }) => {
+    setActiveBotOutboundBridge(null);
+    onClose(() => setActiveBotOutboundBridge(null));
+
+    const hostEffects = [];
+    const hostCtx = {
+      effect(cb) {
+        const res = typeof cb === 'function' ? cb() : cb;
+        if (typeof res === 'function') hostEffects.push(res);
+      },
+      webServer: { register: () => () => {} },
+      inject: () => {},
+    };
+    const mounted = mountBotsIntoHost(hostCtx, { home: root, allowLegacyMigration: false });
+    onClose(() => {
+      for (const fn of hostEffects) fn();
+      mounted.close();
+    });
+
+    const rt = mounted.ensureRuntime();
+    const bot = (await rt.http.invokeRpc('bots.create', { name: 'FeishuBot' })).bot;
+    const pendingItem = rt.itemsStore.add({
+      ownerBotId: bot.id,
+      chatId: 'chat-home',
+      source: { kind: 'home', title: null },
+      title: 'Approve Feishu action',
+      status: 'needs_you',
+    }, { kind: 'bot', botId: bot.id, chatId: 'chat-home' }).item;
+
+    // Activate dsh-im outbound bridge AFTER mountBotsIntoHost.
+    const lateBridge = createBotOutboundBridge(null, { logger: { warn: () => {} } });
+    setActiveBotOutboundBridge(lateBridge);
+
+    const gate = new SingleOwnerAccessGate({ filePath: path.join(root, 'access.json'), defaultHome: root });
+    const botGate = gate.createBotGate({
+      channel: 'feishu',
+      botId: 'feishu-main',
+      getBotConfig: () => ({ ownerOpenIds: ['ou_owner_e2e'] }),
+      getPreset: () => 'dsh-bot',
+      home: root,
+    });
+    const sent = [];
+    const seen = new Set();
+    const fsBridge = new FeishuHarnessBridge({
+      botId: 'feishu-main',
+      outboundBridge: lateBridge,
+      client: {
+        im: {
+          v1: {
+            message: {
+              create: async (req) => {
+                sent.push(req?.data?.content ?? '');
+                return { code: 0, data: { message_id: `out-${sent.length}` } };
+              },
+            },
+          },
+        },
+      },
+      harness: { accessGate: botGate, ensureRunning: async () => {}, ask: async () => ({ text: 'ok' }) },
+      state: {
+        hasSeen: (id) => seen.has(id),
+        markSeen: async (id) => { seen.add(id); },
+        sessionFor: () => 'sess-e2e',
+        setSession: async () => {},
+        clearSession: async () => {},
+      },
+      status: { messagesReceived: 0, messagesReplied: 0, messagesRejected: 0 },
+      allowedSenderOpenIds: new Set(['ou_owner_e2e']),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    });
+
+    await fsBridge.onCardAction({
+      event_id: 'evt-e2e-approve',
+      operator: { open_id: 'ou_owner_e2e' },
+      action: { value: { action: 'needs_you_approve', botId: bot.id, itemUid: pendingItem.uid } },
+      context: { open_message_id: 'om-e2e-1', open_chat_id: 'oc_p2p', chat_type: 'p2p' },
+    });
+    await fsBridge.waitForIdle();
+
+    assert.equal(rt.itemsStore.get(pendingItem.uid).status, 'working');
+    assert.ok(sent.some((body) => body.includes('已批准')));
+  });
+});
+
 test('Webhook HMAC-SHA256 verification: valid signature, ±300s skew, replay blocking, and 30 req/min rate limit', async () => {
   const { openBotsDatabase } = await importBots('db.js');
   const { createWorkStore } = await importBots('work-store.js');

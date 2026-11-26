@@ -569,11 +569,6 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .eventColumn,
-  .event,
-  .requestBoundaryControl,
-  .kindSlot,
-  .kindTag,
   .kindTagIcon,
   .kindTagLabel,
   .turnLabelFull,
@@ -582,31 +577,14 @@
     transition-timing-function: var(--ds-ease-in-out);
   }
 
-  .eventColumn,
-  .kindSlot {
-    transition-property: width;
-  }
-
-  .event {
-    transition-property: padding-right, padding-left;
-  }
-
-  .requestBoundaryControl {
-    transition-property: left;
-  }
-
-  .kindTag {
-    transition-property: padding-right, padding-left;
-  }
-
   .kindTagIcon {
-    transition-property: width, opacity, transform;
+    transition-property: opacity, transform;
   }
 
   .kindTagLabel,
   .turnLabelFull,
   .turnLabelCompact {
-    transition-property: max-width, opacity;
+    transition-property: opacity;
   }
 }
 

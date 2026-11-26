@@ -100,6 +100,11 @@ test('injected measure publishes window-control insets with an 8px plate margin'
   assert.equal(cssVars['--dshd-wco-controls'], '112px');
   assert.equal(cssVars['--dshd-wco-caption'], '48px');
   assert.equal(cssVars['--dshd-wco-pad'], undefined);
+  const style = context.document.getElementById('dshd-shell-integrated-chrome');
+  assert.ok(style);
+  assert.match(style.textContent, /--dsh-frame-top-clearance:\s*48px;/);
+  assert.match(style.textContent, /--dsh-frame-overlay-top:\s*calc\(var\(--dsh-frame-top-clearance\) \+ 20px\);/);
+  assert.match(style.textContent, /html\[data-fullscreen\]\s*\{\s*--dsh-frame-overlay-top:\s*20px;/);
   const host = context.document.getElementById('dshd-shell-controls');
   assert.ok(host);
   assert.equal(host.style.top, '0px');

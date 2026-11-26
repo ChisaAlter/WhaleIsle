@@ -14,6 +14,7 @@ import {
 } from '../../../../src/channels/shared/bot-workspace-store.mjs';
 import { listAgentPresetCatalog } from '../../../../src/channels/shared/agent-preset.mjs';
 import { sharedSingleOwnerGate } from '../../../../src/channels/shared/single-owner-gate.mjs';
+import { getActiveBotOutboundBridge } from '../../../../src/channels/shared/bot-outbound-bridge.mjs';
 import { createTokenConnectionSupervisor } from '../shared/connection-supervisor.mjs';
 import { harnessOrigin, pluginPaths } from '../shared/production.mjs';
 import { createHarnessCommandExecutor } from '../../harness-command-executor.mjs';
@@ -104,6 +105,7 @@ export async function createProductionController(ctx, config = {}, internals = {
         appToken,
         harness: workspaceScope.harness,
         state: workspaceScope.state,
+        outboundBridge: internals.outboundBridge ?? getActiveBotOutboundBridge(ctx),
         replyTimeoutMs: config.replyTimeoutMs ?? 600_000,
         connectTimeoutMs: config.connectTimeoutMs ?? 20_000,
         logger: {

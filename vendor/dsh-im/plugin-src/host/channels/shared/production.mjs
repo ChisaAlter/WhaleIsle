@@ -17,6 +17,7 @@ import {
   isSingleOwnerChannel,
   sharedSingleOwnerGate,
 } from '../../../../src/channels/shared/single-owner-gate.mjs';
+import { getActiveBotOutboundBridge } from '../../../../src/channels/shared/bot-outbound-bridge.mjs';
 
 export function harnessOrigin(webServer, configured) {
   if (configured !== undefined) return new URL(configured);
@@ -129,6 +130,7 @@ export async function createTokenProductionController(ctx, config, internals, de
         token,
         harness: workspaceScope.harness,
         state: workspaceScope.state,
+        outboundBridge: internals.outboundBridge ?? getActiveBotOutboundBridge(ctx),
         replyTimeoutMs: config.replyTimeoutMs ?? 600_000,
         connectTimeoutMs: config.connectTimeoutMs ?? 20_000,
         logger: {

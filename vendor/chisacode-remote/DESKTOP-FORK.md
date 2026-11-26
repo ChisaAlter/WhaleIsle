@@ -17,8 +17,8 @@ MIT shell chrome (settings copy, Electron IPC) stays MIT. AGPL covers this tree 
 
 | Knob | Env / file | Notes |
 | --- | --- | --- |
-| Relay host | `CHISACODE_RELAY_ENDPOINT` / `defaults.json` | **Built-in** `125.124.85.212:8411` (TLS off) |
-| App base (QR URL) | `CHISACODE_APP_BASE_URL` | Same host by default |
+| Relay host | `CHISACODE_RELAY_ENDPOINT` / `defaults.json` | **Built-in** `ayase.cn:443` (TLS on; runtime authority in `src/shared/lan.js`) |
+| App base (QR URL) | `CHISACODE_APP_BASE_URL` | `https://ayase.cn/dshd` (Away) / LAN `:3180` |
 | Home | `userData/chisacode-home` | Sticky device secrets until user 解除 |
 
 ## Packaging
@@ -34,7 +34,7 @@ MIT shell chrome (settings copy, Electron IPC) stays MIT. AGPL covers this tree 
 - `exports.ts` — re-exports `DSH_VENDOR_PACKAGES` for the shell (see `src/main/chisacode-remote.js`).
 - `websocket-server.ts` — `authorizeRelayPairingToken` stores the hello's `relayDeviceAuth.deviceName` as the issued device label (legacy `relay-pair` fallback), so the desktop device list shows a real name per paired device.
 - `relay-pairing-link-store.ts` — a truncated or schema-invalid `relay-pairing-link.json` is quarantined to `<file>.corrupt-<timestamp>` with a warning instead of throwing, so offer minting, `accepts`, and `revoke` keep working (`pairing-offer.ts` / `websocket-server.ts` pass their pino logger; standalone callers fall back to `console.warn`).
-- `relay-device-credential-store.ts` — `issueDevice` normalizes labels to ≤120 chars (`DeviceRecordSchema` caps `label` at load; an overlong persisted label would drop the whole store file) and adds `renameDevice(deviceId, label)` for the desktop's shell-side rename IPC; the store is re-opened per hello auth, so shell writes and daemon writes do not clobber each other.
+- `relay-device-credential-store.ts` — `issueDevice` normalizes labels to ≤120 chars (`DeviceRecordSchema` caps `label` at load; an overlong persisted label would drop the whole store file) and adds `renameDevice(deviceId, label)` for the desktop's shell-side rename IPC; the store is re-opened per hello auth, so shell writes and daemon writes do not clobber each other; `load()` only initializes empty on `ENOENT`, quarantines corrupt/schema-invalid `relay-devices.json` to `<file>.corrupt-<timestamp>` with a warning (`logger.warn` / `console.warn`), and rethrows non-`ENOENT` read/quarantine errors instead of returning empty and overwriting paired devices.
 
 ## Fork deltas (packages/client)
 

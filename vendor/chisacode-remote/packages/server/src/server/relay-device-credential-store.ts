@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import path from "node:path";
+import type pino from "pino";
 import { z } from "zod/v3";
 
 import { ensurePrivateFile, writePrivateFileAtomicSync } from "./private-files.js";
@@ -64,11 +65,13 @@ function safeEqualHex(a: string, b: string): boolean {
 export class RelayDeviceCredentialStore {
   private readonly filePath: string;
   private readonly pairingTokenDir: string;
+  private readonly logger?: pino.Logger;
   private data: DeviceStore;
 
-  constructor(chisacodeHome: string) {
+  constructor(chisacodeHome: string, options: { logger?: pino.Logger } = {}) {
     this.filePath = path.join(chisacodeHome, DEVICE_STORE_FILENAME);
     this.pairingTokenDir = path.join(chisacodeHome, "relay-pairing-tokens");
+    this.logger = options.logger;
     this.data = this.load();
   }
 
@@ -296,20 +299,76 @@ export class RelayDeviceCredentialStore {
   }
 
   private load(): DeviceStore {
-    if (!existsSync(this.filePath)) {
-      return { v: 1, devices: [], pairingTokens: [] };
-    }
+    let raw: string;
     try {
       ensurePrivateFile(this.filePath);
-      const raw = readFileSync(this.filePath, "utf8");
+      raw = readFileSync(this.filePath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return { v: 1, devices: [], pairingTokens: [] };
+      }
+      this.emitWarning("relay_device_store_read_failed", {
+        err: error,
+        filePath: this.filePath,
+      });
+      throw error;
+    }
+
+    try {
       const parsed = DeviceStoreSchema.parse(JSON.parse(raw));
       // Drop records missing secret (pre-strict store) so they must re-pair.
       parsed.devices = parsed.devices.filter(
         (device) => device.secret && device.secret.length >= 32,
       );
       return parsed;
-    } catch {
+    } catch (error) {
+      this.quarantineCorrupt(error);
       return { v: 1, devices: [], pairingTokens: [] };
+    }
+  }
+
+  /**
+   * Preserve corrupt or schema-invalid device store bytes aside as evidence and
+   * warn loudly so a subsequent persist() never silently wipes paired devices.
+   */
+  private quarantineCorrupt(error: unknown): void {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    let corruptPath = `${this.filePath}.corrupt-${stamp}`;
+    let suffix = 1;
+    while (existsSync(corruptPath)) {
+      corruptPath = `${this.filePath}.corrupt-${stamp}-${suffix}`;
+      suffix += 1;
+    }
+    try {
+      renameSync(this.filePath, corruptPath);
+      ensurePrivateFile(corruptPath);
+    } catch (renameError) {
+      if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
+        this.emitWarning("relay_device_store_corrupt", {
+          err: error,
+          filePath: this.filePath,
+        });
+        return;
+      }
+      this.emitWarning("relay_device_store_corrupt_quarantine_failed", {
+        err: error,
+        quarantineErr: renameError,
+        filePath: this.filePath,
+      });
+      throw renameError;
+    }
+    this.emitWarning("relay_device_store_corrupt_quarantined", {
+      err: error,
+      filePath: this.filePath,
+      corruptPath,
+    });
+  }
+
+  private emitWarning(message: string, fields: Record<string, unknown>): void {
+    if (this.logger) {
+      this.logger.warn(fields, message);
+    } else {
+      console.warn(message, fields);
     }
   }
 

@@ -42,8 +42,20 @@ const sprite = {
 };
 
 function applyTheme(theme) {
-  const scheme = typeof theme?.scheme === 'string' ? theme.scheme : '';
-  document.documentElement.dataset.theme = scheme === 'dark' ? 'dark' : 'light';
+  const dark = theme?.scheme === 'dark';
+  document.documentElement.toggleAttribute('data-ds-dark-theme', dark);
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  document.body?.toggleAttribute('data-ds-dark-theme', dark);
+  if (typeof theme?.minimalMode === 'boolean') {
+    document.documentElement.toggleAttribute('data-dsh-minimal', theme.minimalMode);
+    if (theme.minimalMode && hasSprite()) {
+      stopLoop();
+      sprite.row = ROW.idle;
+      sprite.frame = 0;
+      sprite.onceDone = null;
+      drawCell(0, ROW.idle);
+    }
+  }
 }
 
 function hasSprite() {
@@ -123,7 +135,8 @@ function tick() {
 }
 
 function reducedMotionOn() {
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true
+    || document.documentElement.hasAttribute('data-dsh-minimal');
 }
 
 function playLoop(row) {

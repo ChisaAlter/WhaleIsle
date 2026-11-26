@@ -1,4 +1,5 @@
 import { splitMessageText } from '../shared/editable-message-stream.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 import { SlackApi } from './slack-api.mjs';
 import { createSlackBridgeStatus, SlackHarnessBridge } from './slack-bridge.mjs';
@@ -351,6 +352,8 @@ export class SlackRuntime {
   #connectTimeoutMs;
   #createApi;
   #createWebSocket;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createSlackRuntimeStatus();
   #api = null;
   #bridge = null;
@@ -369,6 +372,7 @@ export class SlackRuntime {
     appToken,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     connectTimeoutMs = 20_000,
@@ -384,6 +388,7 @@ export class SlackRuntime {
     this.#appToken = appToken;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#connectTimeoutMs = connectTimeoutMs;
@@ -490,6 +495,7 @@ export class SlackRuntime {
         this.#status.lastCheckedAt = now;
         this.#status.lastConnectedAt = now;
         this.#status.lastError = null;
+        this.#registerOutboundSender();
         resolve();
       };
 
@@ -545,6 +551,7 @@ export class SlackRuntime {
         }
         const code = Number(event.code) || 0;
         const error = new Error(`Slack Socket Mode closed (${code || 'unknown'})`);
+        this.#unregisterOutbound();
         this.#status.ready = false;
         this.#status.connectionState = 'connecting';
         this.#status.lastError = error.message;
@@ -580,6 +587,7 @@ export class SlackRuntime {
   async stop() {
     this.#stopped = true;
     this.#generation += 1;
+    this.#unregisterOutbound();
     this.#abortController?.abort();
     this.#abortController = null;
     if (this.#reconnectTimer !== null) clearTimeout(this.#reconnectTimer);
@@ -602,5 +610,30 @@ export class SlackRuntime {
     this.#status.ready = false;
     this.#status.connectionState = 'idle';
     return this.status;
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('slack', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#api) {
+          throw Object.assign(new Error('Slack bot is not connected'), { code: 'channel_not_connected' });
+        }
+        const res = await this.#api.postMessage({
+          channelId: payload.targetId,
+          threadTs: payload.replyTo,
+          text: payload.text,
+          signal: payload.signal ?? this.#abortController?.signal,
+        });
+        return { messageId: typeof res?.ts === 'string' && res.ts ? res.ts : null };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

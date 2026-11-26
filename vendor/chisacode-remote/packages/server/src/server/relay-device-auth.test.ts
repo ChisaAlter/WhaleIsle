@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type pino from "pino";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -52,6 +53,7 @@ describe("RelayDeviceCredentialStore", () => {
   const cleanup: string[] = [];
 
   afterEach(() => {
+    vi.restoreAllMocks();
     for (const dir of cleanup.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -192,5 +194,65 @@ describe("RelayDeviceCredentialStore", () => {
 
     reread.revokeDevice(deviceId);
     expect(reread.renameDevice(deviceId, "Pixel 9")).toBe(false);
+  });
+
+  test.each([`{"v":1,"devices":`, `{"v":2,"devices":[]}`])(
+    "quarantines corrupt or schema-invalid relay-devices.json and warns instead of silently wiping: %s",
+    (contents) => {
+      const home = mkdtempSync(join(tmpdir(), "relay-dev-store-corrupt-"));
+      cleanup.push(home);
+      const storePath = join(home, "relay-devices.json");
+      writeFileSync(storePath, contents);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const store = new RelayDeviceCredentialStore(home);
+      expect(store.listDevices()).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toBe("relay_device_store_corrupt_quarantined");
+
+      const quarantined = readdirSync(home).filter((name) =>
+        name.startsWith("relay-devices.json.corrupt-"),
+      );
+      expect(quarantined).toHaveLength(1);
+      expect(readFileSync(join(home, quarantined[0]!), "utf8")).toBe(contents);
+
+      // Subsequent persist creates a fresh file while keeping the quarantined evidence intact.
+      const issued = store.issueDevice("phone", "dev_after_quarantine");
+      expect(new RelayDeviceCredentialStore(home).verifyDeviceSecret(issued.deviceId, issued.deviceSecret)).toBe(true);
+      expect(readFileSync(join(home, quarantined[0]!), "utf8")).toBe(contents);
+    },
+  );
+
+  test("routes corruption warnings to injected logger", () => {
+    const home = mkdtempSync(join(tmpdir(), "relay-dev-store-logger-"));
+    cleanup.push(home);
+    writeFileSync(join(home, "relay-devices.json"), "not json");
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnings: Array<{ fields: unknown; message: string }> = [];
+    const logger = {
+      warn(fields: unknown, message: string) {
+        warnings.push({ fields, message });
+      },
+    } as unknown as pino.Logger;
+
+    new RelayDeviceCredentialStore(home, { logger });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe("relay_device_store_corrupt_quarantined");
+    expect(consoleWarn).not.toHaveBeenCalled();
+  });
+
+  test("throws and preserves relay-devices.json on non-ENOENT read errors instead of initializing empty", () => {
+    const home = mkdtempSync(join(tmpdir(), "relay-dev-store-ebusy-"));
+    cleanup.push(home);
+    const storePath = join(home, "relay-devices.json");
+    // A directory at the store file path causes readFileSync to fail with EISDIR (non-ENOENT).
+    // Verify load() does not treat non-ENOENT read failures as an empty store.
+    mkdirSync(storePath);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(() => new RelayDeviceCredentialStore(home)).toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toBe("relay_device_store_read_failed");
+    expect(readdirSync(home).filter((name) => name.startsWith("relay-devices.json.corrupt-"))).toEqual([]);
   });
 });

@@ -103,6 +103,18 @@ function maybePresent(now) {
   paintFrame();
 }
 
+/** @param {any} activeStill */
+function hasVisibleCanvasState(activeStill) {
+  return Boolean(painted || activeStill || feed || particles.length || bubble || panel
+    || lastPaintRect || lastFeedRect || lastParticleRect || lastBubbleRect || lastPanelRect);
+}
+
+function syncIdleSurfaceRegions() {
+  if (chatRect || chatFeedbackRect || surfaceRegionKey) {
+    reportSurfaceRegions();
+  }
+}
+
 function paintFrame() {
   const perfStart = petPerf.enabled ? performance.now() : 0;
   const liveAlpha = (session || rig.ready) ? 1 : 1 - stillCtl.alpha;
@@ -110,8 +122,8 @@ function paintFrame() {
   // Commit only visible ink or cleanup; an empty live scene has nothing to
   // upload while that first inference is still in flight.
   const activeStill = stillCtl.entry && stillCtl.alpha > 0.01;
-  if (!painted && !activeStill && !feed && !particles.length && !bubble && !panel
-      && !lastPaintRect && !lastFeedRect && !lastParticleRect && !lastBubbleRect && !lastPanelRect) {
+  if (!hasVisibleCanvasState(activeStill)) {
+    syncIdleSurfaceRegions();
     return;
   }
   // Self-healing sweep: every ~1.5s clear the WHOLE surface once. Dirty

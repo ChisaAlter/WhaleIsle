@@ -41,6 +41,7 @@ function createShellDialogs() {
   /** @type {ShellConfirmDialog|undefined} */
   let shellConfirmInstance;
   let confirmQueue = Promise.resolve();
+  let nativeQueue = Promise.resolve();
   function shellConfirm() {
     if (!shellConfirmInstance) {
       shellConfirmInstance = new ShellConfirmDialog(
@@ -52,6 +53,31 @@ function createShellDialogs() {
     return shellConfirmInstance;
   }
 
+  function presentNativeMessageBox(/** @type {any} */ parent, /** @type {Record<string, any>} */ options) {
+    const task = nativeQueue.then(async () => {
+      const targetParent = parent && !parent.isDestroyed?.() ? parent : undefined;
+      // The native messagebox has no context slot: the fixed attribution line
+      // folds ahead of the detail text so the fallback never drops it.
+      const nativeDetail = detailWithContext(options);
+      if (options.downloadMethods?.length > 0) {
+        const methods = options.downloadMethods.filter((/** @type {any} */ method) => !method.disabledReason);
+        const result = await dialog.showMessageBox(targetParent, /** @type {any} */ ({
+          ...options,
+          buttons: [...methods.map((/** @type {any} */ method) => method.label), '稍后'],
+          defaultId: 0, cancelId: methods.length,
+          detail: options.downloadMethods.map((/** @type {any} */ method) => `${method.label}：${method.disabledReason || method.description}`).join('\n')
+            + '\n\n' + nativeDetail,
+        }));
+        return result.response < methods.length
+          ? { response: 0, downloadMode: methods[result.response].id }
+          : { response: options.cancelId };
+      }
+      return dialog.showMessageBox(targetParent, /** @type {any} */ ({ ...options, detail: nativeDetail }));
+    });
+    nativeQueue = task.then(() => undefined, () => undefined);
+    return task;
+  }
+
   async function presentConfirmDialog(/** @type {any} */ parent, /** @type {Record<string, any>} */ options) {
     if (parent && !parent.isDestroyed()) {
       try {
@@ -60,23 +86,7 @@ function createShellDialogs() {
         console.warn('dshd dialog: shell confirm failed, native fallback', error);
       }
     }
-    // The native messagebox has no context slot: the fixed attribution line
-    // folds ahead of the detail text so the fallback never drops it.
-    const nativeDetail = detailWithContext(options);
-    if (options.downloadMethods?.length > 0) {
-      const methods = options.downloadMethods.filter((/** @type {any} */ method) => !method.disabledReason);
-      const result = await dialog.showMessageBox(parent || undefined, /** @type {any} */ ({
-        ...options,
-        buttons: [...methods.map((/** @type {any} */ method) => method.label), '稍后'],
-        defaultId: 0, cancelId: methods.length,
-        detail: options.downloadMethods.map((/** @type {any} */ method) => `${method.label}：${method.disabledReason || method.description}`).join('\n')
-          + '\n\n' + nativeDetail,
-      }));
-      return result.response < methods.length
-        ? { response: 0, downloadMode: methods[result.response].id }
-        : { response: options.cancelId };
-    }
-    return dialog.showMessageBox(parent || undefined, /** @type {any} */ ({ ...options, detail: nativeDetail }));
+    return presentNativeMessageBox(parent, options);
   }
 
   /**
@@ -90,24 +100,31 @@ function createShellDialogs() {
     if (options?.signal?.aborted === true) {
       return { response: cancelId };
     }
-    const run = confirmQueue.then(async () => {
+    const prevQueue = confirmQueue;
+    const run = prevQueue.then(async () => {
       if (options?.signal?.aborted === true) {
         return { response: cancelId };
       }
       const resolvedParent = typeof parent === 'function' ? parent() : parent;
       return presentConfirmDialog(resolvedParent, options);
     });
-    confirmQueue = run.then(() => undefined, () => undefined);
-    if (!options?.signal) return run;
+    if (!options?.signal) {
+      confirmQueue = run.then(() => undefined, () => undefined);
+      return run;
+    }
     /** @type {(() => void) | undefined} */
     let onAbort;
     const aborted = new Promise((resolve) => {
       onAbort = () => resolve({ response: cancelId });
       options.signal.addEventListener('abort', onAbort, { once: true });
     });
-    return Promise.race([run, aborted]).finally(() => {
-      options.signal.removeEventListener('abort', onAbort);
+    // Wait for prior prompts (prevQueue) before advancing, while letting an
+    // abort unblock subsequent prompts if this prompt's native dialog hangs.
+    const gated = Promise.race([run, aborted]).finally(() => {
+      if (onAbort) options.signal.removeEventListener('abort', onAbort);
     });
+    confirmQueue = Promise.all([prevQueue, gated]).then(() => undefined, () => undefined);
+    return gated;
   }
 
   // Anchor for productized confirmations: the first VISIBLE window — a hidden
@@ -158,7 +175,7 @@ function createShellDialogs() {
       action === 'install' ? '插件代码会在本机运行。' : '',
       allowBuilds.length > 0 ? `并允许以下包在沙箱外运行构建脚本：${allowBuilds.join(', ')}` : '',
     ].filter(Boolean).join('\n');
-    const result = await confirmDialog(firstVisibleWindow(), {
+    const result = await confirmDialog(firstVisibleWindow, {
       type: 'warning',
       buttons: ['允许', '拒绝'],
       defaultId: 1,
@@ -188,7 +205,7 @@ function createShellDialogs() {
       return confirmDesktopPluginChange(request);
     }
     const locale = desktopDialogMessages();
-    const result = await confirmDialog(firstVisibleWindow(),
+    const result = await confirmDialog(firstVisibleWindow,
       modelActionConfirmOptions(request, locale.messages, locale.id));
     if (result.response === 1) return 'once';
     if (result.response === 2 && !NEVER_ALWAYS_LEVELS.has(request.effect)) return 'always';
@@ -209,7 +226,7 @@ function createShellDialogs() {
     const locale = desktopDialogMessages();
     const options = secretDialogOptions(request, locale.messages, locale.id);
     for (;;) {
-      const result = await confirmDialog(firstVisibleWindow(), options);
+      const result = await confirmDialog(firstVisibleWindow, options);
       if (result.response !== 0) return { ok: true };
       clipboard.writeText(secret);
     }
@@ -283,7 +300,7 @@ function createShellDialogs() {
       noLink: true,
       ...(ctx?.signal ? { signal: ctx.signal } : {}),
     };
-    const result = await confirmDialog(firstVisibleWindow(), options);
+    const result = await confirmDialog(firstVisibleWindow, options);
     return result.response === 0;
   }
 

@@ -379,3 +379,16 @@ test('generic failure evidence still suppresses plugin blame from web boot audit
     assert.equal(inspected.desktopRuntimeDamage, false);
   }
 });
+
+test('dsh-deepseek-tools is classified as a preset and in-box package', () => {
+  const logs = 'cannot resolve profile bundle "dsh-deepseek-tools"';
+  const inspected = inspectPlugins({
+    logs,
+    plugins: [{ name: 'dsh-deepseek-tools', spec: 'file:vendor' }],
+    bundles: ['dsh-deepseek-tools'],
+  });
+  assert.equal(isPresetPlugin('dsh-deepseek-tools'), true);
+  assert.equal(inspected.plugins[0].preset, true);
+  const orphan = inspectPlugins({ logs, pluginTreeFailure: true, plugins: [] });
+  assert.equal(orphan.orphanSuspects.find((r) => r.name === 'dsh-deepseek-tools')?.inBox, true);
+});

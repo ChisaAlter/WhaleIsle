@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -91,7 +92,15 @@ export async function checkClient() {
   };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+function sameEntrypoint(argvPath, moduleUrl) {
+  try {
+    return realpathSync(argvPath) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return path.resolve(argvPath) === path.resolve(fileURLToPath(moduleUrl));
+  }
+}
+
+if (process.argv[1] && sameEntrypoint(process.argv[1], import.meta.url)) {
   if (process.argv.includes('--check')) {
     const status = await checkClient();
     if (!status.ok) {

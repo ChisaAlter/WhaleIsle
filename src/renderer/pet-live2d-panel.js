@@ -327,8 +327,13 @@ function drawPanel() {
       avC.x - avC.r + 1, avC.y - avC.r + 1, (avC.r - 1) * 2, (avC.r - 1) * 2);
     ctx2d.restore();
   } else {
-    ctx2d.font = `20px ${font}`;
-    mid('🐋', avC.x, avC.y, 'center');
+    ctx2d.beginPath();
+    ctx2d.arc(avC.x, avC.y, avC.r - 5, 0, Math.PI * 2);
+    ctx2d.strokeStyle = lvlColor;
+    ctx2d.globalAlpha = 0.45;
+    ctx2d.lineWidth = 1.5;
+    ctx2d.stroke();
+    ctx2d.globalAlpha = 1;
   }
   const nameX = padL + 44;
   ctx2d.font = `600 13px ${font}`;

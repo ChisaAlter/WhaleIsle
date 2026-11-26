@@ -613,6 +613,39 @@ function filterRegisteredWorkspaceRoots(listed) {
   });
 }
 
+let authorityEpoch = 0;
+
+/**
+ * Invalidate cached production workspace authorities after workspace changes
+ * or registration updates so main-process modules reload from live config.
+ */
+function invalidateWorkspaceAuthorities() {
+  authorityEpoch += 1;
+}
+
+function readConfigRevision() {
+  try {
+    const config = require('./config');
+    return typeof config.configRevision === 'function' ? config.configRevision() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** @param {{ allowScratchCwd?: boolean }} [options] */
+function buildProductionWorkspaceAuthority(options = {}) {
+  const { loadConfig } = require('./config');
+  return createWorkspaceAuthority({
+    workspace: loadConfig().workspace,
+    extraWorkspaces: options.allowScratchCwd ? [scratchWorkspacePath()] : [],
+    listRegisteredWorkspaces: () => [
+      ...filterRegisteredWorkspaceRoots(readHarnessRegisteredWorkspacePaths()),
+      ...filterRegisteredWorkspaceRoots(readProjectRegisteredPaths()),
+      ...readProjectExecutionPaths(),
+    ],
+  });
+}
+
 /**
  * Lazy production authority bound to the configured boot workspace plus the
  * harness-registered workspace paths. PTY callers may also opt into the
@@ -624,23 +657,51 @@ function filterRegisteredWorkspaceRoots(listed) {
  */
 function loadWorkspaceAuthority(options = {}) {
   try {
-    const { loadConfig } = require('./config');
-    return createWorkspaceAuthority({
-      workspace: loadConfig().workspace,
-      extraWorkspaces: options.allowScratchCwd ? [scratchWorkspacePath()] : [],
-      listRegisteredWorkspaces: () => [
-        ...filterRegisteredWorkspaceRoots(readHarnessRegisteredWorkspacePaths()),
-        ...filterRegisteredWorkspaceRoots(readProjectRegisteredPaths()),
-        ...readProjectExecutionPaths(),
-      ],
-    });
+    return buildProductionWorkspaceAuthority(options);
   } catch {
     return createWorkspaceAuthority({ workspace: '' });
   }
 }
 
+/**
+ * Cached production authority wrapper that respects test overrides (`set`)
+ * and invalidates automatically on config revisions or explicit workspace
+ * refreshes without permanently caching a transient `loadConfig()` error.
+ * @param {{ allowScratchCwd?: boolean }} [options]
+ */
+function createCachedWorkspaceAuthority(options = {}) {
+  /** @type {ReturnType<typeof createWorkspaceAuthority> | null} */
+  let override = null;
+  /** @type {{ epoch: number, revision: number | undefined, authority: ReturnType<typeof createWorkspaceAuthority> } | null} */
+  let cached = null;
+
+  return {
+    set(/** @type {ReturnType<typeof createWorkspaceAuthority> | null} */ authority) {
+      override = authority;
+      if (authority === null) cached = null;
+    },
+    get() {
+      if (override !== null) return override;
+      const revision = readConfigRevision();
+      if (cached && cached.epoch === authorityEpoch && cached.revision === revision) {
+        return cached.authority;
+      }
+      try {
+        const authority = buildProductionWorkspaceAuthority(options);
+        cached = { epoch: authorityEpoch, revision, authority };
+        return authority;
+      } catch {
+        // Never poison the cache with an empty workspace on transient load errors.
+        return createWorkspaceAuthority({ workspace: '' });
+      }
+    },
+  };
+}
+
 module.exports = {
   createWorkspaceAuthority,
+  createCachedWorkspaceAuthority,
+  invalidateWorkspaceAuthorities,
   loadWorkspaceAuthority,
   readHarnessRegisteredWorkspacePaths,
   readProjectExecutionPaths,

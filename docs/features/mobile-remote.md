@@ -102,7 +102,7 @@
 「请在电脑端操作」**只允许**出现在本段或 NEVER。
 
 - 浏览器 SPA 与原生 Android 的文件、更改、MCP、技能与插件页面均接正式服务；禁止把请求失败画成没有文件/没有服务器。
-- 只读 Files/Diff 的旧契约（不写盘、不 Stage）下一轮仍有效；本轮不转发 `git-stage` / `unstage` / `discard`。
+- 只读 Files/Diff 的旧契约（不写盘、不做完整文件 Stage / Unstage / Discard）下一轮仍有效；Git 隧道仅额外放行 hunk 级 `git-stage-patch` / `git-unstage-patch`（Wave 4），仍禁止转发完整 `git-stage` / `git-unstage` / `git-discard`。
 - 2026-10-27 原生 Android 补全轮已接入 MCP/技能正式管理服务；写入与只读 composition 的判断由 Host 服务决定。浏览器 SPA（2026-10-28）提供其中的启停、测试、删除与调用开关，不提供 MCP/技能新增编辑、插件安装、电脑设置与账户页，也不声称这些已对齐。
 - 消息编辑/rewind、Trajectory、Context meter、Session log 下载、标题栏终端/表面开关、上游 chisacode-ui 套件：本轮不声称对齐。Whale UI 由共享 viewer 在 SPA 与 Android 内渲染，属于既有能力而非对齐声明，见 [Whale UI](openui.md)。
 
@@ -120,7 +120,7 @@
 
 - 手机 = **同协议客户端**（`mobile/web/chisacode/` + `@chisacode/client` bundle）。用户可见名称是 **dshd daemon / dshd offer / dshd 远程**；协议实现仍是 vendored ChisaCode offer v2，不改 pairing wire、包名或 sticky localStorage 键。配对之后两条已配对通道：host RPC（白名单 unary + `respond`）进 loopback `dsh web`；Git 进 Electron `git.js`（host **没有** Git API）。
 - 白名单 unary：`host.describe` / `host.listDirectory` / `host.createDirectory`；`session.list|search|create|history|models|selectModel|rename|fork|prompt|attachment|updateQueue|cancel|delete`；`subagent.list|history|prompt|interrupt`；`workspace.list|create|rename|delete|insertBefore|insertSessionBefore|archiveSession|unarchiveSession`；`skill.list`、`agentPreset.list`、`llm.models` / `llm.providers`；Typert `commands/list`、`commands/execute`。外加 `/api/respond`。
-- Git 白名单（进 main）：`git-status`、`git-fetch-status`、`git-pull-request`、`git-init`、`git-diff`、`git-commit`、`git-push`、`git-pull`、`git-create-change-request`、`git-publish`、`git-status-entries`、`git-branch-list`、`git-switch-branch`、`git-create-branch`。本轮不转发 stage/unstage/discard。
+- Git 白名单（进 main）：`git-status`、`git-fetch-status`、`git-pull-request`、`git-init`、`git-diff`、`git-commit`、`git-push`、`git-pull`、`git-create-change-request`、`git-publish`、`git-status-entries`、`git-branch-list`、`git-switch-branch`、`git-create-branch`，以及 hunk 级补丁暂存 `git-stage-patch`、`git-unstage-patch`；仍禁止转发完整 `git-stage` / `git-unstage` / `git-discard`。
 - 原生管理服务白名单补充：`workspaceFiles.list|read|stat`（会话文件作用域）；`mcpServers.list|upsert|delete|setEnabled|retry|test|authorize`；`skillInventory.list|get|create|update|delete|setInvocation|searchHub|installHub`；`pluginInventory.list`；`pluginManager.listPlugins|listBundles|registries|inspect|setPluginEnabled|setBundleEnabled|installBundle|removeBundle|cancelInstall|waitForInstall`；`settings.describe|update|replace|mutate`（带 revision）；`credentials.describe|set|unset`（只返回配置状态，不能读值）；账户状态、资料、余额、奖励确认、退出与取消登录。所有操作仍走已配对 E2EE 和正式 Host 服务，无通用 namespace 代理。
 - `workspaceFiles.readImage` 是有限图片预览：沿正式 `readBytes` 的会话作用域读取最多 2 MiB，验证 multipart 关联、长度、EOF 和 PNG/JPEG/GIF/WebP/BMP 魔数后转 base64；拒绝 SVG、超限、截断或返回长度与元数据不符的文件，不向客户端开放任意二进制读取。
 - 原生账户 `account.startSignIn` 复用正式 OAuth/PKCE。Android 浏览器回调到手机本地回环监听器后，以 E2EE `account.completeSignIn({code,state})` 转发到当前 Host 固定 `/oauth/callback`；state 与授权码校验、交换和凭据保存仍由账户服务承担。桥只返回授权成功地址或安全错误，不转发令牌与回调响应正文。
@@ -168,7 +168,7 @@
 
 | Kind | What |
 | --- | --- |
-| Automated | `mobile/web/**/*.test.js`（含 `app-cutover.test.js` 零 `fetchAgents`/`createAgent`；`host/*.test.js`；`git/stack.test.js` 的 `commit_push` 顺序；`git/bridge.test.js` 的 `gitCreateBranch`）；`src/shared/dshd-host-tunnel.test.js`（白名单外 403、非 loopback 拒转发）；`src/main/dshd-git-dispatch.test.js`（不转发 stage/pty/writeFile）；`src/main/dshd-remote.test.js`（运行时裁剪、`DSHD_HARNESS_ORIGIN`、不设 `DSH_HOME`）；Android JVM tests（`:protocol:test` PairingIntent；`:app:testDebugUnitTest` VIEW handoff） |
+| Automated | `mobile/web/**/*.test.js`（含 `app-cutover.test.js` 零 `fetchAgents`/`createAgent`；`host/*.test.js`；`git/stack.test.js` 的 `commit_push` 顺序；`git/bridge.test.js` 的 `gitCreateBranch`）；`src/shared/dshd-host-tunnel.test.js`（白名单外 403、非 loopback 拒转发）；`src/main/dshd-git-dispatch.test.js`（仅允许 titlebar 集合与 hunk 级 `git-stage-patch`/`git-unstage-patch`，不转发完整 `stage`/`unstage`/`discard`/pty/writeFile）；`src/main/dshd-remote.test.js`（运行时裁剪、`DSHD_HARNESS_ORIGIN`、不设 `DSH_HOME`）；Android JVM tests（`:protocol:test` PairingIntent；`:app:testDebugUnitTest` VIEW handoff） |
 | Browser | `node tools/mobile-web-qa/run-qa.mjs`（fake **host** 会话，不单靠 fake ACP agents）；`node tools/remote-web-qa/run-e2e.mjs --relay <endpoint>`；`npm run qa:remote` |
 | Manual | **全功能执行表：** [docs/qa/mobile-remote-full-web-cases.md](../qa/mobile-remote-full-web-cases.md)（P0 缺一行未填 = 未测完）。原生 Android 必须独立真机验收配对／保存设备重连、列表、历史／增量、发送／停止、审批、IME/Back、草稿隔离与错误恢复；旧 [T3 Deferred](../qa/mobile-remote-live-acceptance.md) 只是历史状态，不构成本轮签收。 |
 

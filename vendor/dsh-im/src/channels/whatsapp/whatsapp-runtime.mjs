@@ -7,6 +7,7 @@ import {
 } from '@whiskeysockets/baileys';
 
 import { splitMessageText } from '../shared/editable-message-stream.mjs';
+import { getActiveBotOutboundBridge } from '../shared/bot-outbound-bridge.mjs';
 import { t } from '../shared/i18n.mjs';
 import { ImagePromptError } from '../shared/image-prompt.mjs';
 import { trackOutboundArtifactProviderPromise } from '../shared/semantic/artifact.mjs';
@@ -543,6 +544,8 @@ export class WhatsappRuntime {
   #accessMode;
   #allowedPrivateNumbers;
   #createSession;
+  #outboundBridge;
+  #unregisterOutboundSender = null;
   #status = createWhatsappRuntimeStatus();
   #abortController = null;
   #session = null;
@@ -555,6 +558,7 @@ export class WhatsappRuntime {
     authDir,
     harness,
     state,
+    outboundBridge,
     logger = console,
     replyTimeoutMs = 600_000,
     connectTimeoutMs = 30_000,
@@ -568,6 +572,7 @@ export class WhatsappRuntime {
     this.#authDir = authDir;
     this.#harness = harness;
     this.#state = state;
+    this.#outboundBridge = outboundBridge === undefined ? getActiveBotOutboundBridge() : outboundBridge;
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#connectTimeoutMs = connectTimeoutMs;
@@ -645,6 +650,7 @@ export class WhatsappRuntime {
         },
         onDisconnect: ({ error }) => {
           if (controller.signal.aborted) return;
+          this.#unregisterOutbound();
           this.#status.ready = false;
           this.#status.connectionState = 'failed';
           this.#status.lastError = error?.message ?? 'WhatsApp Web connection closed';
@@ -684,6 +690,7 @@ export class WhatsappRuntime {
       this.#status.connectionState = 'connected';
       this.#status.lastCheckedAt = now;
       this.#status.lastConnectedAt = now;
+      this.#registerOutboundSender();
       return this.status;
     } catch (error) {
       this.#status.ready = false;
@@ -716,6 +723,7 @@ export class WhatsappRuntime {
   }
 
   async stop() {
+    this.#unregisterOutbound();
     const session = this.#session;
     const client = this.#client;
     const bridge = this.#bridge;
@@ -733,5 +741,25 @@ export class WhatsappRuntime {
     this.#status.ready = false;
     this.#status.connectionState = 'idle';
     return this.status;
+  }
+
+  #registerOutboundSender() {
+    this.#unregisterOutbound();
+    const bridge = this.#outboundBridge ?? getActiveBotOutboundBridge();
+    if (!bridge || typeof bridge.registerSender !== 'function') return;
+    this.#unregisterOutboundSender = bridge.registerSender('whatsapp', {
+      sendText: async (payload) => {
+        if (!this.#status.ready || !this.#client) {
+          throw Object.assign(new Error('WhatsApp bot is not connected'), { code: 'channel_not_connected' });
+        }
+        const res = await this.#client.sendText({ jid: payload.targetId }, payload.text);
+        return { messageId: res?.providerMessageIds?.[0] ?? null };
+      },
+    }, { accountId: this.#config.botId });
+  }
+
+  #unregisterOutbound() {
+    this.#unregisterOutboundSender?.();
+    this.#unregisterOutboundSender = null;
   }
 }

@@ -769,7 +769,11 @@ test('default autonomy is auto, slot-freed settle auto-relays queued tasks, huma
     },
   });
 
-  // Use short batch window (180ms) for fast deterministic testing (production default is 1500ms)
+  // Control the 180ms batch timer deterministically so parallel npm test load
+  // cannot fire the flush between settling t1 and settling t2.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.after(() => t.mock.timers.reset());
+
   const service = new ProjectService(ctx, { home, notifyBatchMs: 180 });
   t.after(() => service.dispose());
   registerProjectTools(ctx, service);
@@ -795,24 +799,33 @@ test('default autonomy is auto, slot-freed settle auto-relays queued tasks, huma
   // Verify Prompt Cache stability: adding/dispatching tasks does NOT change coordinatorSectionFor
   const staticBefore = service.runner.coordinatorSectionFor({ agent: coord });
 
+  const waitImmediate = async (predicate, maxTurns = 2000) => {
+    for (let i = 0; i < maxTurns; i += 1) {
+      if (await predicate()) return true;
+      await new Promise((r) => setImmediate(r));
+    }
+    return Boolean(await predicate());
+  };
+
   // Settle t1 -> frees concurrency slot -> auto-dispatches t2 immediately!
   await service.settleWorker({
     id: 'w-relay-1',
     stopReason: 'completed',
     lastAssistantMessage: [{ type: 'text', text: 'First slice finished cleanly.' }],
   });
-  await waitForCondition(() => activations.length >= 2, { intervalMs: 10 });
-  assert.equal(activations.length, 2, 'settling t1 should auto-relay queued t2');
+  assert.equal(await waitImmediate(() => activations.length >= 2), true, 'settling t1 should auto-relay queued t2');
 
-  // Settle t2 within the same batching window -> both t1 and t2 coalesce into ONE report-back!
+  // Settle t2 within the same mocked batching window -> both t1 and t2 coalesce into ONE report-back!
   await service.settleWorker({
     id: 'w-relay-2',
     stopReason: 'error',
     lastAssistantMessage: [{ type: 'text', text: 'Second slice hit a lint error.' }],
   });
-  await waitForCondition(
-    () => coordinatorPrompts.length >= 1 && sseEvents.some((ev) => ev.type === 'coordinator.notified'),
-    { intervalMs: 20 },
+  t.mock.timers.tick(180);
+  assert.equal(
+    await waitImmediate(() => coordinatorPrompts.length >= 1 && sseEvents.some((ev) => ev.type === 'coordinator.notified')),
+    true,
+    'ticking batch window should flush coalesced coordinator notification',
   );
 
   assert.equal(coordinatorPrompts.length, 1, 'concurrent settlements should coalesce into one batched receipt');

@@ -213,7 +213,7 @@ function createComponentsService(deps = {}) {
    * @param {any} onProgress
    */
   function attachSupervision(id, child, gen, onProgress) {
-    /** @type {{ child: any, pid: any, gen: number, expectedExit: boolean, attempts: number, timer: any, spawnError?: any }} */
+    /** @type {{ child: any, pid: any, gen: number, expectedExit: boolean, attempts: number, timer: any, spawnError?: any, earlyExit?: number | null }} */
     const proc = { child, pid: child.pid, gen, expectedExit: false, attempts: 0, timer: null };
     procs.set(id, proc);
     if (typeof child.once === 'function') {
@@ -243,6 +243,7 @@ function createComponentsService(deps = {}) {
     }
     const rec = recordFor(id);
     if (!rec || rec.state !== 'running') {
+      proc.earlyExit = code ?? null;
       procs.delete(id);
       return;
     }
@@ -392,33 +393,50 @@ function createComponentsService(deps = {}) {
     const gen = generation += 1;
     const proc = attachSupervision(id, child, gen, onProgress);
 
+    const failStart = (/** @type {string} */ errorCode, /** @type {string} */ message) => {
+      procs.delete(id);
+      rec.state = 'error';
+      rec.pid = null;
+      rec.url = '';
+      rec.lastError = message;
+      writeRegistry();
+      emit(onProgress, { id, op, phase: 'error', percent: 100, message: rec.lastError });
+      return { ok: false, error: errorCode, id, state: 'error', message: rec.lastError };
+    };
+    const isChildExited = () => (child.exitCode !== null && child.exitCode !== undefined)
+      || (child.signalCode !== null && child.signalCode !== undefined)
+      || proc.earlyExit !== undefined;
+    const checkEarlyExit = () => {
+      if (proc.spawnError) {
+        return failStart('spawn-failed', `启动失败：${proc.spawnError.message || proc.spawnError}`);
+      }
+      if (child.exitCode !== null && child.exitCode !== undefined) {
+        return failStart('early-exit', `组件进程启动即退出（code ${child.exitCode}）。`);
+      }
+      if (child.signalCode !== null && child.signalCode !== undefined) {
+        return failStart('early-exit', `组件进程启动即退出（signal ${child.signalCode}）。`);
+      }
+      if (proc.earlyExit !== undefined) {
+        return failStart('early-exit', `组件进程启动即退出（code ${proc.earlyExit ?? '?'}）。`);
+      }
+      return null;
+    };
+
     // Alive grace: a spawn that dies instantly (bad entry, missing runtime)
     // must not report ok — mirror the desktop runtime's grace verdict.
     const graceDeadline = Date.now() + (deps.startGraceMs ?? START_GRACE_MS);
     while (Date.now() < graceDeadline) {
       await new Promise((resolve) => setTimeout(resolve, Math.min(START_POLL_MS, Math.max(0, graceDeadline - Date.now()))));
-      if (proc.spawnError) {
-        procs.delete(id);
-        rec.state = 'error';
-        rec.lastError = `启动失败：${proc.spawnError.message || proc.spawnError}`;
-        writeRegistry();
-        emit(onProgress, { id, op, phase: 'error', percent: 100, message: rec.lastError });
-        return { ok: false, error: 'spawn-failed', id, state: 'error', message: rec.lastError };
-      }
-      if (child.exitCode !== null && child.exitCode !== undefined) {
-        procs.delete(id);
-        rec.state = 'error';
-        rec.lastError = `组件进程启动即退出（code ${child.exitCode}）。`;
-        writeRegistry();
-        emit(onProgress, { id, op, phase: 'error', percent: 100, message: rec.lastError });
-        return { ok: false, error: 'early-exit', id, state: 'error', message: rec.lastError };
-      }
+      const failed = checkEarlyExit();
+      if (failed) return failed;
     }
     emit(onProgress, { id, op, phase: 'wait', percent: 70 });
     const liveState = await lifecycle.waitForStateFile(store.stateFile(root, id), {
       timeoutMs: deps.stateWaitMs ?? STATE_WAIT_MS,
-      isDead: () => (child.exitCode !== null && child.exitCode !== undefined) || Boolean(proc.spawnError),
+      isDead: () => isChildExited() || Boolean(proc.spawnError),
     }, deps);
+    const failedAfterWait = checkEarlyExit();
+    if (failedAfterWait) return failedAfterWait;
     rec.state = 'running';
     rec.pid = child.pid || rec.pid;
     rec.url = typeof liveState?.url === 'string' && liveState.url

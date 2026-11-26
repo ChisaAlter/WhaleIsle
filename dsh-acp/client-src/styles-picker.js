@@ -105,7 +105,8 @@ export const PICKER_CSS = `
   width: 620px;
   max-width: calc(100vw - 24px);
   height: 480px;
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
+  max-height: calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
   padding: 0;
   display: flex;
   flex-direction: row;
@@ -484,7 +485,8 @@ export const PICKER_CSS = `
 @media (max-width: 560px) {
   .dsh-acp-ms-menu {
     flex-direction: column;
-    height: min(620px, calc(100vh - 24px));
+    height: min(620px, calc(100vh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px))));
+    height: min(620px, calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px))));
   }
   .dsh-acp-ms-rail {
     flex-direction: row;

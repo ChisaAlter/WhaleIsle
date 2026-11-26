@@ -241,3 +241,25 @@ test('classic page programs resolve their own shared globals and keep the two pa
     assert.deepEqual(missing, [], `${page} must see its own page's shared ${symbol}`);
   }
 });
+
+test('tsconfig.check.json paths point only to tracked declarations or root node_modules, never vendor build artifacts', async () => {
+  const { default: ts } = await import('typescript');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const checkConfigPath = join(root, 'tsconfig.check.json');
+  const parsed = ts.readConfigFile(checkConfigPath, (file) => readFileSync(file, 'utf8'));
+  assert.equal(parsed.error, undefined);
+  const paths = parsed.config?.compilerOptions?.paths || {};
+  const entries = Object.entries(paths);
+  assert.ok(entries.length > 0);
+  for (const [pkg, targets] of entries) {
+    assert.ok(Array.isArray(targets) && targets.length > 0, `${pkg} must map to at least one path`);
+    for (const relTarget of targets) {
+      assert.doesNotMatch(
+        relTarget,
+        /vendor\/deepseek-harness\/.*(?:lib\/|node_modules\/)/,
+        `${pkg} must not depend on gitignored vendor/deepseek-harness build artifacts: ${relTarget}`,
+      );
+      assert.ok(existsSync(join(root, relTarget)), `${pkg} declaration target missing: ${relTarget}`);
+    }
+  }
+});

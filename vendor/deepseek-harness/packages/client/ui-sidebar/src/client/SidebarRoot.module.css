@@ -722,11 +722,15 @@
   inset-inline: 0;
   bottom: 0;
   height: 24px;
-  background: linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill));
+  background: linear-gradient(to bottom, transparent, var(--dsh-sidebar-rail-fill, var(--dsw-specific-sidebar-fill)));
   pointer-events: none;
 }
 
 :global([data-platform='darwin']) .scrollFade,
+:global(html[data-dsh-gradient]) .scrollFade,
+:global(html[data-dsh-wallpaper]) .scrollFade,
+:global(html[data-dsh-window-material]) .scrollFade,
+:global(html[data-dsh-transparent]) .scrollFade,
 .collapsed .scrollFade,
 .collapsed .scrollArea::before,
 .collapsed .scrollArea::after {
