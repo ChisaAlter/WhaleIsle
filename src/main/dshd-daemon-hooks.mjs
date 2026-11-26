@@ -86,8 +86,8 @@ function ensureMux() {
 }
 
 function scheduleEnsureMux() {
+  closeMux();
   if (!currentOrigin() || muxListeners.size === 0) {
-    closeMux();
     return;
   }
   if (muxSyncScheduled) return;
