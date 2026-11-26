@@ -637,15 +637,16 @@ function createPreviewController(options = {}) {
       });
       configurePipWindowGuards(win, () => { if (pipSession?.window === win) releasePictureInPicture(false); });
       pipSession = { window: win, previewId: id, lastAspectRatio: undefined };
+      const isActivePip = () => Boolean(pipSession?.window === win && !win.isDestroyed?.());
       try {
         await Promise.resolve(win.loadURL(buildPreviewPictureInPictureDataUrl()));
+        if (isActivePip()) await startFrameCapture(id, 'picture-in-picture');
       } catch (error) {
         if (pipSession?.window === win) releasePictureInPicture(true);
-        else win.destroy?.();
+        else if (!win.isDestroyed?.()) win.destroy?.();
         throw error;
       }
-      if (pipSession?.window === win) {
-        await startFrameCapture(id, 'picture-in-picture');
+      if (isActivePip()) {
         win.showInactive();
         publishState(session);
       }

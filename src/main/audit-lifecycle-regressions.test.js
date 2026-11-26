@@ -53,8 +53,9 @@ test('collectInternalSecrets settles on timeout when end marker never arrives', 
   assert.equal(secrets.get('MISSING'), undefined);
 });
 
-test('unquoteGitPath and parseUnifiedDiff decode UTF-8 octal C-quoted Chinese paths', () => {
+test('unquoteGitPath and parseUnifiedDiff decode UTF-8 octal C-quoted Chinese and non-BMP emoji paths', () => {
   assert.equal(unquoteGitPath('"\\344\\270\\255\\346\\226\\207/\\350\\257\\264\\346\\230\\216 \\346\\226\\207\\346\\241\\243.md"'), '中文/说明 文档.md');
+  assert.equal(unquoteGitPath('"🚀\\tnotes.txt"'), '🚀\tnotes.txt');
   const diff = [
     'diff --git "a/\\344\\270\\255\\346\\226\\207.txt" "b/\\344\\270\\255\\346\\226\\207.txt"',
     '--- "a/\\344\\270\\255\\346\\226\\207.txt"',
@@ -176,4 +177,70 @@ test('UpdateCenter.installVersion rejects release without checksumUrl', async ()
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('uninstallPlugin accepts delegatedToken held by launcher removePlugin maintenance lock', async () => {
+  const { uninstallPlugin } = require('./marketplace-install');
+  const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-mp-lock-'));
+  setDesktopDshHome(dir);
+  const token = importGuard.acquireMaintenance('plugin-remove');
+  try {
+    const blocked = await uninstallPlugin('demo-pkg', { runPlugin: async () => ({ ok: true }) });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.code, 'maintenance-in-progress');
+    const allowed = await uninstallPlugin('demo-pkg', {
+      delegatedToken: token,
+      runPlugin: async () => ({ ok: true, log: '' }),
+    });
+    assert.equal(allowed.ok, true);
+  } finally {
+    importGuard.releaseMaintenance(token);
+    clearDesktopDshHome();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('openPictureInPicture does not show destroyed window if closed during startFrameCapture', async () => {
+  let resolveCapture;
+  let shownAfterDestroy = false;
+  let destroyed = false;
+  const wc = new EventEmitter();
+  wc.ipc = new EventEmitter();
+  wc.loadURL = async () => {};
+  wc.close = () => {};
+  wc.send = () => {};
+  wc.getURL = () => 'http://127.0.0.1:3000/';
+  wc.capturePage = () => new Promise((r) => { resolveCapture = r; });
+  const pipWc = new EventEmitter();
+  pipWc.send = () => {};
+  pipWc.setWindowOpenHandler = () => {};
+  const controller = createPreviewController({
+    attach: () => ({
+      partition: 'p',
+      webContents: wc,
+      setBounds() {},
+      setVisible() {},
+      destroy() {},
+    }),
+    createPipWindow: () => {
+      const win = new EventEmitter();
+      win.webContents = pipWc;
+      win.loadURL = async () => {};
+      win.isDestroyed = () => destroyed;
+      win.close = () => { destroyed = true; };
+      win.destroy = () => { destroyed = true; };
+      win.showInactive = () => { if (destroyed) { shownAfterDestroy = true; throw new Error('Object has been destroyed'); } };
+      return win;
+    },
+  });
+  const opened = await controller.open({ url: 'http://127.0.0.1:3000/' });
+  const pipPromise = controller.openPictureInPicture(opened.id);
+  await new Promise((r) => setImmediate(r));
+  await controller.closePictureInPicture();
+  resolveCapture?.({ isEmpty: () => true, getSize: () => ({ width: 0, height: 0 }), toDataURL: () => '' });
+  const res = await pipPromise;
+  assert.equal(res.ok, true);
+  assert.equal(shownAfterDestroy, false);
+  await controller.closeAll();
 });

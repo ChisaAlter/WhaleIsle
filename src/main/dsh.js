@@ -244,9 +244,7 @@ async function isSafeToKill(pid, runOrContext = execFile, maybeContext = {}) {
 
 async function killTree(pid, runOrContext = execFile, maybeContext = {}) {
   const { run, context } = resolveKillArgs(runOrContext, maybeContext, execFile);
-  if (!pid || !await isSafeToKill(pid, run, context)) {
-    return false;
-  }
+  if (!pid || isSelfPid(pid) || (!/** @type {any} */ (context)?.preverifiedGroup && !await isSafeToKill(pid, run, context))) return false;
   try {
     return await killProcessTree(pid, { run });
   } catch (error) {
@@ -1280,12 +1278,15 @@ class DshManager extends EventEmitter {
       if (target) {
         this.setState('stopping', { error: '' });
         this.log(`停止 dsh（pid ${target.pid}）`);
+        let stopContext = /** @type {any} */ (target.context);
         if (child && process.platform !== 'win32') {
+          const safeBeforeTerm = await isSafeToKill(target.pid);
           const exited = new Promise((r) => { child.once?.('exit', r); });
           try { child.kill('SIGTERM'); } catch { /* Tree cleanup below owns the stop result. */ }
           await Promise.race([exited, this._sleep(800)]);
+          if (safeBeforeTerm && !stopContext) stopContext = { preverifiedGroup: true };
         }
-        await this._stopOwnedProcess(target.pid, target.context);
+        await this._stopOwnedProcess(target.pid, stopContext);
       }
     } catch (error) {
       const message = error?.message || String(error);

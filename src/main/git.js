@@ -1130,13 +1130,16 @@ async function openWorkspacePath(cwd, relativePath) {
   const target = resolveInsideWorkspace(cwd, relativePath);
   if (!target) return fail('Path is outside the workspace.');
   let realTarget = target;
+  let isDir = false;
   try {
-    realTarget = fs.realpathSync.native(target);
+    realTarget = require('./logical-realpath').logicalRealpathSync(target);
     if (!resolveInsideWorkspace(cwd, realTarget)) return fail('Path is outside the workspace.');
-    if (!fs.statSync(realTarget).isDirectory() && (BLOCKED_OPEN_EXTS.has(path.extname(target).toLowerCase()) || BLOCKED_OPEN_EXTS.has(path.extname(realTarget).toLowerCase()))) {
-      return fail('Refusing to open executable or script file with system default handler.');
-    }
-  } catch { /* Non-existent path falls through to shell.openPath error reporting. */ }
+    isDir = fs.statSync(realTarget).isDirectory();
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : '';
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') return fail(error instanceof Error ? error.message : 'Unable to open file');
+  }
+  if (!isDir && (BLOCKED_OPEN_EXTS.has(path.extname(target).toLowerCase()) || BLOCKED_OPEN_EXTS.has(path.extname(realTarget).toLowerCase()))) return fail('Refusing to open executable or script file with system default handler.');
   try {
     const error = await require('electron').shell.openPath(realTarget);
     return error ? fail(error) : ok();

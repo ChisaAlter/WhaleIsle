@@ -408,7 +408,12 @@ function registerIpc({
       });
       if (!result.changed || result.rollbackFailed) return result;
       const restarted = await restartAfterProfileWrite(event, { ok: true }, startHarness, HARNESS_DOWN_AFTER_UPDATE);
-      return { ...result, harnessStarted: restarted.harnessStarted, error: restarted.harnessStarted === false ? restarted.error : result.error };
+      return {
+        ...result,
+        harnessStarted: restarted.harnessStarted,
+        ...(restarted.proceeded === false ? { proceeded: false, code: restarted.code } : {}),
+        error: restarted.harnessStarted === false ? (restarted.error ?? result.error) : result.error,
+      };
     });
   });
 

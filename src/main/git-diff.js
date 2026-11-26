@@ -43,13 +43,17 @@ function decodeGitCQuotedBody(inner) {
       const next = inner[i + 1];
       if (Object.prototype.hasOwnProperty.call(GIT_C_ESCAPES, next)) {
         bytes.push(GIT_C_ESCAPES[/** @type {keyof typeof GIT_C_ESCAPES} */ (next)]);
+        i += 1;
       } else {
-        for (const b of Buffer.from(next, 'utf8')) bytes.push(b);
+        const ch = String.fromCodePoint(/** @type {number} */ (inner.codePointAt(i + 1)));
+        for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+        i += ch.length;
       }
-      i += 1;
       continue;
     }
-    for (const b of Buffer.from(inner[i], 'utf8')) bytes.push(b);
+    const ch = String.fromCodePoint(/** @type {number} */ (inner.codePointAt(i)));
+    for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+    if (ch.length > 1) i += ch.length - 1;
   }
   return Buffer.from(bytes).toString('utf8');
 }

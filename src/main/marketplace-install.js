@@ -707,7 +707,7 @@ async function installPlugin(spec, options = {}) {
     }
     const { added, failure } = await addAndValidate(name, options);
     return failure || added;
-  });
+  }, options);
 }
 
 /** Launcher-import registry spec: `name@1.2.3` / `name@^1.2.3` / `name@~1.2.3`. */
@@ -781,14 +781,14 @@ async function uninstallPlugin(packageName, options = {}) {
       return { ...result, installed: listInstalledPlugins() };
     }
     return { ...result, error: '卸载失败' };
-  });
+  }, options);
 }
 
 /**
  * Install a curated marketplace plugin by catalog id.
  * The CLI only receives that row's installSpec after marketplace validation.
  * @param {string} id - registry `owner/name` id.
- * @param {{ allowBuilds?: string[], token?: string, onProgress?: Function }} [options]
+ * @param {{ allowBuilds?: string[], token?: string, onProgress?: Function, delegatedToken?: unknown }} [options]
  * @returns {Promise<{ ok: boolean, error?: string, spec?: string, needsAllowBuilds?: boolean, allowBuilds?: string[], log?: string, installed?: object }>}
  */
 async function installMarketplacePlugin(id, options = {}) {
@@ -816,7 +816,7 @@ async function installMarketplacePlugin(id, options = {}) {
     }
     invalidateMarketplaceUpdates();
     return added;
-  });
+  }, options);
 }
 
 async function failedMarketplaceUpdate(result, snapshot, options, error) {
@@ -922,7 +922,7 @@ async function updateMarketplacePlugins(ids, options = {}) {
       results,
       error: results.every(result => result.ok) ? undefined : '部分插件更新失败，请查看操作记录；构建授权需逐项确认',
     };
-  });
+  }, options);
 }
 
 module.exports = {
