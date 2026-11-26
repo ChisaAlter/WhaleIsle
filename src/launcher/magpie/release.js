@@ -18,12 +18,15 @@ function parseSha256Sums(text) {
   const lines = String(text || '').split(/\r?\n/);
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (!line) continue;
-    const match = /^([a-fA-F0-9]{64})\s+\*?([\w.-]+)$/.exec(line);
+    if (!line || line.startsWith('#')) continue;
+    const match = /^([a-fA-F0-9]{64})\s+\*?(?:\.\/)?([\w.-]+)$/.exec(line);
     if (!match) {
       throw new Error(`Magpie SHA256SUMS 格式无效：${line}`);
     }
     const name = match[2];
+    if (name === '.' || name === '..') {
+      throw new Error(`Magpie SHA256SUMS 格式无效：${line}`);
+    }
     const digest = match[1].toLowerCase();
     if (sums.has(name)) {
       throw new Error(`Magpie SHA256SUMS 存在重复条目：${name}`);
@@ -69,7 +72,7 @@ async function httpGet(url, options = {}) {
  * @returns {string}
  */
 function extractTagVersion(text) {
-  const match = /\/releases\/tag\/v(\d+\.\d+\.\d+)\b/.exec(String(text || ''));
+  const match = /\/releases\/tag\/v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?=[/?#"'\s<]|$)/.exec(String(text || ''));
   return match ? match[1] : '';
 }
 
@@ -123,25 +126,64 @@ async function resolveGithubLatest({ asset, fetchImpl }) {
 }
 
 /**
+ * @param {unknown} rawUrl
+ * @param {string} label
+ * @returns {string}
+ */
+function assertHttpsUrl(rawUrl, label) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || ''));
+  } catch {
+    throw new Error(`CNB Magpie ${label}地址无效`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`CNB Magpie ${label}必须使用 HTTPS 协议`);
+  }
+  return parsed.href;
+}
+
+const CNB_MAX_PAGES = 3;
+
+/**
+ * @param {string} apiBase
+ * @param {(url: string, init?: RequestInit) => Promise<Response>} [fetchImpl]
+ */
+async function collectCnbCandidates(apiBase, fetchImpl) {
+  const candidates = [];
+  for (let page = 1; page <= CNB_MAX_PAGES; page += 1) {
+    const pageUrl = page === 1
+      ? `${apiBase}/releases?page_size=100`
+      : `${apiBase}/releases?page_size=100&page=${page}`;
+    const resp = await httpGet(pageUrl, {
+      fetchImpl,
+      headers: { Accept: 'application/vnd.cnb.api+json' },
+    });
+    if (!resp.ok) {
+      throw new Error(`查询 CNB Magpie 发布列表失败：HTTP ${resp.status}`);
+    }
+    const releases = await resp.json();
+    const list = Array.isArray(releases) ? releases : [];
+    for (const r of list) {
+      if (!r || r.draft || r.prerelease || typeof r.tag_name !== 'string' || !r.tag_name.startsWith(CNB_TAG_PREFIX)) continue;
+      const version = r.tag_name.slice(CNB_TAG_PREFIX.length);
+      if (/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+        candidates.push({ release: r, version });
+      }
+    }
+    if (candidates.length > 0 || list.length === 0) break;
+  }
+  candidates.sort((a, b) => compareVersions(b.version, a.version));
+  return candidates;
+}
+
+/**
  * Resolve latest mirrored Magpie release from CNB (`magpie-vX.Y.Z` tag scheme).
  * @param {{ asset: string, fetchImpl?: (url: string, init?: RequestInit) => Promise<Response> }} options
  */
 async function resolveCnbLatest({ asset, fetchImpl }) {
   const source = require('../release-source');
-  const apiBase = source.ROUTES.cnb.apiBase;
-  const resp = await httpGet(`${apiBase}/releases?page_size=100`, {
-    fetchImpl,
-    headers: { Accept: 'application/vnd.cnb.api+json' },
-  });
-  if (!resp.ok) {
-    throw new Error(`查询 CNB Magpie 发布列表失败：HTTP ${resp.status}`);
-  }
-  const releases = await resp.json();
-  const candidates = (Array.isArray(releases) ? releases : [])
-    .filter((r) => r && !r.draft && !r.prerelease && typeof r.tag_name === 'string' && r.tag_name.startsWith(CNB_TAG_PREFIX))
-    .map((r) => ({ release: r, version: r.tag_name.slice(CNB_TAG_PREFIX.length) }))
-    .filter((item) => /^\d+\.\d+\.\d+$/.test(item.version))
-    .sort((a, b) => compareVersions(b.version, a.version));
+  const candidates = await collectCnbCandidates(source.ROUTES.cnb.apiBase, fetchImpl);
   if (candidates.length === 0) {
     throw new Error('Magpie 组件尚未同步到当前 CNB 线路');
   }
@@ -155,8 +197,8 @@ async function resolveCnbLatest({ asset, fetchImpl }) {
   if (typeof binAsset.size === 'number' && (binAsset.size <= 0 || binAsset.size > MAX_BINARY_BYTES)) {
     throw new Error(`CNB Magpie 资产大小超出限制：${binAsset.size}`);
   }
-  const sumsUrl = sumsAsset.browser_download_url || sumsAsset.download_url;
-  const binUrl = binAsset.browser_download_url || binAsset.download_url;
+  const sumsUrl = assertHttpsUrl(sumsAsset.browser_download_url || sumsAsset.download_url, 'SHA256SUMS 下载');
+  const binUrl = assertHttpsUrl(binAsset.browser_download_url || binAsset.download_url, '二进制下载');
   const sumsResp = await httpGet(sumsUrl, { fetchImpl });
   if (!sumsResp.ok) {
     throw new Error(`下载 CNB Magpie SHA256SUMS 失败：HTTP ${sumsResp.status}`);

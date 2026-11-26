@@ -3656,56 +3656,33 @@
     },
     "scripts/sync-cnb.mjs": {
       "TS18048": {
-        "'file' is possibly 'undefined'.": 7,
+        "'file' is possibly 'undefined'.": 5,
         "'mac' is possibly 'undefined'.": 4,
         "'sums' is possibly 'undefined'.": 4
-      },
-      "TS2339": {
-        "Property 'body' does not exist on type '{ method: string; redirect: string; signal: AbortSignal; headers: { Accept: string; Authorization: string; }; }'.": 1,
-        "Property 'body' does not exist on type '{ method?: string | undefined; }'.": 1,
-        "Property 'name' does not exist on type 'boolean | { file: string; name: any; size: number; sha512: string; }'.": 2
       },
       "TS2532": {
         "Object is possibly 'undefined'.": 1
       },
-      "TS2769": {
-        "No overload matches this call.": 1
-      },
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 2,
         "Parameter 'args' implicitly has an 'any' type.": 2,
-        "Parameter 'asset' implicitly has an 'any' type.": 5,
+        "Parameter 'asset' implicitly has an 'any' type.": 4,
         "Parameter 'bytes' implicitly has an 'any' type.": 1,
         "Parameter 'directory' implicitly has an 'any' type.": 1,
-        "Parameter 'expected' implicitly has an 'any' type.": 1,
-        "Parameter 'fetchImpl' implicitly has an 'any' type.": 1,
         "Parameter 'file' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'path' implicitly has an 'any' type.": 1,
         "Parameter 'release' implicitly has an 'any' type.": 1,
-        "Parameter 'row' implicitly has an 'any' type.": 2,
-        "Parameter 'token' implicitly has an 'any' type.": 1
-      },
-      "TS7016": {
-        "Could not find a declaration file for module 'semver'. '<node_modules>/semver/index.js' implicitly has an 'any' type.": 1
+        "Parameter 'row' implicitly has an 'any' type.": 1
       },
       "TS7031": {
         "Binding element 'directory' implicitly has an 'any' type.": 2,
         "Binding element 'expectedMacos' implicitly has an 'any' type.": 1,
-        "Binding element 'fetchImpl' implicitly has an 'any' type.": 1,
-        "Binding element 'file' implicitly has an 'any' type.": 1,
-        "Binding element 'overwrite' implicitly has an 'any' type.": 1,
-        "Binding element 'prefix' implicitly has an 'any' type.": 1,
         "Binding element 'release' implicitly has an 'any' type.": 2,
         "Binding element 'repo' implicitly has an 'any' type.": 3,
-        "Binding element 'request' implicitly has an 'any' type.": 3,
+        "Binding element 'request' implicitly has an 'any' type.": 2,
         "Binding element 'sha' implicitly has an 'any' type.": 2,
-        "Binding element 'targetId' implicitly has an 'any' type.": 1,
         "Binding element 'token' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type '\"Content-Type\"' can't be used to index type '{ Accept: string; Authorization: string; }'.": 1
       }
     },
     "scripts/verify-md-links.mjs": {
@@ -8127,28 +8104,16 @@
       }
     },
     "src/renderer/launcher-components.js": {
-      "TS18047": {
-        "'state.shell' is possibly 'null'.": 1
-      },
       "TS18048": {
         "'base' is possibly 'undefined'.": 2
       },
       "TS2339": {
         "Property '__launcherComponents' does not exist on type 'Window & typeof globalThis'.": 1,
-        "Property 'componentsList' does not exist on type 'never'.": 1,
-        "Property 'contains' does not exist on type 'never'.": 1,
         "Property 'dshdErrText' does not exist on type 'Window & typeof globalThis'.": 1,
-        "Property 'hidden' does not exist on type 'never'.": 1,
-        "Property 'onComponentsProgress' does not exist on type 'never'.": 1,
-        "Property 'querySelector' does not exist on type 'never'.": 1,
-        "Property 'querySelectorAll' does not exist on type 'never'.": 1,
         "Property 'whaleDom' does not exist on type 'Window & typeof globalThis'.": 1
       },
       "TS2345": {
         "Argument of type '{ title: string; body: string; }' is not assignable to parameter of type '{ title?: string | undefined; body: any; tone?: string | undefined; holdMs: any; }'.": 1
-      },
-      "TS2349": {
-        "This expression is not callable.": 1
       },
       "TS2531": {
         "Object is possibly 'null'.": 1
@@ -8158,7 +8123,7 @@
       },
       "TS7006": {
         "Parameter 'action' implicitly has an 'any' type.": 2,
-        "Parameter 'button' implicitly has an 'any' type.": 5,
+        "Parameter 'button' implicitly has an 'any' type.": 4,
         "Parameter 'cls' implicitly has an 'any' type.": 1,
         "Parameter 'el' implicitly has an 'any' type.": 2,
         "Parameter 'error' implicitly has an 'any' type.": 1,

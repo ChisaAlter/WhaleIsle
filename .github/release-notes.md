@@ -9,4 +9,4 @@
 - **更新下载**：支持为更新下载单独设置 HTTP 代理；下载受阻时会显示可处理的错误信息。
 - **Harness 升级至 0.2.2-rc.2**。废弃的独立 `dsh-with-chatgpt` 插件停止维护和构建，不会卸载已有的独立安装。
 
-提供 Windows x64 与 macOS Apple Silicon 安装包。Mac 包未签名；Android 和鲸桥独立发布。
+提供 Windows x64 与 macOS Apple Silicon 安装包。Mac 包未签名；Android 独立发布，Magpie 通过启动器按需安装官方上游版本。

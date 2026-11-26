@@ -139,7 +139,7 @@ test('latestFor(cnb) only touches cnb hosts and uses anonymous public JSON metad
     const target = String(url);
     seen.push(target);
     assert.match(target, /cnb\.cool/, 'cnb route must not query github');
-    assert.equal(new URL(target).searchParams.get('page_size'), '30');
+    assert.equal(new URL(target).searchParams.get('page_size'), '100');
     // The mirror route reads the list to skip incomplete staging releases and
     // skips draft/prerelease rows — the mock serves a newer prerelease first
     // plus the expected stable row to pin that behavior.
@@ -176,11 +176,60 @@ test('CNB version list and direct tag lookup hide incomplete prerelease mirrors'
   t.after(() => { global.fetch = previousFetch; });
   global.fetch = async (url) => ({ ok: true, status: 200, json: async () => {
     if (String(url).includes('/tags/')) return { tag_name: 'v2.0.0', prerelease: true, assets: [] };
-    assert.equal(new URL(url).searchParams.get('page_size'), '30');
+    assert.equal(new URL(url).searchParams.get('page_size'), '100');
     return [{ tag_name: 'v2.0.0', prerelease: true, assets: [] }, { tag_name: 'v1.0.0', prerelease: false, assets: [] }];
   } });
   assert.equal((await releaseSource.listFor('cnb')).releases.length, 1);
   assert.equal(await releaseSource.releaseFor('cnb', 'v2.0.0'), null);
+});
+
+test('CNB latestFor and listFor paginate beyond 30 non-desktop releases to find v0.3.16 on page 2', async (t) => {
+  useReleasePlatform(t, 'win32');
+  const previousFetch = global.fetch;
+  t.after(() => { global.fetch = previousFetch; });
+  const page1 = Array.from({ length: 30 }, (_, index) => ({
+    tag_name: index % 2 === 0 ? `magpie-v0.1.${4700 + index}` : `android-v0.3.${10 + index}`,
+    draft: false,
+    prerelease: false,
+    assets: [
+      { name: 'Whale-Isle-Setup-9.9.9.exe', browser_download_url: 'https://cnb.cool/ayase/x/releases/download/bad/setup.exe', size: 99 },
+    ],
+  }));
+  const page2 = [
+    { tag_name: 'magpie-v0.1.4699', draft: false, prerelease: false, assets: [] },
+    {
+      tag_name: 'v0.3.16',
+      name: 'v0.3.16',
+      draft: false,
+      prerelease: false,
+      assets: [
+        { name: 'Deepseek-Harness-Desktop-Setup-0.3.16.exe', browser_download_url: 'https://cnb.cool/ayase/x/releases/download/v0.3.16/setup.exe', size: 456 },
+      ],
+    },
+  ];
+  const pagesRequested = [];
+  global.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.searchParams.get('page_size'), '100');
+    const page = parsed.searchParams.get('page') || '1';
+    pagesRequested.push(page);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => (page === '1' ? page1 : page === '2' ? page2 : []),
+    };
+  };
+  const latest = await releaseSource.latestFor('cnb', { installedVersion: '0.3.15' });
+  assert.equal(latest.status, 'available');
+  assert.equal(latest.latest, '0.3.16');
+  assert.equal(latest.tag, 'v0.3.16');
+  assert.deepEqual(pagesRequested, ['1', '2']);
+
+  pagesRequested.length = 0;
+  const list = await releaseSource.listFor('cnb', { installedVersion: '0.3.15' });
+  assert.equal(list.status, 'ok');
+  assert.deepEqual(list.releases.map((row) => row.tag), ['v0.3.16']);
+  assert.deepEqual(pagesRequested, ['1', '2']);
 });
 
 test('listFor rows attach delta info only for the installed→to pair', async (t) => {

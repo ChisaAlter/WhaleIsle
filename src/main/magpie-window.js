@@ -110,6 +110,9 @@ function attachShellIpc(win, deps) {
   };
   contents.on('will-navigate', guardShellNavigation);
   contents.on('will-redirect', guardShellNavigation);
+  contents.on('will-frame-navigate', (/** @type {any} */ event) => {
+    if (!isPackagedRendererFileUrl(event?.url, 'magpie-shell.html')) event?.preventDefault?.();
+  });
   const isMaximized = () => Boolean(deps.nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized?.());
   const isFullScreen = () => Boolean(win.isFullScreen?.());
   const windowState = () => ({
@@ -142,7 +145,28 @@ function attachShellIpc(win, deps) {
   contents.ipc.on('magpie:reload', (event) => {
     const view = deps.getView();
     if (!isOwnedSender(event) || !view || view.webContents.isDestroyed()) return;
-    view.webContents.reload();
+    const targetUrl = deps.getTargetUrl?.();
+    if (targetUrl) {
+      let nextUrl = targetUrl;
+      try {
+        const currentRaw = typeof view.webContents.getURL === 'function' ? view.webContents.getURL() : '';
+        if (currentRaw) {
+          const cur = new URL(currentRaw);
+          const tgt = new URL(targetUrl);
+          if (cur.origin === tgt.origin) {
+            for (const [k, v] of tgt.searchParams.entries()) {
+              cur.searchParams.set(k, v);
+            }
+            nextUrl = cur.href;
+          }
+        }
+      } catch {
+        nextUrl = targetUrl;
+      }
+      void view.webContents.loadURL(nextUrl);
+      return;
+    }
+    view.webContents.reload?.();
   });
   contents.ipc.handle('magpie:open-external-update', async (event) => {
     if (!isOwnedSender(event)) throw new Error('Unauthorized Magpie shell sender');
@@ -251,6 +275,7 @@ function openMagpieWindow(options) {
     openExternalHttp,
     getMeta: () => activeMeta,
     getView: () => activeView,
+    getTargetUrl: () => activeTargetUrl,
   });
   const syncBounds = () => {
     applyViewBounds(win, /** @type {Electron.WebContentsView} */ (activeView), nativeMotion);
@@ -317,7 +342,16 @@ function mountMagpieView(win, targetUrl, origin, WebContentsView, session, openE
     }
     return { action: 'deny' };
   });
-  const guardNavigation = (/** @type {Electron.Event} */ event, /** @type {string} */ target) => {
+  const isAllowedFrameUrl = (/** @type {string} */ target) => {
+    if (!target) return false;
+    if (target === 'about:blank' || target === 'about:srcdoc') return true;
+    try {
+      return new URL(target).origin === origin;
+    } catch {
+      return false;
+    }
+  };
+  contents.on('will-navigate', (/** @type {Electron.Event} */ event, /** @type {string} */ target) => {
     try {
       if (new URL(target).origin !== origin) {
         event.preventDefault();
@@ -326,21 +360,56 @@ function mountMagpieView(win, targetUrl, origin, WebContentsView, session, openE
     } catch {
       event.preventDefault();
     }
-  };
-  contents.on('will-navigate', guardNavigation);
-  contents.on('will-redirect', guardNavigation);
+  });
+  contents.on('will-redirect', (/** @type {Electron.Event} */ event, /** @type {string} */ target) => {
+    try {
+      if (new URL(target).origin !== origin) {
+        event.preventDefault();
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
+  contents.on('will-frame-navigate', (/** @type {any} */ event) => {
+    if (!isAllowedFrameUrl(event?.url)) {
+      event?.preventDefault?.();
+    }
+  });
   void contents.loadURL(targetUrl);
   return view;
 }
 
-function closeMagpieWindow() {
-  if (activeWindow && !activeWindow.isDestroyed()) {
-    activeWindow.destroy();
+/**
+ * Push an updated theme to the currently open Magpie shell window.
+ * @param {{ scheme?: string } | null | undefined} theme
+ * @returns {boolean}
+ */
+function syncMagpieTheme(theme) {
+  if (!theme || typeof theme !== 'object') return false;
+  activeMeta = { ...activeMeta, theme };
+  if (activeTargetUrl && (theme.scheme === 'dark' || theme.scheme === 'light')) {
+    try {
+      activeTargetUrl = buildMagpieTargetUrl(activeTargetUrl, theme);
+    } catch {
+      // Keep activeTargetUrl untouched if it is malformed.
+    }
   }
+  if (!activeWindow || activeWindow.isDestroyed() || activeWindow.webContents.isDestroyed()) {
+    return false;
+  }
+  activeWindow.webContents.send('magpie:shell-meta', activeMeta);
+  return true;
+}
+
+function closeMagpieWindow() {
+  const win = activeWindow;
   activeWindow = null;
   activeView = null;
   activeTargetUrl = '';
   activeOnClose = null;
+  if (win && !win.isDestroyed()) {
+    win.destroy();
+  }
 }
 
 module.exports = {
@@ -348,5 +417,6 @@ module.exports = {
   MAGPIE_PARTITION,
   buildMagpieTargetUrl,
   openMagpieWindow,
+  syncMagpieTheme,
   closeMagpieWindow,
 };

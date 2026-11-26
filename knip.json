@@ -101,7 +101,7 @@
     // 不在 knip 的使用跟踪内。下列文件的导出均由这类消费方（components/index.js 聚合、
     // main-launcher、主进程 ipc.js/dsh.js/app-ready.js/release-ui-walk.js、测试）使用；
     // 已逐项确认，按文件保留。
-    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client,whalebridge}.js": ["exports"],
+    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client}.js": ["exports"],
     "src/main/{dsh-im-desktop,dsh-whale-desktop,editors,git-exec,html-preview,import-guard,ipc-components,ipc-delta,marketplace-updates,pet-settings,pet-stats,marketplace-install,platform-session-overlay,plugins,release-ui-window-controls,update-dialog,whale-ui-host}.js": ["exports"],
     "src/main/approval-monitor/index.js": ["exports"],
     // module.exports 本体在 knip 中记为 default 导出，CJS 单导出模块属误报
@@ -145,7 +145,6 @@
     // js-yaml：CI/release 脚本实际使用但未声明（待用户补声明）
     "scripts/{check-release-assets,check-release-assets.test,ci-scope.test,sync-cnb.test}.mjs": ["unlisted"],
     // QA 驱动使用的 playwright*/puppeteer-core 由 harness vendor 运行时提供
-    "scripts/qa-whalebridge-community.mjs": ["unlisted"],
     "tools/**/*.mjs": ["unlisted"]
   }
 }

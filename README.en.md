@@ -73,7 +73,7 @@
     </td>
     <td width="50%" valign="top">
       <strong>Launcher and mobile remote</strong><br />
-      A dedicated launcher manages desktop versions, resumable delta updates, official config imports, and <a href="docs/features/launcher-components.md">WhaleBridge</a>. Scan a QR code from the Android app or mobile web client for an end-to-end encrypted session away from your desk.
+      A dedicated launcher manages desktop versions, resumable delta updates, official config imports, and <a href="docs/features/launcher-components.md">Magpie</a>. Scan a QR code from the Android app or mobile web client for an end-to-end encrypted session away from your desk.
     </td>
   </tr>
 </table>
@@ -124,7 +124,7 @@
 
 ### Quick start
 
-1. Install and launch Whale Isle (use the launcher to manage versions, download routes, imports, and WhaleBridge).
+1. Install and launch Whale Isle (use the launcher to manage versions, download routes, imports, and Magpie).
 2. Open **Settings → Models** to configure your API provider. Model usage is billed by your chosen provider.
 3. Pick a local folder or mount an SSH remote workspace, then start a new conversation.
 4. Enable optional capabilities as needed: **Settings → Built-in plugins** for Project, **Settings → Whale** for the assistant, and **Settings → Remote** for QR pairing.

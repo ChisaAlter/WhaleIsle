@@ -368,10 +368,16 @@ function createComponentsService(deps = {}) {
     const payload = activePayload(id, rec);
     if (!payload) {
       rec.state = 'error';
+      rec.pid = null;
+      rec.url = '';
       rec.lastError = '组件负载缺失（versions 目录被移除或损坏）。';
       writeRegistry();
       return { ok: false, error: 'payload-missing', id, state: 'error' };
     }
+    rec.state = 'stopped';
+    rec.pid = null;
+    rec.url = '';
+    writeRegistry();
     emit(onProgress, { id, op, phase: 'spawn', percent: 40 });
     let child;
     try {
@@ -394,6 +400,11 @@ function createComponentsService(deps = {}) {
     const proc = attachSupervision(id, child, gen, onProgress);
 
     const failStart = (/** @type {string} */ errorCode, /** @type {string} */ message) => {
+      proc.expectedExit = true;
+      if (proc.timer) {
+        clearTimeout(proc.timer);
+        proc.timer = null;
+      }
       procs.delete(id);
       rec.state = 'error';
       rec.pid = null;

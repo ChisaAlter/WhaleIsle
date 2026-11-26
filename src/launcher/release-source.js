@@ -215,6 +215,47 @@ function routeSnapshot(route, extra = /** @type {T} */ ({})) {
 // Raw release payload with assets intact (releaseFor's summary drops them).
 // Mirror uploads are staged as prereleases. Select stable versions by version
 // number so a later backfill of an older release does not become the update.
+const DESKTOP_TAG_RE = /^(?:v)?\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?$/i;
+const CNB_PAGE_SIZE = 100;
+const CNB_MAX_PAGES = 5;
+
+/** @param {any} row */
+function isCnbDesktopRelease(row) {
+  if (!row || row.draft || row.prerelease) {
+    return false;
+  }
+  const tag = String(row.tag_name || row.name || '').trim();
+  return DESKTOP_TAG_RE.test(tag);
+}
+
+/**
+ * Scan paginated CNB releases (`page_size=100`, bounded to `CNB_MAX_PAGES`),
+ * keeping only published desktop releases so component/Android tags cannot
+ * crowd out desktop versions.
+ * @param {string} apiBase
+ * @param {{ timeoutMs?: number, signal?: AbortSignal, minDesktopCount?: number }} [options]
+ */
+async function fetchCnbDesktopReleases(apiBase, { timeoutMs, signal, minDesktopCount = Infinity } = {}) {
+  /** @type {any[]} */
+  const desktop = [];
+  const seen = new Set();
+  for (let page = 1; page <= CNB_MAX_PAGES; page += 1) {
+    const list = await fetchJson('cnb', `${apiBase}/releases?page_size=${CNB_PAGE_SIZE}&page=${page}`, timeoutMs, { signal });
+    const rows = Array.isArray(list) ? list : [];
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      if (!isCnbDesktopRelease(row)) continue;
+      const key = String(row.tag_name || row.id || '');
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      desktop.push(row);
+    }
+    if (desktop.length >= minDesktopCount) break;
+    if (desktop.length > 0 && rows.length < CNB_PAGE_SIZE) break;
+  }
+  return desktop;
+}
+
 /**
  * @param {string} route
  * @param {string | null | undefined} tag
@@ -232,12 +273,11 @@ async function releaseRaw(route, tag, { timeoutMs, signal } = {}) {
       timeoutMs,
       { signal },
     );
-    return route === 'cnb' && (release?.draft || release?.prerelease) ? null : release;
+    return route === 'cnb' && !isCnbDesktopRelease(release) ? null : release;
   }
   if (route === 'cnb') {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?page_size=30`, timeoutMs, { signal });
-    return (Array.isArray(list) ? list : [])
-      .filter((/** @type {any} */ row) => row && !row.draft && !row.prerelease)
+    const list = await fetchCnbDesktopReleases(desc.apiBase, { timeoutMs, signal });
+    return list
       .sort((/** @type {any} */ a, /** @type {any} */ b) => update.compareVersions(b.tag_name, a.tag_name))[0] || null;
   }
   return fetchJson(route, `${desc.apiBase}/releases/latest`, timeoutMs, { signal });
@@ -292,9 +332,10 @@ async function listFor(route, { installedVersion = '', timeoutMs } = {}) {
     return routeSnapshot('github', { status: 'error', releases: [], message: 'unknown-route' });
   }
   try {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=30`, timeoutMs);
+    const list = route === 'cnb'
+      ? (await fetchCnbDesktopReleases(desc.apiBase, { timeoutMs, minDesktopCount: 30 })).slice(0, 30)
+      : await fetchJson(route, `${desc.apiBase}/releases?per_page=30`, timeoutMs);
     const releases = (Array.isArray(list) ? list : [])
-      .filter((/** @type {any} */ row) => route !== 'cnb' || (!row?.draft && !row?.prerelease))
       .map((/** @type {any} */ row) => summarizeForRoute(route, row, installedVersion))
       .filter(Boolean);
     return routeSnapshot(route, { status: 'ok', releases });

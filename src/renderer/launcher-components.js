@@ -10,15 +10,16 @@
     ? require('../shared/dom')
     : window.whaleDom;
   const state = {
-    el: null,
-    shell: null,
-    unsubscribe: null,
+    el: /** @type {HTMLElement | null} */ (null),
+    shell: /** @type {any} */ (null),
+    unsubscribe: /** @type {(() => void) | null} */ (null),
     pending: new Map(),
     rows: new Map(),
-    list: null,
-    homeEl: null,
-    homeList: null,
+    list: /** @type {HTMLElement | null} */ (null),
+    homeEl: /** @type {HTMLElement | null} */ (null),
+    homeList: /** @type {HTMLElement | null} */ (null),
     refreshing: /** @type {Promise<void> | null} */ (null),
+    queuedRefresh: /** @type {any} */ (null),
     // A failed action stays on its component row until the next action.
     failures: new Map(),
     dismissBound: false,
@@ -177,7 +178,9 @@
 
   function renderRows(payload) {
     const rows = payload && Array.isArray(payload.components) ? payload.components : [];
-    const changed = rows.filter(row => state.rows.has(row.id) && state.rows.get(row.id).state !== row.state);
+    const changed = rows.filter(row => state.rows.has(row.id)
+      && state.rows.get(row.id).state !== row.state
+      && !state.failures.has(row.id));
     if (changed.length) {
       const status = document.getElementById('component-status');
       if (status) status.textContent = changed.map(row => `${row.name || row.id}：${STATE_LABELS[row.state] || row.state}`).join('；');
@@ -350,7 +353,7 @@
       }
       for (const host of [state.el, state.homeEl]) {
         if (!host) continue;
-        host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`).forEach((button) => {
+        host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`).forEach((/** @type {any} */ button) => {
           const restore = pending.restoreButtons.get(button);
           if (button.dataset.compAction === pending.action) {
             if (restore) restore.update(pending.label, buttonLabel(pending.label));
@@ -369,6 +372,7 @@
   // "下载中 42%"); the full sentence stays in the status line and aria-label.
   function buttonLabel(text) {
     const head = String(text).split('：')[0];
+    if (head === PHASE_LABELS.done || head === PHASE_LABELS.error) return head;
     const percent = head.match(/\d+%/)?.[0];
     const base = head.startsWith('正在') ? `${head.slice(2, 4)}中` : head.replace(/\s*\d+%$/, '').split('，').at(-1);
     return percent ? `${base.replace(/中$/, '')} ${percent}` : `${base.replace(/…$/, '')}…`;
@@ -392,6 +396,52 @@
     if (state.list && !state.rows.size) {
       mountNodes(state.list, h('li', {},
         h('span', { class: 'comp-failure', dataset: { compFailure: '' }, role: 'status' }, text)));
+    } else if (state.rows.size > 0 && typeof window.appNotice === 'function') {
+      void window.appNotice({ title: '刷新组件失败', body: text, tone: 'error', holdMs: undefined });
+    }
+  }
+
+  /**
+   * @param {boolean} [checkUpdates]
+   * @param {boolean} [notifyError]
+   * @param {(() => void) | undefined} [onBeforeRender]
+   * @param {(() => void) | undefined} [onAfterRender]
+   */
+  function enqueueRefresh(checkUpdates, notifyError, onBeforeRender, onAfterRender) {
+    if (!state.queuedRefresh) {
+      state.queuedRefresh = {
+        checkUpdates: Boolean(checkUpdates),
+        notifyError: Boolean(notifyError),
+        beforeRender: [],
+        afterRender: [],
+        waiters: [],
+        restoreButton: null,
+      };
+    } else {
+      state.queuedRefresh.checkUpdates = state.queuedRefresh.checkUpdates || Boolean(checkUpdates);
+      state.queuedRefresh.notifyError = state.queuedRefresh.notifyError || Boolean(notifyError);
+    }
+    if (checkUpdates && !state.queuedRefresh.restoreButton) {
+      const button = /** @type {HTMLButtonElement | null | undefined} */ (state.el?.querySelector('[data-comp-refresh]'));
+      if (button && !button.disabled) {
+        state.queuedRefresh.restoreButton = window.launcherButtonBusy(button, '正在刷新组件…');
+      }
+    }
+    if (typeof onBeforeRender === 'function') state.queuedRefresh.beforeRender.push(onBeforeRender);
+    if (typeof onAfterRender === 'function') state.queuedRefresh.afterRender.push(onAfterRender);
+    return new Promise((resolve) => {
+      state.queuedRefresh.waiters.push(resolve);
+    });
+  }
+
+  /** @param {Function[]} list */
+  function runRefreshCallbacks(list) {
+    for (const fn of list) {
+      try {
+        fn();
+      } catch {
+        // Callback errors must not abort remaining refresh cleanup.
+      }
     }
   }
 
@@ -411,31 +461,41 @@
       return Promise.resolve();
     }
     if (state.refreshing) {
-      return state.refreshing.finally(() => {
-        try {
-          onBeforeRender?.();
-        } finally {
-          onAfterRender?.();
-        }
-      });
+      return enqueueRefresh(checkUpdates, notifyError, onBeforeRender, onAfterRender);
     }
-    const button = state.el?.querySelector('[data-comp-refresh]');
-    const restore = button ? window.launcherButtonBusy(button, '正在刷新组件…') : () => {};
-    state.refreshing = Promise.resolve().then(async () => {
-      try {
-        const payload = await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined);
-        onBeforeRender?.();
-        renderRows(payload);
-        onAfterRender?.();
-      } catch (error) {
-        onBeforeRender?.();
-        if (notifyError) showListFailure(errorText(error, '无法读取组件列表'));
-        onAfterRender?.();
-      } finally {
-        onBeforeRender?.();
-        restore();
-        state.refreshing = null;
+    const runCycle = async (/** @type {any} */ initialOpts) => {
+      let current = initialOpts;
+      while (current) {
+        const button = /** @type {HTMLButtonElement | null | undefined} */ (state.el?.querySelector('[data-comp-refresh]'));
+        const restore = current.restoreButton
+          || (button && !button.disabled ? window.launcherButtonBusy(button, '正在刷新组件…') : () => {});
+        try {
+          const payload = await state.shell.componentsList(current.checkUpdates ? { refresh: true } : undefined);
+          runRefreshCallbacks(current.beforeRender);
+          renderRows(payload);
+          runRefreshCallbacks(current.afterRender);
+        } catch (error) {
+          runRefreshCallbacks(current.beforeRender);
+          if (current.notifyError) showListFailure(errorText(error, '无法读取组件列表'));
+          runRefreshCallbacks(current.afterRender);
+        } finally {
+          restore();
+          runRefreshCallbacks(current.waiters);
+        }
+        const next = state.queuedRefresh;
+        state.queuedRefresh = null;
+        current = next;
       }
+    };
+    state.refreshing = runCycle({
+      checkUpdates: Boolean(checkUpdates),
+      notifyError: Boolean(notifyError),
+      beforeRender: typeof onBeforeRender === 'function' ? [onBeforeRender] : [],
+      afterRender: typeof onAfterRender === 'function' ? [onAfterRender] : [],
+      waiters: [],
+      restoreButton: null,
+    }).finally(() => {
+      state.refreshing = null;
     });
     return state.refreshing;
   }
@@ -484,11 +544,26 @@
 
   function restoreActionFocus(button, host, action, id) {
     if (!canRestoreActionFocus(button, host)) return;
-    const buttons = [...host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`)]
-      .filter(control => !control.disabled && control.checkVisibility());
-    const target = buttons.find(control => control.dataset.compAction === action)
-      || buttons[0] || host.querySelector('[data-comp-refresh]');
-    if (target && !target.disabled && target.checkVisibility()) target.focus();
+    const isVisibleControl = (/** @type {any} */ control) => Boolean(
+      control && !control.disabled && control.checkVisibility()
+      && (!control.closest('details') || control.closest('details').open),
+    );
+    const buttons = /** @type {any[]} */ ([...host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`)]
+      .filter(isVisibleControl));
+    const exact = buttons.find(control => control.dataset.compAction === action);
+    if (exact) {
+      exact.focus();
+      return;
+    }
+    if (action === 'rollback' || action === 'uninstall') {
+      const summary = host.querySelector(`[data-comp-row="${CSS.escape(id)}"] details.comp-manage > summary`);
+      if (summary && summary.checkVisibility()) {
+        summary.focus();
+        return;
+      }
+    }
+    const target = buttons[0] || host.querySelector('[data-comp-refresh]');
+    if (target && isVisibleControl(target)) target.focus();
   }
 
   /**
@@ -586,16 +661,22 @@
       restoreButtons: new Map(),
     };
     state.pending.set(id, pending);
-    state.failures.delete(id);
     syncPendingButtons();
     let res = { failure: '', completionMessage: '' };
+    let cancelled = false;
     try {
       const conf = await confirmComponentAction(action, id, name, row, pending);
-      if (conf.cancelled) return;
+      if (conf.cancelled) {
+        cancelled = true;
+        return;
+      }
+      state.failures.delete(id);
       pending.label = ACTION_LOADING[action];
       setComponentStatusText(`${name}：${pending.label}`);
       syncPendingButtons();
       res = await invokeComponentAction(shell, method, conf.argument, action);
+    } catch (error) {
+      res = { failure: errorText(error, action === 'uninstall' ? '无法卸载组件' : '操作失败'), completionMessage: '' };
     } finally {
       if (res.failure) state.failures.set(id, res.failure);
       const restoreFocus = canRestoreActionFocus(button, focusHost);
@@ -612,11 +693,16 @@
         focusRestored = true;
         if (restoreFocus) restoreActionFocus(button, focusHost, action, id);
       };
-      try {
-        await refresh(false, !res.failure, releasePending, finishFocus);
-      } finally {
+      if (cancelled) {
         releasePending();
         finishFocus();
+      } else {
+        try {
+          await refresh(false, !res.failure, releasePending, finishFocus);
+        } finally {
+          releasePending();
+          finishFocus();
+        }
       }
     }
     if (res.failure) setComponentStatusText(`${name}操作未完成：${res.failure}`);

@@ -29,10 +29,12 @@ function loadWithMocks(t, { openExternalCalls = [] } = {}) {
       };
     }
     isDestroyed() { return this.destroyed; }
+    getURL() { return this.loadedUrls.at(-1) || this.mainFrame.url; }
     setWindowOpenHandler(fn) { this.openHandler = fn; }
     loadURL(url) { this.loadedUrls.push(url); return Promise.resolve(); }
     loadFile(file) { this.loadedFiles.push(file); this.mainFrame.url = pathToFileURL(file).href; return Promise.resolve(); }
     send(channel, payload) { this.sent.push([channel, payload]); }
+    reload() { this.loadedUrls.push(`reloaded:${this.getURL()}`); }
     close() { this.destroyed = true; }
   }
 
@@ -260,5 +262,53 @@ test('openMagpieWindow mounts zero-injection sandboxed WebContentsView and guard
   }
   assert.equal(win.webContents.sent.at(-1)[1].fullscreen, false);
 
+  // Cross-origin redirect prevents navigation WITHOUT opening external browser
+  let redirectViewBlocked = false;
+  const openCountBeforeRedirect = openExternalCalls.length;
+  activeView.webContents.emit('will-redirect', { preventDefault() { redirectViewBlocked = true; } }, 'https://evil.example.com/redir');
+  assert.equal(redirectViewBlocked, true);
+  assert.equal(openExternalCalls.length, openCountBeforeRedirect);
+
+  // Subframe navigation blocks cross-origin while allowing same-origin and about:blank
+  let badFramePrevented = false;
+  activeView.webContents.emit('will-frame-navigate', { url: 'https://evil.example.com/frame', isMainFrame: false, preventDefault() { badFramePrevented = true; } });
+  assert.equal(badFramePrevented, true);
+  let blankFramePrevented = false;
+  activeView.webContents.emit('will-frame-navigate', { url: 'about:blank', isMainFrame: false, preventDefault() { blankFramePrevented = true; } });
+  assert.equal(blankFramePrevented, false);
+
+  // Theme sync pushes updated magpie:shell-meta and updates reload URL theme
+  assert.equal(mod.syncMagpieTheme({ scheme: 'light' }), true);
+  assert.deepEqual(win.webContents.sent.at(-1), ['magpie:shell-meta', {
+    ownership: 'managed',
+    version: '0.1.4708',
+    latestVersion: '0.1.4709',
+    externalUpdateUrl: '',
+    theme: { scheme: 'light' },
+  }]);
+
+  // Topbar reload loads the latest target URL (preserving updated ?k= and theme)
+  const loadsBeforeReload = activeView.webContents.loadedUrls.length;
+  win.webContents.ipc.emit('magpie:reload', ownedEvent);
+  assert.equal(activeView.webContents.loadedUrls.length, loadsBeforeReload + 1);
+  assert.equal(activeView.webContents.loadedUrls.at(-1), 'http://127.0.0.1:3430/?k=rotated&theme=light');
+
+  // closeMagpieWindow detaches activeOnClose before destroy so programmatic close does not re-trigger onClose
+  let onCloseCount = 0;
+  mod.openMagpieWindow({
+    url: 'http://127.0.0.1:3430/?k=rotated',
+    theme: { scheme: 'light' },
+    onClose: () => { onCloseCount += 1; },
+  });
   mod.closeMagpieWindow();
+  assert.equal(onCloseCount, 0);
+
+  // User-initiated close still triggers onClose once
+  mod.openMagpieWindow({
+    url: 'http://127.0.0.1:3430/?k=userclose',
+    theme: { scheme: 'light' },
+    onClose: () => { onCloseCount += 1; },
+  });
+  createdWindows.at(-1).close();
+  assert.equal(onCloseCount, 1);
 });

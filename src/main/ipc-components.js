@@ -30,7 +30,7 @@ function _configureForTest(deps) {
 
 function register({ handle, send, onQuitCommit }) {
   const svc = ensureService();
-  const bridge = serviceDeps ? (serviceDeps.magpie || serviceDeps.whaleBridge) : require('../launcher/magpie').magpieService();
+  const bridge = serviceDeps ? serviceDeps.magpie : require('../launcher/magpie').magpieService();
   const bridgeId = bridge?.id || 'magpie';
   bridgeService = bridge || null;
   const progress = (/** @type {any} */ event, /** @type {any} */ id) => (/** @type {any} */ payload) => send(event, 'shell:components-progress', { id, ...payload });
@@ -39,8 +39,12 @@ function register({ handle, send, onQuitCommit }) {
   handle('shell:components-list', async (_event, options) => {
     const list = svc.list();
     if (!bridge) return list;
-    if (!bridgeListed || options?.refresh === true) { await bridge.refreshCatalog(); bridgeListed = true; }
-    await bridge.reconcile?.();
+    if (!bridgeListed || options?.refresh === true) {
+      await bridge.refreshCatalog();
+      bridgeListed = true;
+    } else {
+      await bridge.reconcile?.();
+    }
     return { ...list, components: [bridge.row(), ...list.components] };
   });
 

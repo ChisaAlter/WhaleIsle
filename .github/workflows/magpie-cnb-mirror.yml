@@ -8,6 +8,11 @@ on:
         description: Official yetone/magpie version X.Y.Z to mirror (blank uses latest)
         type: string
         required: false
+      allow_prerelease:
+        description: Allow mirroring a prerelease version when version is specified
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -33,4 +38,6 @@ jobs:
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
           CNB_REPO: ${{ vars.CNB_REPO }}
           MAGPIE_VERSION: ${{ inputs.version }}
+          ALLOW_PRERELEASE: ${{ inputs.allow_prerelease && '1' || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/sync-magpie-cnb.mjs

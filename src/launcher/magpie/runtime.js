@@ -4,7 +4,7 @@ const { createHash, randomBytes } = require('node:crypto');
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
-const { atomicWriteFileSync, safeRemoveSync } = require('../../shared/fs-safe');
+const { atomicWriteFileSync, renameWithRetrySync, safeRemoveSync } = require('../../shared/fs-safe');
 const { spawnTreeOptions } = require('../../shared/process-tree');
 const {
   DEFAULT_WEB_PORT,
@@ -123,31 +123,63 @@ async function waitForMagpieReady(child, ctx) {
   const bootUrl = `http://127.0.0.1:${webPort}/boot.js`;
   const fetchImpl = deps.fetchImpl || fetch;
   let failure = /** @type {Error | null} */ (null);
-  child.once('error', (/** @type {Error} */ error) => { failure = error; });
-  while (Date.now() < deadline) {
+  let exitInfo = /** @type {{ code: number | null, signal: string | null } | null} */ (null);
+  const onError = (/** @type {Error} */ error) => { failure = error; };
+  const onExit = (/** @type {number | null} */ code, /** @type {string | null} */ signal) => {
+    exitInfo = { code: code ?? null, signal: signal ?? null };
+  };
+  child.once?.('error', onError);
+  child.once?.('exit', onExit);
+
+  const assertAlive = () => {
     if (failure) throw failure;
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null && child.exitCode !== undefined) {
       const tail = logTail(logFile, logStart);
       throw new Error(`Magpie 启动退出（${child.exitCode}）${tail ? `：${tail}` : ''}`);
     }
-    if (await waitHttpReady(bootUrl, fetchImpl)) {
-      if (!expectGateway) {
-        const record = { pid: child.pid, version, webPort, webKey, webUrl };
-        writeJsonSafe(companionStateFile, record);
-        return record;
-      }
-      const candidate = resolveGatewayCandidate(configDir).addr;
-      const gw = await probeGateway(candidate, { fetchJson: deps.fetchJson, fetchImpl: deps.fetchImpl });
-      if (gw) {
-        const record = { pid: child.pid, version, webPort, webKey, webUrl, gatewayAddr: gw.addr };
-        writeJsonSafe(managedStateFile, record);
-        return record;
-      }
+    if (child.signalCode !== null && child.signalCode !== undefined) {
+      const tail = logTail(logFile, logStart);
+      throw new Error(`Magpie 启动被信号终止（${child.signalCode}）${tail ? `：${tail}` : ''}`);
     }
-    await delay(100);
+    if (exitInfo) {
+      const reason = exitInfo.signal ? `信号 ${exitInfo.signal}` : `${exitInfo.code ?? '?'}`;
+      const tail = logTail(logFile, logStart);
+      throw new Error(`Magpie 启动退出（${reason}）${tail ? `：${tail}` : ''}`);
+    }
+  };
+
+  try {
+    while (Date.now() < deadline) {
+      assertAlive();
+      const httpReady = await waitHttpReady(bootUrl, fetchImpl);
+      assertAlive();
+      if (httpReady) {
+        if (!expectGateway) {
+          const record = { pid: child.pid, version, webPort, webKey, webUrl };
+          writeJsonSafe(companionStateFile, record);
+          return record;
+        }
+        const candidate = resolveGatewayCandidate(configDir).addr;
+        const gw = await probeGateway(candidate, { fetchJson: deps.fetchJson, fetchImpl: deps.fetchImpl });
+        assertAlive();
+        if (gw) {
+          if (gw.pid && child.pid && gw.pid !== child.pid) {
+            throw new Error(`Magpie 网关端口已被其他进程（PID ${gw.pid}）占用`);
+          }
+          const record = { pid: child.pid, version, webPort, webKey, webUrl, gatewayAddr: gw.addr };
+          writeJsonSafe(managedStateFile, record);
+          return record;
+        }
+      }
+      await delay(100);
+      assertAlive();
+    }
+    const tail = logTail(logFile, logStart);
+    throw new Error(`Magpie 启动超时${tail ? `：${tail}` : ''}`);
+  } finally {
+    child.removeListener?.('error', onError);
+    child.removeListener?.('exit', onExit);
   }
-  const tail = logTail(logFile, logStart);
-  throw new Error(`Magpie 启动超时${tail ? `：${tail}` : ''}`);
 }
 
 /**
@@ -251,6 +283,7 @@ function removeDirWithRetry(target) {
  *   progress?: Function,
  *   emit: (fn: Function | undefined, phase: string, percent: number, message?: string) => void,
  *   downloadFile?: (url: string, dest: string, onProgress?: (p: any) => void) => Promise<void>,
+ *   renameSync?: (from: string, to: string) => void,
  * }} ctx
  */
 async function stageMagpieBinary(ctx) {
@@ -279,8 +312,31 @@ async function stageMagpieBinary(ctx) {
     if (platform !== 'win32') fs.chmodSync(stagedBin, 0o755);
     writeJsonSafe(path.join(stagingDir, 'manifest.json'), rel);
     setBinaryReadOnly(stagingDir, stagedBin, platform);
-    removeDirWithRetry(targetDir);
-    fs.renameSync(stagingDir, targetDir);
+    const backupDir = path.join(root, 'versions', `.backup-${process.pid}`);
+    const renameSync = ctx.renameSync || renameWithRetrySync;
+    removeDirWithRetry(backupDir);
+    let hadBackup = false;
+    if (fs.existsSync(targetDir)) {
+      renameSync(targetDir, backupDir);
+      hadBackup = true;
+    }
+    try {
+      renameSync(stagingDir, targetDir);
+    } catch (swapError) {
+      if (hadBackup && !fs.existsSync(targetDir) && fs.existsSync(backupDir)) {
+        try {
+          renameSync(backupDir, targetDir);
+        } catch {
+          // Preserve the original swap error if rollback rename also fails.
+        }
+      }
+      throw swapError;
+    }
+    try {
+      removeDirWithRetry(backupDir);
+    } catch {
+      // Old backup cleanup is best-effort once targetDir is committed.
+    }
     return rel.version;
   } finally {
     try {

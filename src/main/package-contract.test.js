@@ -61,6 +61,16 @@ test('account startup WebSocket dependency is locked for production packaging', 
   assert.equal(typeof websocket.integrity, 'string');
 });
 
+test('DSH YAML sync dependency is locked for production packaging', () => {
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
+  assert.equal(typeof pkg.dependencies?.yaml, 'string', 'dsh-sync needs yaml in the packaged runtime');
+  assert.equal(lock.packages[''].dependencies.yaml, pkg.dependencies.yaml);
+  const yamlPkg = lock.packages['node_modules/yaml'];
+  assert.ok(yamlPkg, 'a developer-only node_modules/yaml must not mask a missing lock entry');
+  assert.notEqual(yamlPkg.dev, true);
+  assert.equal(typeof yamlPkg.integrity, 'string');
+});
+
 test('manifest keeps the packaging contract after-pack depends on', () => {
   const build = pkg.build;
   assert.equal(typeof build, 'object', 'build block is missing');

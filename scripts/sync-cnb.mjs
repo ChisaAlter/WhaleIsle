@@ -1,100 +1,54 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, openAsBlob } from 'node:fs'
+import { createReadStream } from 'node:fs'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import semver from 'semver'
 import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { validateReleaseAssets } from './check-release-assets.mjs'
+import { cnbClient, uploadMirrorAsset, verifyDownload } from './lib/cnb-client.mjs'
+
+export { cnbClient, uploadMirrorAsset, verifyDownload }
 
 const safeRepo = /^[\w.-]+(?:\/[\w.-]+)+$/
-const stableTag = /^(?:v|whalebridge-v)\d+\.\d+\.\d+$/
-const LEGACY_WB_MAX_BYTES = 200 * 1024 * 1024
+const stableTag = /^v\d+\.\d+\.\d+$/
+const CNB_PAGE_SIZE = 100
 
-/** @param {any} m */
-function validateLegacyWhaleBridgeManifest(m) {
-  const spec = m?.platforms?.['win32-x64']
-  if (m?.id !== 'whalebridge' || typeof m.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(m.version)) {
-    throw new Error('WhaleBridge release manifest mismatch')
+/** @param {string} left @param {string} right */
+function compareDesktopTags(left, right) {
+  const a = left.slice(1).split('.').map(Number)
+  const b = right.slice(1).split('.').map(Number)
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
   }
-  if (!spec || spec.asset !== 'WhaleBridge-win32-x64.exe' || typeof spec.sha256 !== 'string' ||
-      !/^[a-f0-9]{64}$/.test(spec.sha256) || !Number.isInteger(spec.size) || spec.size <= 0 || spec.size > LEGACY_WB_MAX_BYTES) {
-    throw new Error('WhaleBridge release manifest mismatch')
-  }
-  if (typeof m.license !== 'string' || !m.license.includes('MIT License')) {
-    throw new Error('WhaleBridge release manifest mismatch')
-  }
-  return m
+  return 0
 }
+
+/**
+ * Scan all published desktop `vX.Y.Z` releases on CNB instead of trusting
+ * `/releases/latest` (which can point to `magpie-v*` or `android-v*`).
+ * @param {(path: string, opts?: any) => Promise<any>} request
+ * @param {string} prefix
+ */
+async function findHighestDesktopRelease(request, prefix) {
+  let highest = null
+  for (let page = 1; ; page += 1) {
+    const releases = await request(`${prefix}/releases?page_size=${CNB_PAGE_SIZE}&page=${page}`)
+    if (!Array.isArray(releases) || releases.length === 0) break
+    for (const row of releases) {
+      if (!row || row.draft || row.prerelease || !stableTag.test(row.tag_name || '')) continue
+      if (!highest || compareDesktopTags(row.tag_name, highest.tag_name) > 0) highest = row
+    }
+    if (releases.length < CNB_PAGE_SIZE) break
+  }
+  return highest
+}
+
 async function fileHash(file, algorithm = 'sha512') {
   const hash = createHash(algorithm)
   for await (const chunk of createReadStream(file)) hash.update(chunk)
   return hash.digest('hex')
-}
-
-export function cnbClient(token, fetchImpl = fetch) {
-  if (!token) throw new Error('CNB_TOKEN is required')
-  return async (path, { method = 'GET', body } = {}) => {
-    const url = new URL('https://api.cnb.cool' + path)
-    const options = { method, redirect: 'error', signal: AbortSignal.timeout(30000),
-      headers: { Accept: 'application/vnd.cnb.api+json', Authorization: 'Bearer ' + token } }
-    if (body) {
-      options.headers['Content-Type'] = 'application/json'
-      options.body = JSON.stringify(body)
-    }
-    let response
-    try { response = await fetchImpl(url, options) }
-    catch { throw new Error('CNB ' + method + ': request failed') }
-    if (response.status === 404) return null
-    if (!response.ok) throw new Error('CNB ' + method + ': HTTP ' + response.status)
-    const text = await response.text()
-    return text ? JSON.parse(text) : null
-  }
-}
-
-export async function verifyDownload(asset, expected, fetchImpl) {
-  const url = asset?.browser_download_url
-  if (!url || new URL(url).protocol !== 'https:' || new URL(url).hostname !== 'cnb.cool') {
-    throw new Error('CNB asset has no anonymous download URL: ' + expected.name)
-  }
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(30 * 60 * 1000) })
-  if (!response.ok || !response.body) throw new Error('CNB asset download failed: ' + expected.name)
-  const hash = createHash('sha512')
-  let size = 0
-  for await (const chunk of response.body) {
-    size += chunk.byteLength
-    if (size > expected.size) throw new Error('CNB asset size mismatch: ' + expected.name)
-    hash.update(chunk)
-  }
-  if (size !== expected.size || hash.digest('hex') !== expected.sha512) {
-    throw new Error('CNB asset checksum mismatch: ' + expected.name)
-  }
-}
-
-export async function uploadMirrorAsset({ file, overwrite, targetId, prefix, request, fetchImpl }) {
-  const upload = await request(prefix + '/releases/' + targetId + '/asset-upload-url', {
-    method: 'POST', body: { asset_name: file.name, size: file.size, overwrite, ttl: 0 },
-  })
-  const destination = new URL(upload.upload_url)
-  const confirmation = new URL(upload.verify_url, 'https://api.cnb.cool')
-  if (destination.protocol !== 'https:' || confirmation.origin !== 'https://api.cnb.cool' ||
-      !confirmation.pathname.startsWith(prefix + '/releases/' + targetId + '/asset-upload-confirmation/')) {
-    throw new Error('CNB returned an invalid upload destination')
-  }
-  let response
-  try {
-    response = await fetchImpl(destination, { method: 'PUT', body: await openAsBlob(file.file),
-      redirect: 'error', signal: AbortSignal.timeout(30 * 60 * 1000) })
-  } catch { throw new Error('CNB asset upload failed: ' + file.name) }
-  if (!response.ok) throw new Error('CNB asset upload failed: ' + file.name + ' (HTTP ' + response.status + ')')
-  confirmation.searchParams.set('ttl', '0')
-  await request(confirmation.pathname + confirmation.search, { method: 'POST' })
-  const refreshed = await request(prefix + '/releases/' + targetId)
-  const asset = refreshed?.assets?.find(row => row.name === file.name)
-  await verifyDownload(asset, file, fetchImpl)
-  return asset
 }
 
 export async function validateMirrorAssets(release, directory) {
@@ -115,14 +69,6 @@ export async function validateMirrorAssets(release, directory) {
       throw new Error('GitHub asset digest mismatch: ' + asset.name)
     }
     files.push({ file, name: asset.name, size: info.size, sha512: await fileHash(file) })
-  }
-  if (tag.startsWith('whalebridge-v')) {
-    const manifest = validateLegacyWhaleBridgeManifest(JSON.parse(await readFile(join(directory, 'WhaleBridge-component.json'), 'utf8')))
-    const spec = manifest.platforms['win32-x64']
-    if (tag !== 'whalebridge-v' + manifest.version || files.length !== 2 || !names.includes('WhaleBridge-component.json') ||
-        !names.includes(spec.asset) || (await stat(join(directory, spec.asset))).size !== spec.size ||
-        await fileHash(join(directory, spec.asset), 'sha256') !== spec.sha256) throw new Error('WhaleBridge release manifest mismatch')
-    return files
   }
   const version = tag.slice(1)
   const setup = join(directory, 'Whale-Isle-Setup-' + version + '.exe')
@@ -147,7 +93,7 @@ export async function mirrorRelease({ release, directory, sha, request, fetchImp
   const prefix = '/' + repo + '/-'
   const sourceTag = await request(prefix + '/git/tags/' + encodeURIComponent(tag))
   if (sourceTag?.commit?.sha !== sha) throw new Error('CNB tag does not match GitHub source: ' + tag)
-  const latest = await request(prefix + '/releases/latest')
+  const highestDesktop = await findHighestDesktopRelease(request, prefix)
   let target = await request(prefix + '/releases/tags/' + encodeURIComponent(tag))
   const body = { tag_name: tag, name: release.name || tag, body: release.body || ('GitHub release ' + tag) }
   if (!target) {
@@ -161,7 +107,7 @@ export async function mirrorRelease({ release, directory, sha, request, fetchImp
   for (const file of files) {
     const existing = assets.filter(a => a.name === file.name)
     if (existing.length > 1) throw new Error('Duplicate CNB asset: ' + file.name)
-    let asset = existing[0]
+    const asset = existing[0]
     if (!asset) {
       if (!staged) throw new Error('Published CNB release is incomplete: ' + file.name)
       output('Uploading ' + file.name)
@@ -172,7 +118,7 @@ export async function mirrorRelease({ release, directory, sha, request, fetchImp
   }
   if (staged) await request(prefix + '/releases/' + target.id, { method: 'PATCH', body: {
     name: body.name, body: body.body, draft: false, prerelease: false,
-    make_latest: tag.startsWith('whalebridge-v') || semver.valid(latest?.tag_name) && semver.gt(latest.tag_name, tag) ? 'false' : 'true',
+    make_latest: highestDesktop && compareDesktopTags(highestDesktop.tag_name, tag) > 0 ? 'false' : 'true',
   } })
   const url = 'https://cnb.cool/' + repo + '/-/releases/tag/' + tag
   output('Verified CNB mirror: ' + url)
@@ -254,7 +200,8 @@ export async function supplementMacosMirror({ release, directory, sha, request, 
 
   const uploaded = []
   const verifiedIds = new Map([[sums.name, oldSumsAsset.id], [macName, oldMac?.id]])
-  for (const [file, overwrite] of [[sums, true], [mac, false]]) {
+  const supplementPairs = /** @type {Array<[{ file: string, name: string, size: number, sha512: string }, boolean]>} */ ([[sums, true], [mac, false]])
+  for (const [file, overwrite] of supplementPairs) {
     if (file === sums ? sameSums : Boolean(oldMac)) continue
     const asset = await uploadMirrorAsset({ file, overwrite, targetId: target.id, prefix, request, fetchImpl })
     verifiedIds.set(file.name, asset.id)

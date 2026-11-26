@@ -29,14 +29,30 @@ function platformAssetName(platform = process.platform, arch = process.arch) {
 }
 
 /**
+ * Check whether `rawPath` is truly absolute on the target platform.
+ * On Windows, Node's `path.isAbsolute('\\foo')` returns true even though Go's
+ * `filepath.IsAbs` requires a drive root (`C:\`) or UNC root (`\\server\share`).
+ * @param {string} rawPath
+ * @param {string} [platform]
+ * @returns {boolean}
+ */
+function isPlatformAbsolutePath(rawPath, platform = process.platform) {
+  if (platform === 'win32') {
+    return /^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(rawPath);
+  }
+  return path.isAbsolute(rawPath);
+}
+
+/**
  * Resolve Magpie's configuration directory, matching upstream internal/appdir/appdir.go.
  * @param {NodeJS.ProcessEnv} [env]
  * @param {string} [homeDir]
+ * @param {string} [platform]
  * @returns {string}
  */
-function resolveMagpieConfigDir(env = process.env, homeDir = os.homedir()) {
+function resolveMagpieConfigDir(env = process.env, homeDir = os.homedir(), platform = process.platform) {
   const xdg = typeof env?.XDG_CONFIG_HOME === 'string' ? env.XDG_CONFIG_HOME.trim() : '';
-  if (xdg && path.isAbsolute(xdg)) {
+  if (xdg && isPlatformAbsolutePath(xdg, platform)) {
     return path.join(xdg, 'magpie');
   }
   return path.join(homeDir, '.config', 'magpie');
@@ -45,12 +61,22 @@ function resolveMagpieConfigDir(env = process.env, homeDir = os.homedir()) {
 /**
  * Ensure the managed binary directory never carries portable-mode markers
  * (`data/` or `.portable`), which would make upstream `appdir.Portable()`
- * ignore `~/.config/magpie`.
+ * ignore `~/.config/magpie`. Uses `lstatSync` so dangling symlinks/junctions
+ * cannot bypass detection.
  * @param {string} versionDir
  */
 function assertNoPortableMarkers(versionDir) {
   for (const marker of ['data', '.portable']) {
-    if (fs.existsSync(path.join(versionDir, marker))) {
+    let exists = false;
+    try {
+      fs.lstatSync(path.join(versionDir, marker));
+      exists = true;
+    } catch (error) {
+      if (/** @type {NodeJS.ErrnoException} */ (error)?.code !== 'ENOENT') {
+        exists = true;
+      }
+    }
+    if (exists) {
       throw new Error(`托管 Magpie 目录存在便携模式标记 ${marker}，已拒绝运行以免隔离配置`);
     }
   }

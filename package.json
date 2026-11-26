@@ -267,6 +267,7 @@
   "dependencies": {
     "electron-updater": "6.8.11",
     "koffi": "3.3.3",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "yaml": "2.9.1"
   }
 }

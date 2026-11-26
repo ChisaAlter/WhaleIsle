@@ -57,7 +57,7 @@
 | [dsh-home](dsh-home.md) | 桌面 `userData/dsh-home`；Harness 不读官方 `~/.dsh` | `dsh-home.js` / spawnEnv | TC-INST-009、011；TC-WS-006 |
 | [desktop-launcher](desktop-launcher.md) | 冷启动闸门：更新询问、启停桌面、版本、插件问诊 | `launcher.*` / launcher-gate | TC-LAUNCH-001…007 |
 | [launcher-distribution](launcher-distribution.md) | 启动器轻量分发、双线路完整包与独立增量包（拟议） | `launcher.*` / 分发服务 / release workflows | 唯一启动器、签名清单、双镜像与 CI Setup 实机 |
-| [launcher-components](launcher-components.md) | 现有启动器按需安装并监管独立工具或服务（拟议） | `launcher.*` / component supervisor | 签名包、运行与回滚实机 |
+| [launcher-components](launcher-components.md) | 启动器按需安装并监管官方 Magpie CLI（从旧版鲸桥自动迁移） | `src/launcher/magpie/` / `magpie-window.js` | 清单校验、迁移回滚、并发锁与零注入壳窗 |
 | [data-import](data-import.md) | 启动器只读导入官方会话/插件名单 | `data-import.js` | TC-LAUNCH-004 |
 | [session-archive](session-archive.md) | 归档隐藏；已归档里恢复/删除 | ui-workspace / workspace RPC | TC-CHAT-010、013 |
 | [pinned-section](pinned-section.md) | 侧栏顶部「已置顶」区：所有工作区的置顶会话集中在最上面，标出所属工作区，原分组不再重复 | vendor ui-workspace（tree / Rows / WorkspaceBrowser / locales） | vendor client specs + 实机侧栏 |

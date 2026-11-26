@@ -9,4 +9,4 @@
 - **Update downloads**: Set an HTTP proxy just for update downloads and see actionable errors when a download is blocked.
 - **Harness 0.2.2-rc.2**: This release updates the bundled Harness. The retired standalone `dsh-with-chatgpt` plugin is no longer maintained or built here; existing standalone installations are not removed.
 
-Installers are available for Windows x64 and macOS Apple Silicon. The Mac installer is unsigned. Android and WhaleBridge are released separately.
+Installers are available for Windows x64 and macOS Apple Silicon. The Mac installer is unsigned. Android is released separately, and Magpie is installed on demand from its official upstream releases via the launcher.

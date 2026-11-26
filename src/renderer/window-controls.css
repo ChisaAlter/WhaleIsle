@@ -47,6 +47,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.window-controls button:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
 .window-controls button[data-act="close"]:hover {
   background: #e81123;
   color: #fff;

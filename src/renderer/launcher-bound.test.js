@@ -65,7 +65,7 @@ test('home component controls track lifecycle and keep rollback separate; availa
   assert.equal(r.stopped.rowOpen, false);
   assert.equal(r.stopped.rollbackVisible, false);
   assert.equal(r.stopped.desktopImages, 0, 'the desktop home card omits its avatar');
-  assert.equal(r.stopped.homeImages, 0, 'the WhaleBridge home card omits its avatar');
+  assert.equal(r.stopped.homeImages, 0, 'the official component home card omits its avatar');
   assert.ok(r.stopped.sidebarBrand > 0, 'the sidebar brand stays unchanged');
   assert.ok(r.stopped.catalogBrand > 0, 'component management retains its existing icon');
   assert.equal(r.starting.homeDisabled, true);
@@ -177,12 +177,15 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.equal(r.calls.filter(call => call.op === 'component-uninstall-info').length, 2, 'each intentional uninstall reads status once');
   assert.equal(r.calls.filter(call => call.op === 'component-start').length, 2, 'double click is guarded; later intentional start still works');
 
-  for (const result of [r.failureDismissed, r.installDismissed, r.updateDismissed, r.uninstallCancelled, r.finalState]) {
+  for (const result of [r.failureDismissed, r.installDismissed, r.updateDismissed, r.finalState]) {
     assert.equal(result.focusConnected, true, 'completed operation focuses current DOM');
     assert.equal(result.focusVisible, true, 'completed operation never focuses a hidden modal or menu button');
     assert.equal(result.focusTag, 'BUTTON');
     assert.equal(Boolean(result.focusAction || result.focusRefresh), true, 'focus returns to an actionable component control');
   }
+  assert.equal(r.uninstallCancelled.focusConnected, true, 'cancelled uninstall focuses current DOM');
+  assert.equal(r.uninstallCancelled.focusVisible, true, 'cancelled uninstall focuses visible manage summary');
+  assert.equal(r.uninstallCancelled.focusTag, 'SUMMARY', 'cancelled uninstall returns focus to row manage summary');
   assert.equal(r.switchedTab.focusTab, 'components', 'completion does not take focus from a user-selected tab');
   assert.equal(r.switchedTab.noticeVisible, false, 'ordinary start completion is reflected by the persistent state');
   assert.equal(r.finalState.noticeVisible, false);
