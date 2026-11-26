@@ -12,8 +12,8 @@ importers:
   .:
     dependencies:
       electron-updater:
-        specifier: 6.8.10
-        version: 6.8.10(supports-color@7.1.0)
+        specifier: 6.8.11
+        version: 6.8.11(supports-color@7.1.0)
       koffi:
         specifier: 3.3.3
         version: 3.3.3
@@ -1050,8 +1050,8 @@ packages:
   electron-publish@26.16.0:
     resolution: {integrity: sha512-Vt3KzQIiw9BImvNOYtndg9Mjki+tl4+1sQiC/+G5j8khWaENOJFWodiB+sUl6yyHwtd37avehskdtPw7f8y/+Q==}
 
-  electron-updater@6.8.10:
-    resolution: {integrity: sha512-6ZSwTUoBNtI1f9Pp8y6zCigD8LKV18Rb1+1A7sZzvKvA17o2sqSqKmm0t6uvKeF+HZqA4vsmw4qq0JSS241USQ==}
+  electron-updater@6.8.11:
+    resolution: {integrity: sha512-12U/mbzaIKQS3Q543aQ7DjyAZMXeVJy1Wpu0qdq5ne4RXpIQDpWYm25zRjgXngAoo6swMrm4C4owGyiIipelsg==}
 
   electron-winstaller@5.4.0:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
@@ -2738,7 +2738,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron-updater@6.8.10(supports-color@7.1.0):
+  electron-updater@6.8.11(supports-color@7.1.0):
     dependencies:
       builder-util-runtime: 9.7.0(supports-color@7.1.0)
       fs-extra: 10.1.0

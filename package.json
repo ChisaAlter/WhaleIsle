@@ -265,7 +265,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "6.8.10",
+    "electron-updater": "6.8.11",
     "koffi": "3.3.3",
     "ws": "8.22.0"
   }
