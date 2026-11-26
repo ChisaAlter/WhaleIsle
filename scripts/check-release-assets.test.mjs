@@ -322,7 +322,19 @@ test('rejects duplicate Setup executables', async (t) => {
 test('rejects duplicated YAML mapping keys', async (t) => {
   const yaml = renderMetadata().replace(`version: ${VERSION}\n`, `version: ${VERSION}\nversion: ${VERSION}\n`)
   const f = createFixture(t, { metadata: yaml })
-  await rejects(validate(f.dir), /parse|duplicated/)
+  await rejects(validate(f.dir), /parse|duplicated|unique/i)
+})
+
+test('rejects custom tags, YAML 1.1 extra tags, and coerced duplicate keys', async (t) => {
+  for (const extra of [
+    'notes: !evil payload',
+    'notes: !!js/function "function(){return 1}"',
+    'extraDate: !!timestamp 2026-09-20',
+    '1: first\n"1": second',
+  ]) {
+    const f = createFixture(t, { metadata: `${renderMetadata()}${extra}\n` })
+    await rejects(validate(f.dir), /parse|tag|unique|duplicate/i)
+  }
 })
 
 test('rejects malformed YAML', async (t) => {

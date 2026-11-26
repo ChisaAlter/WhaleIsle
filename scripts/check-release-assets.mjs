@@ -39,7 +39,7 @@ import { createReadStream } from 'node:fs'
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse as parseYaml } from 'yaml'
+import { parseDocument } from 'yaml'
 
 export const SETUP_PREFIX = 'Whale-Isle-Setup-'
 export const SETUP_SUFFIX = '.exe'
@@ -180,7 +180,7 @@ function requireSingleCandidate(candidates, label) {
   return candidates[0]
 }
 
-/** Bounded read + data-only YAML parse. Duplicate mapping keys throw in js-yaml 4. */
+/** Bounded read + data-only YAML parse. Duplicate keys, custom tags, and YAML 1.1 extras throw. */
 async function readMetadata(metadataPath) {
   let info
   try {
@@ -206,9 +206,20 @@ async function readMetadata(metadataPath) {
   }
   let parsed
   try {
-    // YAML 1.2 core schema keeps ISO timestamps/versions as strings, rejects
-    // custom JS tags, and enforces unique mapping keys strictly.
-    parsed = parseYaml(raw.toString('utf8'), { schema: 'core', uniqueKeys: true, strict: true })
+    // YAML 1.2 core schema with resolveKnownTags:false and stringKeys:true keeps
+    // scalars data-only, rejects custom/!!js/YAML 1.1 tags via warnings/errors,
+    // and enforces unique keys even across coerced scalars (e.g. 1 vs "1").
+    const doc = parseDocument(raw.toString('utf8'), {
+      schema: 'core',
+      resolveKnownTags: false,
+      uniqueKeys: true,
+      strict: true,
+      stringKeys: true,
+      logLevel: 'silent',
+    })
+    if (doc.errors.length > 0) throw doc.errors[0]
+    if (doc.warnings.length > 0) throw doc.warnings[0]
+    parsed = doc.toJS({ maxAliasCount: 100 })
   } catch (error) {
     fail(`cannot parse ${METADATA_NAME}: ${error.message}`)
   }
