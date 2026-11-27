@@ -2785,7 +2785,7 @@
         "Parameter 'command' implicitly has an 'any' type.": 1,
         "Parameter 'cwd' implicitly has an 'any' type.": 1,
         "Parameter 'err' implicitly has an 'any' type.": 1,
-        "Parameter 'sqlitePackage' implicitly has an 'any' type.": 2,
+        "Parameter 'sqlitePackage' implicitly has an 'any' type.": 1,
         "Parameter 'target' implicitly has an 'any' type.": 2
       },
       "TS7016": {

@@ -285,21 +285,18 @@ function assertDshImSharpRuntime(packageDir, nodeBinary = process.execPath, targ
   `], { cwd: packageDir, stdio: 'pipe', windowsHide: true, timeout: 30_000 });
 }
 
-async function assertDshdRemoteRuntime(resources) {
+async function assertDshdRemoteRuntime(resources, target = { platform: process.platform, arch: process.arch }) {
   const root = path.join(resources, 'vendor', 'dshd-remote');
   const serverExport = path.join(root, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js');
+  const targetId = `${target.platform}-${target.arch}`;
   const required = [
     serverExport,
     ...['@chisacode/protocol/dist/connection-offer.js', '@chisacode/relay/dist/e2ee.js',
-      'better-sqlite3/build/Release/better_sqlite3.node', 'pino/package.json', 'ws/package.json']
+      `better-sqlite3/prebuilds/${targetId}.node`, 'pino/package.json', 'ws/package.json']
       .map((rel) => path.join(root, 'node_modules', ...rel.split('/'))),
   ];
   const missing = required.filter((file) => !fs.existsSync(file));
-  if (missing.length > 0) {
-    throw new Error(
-      `安装包缺少 DSHD 远程运行时：${missing.map((file) => path.relative(root, file)).join(', ')}`,
-    );
-  }
+  if (missing.length > 0) throw new Error(`安装包缺少 DSHD 远程运行时：${missing.map((file) => path.relative(root, file)).join(', ')}`);
   const forbidden = [
     path.join(root, 'packages'),
     path.join(root, 'node_modules', '@anthropic-ai', 'claude-agent-sdk-win32-x64'),
@@ -308,11 +305,7 @@ async function assertDshdRemoteRuntime(resources) {
     path.join(root, 'node_modules', 'node-pty', 'third_party'),
     path.join(root, 'node_modules', 'node-pty', 'prebuilds', 'win32-x64', 'conpty.pdb'),
   ].filter((file) => fs.existsSync(file));
-  if (forbidden.length > 0) {
-    throw new Error(
-      `安装包混入非 DSHD 远程运行时：${forbidden.map((file) => path.relative(root, file)).join(', ')}`,
-    );
-  }
+  if (forbidden.length > 0) throw new Error(`安装包混入非 DSHD 远程运行时：${forbidden.map((file) => path.relative(root, file)).join(', ')}`);
   const api = await import(pathToFileURL(serverExport).href);
   for (const name of [
     'createChisaCodeDaemon',
@@ -1816,7 +1809,7 @@ module.exports = async function afterPack(context) {
     console.log(`${name}: removed ${removed} non-production dependency packages`);
   }
   pruneRuntimeFiles(path.join(resources, 'vendor', 'dshd-remote'), target);
-  await assertDshdRemoteRuntime(resources);
+  await assertDshdRemoteRuntime(resources, target);
   const harnessDest = path.join(resources, 'vendor', 'deepseek-harness');
   const started = Date.now();
 
