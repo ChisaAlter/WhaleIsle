@@ -1,15 +1,14 @@
 {
   "schemaVersion": 1,
   "win32-x64": {
-    "totalBytes": 1461312233,
+    "totalBytes": 1454028625,
     "maxUnclassifiedBytes": 8388608,
     "maxDuplicateBytes": 24277889,
     "pendingSlimmingForbidden": [
       "office-kit-wasm",
       "pet-ort-nonjsep",
       "mobile-whale-ui-dup",
-      "mobile-head-dup",
-      "renderer-openui"
+      "mobile-head-dup"
     ],
     "components": {
       "electron-base": {
@@ -61,7 +60,7 @@
         "maxBytes": 2330275
       },
       "renderer-openui": {
-        "maxBytes": 8291878
+        "maxBytes": 0
       },
       "whale-ui-renderer": {
         "maxBytes": 19176591
@@ -92,6 +91,31 @@
       },
       "desktop-other": {
         "maxBytes": 58689933
+      }
+    }
+  },
+  "launcher-win32-x64": {
+    "totalBytes": 339815539,
+    "maxUnclassifiedBytes": 1048576,
+    "maxDuplicateBytes": 0,
+    "components": {
+      "electron-base": {
+        "maxBytes": 327285713
+      },
+      "renderer-openui": {
+        "maxBytes": 0
+      },
+      "launcher-node-pty": {
+        "maxBytes": 0
+      },
+      "launcher-whale-ui": {
+        "maxBytes": 0
+      },
+      "whale-ui-renderer": {
+        "maxBytes": 1520608
+      },
+      "desktop-other": {
+        "maxBytes": 11505449
       }
     }
   }
