@@ -2941,6 +2941,13 @@ ${DISPATCH_SHARED_CSS}
         }
       }, [filterOpen])
 
+      const memoryRef = useRef(memory)
+      memoryRef.current = memory
+      const memoryRevision = useMemo(() => {
+        const files = memory && Array.isArray(memory.files) ? memory.files : []
+        return files.map((/** @type {{ name?: string, modified?: string, size?: number }} */ f) => `${f.name || ''}\u0000${f.modified || ''}\u0000${f.size ?? ''}`).join('\u0001')
+      }, [memory])
+
       // Debounced backend search for shared memory (`GET /projects-api/projects/:id/memory?q=...`)
       useEffect(() => {
         const trimmed = memQuery.trim()
@@ -2966,7 +2973,8 @@ ${DISPATCH_SHARED_CSS}
             })
             .catch(() => {
               if (seq !== memSearchSeqRef.current) return
-              const base = (memory && Array.isArray(memory.files)) ? memory.files : []
+              const latestMemory = memoryRef.current
+              const base = (latestMemory && Array.isArray(latestMemory.files)) ? latestMemory.files : []
               const lower = trimmed.toLowerCase()
               setMemSearchResult(
                 base.filter((f) => `${f.name || ''} ${f.description || ''}`.toLowerCase().includes(lower)),
@@ -2980,7 +2988,7 @@ ${DISPATCH_SHARED_CSS}
           clearTimeout(timer)
           memSearchSeqRef.current += 1
         }
-      }, [memQuery, project && project.id, drawerTab, memory])
+      }, [memQuery, project && project.id, drawerTab, memoryRevision])
 
       const taskList = (project && project.tasks) || []
       const references = (library && Array.isArray(library.references)) ? library.references : []
