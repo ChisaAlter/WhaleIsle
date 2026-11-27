@@ -2,6 +2,7 @@
 
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const { WebSocket, WebSocketServer } = require('ws');
 const { resolveMobileWebRoot, resolveSpaAsset } = require('./mobile-web');
 
@@ -11,6 +12,11 @@ const MAX_PENDING_BRIDGE_MESSAGES = 64;
 const MAX_PENDING_BRIDGE_BYTES = 16 * 1024 * 1024;
 const MAX_BRIDGE_PAYLOAD_BYTES = 16 * 1024 * 1024;
 const MAX_BRIDGE_CONNECTIONS = 16;
+const MAX_BRIDGES_PER_REMOTE_ADDRESS = 4;
+const BRIDGE_FIRST_FRAME_TIMEOUT_MS = 10_000;
+const BRIDGE_IDLE_TIMEOUT_MS = 120_000;
+const BRIDGE_HIGH_WATERMARK_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_BRIDGE_BUFFERED_BYTES = 64 * 1024 * 1024;
 const VALID_HOST_HEADER_RE = /^(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::\d{1,5})?$/;
 
 /** @param {import('ws').RawData} data */
@@ -20,20 +26,76 @@ function rawDataByteLength(data) {
   return data.byteLength;
 }
 
+/** @param {unknown} raw */
+function normalizeAddressToken(raw) {
+  if (typeof raw !== 'string') return '';
+  let addr = raw.trim().toLowerCase();
+  if (addr.startsWith('[') && addr.endsWith(']')) {
+    addr = addr.slice(1, -1);
+  }
+  const zoneIdx = addr.indexOf('%');
+  if (zoneIdx >= 0) addr = addr.slice(0, zoneIdx);
+  if (addr.startsWith('::ffff:')) addr = addr.slice(7);
+  return addr;
+}
+
+/** @returns {string[]} */
+function defaultListLocalAddresses() {
+  const addresses = new Set(['127.0.0.1', '::1', 'localhost']);
+  const ifaces = os.networkInterfaces();
+  for (const entries of Object.values(ifaces)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      const normalized = normalizeAddressToken(entry?.address);
+      if (normalized) addresses.add(normalized);
+    }
+  }
+  return [...addresses];
+}
+
+/** @param {string} rawHost */
+function extractHostPort(rawHost) {
+  if (!rawHost) return '';
+  if (rawHost.startsWith('[')) {
+    const close = rawHost.indexOf(']');
+    if (close >= 0 && rawHost[close + 1] === ':') return rawHost.slice(close + 2);
+    return '';
+  }
+  const colon = rawHost.lastIndexOf(':');
+  return colon >= 0 ? rawHost.slice(colon + 1) : '';
+}
+
 /**
+ * Validate WebSocket upgrade Origin against same-host OR same-port local interface addresses.
  * @param {string | undefined} rawOrigin
  * @param {string} rawHost
+ * @param {{ port?: number, localAddresses?: Iterable<string> }} [context]
  * @returns {boolean}
  */
-function isAllowedUpgradeOrigin(rawOrigin, rawHost) {
+function isAllowedUpgradeOrigin(rawOrigin, rawHost, context = {}) {
   if (!rawOrigin) return true;
+  let parsed;
   try {
-    const parsed = new URL(rawOrigin);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    return parsed.host.toLowerCase() === rawHost.toLowerCase();
+    parsed = new URL(rawOrigin);
   } catch {
     return false;
   }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.host.toLowerCase() === rawHost.toLowerCase()) return true;
+
+  const expectedPort = String(context.port || extractHostPort(rawHost) || '');
+  if (!expectedPort) return false;
+  const originPort = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+  if (originPort !== expectedPort) return false;
+
+  const originHost = normalizeAddressToken(parsed.hostname);
+  if (!originHost) return false;
+  const localSet = new Set();
+  for (const addr of context.localAddresses || []) {
+    const normalized = normalizeAddressToken(addr);
+    if (normalized) localSet.add(normalized);
+  }
+  return localSet.has(originHost);
 }
 
 /**
@@ -106,6 +168,191 @@ function rejectUpgrade(socket, statusCode, reason) {
 }
 
 /**
+ * @param {WebSocket} ws
+ * @param {number} safeCode
+ * @param {string} safeReason
+ */
+function closeSocketSafely(ws, safeCode, safeReason) {
+  if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) return;
+  try {
+    ws.close(safeCode, safeReason);
+    const killTimer = setTimeout(() => {
+      if (ws.readyState !== WebSocket.CLOSED) {
+        try { ws.terminate(); } catch { /* ignore */ }
+      }
+    }, 500);
+    killTimer.unref?.();
+  } catch {
+    try { ws.terminate(); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * @typedef {{
+ *   queuedBytes: () => number,
+ *   teardown: (code: unknown, reason: unknown) => void,
+ * }} BridgeEntry
+ * @typedef {{
+ *   bridges: Set<BridgeEntry>,
+ *   activeUpstreams: Set<WebSocket>,
+ *   bridgesPerRemote: Map<string, number>,
+ *   firstFrameTimeoutMs: number,
+ *   idleTimeoutMs: number,
+ *   bridgeHighWatermarkBytes: number,
+ *   maxTotalBridgeBufferedBytes: number,
+ * }} BridgePool
+ */
+
+/**
+ * Enforce global WS bridge buffered-byte ceiling by closing the single heaviest bridge.
+ * @param {BridgePool} pool
+ * @param {number} nextBytes
+ * @param {BridgeEntry} [activeEntry]
+ * @returns {boolean}
+ */
+function enforceGlobalBufferBudget(pool, nextBytes, activeEntry) {
+  let total = nextBytes;
+  /** @type {BridgeEntry | null} */
+  let heaviest = null;
+  let heaviestBytes = -1;
+  for (const entry of pool.bridges) {
+    const base = entry.queuedBytes();
+    const score = base + (entry === activeEntry ? nextBytes : 0);
+    total += base;
+    if (score > heaviestBytes) {
+      heaviestBytes = score;
+      heaviest = entry;
+    }
+  }
+  if (total <= pool.maxTotalBridgeBufferedBytes || !heaviest) return false;
+  heaviest.teardown(1008, 'Bridge memory budget exceeded');
+  return true;
+}
+
+/**
+ * Wire bidirectional forwarding, idle/first-frame timers, and backpressure limits on one 1:1 bridge.
+ * @param {BridgePool} pool
+ * @param {WebSocket} clientWs
+ * @param {WebSocket} upstreamWs
+ * @param {string} remoteKey
+ */
+function attachBridgeSession(pool, clientWs, upstreamWs, remoteKey) {
+  /** @type {Array<{ data: import('ws').RawData, isBinary: boolean }>} */
+  const pendingToUpstream = [];
+  let pendingBytes = 0;
+  let closed = false;
+  let sawFirstClientFrame = false;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let firstFrameTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let idleTimer = null;
+
+  /** @param {unknown} code @param {unknown} reason */
+  const teardown = (code, reason) => {
+    if (closed) return;
+    closed = true;
+    if (firstFrameTimer) { clearTimeout(firstFrameTimer); firstFrameTimer = null; }
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    pool.bridges.delete(entry);
+    pool.activeUpstreams.delete(upstreamWs);
+    const prevCount = pool.bridgesPerRemote.get(remoteKey) || 0;
+    if (prevCount <= 1) pool.bridgesPerRemote.delete(remoteKey);
+    else pool.bridgesPerRemote.set(remoteKey, prevCount - 1);
+    pendingToUpstream.length = 0;
+    pendingBytes = 0;
+    const safeCode = normalizeForwardCloseCode(code);
+    const safeReason = typeof reason === 'string' ? reason.slice(0, 120) : '';
+    closeSocketSafely(clientWs, safeCode, safeReason);
+    closeSocketSafely(upstreamWs, safeCode, safeReason);
+  };
+
+  /** @type {BridgeEntry} */
+  const entry = {
+    queuedBytes: () => pendingBytes + clientWs.bufferedAmount + upstreamWs.bufferedAmount,
+    teardown,
+  };
+  pool.bridges.add(entry);
+  pool.activeUpstreams.add(upstreamWs);
+  pool.bridgesPerRemote.set(remoteKey, (pool.bridgesPerRemote.get(remoteKey) || 0) + 1);
+
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (pool.idleTimeoutMs > 0) {
+      idleTimer = setTimeout(() => teardown(1008, 'Bridge idle'), pool.idleTimeoutMs);
+      idleTimer.unref?.();
+    }
+  };
+
+  if (pool.firstFrameTimeoutMs > 0) {
+    firstFrameTimer = setTimeout(() => {
+      if (!sawFirstClientFrame) teardown(1008, 'Bridge idle');
+    }, pool.firstFrameTimeoutMs);
+    firstFrameTimer.unref?.();
+  }
+
+  upstreamWs.on('open', () => {
+    if (closed) return;
+    while (pendingToUpstream.length > 0 && upstreamWs.readyState === WebSocket.OPEN) {
+      const item = pendingToUpstream.shift();
+      if (!item) continue;
+      pendingBytes = Math.max(0, pendingBytes - rawDataByteLength(item.data));
+      try {
+        upstreamWs.send(item.data, { binary: item.isBinary });
+      } catch {
+        teardown(1011, 'Upstream send failed');
+        return;
+      }
+    }
+  });
+
+  clientWs.on('message', (data, isBinary) => {
+    if (closed) return;
+    if (!sawFirstClientFrame) {
+      sawFirstClientFrame = true;
+      if (firstFrameTimer) { clearTimeout(firstFrameTimer); firstFrameTimer = null; }
+    }
+    resetIdleTimer();
+    const bytes = rawDataByteLength(data);
+    enforceGlobalBufferBudget(pool, bytes, entry);
+    if (closed) return;
+
+    if (upstreamWs.readyState === WebSocket.OPEN) {
+      if (upstreamWs.bufferedAmount > pool.bridgeHighWatermarkBytes) {
+        teardown(1008, 'Upstream backpressure overflow');
+        return;
+      }
+      try { upstreamWs.send(data, { binary: isBinary }); } catch { teardown(1011, 'Upstream send failed'); }
+      return;
+    }
+    if (upstreamWs.readyState === WebSocket.CONNECTING) {
+      if (pendingToUpstream.length >= MAX_PENDING_BRIDGE_MESSAGES || pendingBytes + bytes > MAX_PENDING_BRIDGE_BYTES) {
+        teardown(1008, 'Bridge queue overflow');
+        return;
+      }
+      pendingBytes += bytes;
+      pendingToUpstream.push({ data, isBinary });
+    }
+  });
+
+  upstreamWs.on('message', (data, isBinary) => {
+    if (closed || clientWs.readyState !== WebSocket.OPEN) return;
+    if (sawFirstClientFrame) resetIdleTimer();
+    enforceGlobalBufferBudget(pool, rawDataByteLength(data), entry);
+    if (closed) return;
+    if (clientWs.bufferedAmount > pool.bridgeHighWatermarkBytes) {
+      teardown(1008, 'Client backpressure overflow');
+      return;
+    }
+    try { clientWs.send(data, { binary: isBinary }); } catch { teardown(1011, 'Client send failed'); }
+  });
+
+  clientWs.on('close', (code, reason) => teardown(code, reason ? reason.toString('utf8') : ''));
+  clientWs.on('error', () => teardown(1011, 'Client socket error'));
+  upstreamWs.on('close', (code, reason) => teardown(code, reason ? reason.toString('utf8') : ''));
+  upstreamWs.on('error', () => teardown(1011, 'Upstream bridge error'));
+}
+
+/**
  * Serve the mobile/web parity SPA for phone pairing (hash #offer= stays client-side),
  * and optionally bridge `/ws` WebSocket upgrades 1:1 to the daemon's loopback `/lan-ws`
  * E2EE endpoint for zero-external-server LAN transport.
@@ -114,6 +361,13 @@ function rejectUpgrade(socket, statusCode, reason) {
  * @param {number} [options.port]
  * @param {string} [options.root]
  * @param {string | (() => string)} [options.lanWsTarget]
+ * @param {() => Iterable<string>} [options.listLocalAddresses]
+ * @param {(req: import('http').IncomingMessage) => string} [options.resolveRemoteAddress]
+ * @param {number} [options.firstFrameTimeoutMs]
+ * @param {number} [options.idleTimeoutMs]
+ * @param {number} [options.maxBridgesPerRemoteAddress]
+ * @param {number} [options.bridgeHighWatermarkBytes]
+ * @param {number} [options.maxTotalBridgeBufferedBytes]
  * @returns {import('http').Server}
  */
 function createMobileWebServer(options = {}) {
@@ -121,6 +375,13 @@ function createMobileWebServer(options = {}) {
   const resolveLanWsTarget = typeof options.lanWsTarget === 'function'
     ? options.lanWsTarget
     : () => (typeof options.lanWsTarget === 'string' ? options.lanWsTarget : '');
+  const listLocalAddresses = typeof options.listLocalAddresses === 'function'
+    ? options.listLocalAddresses
+    : defaultListLocalAddresses;
+  const resolveRemoteAddress = typeof options.resolveRemoteAddress === 'function'
+    ? options.resolveRemoteAddress
+    : (/** @type {import('http').IncomingMessage} */ req) => normalizeAddressToken(req.socket?.remoteAddress) || 'unknown';
+  const maxBridgesPerRemote = options.maxBridgesPerRemoteAddress ?? MAX_BRIDGES_PER_REMOTE_ADDRESS;
 
   const server = http.createServer((req, res) => {
     let asset;
@@ -128,8 +389,6 @@ function createMobileWebServer(options = {}) {
       const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
       asset = resolveSpaAsset(root, url.pathname);
     } catch {
-      // HTTP parser acceptance does not imply a valid URL or percent encoding.
-      // Keep malformed, unauthenticated LAN input out of the main-process guard.
       res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('Bad request');
       return;
@@ -142,11 +401,6 @@ function createMobileWebServer(options = {}) {
     const headers = {
       'content-type': asset.type,
       'cache-control': /html/.test(asset.type) ? 'no-store' : 'no-cache',
-      // Defense-in-depth for the LAN pairing landing page. NOTE: no CSP here —
-      // the SPA opens a WebSocket to a *different* relay host (the ChisaCode
-      // daemon relay), so a same-origin `connect-src` would break pairing on the
-      // non-secure LAN context. Only universally-safe headers are set. Pairing
-      // secret stays in the `#offer=` fragment and never reaches this server.
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
       'x-frame-options': 'DENY',
@@ -167,7 +421,6 @@ function createMobileWebServer(options = {}) {
       res.end(body);
     }, () => {
       if (res.writableEnded || req.destroyed) return;
-      // A file can disappear after asset resolution during an update/rebuild.
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('Not found');
     });
@@ -180,8 +433,16 @@ function createMobileWebServer(options = {}) {
     perMessageDeflate: false,
     maxPayload: MAX_BRIDGE_PAYLOAD_BYTES,
   });
-  /** @type {Set<WebSocket>} */
-  const activeUpstreams = new Set();
+  /** @type {BridgePool} */
+  const pool = {
+    bridges: new Set(),
+    activeUpstreams: new Set(),
+    bridgesPerRemote: new Map(),
+    firstFrameTimeoutMs: options.firstFrameTimeoutMs ?? BRIDGE_FIRST_FRAME_TIMEOUT_MS,
+    idleTimeoutMs: options.idleTimeoutMs ?? BRIDGE_IDLE_TIMEOUT_MS,
+    bridgeHighWatermarkBytes: options.bridgeHighWatermarkBytes ?? BRIDGE_HIGH_WATERMARK_BYTES,
+    maxTotalBridgeBufferedBytes: options.maxTotalBridgeBufferedBytes ?? MAX_TOTAL_BRIDGE_BUFFERED_BYTES,
+  };
 
   server.on('upgrade', (req, socket, head) => {
     const rawHost = typeof req.headers.host === 'string' ? req.headers.host.trim() : '';
@@ -189,7 +450,6 @@ function createMobileWebServer(options = {}) {
       rejectUpgrade(socket, 400, 'Invalid Host header');
       return;
     }
-
     let requestUrl;
     try {
       requestUrl = new URL(req.url || '/', `http://${rawHost}`);
@@ -197,156 +457,50 @@ function createMobileWebServer(options = {}) {
       rejectUpgrade(socket, 400, 'Bad request');
       return;
     }
-
     if (requestUrl.pathname !== LAN_BRIDGE_WS_PATH) {
       rejectUpgrade(socket, 404, 'Not found');
       return;
     }
-
+    const addr = server.address();
+    const listenPort = addr && typeof addr === 'object' ? addr.port : options.port;
     const rawOrigin = typeof req.headers.origin === 'string' ? req.headers.origin.trim() : '';
-    if (!isAllowedUpgradeOrigin(rawOrigin, rawHost)) {
+    if (!isAllowedUpgradeOrigin(rawOrigin, rawHost, { port: listenPort, localAddresses: listLocalAddresses() })) {
       rejectUpgrade(socket, 403, 'Origin not allowed');
       return;
     }
-
-    if (activeUpstreams.size >= MAX_BRIDGE_CONNECTIONS) {
+    const remoteKey = normalizeAddressToken(resolveRemoteAddress(req)) || 'unknown';
+    if (pool.bridges.size >= MAX_BRIDGE_CONNECTIONS || (pool.bridgesPerRemote.get(remoteKey) || 0) >= maxBridgesPerRemote) {
       rejectUpgrade(socket, 503, 'Too many bridge connections');
       return;
     }
-
     const targetBase = parseLoopbackLanTarget(resolveLanWsTarget());
     if (!targetBase) {
       rejectUpgrade(socket, 503, 'LAN E2EE bridge unavailable');
       return;
     }
-
     const upstreamUrl = new URL(targetBase.toString());
     for (const [key, value] of requestUrl.searchParams.entries()) {
       if (key === 'serverId' || key === 'role' || key === 'v') {
         upstreamUrl.searchParams.set(key, value);
       }
     }
-
     wss.handleUpgrade(req, socket, head, (clientWs) => {
       const upstreamWs = new WebSocket(upstreamUrl.toString(), {
         perMessageDeflate: false,
         handshakeTimeout: 5_000,
         maxPayload: MAX_BRIDGE_PAYLOAD_BYTES,
       });
-      activeUpstreams.add(upstreamWs);
-
-      /** @type {Array<{ data: import('ws').RawData, isBinary: boolean }>} */
-      const pendingToUpstream = [];
-      let pendingBytes = 0;
-      let closed = false;
-
-      const teardown = (/** @type {unknown} */ code, /** @type {unknown} */ reason) => {
-        if (closed) return;
-        closed = true;
-        activeUpstreams.delete(upstreamWs);
-        pendingToUpstream.length = 0;
-        pendingBytes = 0;
-        const safeCode = normalizeForwardCloseCode(code);
-        const safeReason = typeof reason === 'string' ? reason.slice(0, 120) : '';
-        if (clientWs.readyState === WebSocket.OPEN || clientWs.readyState === WebSocket.CONNECTING) {
-          try {
-            clientWs.close(safeCode, safeReason);
-          } catch {
-            try { clientWs.terminate(); } catch { /* ignore */ }
-          }
-        }
-        if (upstreamWs.readyState === WebSocket.OPEN || upstreamWs.readyState === WebSocket.CONNECTING) {
-          try {
-            upstreamWs.close(safeCode, safeReason);
-          } catch {
-            try { upstreamWs.terminate(); } catch { /* ignore */ }
-          }
-        }
-      };
-
-      upstreamWs.on('open', () => {
-        if (closed) return;
-        while (pendingToUpstream.length > 0 && upstreamWs.readyState === WebSocket.OPEN) {
-          const item = pendingToUpstream.shift();
-          if (!item) continue;
-          try {
-            upstreamWs.send(item.data, { binary: item.isBinary });
-          } catch {
-            teardown(1011, 'Upstream send failed');
-            return;
-          }
-        }
-      });
-
-      clientWs.on('message', (data, isBinary) => {
-        if (closed) return;
-        if (upstreamWs.readyState === WebSocket.OPEN) {
-          if (upstreamWs.bufferedAmount > MAX_BRIDGE_PAYLOAD_BYTES) {
-            teardown(1008, 'Upstream backpressure overflow');
-            return;
-          }
-          try {
-            upstreamWs.send(data, { binary: isBinary });
-          } catch {
-            teardown(1011, 'Upstream send failed');
-          }
-          return;
-        }
-        if (upstreamWs.readyState === WebSocket.CONNECTING) {
-          const bytes = rawDataByteLength(data);
-          if (pendingToUpstream.length >= MAX_PENDING_BRIDGE_MESSAGES || pendingBytes + bytes > MAX_PENDING_BRIDGE_BYTES) {
-            teardown(1008, 'Bridge queue overflow');
-            return;
-          }
-          pendingBytes += bytes;
-          pendingToUpstream.push({ data, isBinary });
-        }
-      });
-
-      upstreamWs.on('message', (data, isBinary) => {
-        if (closed || clientWs.readyState !== WebSocket.OPEN) return;
-        if (clientWs.bufferedAmount > MAX_BRIDGE_PAYLOAD_BYTES) {
-          teardown(1008, 'Client backpressure overflow');
-          return;
-        }
-        try {
-          clientWs.send(data, { binary: isBinary });
-        } catch {
-          teardown(1011, 'Client send failed');
-        }
-      });
-
-      clientWs.on('close', (code, reason) => {
-        teardown(code, reason ? reason.toString('utf8') : '');
-      });
-      clientWs.on('error', () => {
-        teardown(1011, 'Client socket error');
-      });
-      upstreamWs.on('close', (code, reason) => {
-        teardown(code, reason ? reason.toString('utf8') : '');
-      });
-      upstreamWs.on('error', () => {
-        teardown(1011, 'Upstream bridge error');
-      });
+      attachBridgeSession(pool, clientWs, upstreamWs, remoteKey);
     });
   });
 
   server.on('close', () => {
-    for (const client of wss.clients) {
-      try {
-        client.close(1001, 'Server closing');
-      } catch {
-        // ignore
-      }
+    for (const entry of [...pool.bridges]) {
+      entry.teardown(1001, 'Server closing');
     }
-    for (const upstream of activeUpstreams) {
-      try {
-        upstream.close(1001, 'Server closing');
-      } catch {
-        // ignore
-      }
-    }
-    activeUpstreams.clear();
+    pool.bridges.clear();
+    pool.activeUpstreams.clear();
+    pool.bridgesPerRemote.clear();
     wss.close();
   });
 
@@ -387,6 +541,7 @@ function listenMobileWebServer(server, bindAddress, port) {
 
 module.exports = {
   MOBILE_WEB_PORT,
+  isAllowedUpgradeOrigin,
   createMobileWebServer,
   listenMobileWebServer,
 };
