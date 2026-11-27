@@ -5,7 +5,12 @@ const { app } = require('electron');
 const { openExternalFixedTarget } = require('../main/open-external');
 
 const APP_ID = 'ai.deepseek.harness.gui';
-const { PRODUCT_NAME, LEGACY_PRODUCT_NAME } = require('../shared/product-identity');
+const {
+  PRODUCT_NAME,
+  LAUNCHER_NAME,
+  LEGACY_PRODUCT_NAMES,
+  LEGACY_LAUNCHER_NAMES,
+} = require('../shared/product-identity');
 // The desktop runtime keeps this identity even once a slim launcher package
 // exists: the launcher then scans for this product, not for itself.
 const DESKTOP_TARGET = { appId: APP_ID, productName: PRODUCT_NAME };
@@ -17,7 +22,9 @@ const SETTINGS_APPS_URL = 'ms-settings:appsfeatures';
 
 /** @param {string} productName */
 function productNames(productName) {
-  return productName === PRODUCT_NAME ? [PRODUCT_NAME, LEGACY_PRODUCT_NAME] : [productName];
+  if (productName === PRODUCT_NAME) return [PRODUCT_NAME, ...LEGACY_PRODUCT_NAMES];
+  if (productName === LAUNCHER_NAME) return [LAUNCHER_NAME, ...LEGACY_LAUNCHER_NAMES];
+  return [productName];
 }
 
 // `deps.target` selects which product's install registration to inspect.

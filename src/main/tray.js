@@ -21,7 +21,7 @@ function applyTrayBadge(indicator) {
     if (baseTrayImage && !baseTrayImage.isEmpty()) {
       tray.setImage(baseTrayImage);
     }
-    tray.setToolTip('Whale Isle');
+    tray.setToolTip('WhaleIsle');
     return;
   }
   if (indicator.image && !indicator.image.isEmpty()) {
@@ -29,7 +29,7 @@ function applyTrayBadge(indicator) {
   } else if (baseTrayImage && !baseTrayImage.isEmpty()) {
     tray.setImage(baseTrayImage);
   }
-  tray.setToolTip(typeof indicator.tooltip === 'string' && indicator.tooltip ? indicator.tooltip : 'Whale Isle');
+  tray.setToolTip(typeof indicator.tooltip === 'string' && indicator.tooltip ? indicator.tooltip : 'WhaleIsle');
 }
 
 function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, petEnabled, updateLabel, onUpdate }) {
@@ -63,7 +63,7 @@ function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, pe
     petToggle: onPetToggle || (() => {}),
   };
   tray = new Tray(baseTrayImage || nativeImage.createEmpty());
-  tray.setToolTip('Whale Isle');
+  tray.setToolTip('WhaleIsle');
   trayMenuParams = {
     onShow: trayActions.show,
     onOpenLauncher: trayActions.openLauncher,

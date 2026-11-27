@@ -3,9 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const PRODUCT_NAME = 'Whale Isle';
-const LAUNCHER_NAME = 'Whale Isle Launcher';
+const PRODUCT_NAME = 'WhaleIsle';
+const LAUNCHER_NAME = 'WhaleIsle Launcher';
 const LEGACY_PRODUCT_NAME = 'Deepseek-Harness-Desktop';
+const LEGACY_PRODUCT_NAMES = Object.freeze(['Whale Isle', LEGACY_PRODUCT_NAME]);
+const LEGACY_LAUNCHER_NAMES = Object.freeze(['Whale Isle Launcher', 'Deepseek-Harness-Launcher']);
 const LEGACY_DESKTOP_USER_DATA = LEGACY_PRODUCT_NAME;
 const LEGACY_LAUNCHER_USER_DATA = 'Deepseek-Harness-Launcher';
 
@@ -30,6 +32,8 @@ module.exports = {
   PRODUCT_NAME,
   LAUNCHER_NAME,
   LEGACY_PRODUCT_NAME,
+  LEGACY_PRODUCT_NAMES,
+  LEGACY_LAUNCHER_NAMES,
   LEGACY_DESKTOP_USER_DATA,
   LEGACY_LAUNCHER_USER_DATA,
   preserveUserDataPath,

@@ -112,7 +112,7 @@ function expectedOfficialEnvironment(harnessDir = harness, rootDir = root) {
   const version = JSON.parse(fs.readFileSync(path.join(harnessDir, 'package.json'), 'utf8')).version;
   return {
     DSH_CLIENT_BUILD_PROFILE: 'official',
-    DSH_CLIENT_TITLE: 'Whale Isle',
+    DSH_CLIENT_TITLE: 'WhaleIsle',
     DSH_CLIENT_COMMIT_HASH: commitHash,
     DSH_CLIENT_VERSION: version,
   };
@@ -135,7 +135,7 @@ export async function officialBuildReason(harnessDir = harness, rootDir = root) 
   }
   const environment = record?.environment;
   if (environment?.DSH_CLIENT_BUILD_PROFILE !== 'official') return 'client build is not official';
-  if (environment?.DSH_CLIENT_TITLE !== 'Whale Isle') return 'client build title is not official';
+  if (environment?.DSH_CLIENT_TITLE !== 'WhaleIsle') return 'client build title is not official';
   const expected = expectedOfficialEnvironment(harnessDir, rootDir);
   const recordedKeys = Object.keys(environment).sort().join(',');
   if (recordedKeys !== Object.keys(expected).sort().join(',')) {

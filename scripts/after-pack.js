@@ -1490,7 +1490,7 @@ function resolveResourcesDir(context) {
     return context.packager.getResourcesDir(context.appOutDir);
   }
   if (context?.electronPlatformName === 'darwin') {
-    const product = context.packager?.appInfo?.productFilename || 'Whale Isle';
+    const product = context.packager?.appInfo?.productFilename || 'WhaleIsle';
     return path.join(context.appOutDir, `${product}.app`, 'Contents', 'Resources');
   }
   return path.join(context.appOutDir, 'resources');

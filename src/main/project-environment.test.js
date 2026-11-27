@@ -65,8 +65,8 @@ test('a folder that cannot host a Project is refused with its reason, before and
     [path.parse(ordinary).root, 'root', /磁盘根目录/],
     [os.homedir(), 'home', /用户主目录/],
     [config, 'system-data', /系统配置目录/],
-    [userData, 'app-data', /鲸屿自己的数据目录/],
-    [path.join(userData, 'dsh-home'), 'app-data', /鲸屿自己的数据目录/],
+    [userData, 'app-data', /WhaleIsle 自己的数据目录/],
+    [path.join(userData, 'dsh-home'), 'app-data', /WhaleIsle 自己的数据目录/],
     [file, 'not-directory', /不是文件夹/],
     [path.join(directory, 'absent'), 'missing', /找不到/],
   ]) {

@@ -106,14 +106,14 @@ export async function validateAndroidAssets({ assetDir, version, sha, expectedCe
 }
 
 export function androidReleaseBody(version) {
-  return `# 鲸屿 Android ${version}\n\n` +
+  return `# WhaleIsle Android ${version}\n\n` +
     `- 支持 Android 8.0 及以上（API 26+）。\n` +
-    `- 安装 APK 后，扫描鲸屿桌面端提供的连接二维码。手机端是桌面的移动客户端，AI 会话与工具任务由连接的桌面端运行。\n` +
+    `- 安装 APK 后，扫描 WhaleIsle 桌面端提供的连接二维码。手机端是桌面的移动客户端，AI 会话与工具任务由连接的桌面端运行。\n` +
     `- 本次构建通过 JVM 测试、Android Lint 与模拟器检查；尚无物理 Android 设备扫码连接桌面并完成 AI 会话的全链路验证证据。\n` +
     `- APK 与构建记录的 SHA-512 校验值见 SHA512SUMS.txt。\n\n` +
     `<details>\n<summary>English</summary>\n\n` +
-    `Whale Isle Android ${version} requires Android 8.0 or newer (API 26+).\n\n` +
-    `Install the APK and scan the connection QR code shown by Whale Isle desktop. This is a mobile client for the connected desktop, which runs the AI sessions and tools.\n\n` +
+    `WhaleIsle Android ${version} requires Android 8.0 or newer (API 26+).\n\n` +
+    `Install the APK and scan the connection QR code shown by WhaleIsle desktop. This is a mobile client for the connected desktop, which runs the AI sessions and tools.\n\n` +
     `JVM tests, Android Lint and emulator checks passed. There is no physical-device end-to-end evidence yet for scanning the desktop QR code and completing an AI session.\n\n` +
     `SHA512SUMS.txt contains SHA-512 checksums for the APK and build metadata.\n\n</details>\n`
 }
@@ -263,7 +263,7 @@ export async function publishAndroid({ repo, mirrorRepo, version, sha, assetDir,
   const uploaded = []
   if (!release) {
     const created = await request(prefix + '/releases', { method: 'POST', body: {
-      tag_name: tag, target_commitish: sha, name: 'Whale Isle Android ' + version,
+      tag_name: tag, target_commitish: sha, name: 'WhaleIsle Android ' + version,
       body: androidReleaseBody(version), draft: true, prerelease: false, make_latest: 'false',
     } })
     if (!created?.id) throw new Error('GitHub Android draft creation returned no ID')
@@ -283,7 +283,7 @@ export async function publishAndroid({ repo, mirrorRepo, version, sha, assetDir,
     await protectGithub()
     await protectMirror(Boolean(mirrorTag))
     await request(prefix + '/releases/' + release.id, { method: 'PATCH', body: {
-      name: 'Whale Isle Android ' + version, body: androidReleaseBody(version), draft: false, prerelease: false, make_latest: 'false',
+      name: 'WhaleIsle Android ' + version, body: androidReleaseBody(version), draft: false, prerelease: false, make_latest: 'false',
     } })
     release = await request(prefix + '/releases/' + release.id)
     if (checkRelease(release, { tag, sha, files, complete: true })) throw new Error('Android GitHub release remains a draft')
@@ -298,7 +298,7 @@ export async function publishAndroid({ repo, mirrorRepo, version, sha, assetDir,
   let target = existingMirror
   if (!target) {
     const created = await mirrorRequest(mirrorPrefix + '/releases', { method: 'POST', body: {
-      tag_name: tag, target_commitish: sha, name: 'Whale Isle Android ' + version, body: androidReleaseBody(version),
+      tag_name: tag, target_commitish: sha, name: 'WhaleIsle Android ' + version, body: androidReleaseBody(version),
       draft: false, prerelease: true, make_latest: 'false',
     } })
     if (!created?.id) throw new Error('CNB Android prerelease creation returned no ID')
@@ -319,7 +319,7 @@ export async function publishAndroid({ repo, mirrorRepo, version, sha, assetDir,
     await protectGithub()
     await protectMirror()
     await mirrorRequest(mirrorPrefix + '/releases/' + target.id, { method: 'PATCH', body: {
-      name: 'Whale Isle Android ' + version, body: androidReleaseBody(version), draft: false, prerelease: false, make_latest: 'false',
+      name: 'WhaleIsle Android ' + version, body: androidReleaseBody(version), draft: false, prerelease: false, make_latest: 'false',
     } })
     target = await mirrorRequest(mirrorPrefix + '/releases/' + target.id)
     if (checkRelease(target, { tag, sha, files, mirror: true, complete: true })) throw new Error('Android CNB release remains a prerelease')

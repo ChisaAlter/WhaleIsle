@@ -30,13 +30,15 @@ test('native Windows registration preserves Chinese and emoji paths with redirec
   }
 });
 
-test('current desktop target still accepts the previous installed executable', () => {
-  const candidates = detect.desktopExeCandidates('C:\\Apps\\Whale Isle');
+test('current desktop target still accepts the previous installed executables', () => {
+  const candidates = detect.desktopExeCandidates('C:\\Apps\\WhaleIsle');
   assert.deepEqual(candidates, [
-    path.join('C:\\Apps\\Whale Isle', 'Whale Isle.exe'),
-    path.join('C:\\Apps\\Whale Isle', 'app', 'Whale Isle.exe'),
-    path.join('C:\\Apps\\Whale Isle', 'Deepseek-Harness-Desktop.exe'),
-    path.join('C:\\Apps\\Whale Isle', 'app', 'Deepseek-Harness-Desktop.exe'),
+    path.join('C:\\Apps\\WhaleIsle', 'WhaleIsle.exe'),
+    path.join('C:\\Apps\\WhaleIsle', 'app', 'WhaleIsle.exe'),
+    path.join('C:\\Apps\\WhaleIsle', 'Whale Isle.exe'),
+    path.join('C:\\Apps\\WhaleIsle', 'app', 'Whale Isle.exe'),
+    path.join('C:\\Apps\\WhaleIsle', 'Deepseek-Harness-Desktop.exe'),
+    path.join('C:\\Apps\\WhaleIsle', 'app', 'Deepseek-Harness-Desktop.exe'),
   ]);
 });
 
@@ -69,7 +71,7 @@ test('empty DisplayVersion falls back to the runtime exe product version', () =>
   const info = detect.getInstalledAppInfo({
     platform: 'win32',
     isPackaged: true,
-    target: { appId: 'ai.deepseek.harness.gui', productName: 'Whale Isle' },
+    target: { appId: 'ai.deepseek.harness.gui', productName: 'WhaleIsle' },
     existsSync: () => true,
     statSync: () => ({ mtimeMs: 1 }),
     execFileSync: (command, args) => {

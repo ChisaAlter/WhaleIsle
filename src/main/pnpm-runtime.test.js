@@ -44,7 +44,7 @@ test('built dsh installs and removes an offline bundle from paths with Chinese a
   if (!requirePrerequisite(t, harnessWorkspace())) return;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-pnpm-中文 路径-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const runtime = path.join(dir, '软件 Whale Isle');
+  const runtime = path.join(dir, '软件 WhaleIsle');
   fs.mkdirSync(runtime);
   const node = path.join(runtime, path.basename(process.execPath));
   fs.copyFileSync(process.execPath, node);

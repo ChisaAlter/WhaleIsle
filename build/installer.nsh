@@ -1,4 +1,4 @@
-# Whale Isle NSIS customization (assisted installer only).
+# WhaleIsle NSIS customization (assisted installer only).
 !include "${__FILEDIR__}\remove-directory.nsh"
 !ifdef BUILD_UNINSTALLER
   !insertmacro dshDefineRemoveDirectory "un."
@@ -231,7 +231,7 @@
 
 !macro customHeader
   # Replace the stock "Nullsoft Install System vX.XX" footer with the product.
-  BrandingText "Whale Isle ${VERSION}"
+  BrandingText "WhaleIsle ${VERSION}"
 !macroend
 
 # --- Corrupted install-record hygiene (incident 2026-09-12) ----------------
@@ -384,10 +384,12 @@
     !insertmacro _DSHD_IS_ABS $0 $R0
     ${If} $R0 == "1"
       ${IfNot} ${FileExists} "$0\${APP_EXECUTABLE_FILENAME}"
-        ${IfNot} ${FileExists} "$0\Deepseek-Harness-Desktop.exe"
-          ${IfNot} ${FileExists} "$0\Deepseek-Harness-Launcher.exe"
-            ${IfNot} ${FileExists} "$0\Whale Isle Launcher.exe"
-              StrCpy $R0 "0"
+        ${IfNot} ${FileExists} "$0\Whale Isle.exe"
+          ${IfNot} ${FileExists} "$0\Deepseek-Harness-Desktop.exe"
+            ${IfNot} ${FileExists} "$0\Deepseek-Harness-Launcher.exe"
+              ${IfNot} ${FileExists} "$0\Whale Isle Launcher.exe"
+                StrCpy $R0 "0"
+              ${EndIf}
             ${EndIf}
           ${EndIf}
         ${EndIf}

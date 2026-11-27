@@ -7,10 +7,20 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   PRODUCT_NAME,
+  LAUNCHER_NAME,
+  LEGACY_PRODUCT_NAMES,
+  LEGACY_LAUNCHER_NAMES,
   LEGACY_DESKTOP_USER_DATA,
   LEGACY_LAUNCHER_USER_DATA,
   preserveUserDataPath,
 } = require('./product-identity');
+
+test('public identity uses unspaced WhaleIsle while retaining legacy install names', () => {
+  assert.equal(PRODUCT_NAME, 'WhaleIsle');
+  assert.equal(LAUNCHER_NAME, 'WhaleIsle Launcher');
+  assert.deepEqual(LEGACY_PRODUCT_NAMES, ['Whale Isle', 'Deepseek-Harness-Desktop']);
+  assert.deepEqual(LEGACY_LAUNCHER_NAMES, ['Whale Isle Launcher', 'Deepseek-Harness-Launcher']);
+});
 
 test('public rename retains both existing Electron data directories', () => {
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-isle-identity-'));
@@ -34,8 +44,8 @@ test('public rename retains both existing Electron data directories', () => {
 
 test('explicit user-data-dir keeps the caller-selected path', () => {
   const app = {
-    getPath: () => 'C:\\custom\\Whale Isle',
+    getPath: () => 'C:\\custom\\WhaleIsle',
     setPath: () => assert.fail('explicit path must not be overridden'),
   };
-  assert.equal(preserveUserDataPath(app, LEGACY_DESKTOP_USER_DATA, ['--user-data-dir=C:\\custom\\Whale Isle']), 'C:\\custom\\Whale Isle');
+  assert.equal(preserveUserDataPath(app, LEGACY_DESKTOP_USER_DATA, ['--user-data-dir=C:\\custom\\WhaleIsle']), 'C:\\custom\\WhaleIsle');
 });

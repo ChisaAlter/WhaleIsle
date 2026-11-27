@@ -16,7 +16,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 const distDir = path.join(root, 'dist')
 const timeoutMs = Number(process.env.DSH_SMOKE_TIMEOUT_MS) || 600_000
-const PRODUCT_EXE = 'Whale Isle.exe'
+const PRODUCT_EXE = 'WhaleIsle.exe'
 const STALE_HARNESS_VERSION = '0.1.0-rc.7'
 
 function packagedExecutable() {
@@ -54,7 +54,7 @@ function productExeRunning() {
 function assertProductNotRunning() {
   if (productExeRunning()) {
     throw new Error(
-      `${PRODUCT_EXE} is already running (same appId lock). Quit Whale Isle.exe first. Do not kill Cursor.`,
+      `${PRODUCT_EXE} is already running (same appId lock). Quit WhaleIsle.exe first. Do not kill Cursor.`,
     )
   }
 }
@@ -171,7 +171,7 @@ async function assertPackagedP0Result(result, extractRoot, resourcesPath) {
   const packagedP0 = result.packagedP0
   if (!packagedP0) {
     throw new Error(
-      'dshd-smoke.json has no packagedP0. Diagnose the missing payload before repeating qa:packaged. If rebuilding is needed, run npm run dist with the Node version in root .nvmrc so the asar includes DSH_SMOKE_SIBLING. Quit Whale Isle.exe first.',
+      'dshd-smoke.json has no packagedP0. Diagnose the missing payload before repeating qa:packaged. If rebuilding is needed, run npm run dist with the Node version in root .nvmrc so the asar includes DSH_SMOKE_SIBLING. Quit WhaleIsle.exe first.',
     )
   }
   if (packagedP0.ok !== true) {

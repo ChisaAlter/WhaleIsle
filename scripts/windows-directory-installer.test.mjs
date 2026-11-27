@@ -95,7 +95,7 @@ test('native NSIS cleanup removes staged/retired cyclic junctions without touchi
       const directories = join(directory, 'installer-directories.nsh')
       writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
       writeFileSync(source, `Unicode true
-Name "Whale Isle runtime cleanup fixture"
+Name "WhaleIsle runtime cleanup fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -165,7 +165,7 @@ test('updated uninstall restores locked old files and opaque junctions before fa
     const adapted = transactionalUninstallerScript(readFileSync(join(templates, 'uninstaller.nsh'), 'utf8'))
     const functions = adapted.slice(adapted.indexOf('Function un.atomicRMDir'), adapted.indexOf('!ifndef UNINSTALL_SECTION_NAME'))
     writeFileSync(source, `Unicode true
-Name "Whale Isle updated removal fixture"
+Name "WhaleIsle updated removal fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -223,7 +223,7 @@ test('failed retirement leaves actionable cleanup instructions and preserves the
     writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
     const tool = await compiler()
     writeFileSync(source, `Unicode true
-Name "Whale Isle retirement fixture"
+Name "WhaleIsle retirement fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -288,7 +288,7 @@ test('post-promotion rollback preserves its state and complete old backup when f
     writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
     const tool = await compiler()
     writeFileSync(source, `Unicode true
-Name "Whale Isle rollback fixture"
+Name "WhaleIsle rollback fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -356,7 +356,7 @@ test('silent old-uninstaller failure returns upstream exit 2 and cleans the stag
     assert.ok(start >= 0 && end > start, 'real handleUninstallResult template')
     const tool = await compiler()
     writeFileSync(source, `Unicode true
-Name "Whale Isle failed relocation fixture"
+Name "WhaleIsle failed relocation fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 ${tool.header}

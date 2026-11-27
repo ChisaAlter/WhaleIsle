@@ -299,7 +299,7 @@ if (!gotLock) {
       tray = createLauncherTray({
         onShow: () => void openLauncher(),
         onQuit: quitApp,
-        toolTip: '鲸屿启动器',
+        toolTip: LAUNCHER_NAME,
         statusLabel: supervisedComponentsLabel,
       });
     } catch (error) {

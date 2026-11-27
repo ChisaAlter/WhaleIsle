@@ -57,7 +57,7 @@ test('report renders header, error, host diagnostic, and console tail', async ()
     error: new Error('boom'),
     hostDiagnostic: 'host said nope',
     rendererConsole: ['TypeError: x'],
-    app: { name: 'Whale Isle', version: '0.3.3', platform: 'win32', arch: 'x64', electron: '43', node: '24', locale: 'zh-CN' },
+    app: { name: 'WhaleIsle', version: '0.3.3', platform: 'win32', arch: 'x64', electron: '43', node: '24', locale: 'zh-CN' },
     time: new Date('2026-09-26T12:00:00Z'),
   });
   assert.ok(file && file.endsWith('crash-2026-09-26T12-00-00-000Z-renderer.log'));
@@ -68,7 +68,7 @@ test('report renders header, error, host diagnostic, and console tail', async ()
   assert.ok(body.includes('TypeError: x'));
 });
 
-const MAIN_APP = { name: 'Whale Isle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' };
+const MAIN_APP = { name: 'WhaleIsle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' };
 
 test('main failure reporter writes one main crash report, then prunes', async () => {
   const dir = tempDir('dshd-crash-');
@@ -157,7 +157,7 @@ test('report adds the hang stack and memory trend only when they were collected'
     phase: 'running',
     error: new Error('界面无响应'),
     rendererConsole: [],
-    app: { name: 'Whale Isle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' },
+    app: { name: 'WhaleIsle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' },
     time: new Date('2026-10-29T16:00:00Z'),
   };
   const plain = renderCrashReport(base);

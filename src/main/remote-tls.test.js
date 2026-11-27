@@ -51,7 +51,7 @@ test('serial DER edge shapes stay parseable: multi-zero stripping and high-bit z
 test('generateTlsMaterial mints a parseable self-signed P-256 certificate', () => {
   const material = generateTlsMaterial({ addresses: ['192.168.1.20', 'not-an-ip', '192.168.1.20'] });
   const x509 = new crypto.X509Certificate(material.cert);
-  assert.match(x509.subject, /Whale Isle Remote/);
+  assert.match(x509.subject, /WhaleIsle Remote/);
   assert.equal(x509.subject, x509.issuer);
   assert.match(x509.subjectAltName || '', /DNS:localhost/);
   assert.match(x509.subjectAltName || '', /IP Address:127\.0\.0\.1/);

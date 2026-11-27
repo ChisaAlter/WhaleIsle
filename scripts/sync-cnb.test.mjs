@@ -56,7 +56,7 @@ function fixture(t, { existing = null, uploaded = [], corruptRemote = false, fai
   bytes.set('latest.yml', Buffer.from(JSON.stringify({ version: '1.2.3', files: [{ url: name, size: bytes.get(name).length, sha512: digest(bytes.get(name), 'sha512', 'base64') }] })))
   bytes.set('SHA512SUMS.txt', Buffer.from([...bytes].map(([n, b]) => digest(b) + '  ' + n).join('\n') + '\n'))
   for (const [n, b] of bytes) writeFileSync(join(directory, n), b)
-  const release = { tag_name: 'v1.2.3', name: 'Whale Isle', body: 'Release notes', prerelease: false, draft: false,
+  const release = { tag_name: 'v1.2.3', name: 'WhaleIsle', body: 'Release notes', prerelease: false, draft: false,
     assets: [...bytes].map(([n, b]) => ({ name: n, size: b.length, digest: 'sha256:' + digest(b, 'sha256') })) }
   const asset = name => ({ id: name, name, browser_download_url: 'https://cnb.cool/' + repo + '/-/releases/download/v1.2.3/' + name })
   const calls = []

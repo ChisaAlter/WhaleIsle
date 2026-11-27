@@ -221,7 +221,7 @@ test('usage tool rejects an earlier day and accepts the current local day', asyn
 
 test('sticker markdown preserves drives and escaped path characters without emitting network URLs', async () => {
   const { markdownPathFor } = await import(moduleUrl('sticker-tools.js'));
-  for (const file of ['D:\\Whale Isle\\happy(1)#.webp', 'C:\\Users\\me\\鲸鱼娘.png', '/tmp/a b.webp']) {
+  for (const file of ['D:\\WhaleIsle Dir\\happy(1)#.webp', 'C:\\Users\\me\\鲸鱼娘.png', '/tmp/a b.webp']) {
     const authored = markdownPathFor(file);
     assert.equal(decodeURIComponent(authored), file.replaceAll('\\', '/'));
     assert.doesNotMatch(authored, /[ ()#]/);

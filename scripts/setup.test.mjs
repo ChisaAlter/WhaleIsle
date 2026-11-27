@@ -104,7 +104,7 @@ test('officialBuildReason detects stale version/commit metadata', async (t) => {
     JSON.stringify({
       environment: {
         DSH_CLIENT_BUILD_PROFILE: 'official',
-        DSH_CLIENT_TITLE: 'Whale Isle',
+        DSH_CLIENT_TITLE: 'WhaleIsle',
         DSH_CLIENT_COMMIT_HASH: 'abc1234',
         DSH_CLIENT_VERSION: '0.2.2-rc.2',
       },
@@ -163,7 +163,7 @@ test('officialBuildReason honors explicit DSH_CLIENT_COMMIT_HASH and still rejec
   process.env.DSH_CLIENT_COMMIT_HASH = '1234567ABCDEF';
   const expectedEnv = {
     DSH_CLIENT_BUILD_PROFILE: 'official',
-    DSH_CLIENT_TITLE: 'Whale Isle',
+    DSH_CLIENT_TITLE: 'WhaleIsle',
     DSH_CLIENT_COMMIT_HASH: '1234567',
     DSH_CLIENT_VERSION: '0.2.3-alpha.2',
   };

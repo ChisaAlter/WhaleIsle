@@ -105,7 +105,7 @@ export async function publish({ repo, runId, request, gh, sha, windowsOnlyTag = 
     const english = await readFile(join(root, '.github/release-notes.en.md'), 'utf8')
     const body = notes + '\n\n<details>\n<summary>English</summary>\n\n' + english + '\n\n</details>\n'
     const release = existing || await request(prefix + '/releases', {
-      method: 'POST', body: { tag_name: tag, target_commitish: sha, name: 'Whale Isle ' + tag, body, draft: true },
+      method: 'POST', body: { tag_name: tag, target_commitish: sha, name: 'WhaleIsle ' + tag, body, draft: true },
     })
     // Failed uploads leave a draft. Retry the same run without rebuilding.
     await gh(['release', 'upload', tag, ...files, '--repo', repo, '--clobber'])

@@ -71,7 +71,7 @@ function fixture() {
 
 test('legacy shortcut identity is the unchanged installer/window GUI AppID', () => {
   assert.equal(details.appUserModelId, require('../../package.json').build.appId);
-  assert.equal(details.appUserModelId, require('./window-app-details').windowsAppDetails({ isPackaged: true, execPath: 'C:\\Whale Isle.exe' }).appId);
+  assert.equal(details.appUserModelId, require('./window-app-details').windowsAppDetails({ isPackaged: true, execPath: 'C:\\WhaleIsle.exe' }).appId);
   assert.equal(isLegacyNotificationShortcut(details), true);
   assert.equal(isLegacyNotificationShortcut({ ...details, icon: details.target.toUpperCase() }), true);
 });
@@ -84,7 +84,7 @@ for (const [label, patch] of [
   ['whitespace arguments', { args: ' ' }],
   ['custom icon', { icon: 'C:\\Icons\\custom.ico' }],
   ['another icon resource', { iconIndex: 1 }],
-  ['installed Whale executable', { target: 'C:\\软件\\Whale Isle\\Whale Isle.exe' }],
+  ['installed Whale executable', { target: 'C:\\软件\\WhaleIsle\\WhaleIsle.exe' }],
   ['relative executable', { target: 'electron.exe' }],
   ['drive-relative executable', { target: 'C:electron.exe' }],
   ['parent traversal', { target: 'C:\\Repo\\..\\electron.exe' }],

@@ -48,7 +48,7 @@ function brandMark(size, { muted = false } = {}) {
 /**
  * Welcome/finish sidebar: official light sidebar fill (same as the launcher
  * rail), the whale-girl head mark, the product name
- * `Whale Isle` in the 164px column, and a thin
+ * `WhaleIsle` in the 164px column, and a thin
  * DeepSeek-blue accent rule. A right hairline separates it from the white
  * dialog canvas. Chinese copy stays in the localized MUI strings, not baked
  * into bitmaps.
@@ -64,7 +64,7 @@ function sidebarHtml(k, { muted, titleColor, accentColor }) {
   </style></head><body>
     <div class="stack">
       ${brandMark(72 * k, { muted })}
-      <div class="word">Whale Isle</div>
+      <div class="word">WhaleIsle</div>
       <div class="rule"></div>
     </div>
     <div class="hairline"></div>

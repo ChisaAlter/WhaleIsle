@@ -168,7 +168,7 @@ function shouldCloseLauncherAfterDesktopStart({
  */
 function updateStayHint(check, outcome) {
   if (outcome?.manualInstall === true) {
-    const message = outcome.message || '已打开安装映像，请将 Whale Isle 拖入 Applications 完成更新';
+    const message = outcome.message || '已打开安装映像，请将 WhaleIsle 拖入 Applications 完成更新';
     return { ...check, message, hint: `${message}。完成后重新打开应用。` };
   }
   if (outcome && outcome.launched === true) {

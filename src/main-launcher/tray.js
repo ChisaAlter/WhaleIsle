@@ -51,7 +51,7 @@ function createLauncherTray({ onShow, onQuit, toolTip, statusLabel }) {
     image = image.resize({ width: 24, height: 24 });
   }
   const tray = new Tray(image && !image.isEmpty() ? image : nativeImage.createEmpty());
-  tray.setToolTip(toolTip || 'Whale Isle Launcher');
+  tray.setToolTip(toolTip || 'WhaleIsle Launcher');
   const buildMenu = () => Menu.buildFromTemplate(launcherTrayTemplate({ onShow, onQuit, statusLabel }));
   if (typeof statusLabel === 'function') {
     // Dynamic menu: rebuild at right-click so the status line is fresh.

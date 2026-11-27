@@ -46,7 +46,7 @@ function Read-GpuCounter([string]$counterPath, [int[]]$processIds, [double]$divi
 
 while (((Get-Date) - $started).TotalSeconds -lt $Seconds) {
   $at = Get-Date
-  $processes = @(Get-CimInstance Win32_Process -Filter "name = 'electron.exe' or name = 'Whale Isle.exe' or name = 'Deepseek-Harness-Desktop.exe'" |
+  $processes = @(Get-CimInstance Win32_Process -Filter "name = 'electron.exe' or name = 'WhaleIsle.exe' or name = 'Whale Isle.exe' or name = 'Deepseek-Harness-Desktop.exe'" |
     Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($repo + '\', [StringComparison]::OrdinalIgnoreCase) })
   foreach ($process in $processes) {
     $processId = [int]$process.ProcessId

@@ -33,7 +33,7 @@ const DIRECTORY_REFUSALS = {
   root: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。',
   home: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。',
   'system-data': '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。',
-  'app-data': '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。',
+  'app-data': '这是 WhaleIsle 自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。',
 };
 
 function hasUnsafeDirectorySyntax(raw) {
