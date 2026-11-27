@@ -11482,9 +11482,8 @@
     "vendor/dsh-whale/src/shared/bot-avatar-color.js": {
       "TS7006": {
         "Parameter 'color' implicitly has an 'any' type.": 2,
-        "Parameter 'hexColor' implicitly has an 'any' type.": 1,
         "Parameter 'hexPair' implicitly has an 'any' type.": 1,
-        "Parameter 'svgText' implicitly has an 'any' type.": 2,
+        "Parameter 'svgText' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 2
       }
     },
