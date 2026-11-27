@@ -2179,17 +2179,6 @@
         "Variable 'problems' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       }
     },
-    "scripts/ci-scope.mjs": {
-      "TS2339": {
-        "Property 'release' does not exist on type '{ product: boolean; vendor: boolean; tools: boolean; motion: boolean; }'.": 1
-      },
-      "TS7006": {
-        "Parameter 'baseManifest' implicitly has an 'any' type.": 1,
-        "Parameter 'headManifest' implicitly has an 'any' type.": 1,
-        "Parameter 'paths' implicitly has an 'any' type.": 1,
-        "Parameter 'rev' implicitly has an 'any' type.": 1
-      }
-    },
     "scripts/deploy-dshd-public-spa.mjs": {
       "TS7006": {
         "Parameter 'acc' implicitly has an 'any[]' type.": 1,
