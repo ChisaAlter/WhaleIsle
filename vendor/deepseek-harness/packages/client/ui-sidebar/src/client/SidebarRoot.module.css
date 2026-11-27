@@ -575,6 +575,28 @@
   display: none;
 }
 
+/* Claude renders flat warm-paper chrome without glass blur or glowing rims
+   (skins.css); keep only the hairline stroke and opaque warm-paper hover/active
+   tints while hiding the backdrop pseudo-element. */
+:global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession {
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-stroke);
+}
+
+:global(html[data-dsh-skin='claude']) .newSession::before {
+  display: none;
+}
+
+@media (hover: hover) {
+  :global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession:hover {
+    background: color-mix(in srgb, var(--dsw-specific-input-major), var(--dsw-alias-label-primary) 5%);
+  }
+}
+
+:global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession:active {
+  background: color-mix(in srgb, var(--dsw-specific-input-major), var(--dsw-alias-label-primary) 8%);
+}
+
 /* The rail stacks the occupant's controls under the New session icon. */
 .collapsed .newSessionRow {
   flex-direction: column;

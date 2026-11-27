@@ -308,5 +308,20 @@ describe('SidebarRoot.module.css', () => {
 
     expect(declarations(":global(html[data-dsh-skin='codex']) .newSession")?.get('box-shadow')).toBe('none')
     expect(declarations(":global(html[data-dsh-skin='codex']) .newSession::before")?.get('display')).toBe('none')
+
+    const claudeRest = ":global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession"
+    const claudeHover = `${claudeRest}:hover`
+    const claudeActive = `${claudeRest}:active`
+    expect(declarations(claudeRest)?.get('background')).toBe('var(--dsw-specific-input-major)')
+    expect(declarations(claudeRest)?.get('box-shadow')).toBe('var(--dsw-elevation-stroke)')
+    expect(declarations(claudeRest)?.get('box-shadow')).not.toContain('rgba(255, 255, 255')
+    expect(declarations(":global(html[data-dsh-skin='claude']) .newSession::before")?.get('display')).toBe('none')
+    expect(declarations(claudeHover)?.get('background')).toBe(
+      'color-mix(in srgb, var(--dsw-specific-input-major), var(--dsw-alias-label-primary) 5%)',
+    )
+    expect(declarations(claudeActive)?.get('background')).toBe(
+      'color-mix(in srgb, var(--dsw-specific-input-major), var(--dsw-alias-label-primary) 8%)',
+    )
+    expect(css.indexOf(claudeHover)).toBeLessThan(css.indexOf(claudeActive))
   })
 })
