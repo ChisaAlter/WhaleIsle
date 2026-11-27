@@ -330,7 +330,7 @@ export function createBotsRuntime(options) {
     memoryService,
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
-    getLookAroundUpNextCount: (botId) => runtime.lookAroundService?.countOpenUpNext(botId) ?? 0,
+    getLookAroundUpNextCount: (botId) => runtime.lookAroundService?.countUnseenUpNext(botId) ?? 0,
     getLookAroundService: () => runtime.lookAroundService,
     getTidyUpService: () => runtime.tidyUpService,
     getAutomationsService: () => runtime.automationsService,
