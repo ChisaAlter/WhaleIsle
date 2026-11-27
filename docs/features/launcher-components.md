@@ -12,7 +12,7 @@
 
 1. 用户在启动器「组件」分区浏览与安装官方上游 [Magpie CLI](https://github.com/yetone/magpie)（`magpie-cli`）。
 2. 启动器优先复用本机已存在的 Magpie 安装与 `~/.config/magpie` 配置目录；如果本机已有网关（默认 `127.0.0.1:3425`）但尚未开启 Web 界面，受管程序仅作为 `--addr 127.0.0.1:<port> --no-open` UI 伴生实例接入同一配置与网关，不与外部网关冲突。
-3. 用户点击「打开设置」时，鲸屿在原生 `BrowserWindow` 壳窗（38px 宿主标题栏）内通过零注入 `WebContentsView` 直接加载上游 Magpie Web UI。
+3. 用户点击「打开设置」时，WhaleIsle 在原生 `BrowserWindow` 壳窗（38px 宿主标题栏）内通过零注入 `WebContentsView` 直接加载上游 Magpie Web UI。
 4. 曾安装旧版「鲸桥（WhaleBridge）」的用户在检测或安装 Magpie 时自动迁移配置到 Magpie（只读旧数据、带回滚状态机、安全合并并去重 `usage.jsonl`、按 token 新鲜度保留凭据、完成后自动断开旧 DSH `whalebridge` 渠道）。
 5. 受管安装支持在启动器内检查新版本、原地升级与一键回滚，并支持卸载或单独清理配置；外部安装的 Magpie 保持只读保护，不在启动器内强杀或覆盖用户自有二进制，升级时打开官方 Release 页面。
 

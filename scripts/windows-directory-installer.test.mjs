@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
+  assistedInstallerScript,
+  desktopInstallSection,
+  legacyProcessCheckScript,
   directoryRemovalScript,
   directoryTransactionsScript,
   transactionalUninstallerScript,
@@ -95,7 +98,7 @@ test('native NSIS cleanup removes staged/retired cyclic junctions without touchi
       const directories = join(directory, 'installer-directories.nsh')
       writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
       writeFileSync(source, `Unicode true
-Name "Whale Isle runtime cleanup fixture"
+Name "WhaleIsle runtime cleanup fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -165,7 +168,7 @@ test('updated uninstall restores locked old files and opaque junctions before fa
     const adapted = transactionalUninstallerScript(readFileSync(join(templates, 'uninstaller.nsh'), 'utf8'))
     const functions = adapted.slice(adapted.indexOf('Function un.atomicRMDir'), adapted.indexOf('!ifndef UNINSTALL_SECTION_NAME'))
     writeFileSync(source, `Unicode true
-Name "Whale Isle updated removal fixture"
+Name "WhaleIsle updated removal fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -223,7 +226,7 @@ test('failed retirement leaves actionable cleanup instructions and preserves the
     writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
     const tool = await compiler()
     writeFileSync(source, `Unicode true
-Name "Whale Isle retirement fixture"
+Name "WhaleIsle retirement fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -288,7 +291,7 @@ test('post-promotion rollback preserves its state and complete old backup when f
     writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
     const tool = await compiler()
     writeFileSync(source, `Unicode true
-Name "Whale Isle rollback fixture"
+Name "WhaleIsle rollback fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 SilentInstall silent
@@ -356,7 +359,7 @@ test('silent old-uninstaller failure returns upstream exit 2 and cleans the stag
     assert.ok(start >= 0 && end > start, 'real handleUninstallResult template')
     const tool = await compiler()
     writeFileSync(source, `Unicode true
-Name "Whale Isle failed relocation fixture"
+Name "WhaleIsle failed relocation fixture"
 OutFile "${nsisQuote(output)}"
 RequestExecutionLevel user
 ${tool.header}
@@ -438,4 +441,27 @@ test('installWindowsDirectoryInstaller reclaims .nsis-directory-installer on bot
   await cleanupDirectoryInstaller(outDir)
   assert.equal(existsSync(staging), false)
   assert.equal(existsSync(join(outDir, 'keep.exe')), true)
+})
+
+test('NSIS rename adapters preserve legacy install dirs, shortcut targets, and running-process checks', async () => {
+  const { directoryInstallSection, directoryInstallerExits } = await import('../vendor/deepseek-harness/apps/desktop/scripts/windows-directory-installer.mjs')
+  const assisted = assistedInstallerScript(readFileSync(join(templates, 'assistedInstaller.nsh'), 'utf8'))
+  assert.match(assisted, /ReadRegStr \$0 SHELL_CONTEXT "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/)
+  assert.match(assisted, /\$\{StrContains\} \$0 "Whale Isle" \$INSTDIR/)
+  assert.match(assisted, /\$\{StrContains\} \$0 "Deepseek-Harness-Desktop" \$INSTDIR/)
+  assert.match(assisted, /\$\{StrContains\} \$0 "Whale Isle Launcher" \$INSTDIR/)
+
+  const section = desktopInstallSection(directoryInstallSection(readFileSync(join(templates, 'installSection.nsh'), 'utf8')))
+  assert.match(section, /\$\{orIf\} \$\{FileExists\} "\$INSTDIR\\Whale Isle\.exe"/)
+  assert.match(section, /\$\{orIf\} \$\{FileExists\} "\$INSTDIR\\Deepseek-Harness-Desktop\.exe"/)
+  assert.match(section, /\$\{orIf\} \$\{FileExists\} "\$INSTDIR\\Whale Isle Launcher\.exe"/)
+  assert.match(section, /Delete "\$oldStartMenuLink"/)
+  assert.match(section, /Delete "\$oldDesktopLink"/)
+  assert.match(section, /CreateShortCut "\$newStartMenuLink" "\$appExe"/)
+  assert.match(section, /CreateShortCut "\$newDesktopLink" "\$appExe"/)
+
+  const running = legacyProcessCheckScript(directoryInstallerExits(readFileSync(join(templates, 'include/allowOnlyOneInstallerInstance.nsh'), 'utf8')))
+  assert.match(running, /StrCpy \$dshRunningExeName "Whale Isle\.exe"/)
+  assert.match(running, /!insertmacro FIND_PROCESS "\$dshRunningExeName"/)
+  assert.match(running, /!insertmacro KILL_PROCESS "\$dshRunningExeName"/)
 })

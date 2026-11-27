@@ -103,7 +103,7 @@ afterEach(cleanup)
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Session export Header action', () => {
-  it('hides the Whale Isle menu without removing shared download feedback', async () => {
+  it('hides the WhaleIsle menu without removing shared download feedback', async () => {
     vi.stubGlobal('shell', { windowAction: vi.fn() })
     const b = bench({ feedbackAvailable: true })
     expect(b.view.queryByRole('button', { name: 'More actions' })).toBeNull()

@@ -233,7 +233,7 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
                     "about" -> {
                         val context = LocalContext.current
                         val version = remember(context) { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
-                        SettingsLabel("Whale Isle $version")
+                        SettingsLabel("WhaleIsle（鲸屿） $version")
                         SettingsNote("Android 原生客户端 · 竖屏布局")
                         SettingsLabel("连接与数据")
                         SettingsNote("配对凭据与文字草稿加密保存在本机。手机通过端到端加密连接电脑，已配对的电脑使用保存凭据重连。")

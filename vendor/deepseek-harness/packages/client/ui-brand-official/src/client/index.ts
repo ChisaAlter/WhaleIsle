@@ -1,4 +1,4 @@
-/** Whale Isle occupants for the official build's generic browser-brand slots. */
+/** WhaleIsle occupants for the official build's generic browser-brand slots. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'

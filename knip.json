@@ -80,6 +80,7 @@
   "ignore": [
     // knip 会把嵌套 package.json 自动检测成 workspace；这些树在任务范围外，
     // 必须按文件级 ignore 兜底，否则其测试/源码依赖会混入报告
+    ".worktrees/**",
     "vendor/{deepseek-harness,chisacode-remote,open-intelligent-ui,dsh-im,dsh-pad,dsh-remote,dsh-usage-panel,dshmarket}/**",
     "mobile/android/**"
   ],
@@ -139,6 +140,7 @@
     "src/main/{after-pack-workspace,runtime-instance-graph}.test.js": ["unlisted"],
     // electron-builder 传递依赖（builder-util / app-builder-lib / @electron/get /
     // builder-util-runtime）：经 require.resolve 在 builder 上下文解析，未直接声明
+    "src/launcher/install-detect.test.js": ["unlisted"],
     "src/main/{ci-isolation,package-contract}.test.js": ["unlisted"],
     "src/main/update-updater{,.test}.js": ["unlisted"],
     "scripts/{after-pack,bundled-acp.test,production-runtime.test}.{js,mjs}": ["unlisted"],

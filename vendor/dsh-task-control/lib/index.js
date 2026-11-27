@@ -1,22 +1,3 @@
-/**
- * dsh-task-control — desktop-owned Host plugin implementing the task
- * admission lock and work inspection behind the Whale Isle quit/update
- * protection flow.
- *
- * Admission surface: every webServer route (present and future registrations,
- * HTTP and upgrade) is gated while a lock is held; the connection `/api`
- * waterfall carries a second gate because that route predates this plugin in
- * the composition. `sessionController.resolveAgent` and `jobs.start` are
- * wrapped so Schedule delivery, IM channels, and Typert lookups cannot start
- * work while locked — delivery refusals keep schedules armed for the next
- * window, which `onUnlock` re-drives.
- *
- * Control surface: `POST /dshd-task-control/<inspect|acquire|renew|release|
- * cancel|status>` gated by the per-boot Bearer token the desktop delivers
- * over the host's stdin secret channel (#427) as `DSHD_TASK_CONTROL_TOKEN`
- * in the in-process store. No token → the route stays closed.
- */
-
 import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
 import { admit, createControlState, lockStatus } from './state.js';
 import { CONTROL_PREFIX, createControlHandler } from './http.js';

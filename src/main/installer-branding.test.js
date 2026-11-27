@@ -25,7 +25,7 @@ test('nsis keeps the assisted-installer product contract', () => {
   assert.equal(nsis.allowToChangeInstallationDirectory, true);
   assert.equal(nsis.createDesktopShortcut, true);
   assert.equal(nsis.createStartMenuShortcut, true);
-  assert.equal(nsis.shortcutName, 'Whale Isle');
+  assert.equal(nsis.shortcutName, 'WhaleIsle');
   assert.equal(nsis.artifactName, 'Whale-Isle-Setup-${version}.${ext}');
   // Per-user default install path (%LOCALAPPDATA%\Programs) — TC-INST-013
   // uses the shared primary runtime there; do not flip to perMachine.
@@ -96,7 +96,7 @@ test('installer.nsh preserves branded pages and keeps installation work silent-i
   assert.ok(unWelcome, 'customUnWelcomePage macro body');
   assert.match(unWelcome[1], /!define MUI_WELCOMEPAGE_TITLE_3LINES/);
   assert.match(unWelcome[1], /!insertmacro MUI_UNPAGE_WELCOME/);
-  assert.match(nsh, /BrandingText "Whale Isle \$\{VERSION\}"/);
+  assert.match(nsh, /BrandingText "\$\{PRODUCT_NAME\} \$\{VERSION\}"/);
   const code = nsh
     .split('\n')
     .filter((line) => !line.trim().startsWith('#') && !line.trim().startsWith(';'))
@@ -123,6 +123,7 @@ test('customInit purges dead install records and repairs a poisoned $INSTDIR', (
   // a bash-mangled /D=, or a wiped target dir) are deleted, never trusted.
   assert.match(body, /ReadRegStr \$0 SHELL_CONTEXT "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/);
   assert.match(body, /\$\{FileExists\} "\$0\\\$\{APP_EXECUTABLE_FILENAME\}"/);
+  assert.match(body, /\$\{FileExists\} "\$0\\Whale Isle\.exe"/);
   assert.match(body, /\$\{FileExists\} "\$0\\Deepseek-Harness-Desktop\.exe"/);
   assert.match(body, /\$\{FileExists\} "\$0\\Deepseek-Harness-Launcher\.exe"/);
   assert.match(body, /DeleteRegValue SHELL_CONTEXT "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/);
@@ -158,7 +159,7 @@ test('bitmap renderer pins the MUI2 geometry and stays regenerable', () => {
   assert.match(source, /rgb\(15, 17, 21\)/); // --dsw-alias-label-primary
   assert.match(source, /rgb\(65, 118, 230\)/); // --dsw-static-deepseek-500
   // Sidebar carries the product name, not a parallel marketing wordmark.
-  assert.match(source, /Whale Isle/);
+  assert.match(source, /WhaleIsle/);
   // The near-black icon-tile marketing panel (a second skin) must not return,
   // and boot instrument-canvas tokens never reach the installer.
   assert.doesNotMatch(source, /#0b0d12/i);

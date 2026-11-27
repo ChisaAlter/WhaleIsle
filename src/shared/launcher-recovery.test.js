@@ -124,14 +124,14 @@ test('startup guidance names only installed disableable users and asks before ch
   const guidance = startupRecoveryGuidance(status);
   assert.equal(guidance.kind, 'disable');
   assert.deepEqual(guidance.names, ['dsh-tavern']);
-  assert.equal(guidance.confirmText, '禁用并启动鲸屿');
+  assert.equal(guidance.confirmText, '禁用并启动 WhaleIsle');
   assert.match(guidance.body, /不会卸载.*删除/);
 });
 
 test('automatic skip retains the targeted recommendation even after successful boot', () => {
   const status = failedPluginStatus({ lastStart: { ok: true }, desktop: { state: 'ready' }, recovery: { skipUserPlugins: true } });
   assert.equal(startupRecoveryGuidance(status).kind, 'disable');
-  assert.match(recoveryVerdict(status.lastStart, status.recovery, status.forensics), /dsh-tavern.*禁用并启动鲸屿/);
+  assert.match(recoveryVerdict(status.lastStart, status.recovery, status.forensics), /dsh-tavern.*禁用并启动 WhaleIsle/);
   assert.equal(startupRecoveryGuidance({ ...status, recovery: { skipUserPlugins: false } }), null);
 });
 

@@ -160,7 +160,7 @@ export function ConversationSessionHeader({
     return { visibleTabs, moreTabs: tabs.filter(tab => !visibleIds.has(tab.id)) }
   }, [tabs, unpinned, hasEntryActions, visibleViewLimit])
   const currentInMore = moreTabs.some(tab => tab.id === active?.id)
-  // Whale Isle's native shell keeps the folder and Git controls, not this menu trigger.
+  // WhaleIsle's native shell keeps the folder and Git controls, not this menu trigger.
   const whaleDesktop = typeof (globalThis as { shell?: { windowAction?: unknown } }).shell?.windowAction === 'function'
   return (
     <header

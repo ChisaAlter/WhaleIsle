@@ -101,7 +101,7 @@ test('createBadgePresenter updates Windows overlay + tray with caching and clear
   assert.equal(overlayCalls.length, 1);
   assert.equal(overlayCalls[0].desc, '3 项待审批');
   assert.equal(representations.length, 2, 'overlay registers both 1x and 2x representations');
-  assert.equal(trayCalls[0]?.tooltip, 'Whale Isle（3 项待审批）');
+  assert.equal(trayCalls[0]?.tooltip, 'WhaleIsle（3 项待审批）');
   assert.ok(trayCalls[0]?.image);
 
   presenter.applyCount(3);
@@ -138,7 +138,7 @@ test('createBadgePresenter updates macOS Dock badge and tray tooltip', () => {
   presenter.applyCount(1);
   assert.deepEqual(dockBadges, ['1']);
   assert.deepEqual(badgeCounts, [1]);
-  assert.deepEqual(trayCalls[0], { tooltip: 'Whale Isle (1 pending approval)' });
+  assert.deepEqual(trayCalls[0], { tooltip: 'WhaleIsle (1 pending approval)' });
 
   presenter.applyCount(120);
   assert.deepEqual(dockBadges, ['1', '99+']);

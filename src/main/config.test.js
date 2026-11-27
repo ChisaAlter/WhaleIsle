@@ -552,6 +552,27 @@ test('the update proxy is stored in canonical form and a stored invalid value fa
   assert.equal(saveConfig({ updateProxy: '' }).updateProxy, '');
 });
 
+test('packaged defaultWorkspace preserves existing Whale Isle and Deepseek-Harness-Desktop folders before creating WhaleIsle', () => {
+  const { defaultWorkspace } = require('./config');
+  const appMock = require('electron').app;
+  const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-docs-test-'));
+  const origPackaged = appMock.isPackaged;
+  const origGetPath = appMock.getPath;
+  appMock.isPackaged = true;
+  appMock.getPath = (name) => (name === 'documents' ? docsDir : origGetPath(name));
+  try {
+    assert.equal(defaultWorkspace(), path.join(docsDir, 'WhaleIsle'));
+    fs.mkdirSync(path.join(docsDir, 'Deepseek-Harness-Desktop'));
+    assert.equal(defaultWorkspace(), path.join(docsDir, 'Deepseek-Harness-Desktop'));
+    fs.mkdirSync(path.join(docsDir, 'Whale Isle'));
+    assert.equal(defaultWorkspace(), path.join(docsDir, 'Whale Isle'));
+  } finally {
+    appMock.isPackaged = origPackaged;
+    appMock.getPath = origGetPath;
+    fs.rmSync(docsDir, { recursive: true, force: true });
+  }
+});
+
 test('starPrompt defaults, normalizes, persists to public config, and is not renderer-writable', () => {
   const before = loadConfig();
   try {

@@ -12,8 +12,8 @@ function uninstallErrorHint(result) {
     return result.message;
   }
   const labels = {
-    'source-run-no-install': '当前为源码运行，无本机安装包可卸载。请用「设置 → 应用」卸载已安装的 Whale Isle。',
-    'uninstaller-not-found': '未找到卸载程序。请在「设置 → 应用」中卸载 Whale Isle。',
+    'source-run-no-install': '当前为源码运行，无本机安装包可卸载。请用「设置 → 应用」卸载已安装的 WhaleIsle。',
+    'uninstaller-not-found': '未找到卸载程序。请在「设置 → 应用」中卸载 WhaleIsle。',
   };
   return labels[result?.error] || result?.error || '无法启动卸载程序';
 }

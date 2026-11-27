@@ -2,7 +2,7 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-**把你常用的编程 Agent 接入 DeepSeek Harness 和鲸屿：既能直接聊天，也能作为子代理协作。**
+**把你常用的编程 Agent 接入 DeepSeek Harness 和 WhaleIsle（鲸屿）：既能直接聊天，也能作为子代理协作。**
 
 支持 Claude Code、OpenAI Codex、Google Antigravity、Cognition Devin，以及其他兼容 [Agent Client Protocol（ACP）](https://agentclientprotocol.com/) 的服务。账号、模型和运行配置统一在 **设置 → Agent** 管理；会话底部使用 Agent 分栏选择器，集中切换 Agent、模型和推理等级。
 
@@ -16,7 +16,7 @@
 - **看清后台任务状态**：展示最近活动、正在运行的工具、等待回答或审批，以及真实的完成、失败和取消结果。
 - **分别管理多个账号**：同一种 Agent 可以创建多个实例，使用独立的账号目录、环境变量和模型配置。
 
-本仓库是独立的 Cordis 插件，包含 ACP 运行时；不包含鲸屿或 DeepSeek Harness 宿主。
+本仓库是独立的 Cordis 插件，包含 ACP 运行时；不包含 WhaleIsle 或 DeepSeek Harness 宿主。
 
 ## 界面预览
 
@@ -24,7 +24,7 @@
 
 左侧切换 Agent，中间搜索与选择模型，右侧调整模型声明的推理选项，并保留宿主原生团队协作开关。窄窗口下自动改为上下排列。
 
-![鲸屿中的 Agent 分栏选择器：Agent 列表、模型搜索、推理选项与团队协作开关](docs/screenshots/agent-picker.png)
+![WhaleIsle 中的 Agent 分栏选择器：Agent 列表、模型搜索、推理选项与团队协作开关](docs/screenshots/agent-picker.png)
 
 ### 关闭 Agent，账号仍保持登录
 
@@ -32,7 +32,7 @@
 
 ![Agent 与账号管理：QA Agent 已关闭，但列表和账号详情仍显示已登录](docs/screenshots/agent-account.png)
 
-截图来自 0.4.8 在鲸屿中的实际运行，使用合成测试 Agent；界面语言为简体中文。
+截图来自 0.4.8 在 WhaleIsle 中的实际运行，使用合成测试 Agent；界面语言为简体中文。
 
 ## 0.4.9 更新
 
@@ -56,7 +56,7 @@
 dsh plugin --profile web add "./dsh-acp-agents-<版本号>.tgz"
 ```
 
-将 `<版本号>` 换成下载文件的实际版本；`web` 应与使用的 profile 一致。鲸屿管理的 profile 请使用鲸屿随附的 CLI，并在更新前正常退出宿主，安装后重新启动。插件通过 GitHub 分发，不从 npm registry 安装。
+将 `<版本号>` 换成下载文件的实际版本；`web` 应与使用的 profile 一致。WhaleIsle 管理的 profile 请使用 WhaleIsle 随附的 CLI，并在更新前正常退出宿主，安装后重新启动。插件通过 GitHub 分发，不从 npm registry 安装。
 
 **需要当前源码版本时**，可以直接打包，无需先重建随仓库附带的运行时：
 
@@ -202,7 +202,7 @@ Team 开启时，`list_agents` 返回整队，根代理名为 `lead`，成员使
 ## 兼容性与运行要求
 
 - Node.js `^22.19.0 || >=24.0.0`。
-- DeepSeek Harness / 鲸屿宿主，提供 Cordis 4、LLM 适配器注册、连接和 Web 服务。
+- DeepSeek Harness / WhaleIsle 宿主，提供 Cordis 4、LLM 适配器注册、连接和 Web 服务。
 - 子代理委派还需要宿主的 `subagents`、`tools`（含 `@deepseek-ai/dsh-tools`）、受管理本地子会话接口，以及主进程桌面确认通道（`DSH_DESKTOP_INSTALL_URL` + 进程内密钥 `DSH_DESKTOP_INSTALL_TOKEN`）；无桌面确认通道的纯 CLI/Web 宿主上 `acp_delegate` 会默认 fail-closed 拒绝，但单会话 Agent 切换不受影响。
 - Agent Teams 需要宿主挂载 Team 服务。Windows 终端登录需要宿主正确释放 ConPTY，单独安装插件不会更新宿主 PTY 模块。
 

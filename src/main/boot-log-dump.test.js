@@ -30,7 +30,7 @@ test('formatBootLogDump writes version, failure, and the full log ring', () => {
     logs,
   });
 
-  assert.match(text, /^Whale Isle 0\.2\.3\n/);
+  assert.match(text, /^WhaleIsle 0\.2\.3\n/);
   assert.match(text, /^savedAt: 2026-08-20T00:00:00\.000Z$/m);
   assert.match(text, /^state: error$/m);
   assert.match(text, /^error: Harness 启动失败$/m);
@@ -56,7 +56,7 @@ test('formatBootLogDump keeps the header and log marker when logs are empty', ()
     snapshot: { state: 'error' },
     logs: [],
   });
-  assert.match(text, /^Whale Isle 1\.0\.0\n/);
+  assert.match(text, /^WhaleIsle 1\.0\.0\n/);
   assert.match(text, /^failure\.phase: -$/m);
   assert.match(text, /\n--- logs ---\n$/);
   assert.doesNotMatch(text, /^recovery\./m);

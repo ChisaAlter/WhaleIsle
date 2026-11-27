@@ -116,7 +116,7 @@ describe('pi-ai login flows', () => {
       'openai-codex',
       'oauth',
       expect.anything(),
-      expect.objectContaining({ agentName: 'Whale Isle' }),
+      expect.objectContaining({ agentName: 'WhaleIsle' }),
     )
 
     await attempt(ctx, () => Promise.resolve(), { key: recordKeyFor('anthropic'), method: 'api-key' })
@@ -124,7 +124,7 @@ describe('pi-ai login flows', () => {
       'anthropic',
       'api_key',
       expect.anything(),
-      expect.objectContaining({ agentName: 'Whale Isle' }),
+      expect.objectContaining({ agentName: 'WhaleIsle' }),
     )
   })
 
@@ -216,7 +216,7 @@ describe('pi-ai login flows', () => {
     expect(seen?.aborted).toBe(true)
   })
 
-  it('passes Whale Isle agentName and a persistent isolated deviceId for openai OAuth login', async () => {
+  it('passes WhaleIsle agentName and a persistent isolated deviceId for openai OAuth login', async () => {
     const ctx = await harness()
     const OPENAI = recordKeyFor('openai')
     const seenIds: string[] = []
@@ -226,7 +226,7 @@ describe('pi-ai login flows', () => {
       _interaction: AuthInteraction,
       options?: LoginOptions,
     ) => {
-      expect(options?.agentName).toBe('Whale Isle')
+      expect(options?.agentName).toBe('WhaleIsle')
       const id = options?.getDeviceId?.()
       expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
       if (id !== undefined) seenIds.push(id)

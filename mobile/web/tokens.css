@@ -70,8 +70,6 @@
   --dsw-specific-sidebar-nav-item-active: rgb(235, 238, 242);
   --dsw-specific-sidebar-nav-item-active-accent: rgb(228, 237, 253);
   --dsw-specific-sidebar-nav-item-hover: rgb(241, 243, 245);
-  /* Pre-connection sea-horizon semantics. These are calibrated from the
-     Whale Isle boot canvas but stay owned by the mobile runtime. */
   --mobile-connect-ink: rgb(24, 42, 54);
   --mobile-connect-muted: rgb(82, 108, 121);
   --mobile-connect-mark: rgb(24, 58, 74);

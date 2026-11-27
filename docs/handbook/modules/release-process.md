@@ -30,7 +30,7 @@ npm run dist:mac
 
 `setup:harness` 执行 Harness 的 `build:official`；`dist:mac` 不包含这一步，会使用已有客户端产物。仅 TypeScript 检查通过或 `app.asar` 摘要变化，不能说明新的客户端代码已进入安装包。
 
-- 当前应用名是 `Whale Isle.app`。安装新 DMG 时确认实际挂载卷，避免从仍挂载的同名旧卷复制。核对安装副本与本次 `dist/mac-arm64/Whale Isle.app` 的 `Contents/Resources/app.asar`、`Contents/Resources/vendor/deepseek-harness.tar` 是否一致。
+- 当前应用名是 `WhaleIsle.app`。安装新 DMG 时确认实际挂载卷，避免从仍挂载的同名旧卷复制。核对安装副本与本次 `dist/mac-arm64/WhaleIsle.app` 的 `Contents/Resources/app.asar`、`Contents/Resources/vendor/deepseek-harness.tar` 是否一致。
 - 同版本回归使用新的专用 `--user-data-dir=<绝对路径>`，不要删除真实用户配置或运行时缓存。正常退出上一轮测试实例后，确认新进程的应用路径和实际 userData，避免把旧实例当作新包。
 - Mac 的解压运行时位于该 userData 的 `runtime/<桌面版本>`，复用受归档身份校验控制。核对实际运行时中受影响的 `packages/client/*/lib/client.js` 与本次构建产物，而不是只看源码或 ASAR；例如文件与终端修复分别检查 `ui-files`、`ui-user-terminal`。
 - 分别记录本地安装版、互联网下载版与签名/Gatekeeper 结果。本地包没有 quarantine 时能启动，不代表下载后的首次启动通过；不要清除 quarantine 或关闭安全验证来代替测试。
@@ -73,7 +73,7 @@ Android 使用 `android-v<版本>` 独立标签，已发布的首版为 0.3.10 /
 
 ## Magpie 组件
 
-鲸屿不再自行维护 Go 分叉仓库或构建组件二进制，而是直接分发官方上游 [yetone/magpie](https://github.com/yetone/magpie) 的 `magpie-cli` 预编译产物（覆盖 Windows amd64/arm64、macOS arm64/amd64、Linux amd64/arm64）。
+WhaleIsle 不再自行维护 Go 分叉仓库或构建组件二进制，而是直接分发官方上游 [yetone/magpie](https://github.com/yetone/magpie) 的 `magpie-cli` 预编译产物（覆盖 Windows amd64/arm64、macOS arm64/amd64、Linux amd64/arm64）。
 
 - **GitHub 线路**：启动器通过上游 `/releases/latest` 重定向确定版本并下载 `SHA256SUMS` 与对应平台二进制，不依赖易受限的 REST API 配额；校验字节大小和 SHA256 后投入使用。
 - **CNB 国内镜像**：[Magpie CNB mirror](../../../.github/workflows/magpie-cnb-mirror.yml) 定时或手动运行 `scripts/sync-magpie-cnb.mjs`，从上游拉取 `SHA256SUMS` 与全部 6 平台二进制、逐个核验 SHA256，并以 `magpie-v<版本>` 标签上传至 CNB Release（保持 `make_latest: 'false'`，不覆盖桌面 latest）。

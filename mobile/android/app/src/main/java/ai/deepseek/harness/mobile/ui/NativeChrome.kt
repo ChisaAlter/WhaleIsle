@@ -47,7 +47,7 @@ import androidx.core.view.WindowCompat
 
 @Composable
 internal fun WhaleAvatar(modifier: Modifier = Modifier) {
-    Image(painterResource(R.drawable.whale_head), "鲸屿", modifier)
+    Image(painterResource(R.drawable.whale_head), "WhaleIsle", modifier)
 }
 
 @Composable
@@ -56,12 +56,9 @@ internal fun WhaleWordmark(modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         WhaleAvatar(Modifier.size(44.dp))
         Column {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row {
-                    Text("鲸", color = colors.labelPrimary, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
-                    Text("屿", color = colors.buttonInfoFill, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
-                }
-                Text("WHALE ISLE", color = colors.labelPrimary, fontSize = 10.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+            Row {
+                Text("Whale", color = colors.labelPrimary, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
+                Text("Isle", color = colors.buttonInfoFill, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
             }
             Text("BASED ON DEEPSEEK HARNESS", color = colors.labelTertiary, fontSize = 8.sp, lineHeight = 14.sp)
         }

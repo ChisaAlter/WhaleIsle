@@ -121,7 +121,7 @@ async function fixture(t, config = {}) {
       if (options.method === 'POST' && path === prefix + '/releases') {
         assert.equal(target, null)
         assert.equal(release.draft, false, 'Only a published, verified GitHub release is mirrored')
-        assert.deepEqual(options.body, { tag_name: tag, target_commitish: sha, name: 'Whale Isle Android ' + version,
+        assert.deepEqual(options.body, { tag_name: tag, target_commitish: sha, name: 'WhaleIsle Android ' + version,
           body: androidReleaseBody(version), draft: false, prerelease: true, make_latest: 'false' })
         target = { id: '200', ...options.body }
         return cnbSnapshot()
@@ -462,10 +462,10 @@ test('release notes explain Android requirements, desktop QR connection and the 
   const body = androidReleaseBody(version)
   assert.match(body, /Android 8\.0/)
   assert.match(body, /API 26\+/)
-  assert.match(body, /扫描鲸屿桌面端提供的连接二维码/)
+  assert.match(body, /扫描 WhaleIsle 桌面端提供的连接二维码/)
   assert.match(body, /物理 Android 设备.*全链路验证证据/)
   assert.match(body, /scan the connection QR code/)
-  assert.match(body, /shown by Whale Isle desktop\./)
+  assert.match(body, /shown by WhaleIsle desktop\./)
   assert.doesNotMatch(androidReleaseBody('0.3.11'), /v0\.3\.11 (?:桌面端|desktop)|desktop v0\.3\.11/)
   assert.match(body, /no physical-device end-to-end evidence/)
   assert.doesNotMatch(body, /autonomous|standalone AI|自主运行/)

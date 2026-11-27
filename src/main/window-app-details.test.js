@@ -12,16 +12,16 @@ const { createForegroundPolicy } = require('./foreground');
 const sourceOptions = {
   isPackaged: false,
   execPath: 'C:\\开发 目录\\electron.exe',
-  appPath: 'C:\\开发 目录\\Whale Isle',
-  iconPath: 'C:\\开发 目录\\Whale Isle\\assets\\icon.ico',
+  appPath: 'C:\\开发 目录\\WhaleIsle',
+  iconPath: 'C:\\开发 目录\\WhaleIsle\\assets\\icon.ico',
 };
 
 test('source taskbar relaunch quotes only executable and absolute application path', () => {
   const details = windowsAppDetails({ ...sourceOptions, argv: ['--session=private', '--auth-token=private', '--qa'] });
-  assert.equal(details.relaunchCommand, '"C:\\开发 目录\\electron.exe" "C:\\开发 目录\\Whale Isle"');
+  assert.equal(details.relaunchCommand, '"C:\\开发 目录\\electron.exe" "C:\\开发 目录\\WhaleIsle"');
   assert.equal(details.appIconPath, sourceOptions.iconPath);
   assert.equal(details.appIconIndex, 0);
-  assert.equal(details.relaunchDisplayName, 'Whale Isle');
+  assert.equal(details.relaunchDisplayName, 'WhaleIsle');
   assert.equal(details.appId, require('../../package.json').build.appId);
 });
 
@@ -31,7 +31,7 @@ test('packaged taskbar relaunch keeps the installed desktop and slim identities'
     assert.equal(details.relaunchCommand, '"C:\\开发 目录\\electron.exe"');
     assert.equal(details.appIconPath, sourceOptions.execPath);
     assert.equal(details.appIconIndex, 0);
-    assert.equal(details.relaunchDisplayName, launcher ? 'Whale Isle Launcher' : 'Whale Isle');
+    assert.equal(details.relaunchDisplayName, launcher ? 'WhaleIsle Launcher' : 'WhaleIsle');
     assert.equal(details.appId, launcher ? 'ai.deepseek.harness.launcher' : 'ai.deepseek.harness.gui');
   }
 });
@@ -40,11 +40,11 @@ test('packaged Shell icons never use the ASAR virtual asset path', () => {
   const details = windowsAppDetails({
     ...sourceOptions,
     isPackaged: true,
-    execPath: 'C:\\软件\\Whale Isle\\Whale Isle.exe',
-    iconPath: 'C:\\软件\\Whale Isle\\resources\\app.asar\\assets\\icon.ico',
+    execPath: 'C:\\软件 目录\\WhaleIsle\\WhaleIsle.exe',
+    iconPath: 'C:\\软件 目录\\WhaleIsle\\resources\\app.asar\\assets\\icon.ico',
   });
-  assert.equal(details.appIconPath, 'C:\\软件\\Whale Isle\\Whale Isle.exe');
-  assert.equal(details.relaunchCommand, '"C:\\软件\\Whale Isle\\Whale Isle.exe"');
+  assert.equal(details.appIconPath, 'C:\\软件 目录\\WhaleIsle\\WhaleIsle.exe');
+  assert.equal(details.relaunchCommand, '"C:\\软件 目录\\WhaleIsle\\WhaleIsle.exe"');
 });
 
 test('quoted source application paths preserve trailing backslashes', () => {

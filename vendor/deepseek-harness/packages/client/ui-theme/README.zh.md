@@ -147,7 +147,7 @@ Desktop 的固定快捷键 `Cmd`/`Ctrl` + `+`（或 `=`）和 `Cmd`/`Ctrl` + `-`
 - **第三方主题是扩展点，不是产品**：注册主题意味着覆盖同名别名变量；目前不会验证一组覆盖是否完整。
 - **token 样式表是颜色值的唯一权威来源**：设计系统中缺失的值会有意不补入；一律采用最接近的语义 token，设计负责人批准的新增值须在同一变更中以一个静态尺度层级与一个语义别名的形式进入。
 - **Claude 正文随包提供 Source Serif 4**：`editorial-font.css` 打包的 SIL OFL 字体替代无法再分发的 Claude 授权衬线 Copernicus/Tiempos。拉丁字形回退 Iowan Old Style、Charter、Georgia、Cambria、Times New Roman，中文回退 Songti SC、Noto Serif SC / Source Han Serif SC、SimSun，字体未覆盖的字形仍由系统字体决定。只有会话正文、用户气泡、输入框草稿与空态标题使用该字体；代码保持产品等宽字体。
-- **Claude 界面字体是随包 Inter，品牌行除外**：`interface-font.css` 提供的 Inter 由一条 `body` token 应用到界面 chrome、元信息行与控件。侧栏品牌行重置回产品正文字体，鲸屿字标保持出厂外观与用户选择的正文家族；中文回退到平台中文字体。
+- **Claude 界面字体是随包 Inter，品牌行除外**：`interface-font.css` 提供的 Inter 由一条 `body` token 应用到界面 chrome、元信息行与控件。侧栏品牌行重置回产品正文字体，WhaleIsle 字标保持出厂外观与用户选择的正文家族；中文回退到平台中文字体。
 - **只有产品图标可替换**：`ThemeDefinition.icons` 覆盖 ui-primitives 的产品图标集；文件类型、插件、站点与品牌图稿仍渲染固定的内联 SVG。
 
 <a id="dev-note"></a>

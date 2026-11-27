@@ -10,7 +10,7 @@ const { normalizeGrowthState } = require('./pet-growth');
 const { normalizeStats } = require('./pet-stats');
 const petSettings = require('./pet-settings');
 const { normalizeUpdateProxy } = require('./system-proxy');
-const { PRODUCT_NAME, LEGACY_PRODUCT_NAME } = require('../shared/product-identity');
+const { PRODUCT_NAME, LEGACY_PRODUCT_NAMES } = require('../shared/product-identity');
 const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const REMOTE_FEATURE_ENABLED = true;
@@ -573,8 +573,13 @@ function isUnsafeWorkspace(dir) {
 function defaultWorkspace() {
   if (app.isPackaged) {
     const documents = app.getPath('documents');
-    const legacy = path.join(documents, LEGACY_PRODUCT_NAME);
-    return fs.existsSync(legacy) ? legacy : path.join(documents, PRODUCT_NAME);
+    for (const legacyName of LEGACY_PRODUCT_NAMES) {
+      const legacy = path.join(documents, legacyName);
+      if (fs.existsSync(legacy)) {
+        return legacy;
+      }
+    }
+    return path.join(documents, PRODUCT_NAME);
   }
   return projectRoot();
 }

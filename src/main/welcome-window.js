@@ -35,7 +35,7 @@ function welcomeWindowOptions() {
     fullscreenable: false,
     show: false,
     frame: false,
-    title: '鲸屿',
+    title: 'WhaleIsle',
     backgroundColor: '#00000000',
     transparent: true,
     webPreferences: {

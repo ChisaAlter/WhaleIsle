@@ -56,7 +56,7 @@ installUncaughtBrokenPipeGuard({
     directory: () => crashLogDir(),
     isReady: () => app.isReady(),
     describeApp: () => ({
-      name: 'Whale Isle',
+      name: PRODUCT_NAME,
       version: app.getVersion(),
       platform: process.platform,
       arch: process.arch,

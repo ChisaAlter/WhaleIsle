@@ -1,7 +1,7 @@
 # dsh-task-control
 
 Desktop-owned Harness plugin: admission lock + work inspection + loopback
-control route for quit/update protection in Whale Isle.
+control route for quit/update protection in WhaleIsle.
 
 ## Control route
 

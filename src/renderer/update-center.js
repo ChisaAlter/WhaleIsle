@@ -138,7 +138,7 @@
         return true;
       case 'installing':
         out.headline = `正在安装 v${target?.version || ''}`;
-        out.subline = '安装程序启动后，鲸屿会自动退出并完成更新。';
+        out.subline = '安装程序启动后，WhaleIsle 会自动退出并完成更新。';
         out.progress = { percent: null, text: '正在启动安装程序…', state: 'indeterminate' };
         out.actions = [{ id: 'install', label: '正在安装…', kind: 'primary', disabled: true }];
         return true;

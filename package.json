@@ -1,8 +1,8 @@
 {
   "name": "deepseek-harness-desktop",
-  "productName": "Whale Isle",
+  "productName": "WhaleIsle",
   "version": "0.3.16",
-  "description": "Whale Isle desktop app based on DeepSeek Harness",
+  "description": "WhaleIsle desktop app based on DeepSeek Harness",
   "author": "Chisa",
   "license": "MIT",
   "main": "src/main/index.js",
@@ -88,7 +88,7 @@
   },
   "build": {
     "appId": "ai.deepseek.harness.gui",
-    "productName": "Whale Isle",
+    "productName": "WhaleIsle",
     "copyright": "MIT",
     "npmRebuild": false,
     "directories": {
@@ -246,7 +246,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Whale Isle",
+      "shortcutName": "WhaleIsle",
       "artifactName": "Whale-Isle-Setup-${version}.${ext}",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",

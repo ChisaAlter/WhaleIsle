@@ -141,7 +141,7 @@ function bind() {
         return;
       }
       setHint(result?.message || (result?.openedSettings
-        ? '已打开「设置 → 应用」，请在列表中卸载 Whale Isle。'
+        ? '已打开「设置 → 应用」，请在列表中卸载 WhaleIsle。'
         : ''), { fade: true });
     } catch (error) {
       setHint(errText(error, '无法启动卸载程序'));

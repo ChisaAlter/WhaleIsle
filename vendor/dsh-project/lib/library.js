@@ -217,7 +217,7 @@ export function createLibraryManager(store) {
       const inOwnSafeDir = (realMemory && withinPath(realMemory, canonical))
         || (realDocs && withinPath(realDocs, canonical));
       if (!inOwnSafeDir) {
-        throw httpError(403, '禁止将鲸屿内部数据文件添加为项目参考资料。', { code: 'forbidden_reference_path' });
+        throw httpError(403, '禁止将 WhaleIsle 内部数据文件添加为项目参考资料。', { code: 'forbidden_reference_path' });
       }
     }
     const inSystemTmp = Boolean(realTmp && withinPath(realTmp, canonical));

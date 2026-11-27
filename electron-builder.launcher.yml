@@ -1,8 +1,5 @@
-# Slim launcher package: a second executable that manages the installed DSHD
-# desktop runtime. No vendor/ extraResources, no harness stack at runtime —
-# the package carries the launcher surface only.
 appId: ai.deepseek.harness.launcher
-productName: Whale Isle Launcher
+productName: WhaleIsle Launcher
 copyright: MIT
 npmRebuild: false
 asarUnpack:
@@ -30,7 +27,7 @@ files:
 
 extraMetadata:
   main: src/main-launcher/index.js
-  productName: Whale Isle Launcher
+  productName: WhaleIsle Launcher
   dshdPackage: launcher
 
 electronDist: node_modules/electron/dist
@@ -56,7 +53,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Whale Isle Launcher
+  shortcutName: WhaleIsle Launcher
   artifactName: Whale-Isle-Launcher-Setup-${version}.${ext}
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico

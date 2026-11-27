@@ -11,7 +11,7 @@
 const crypto = require('crypto');
 
 const VALID_DAYS = 3650;
-const SUBJECT_CN = 'Whale Isle Remote';
+const SUBJECT_CN = 'WhaleIsle Remote';
 
 // ---------------------------------------------------------------------------
 // Minimal DER encoding (only the forms this certificate needs).

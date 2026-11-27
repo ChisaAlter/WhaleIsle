@@ -2,7 +2,7 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-**Bring your coding agents into DeepSeek Harness and Whale Isle—for direct conversations and managed subagent collaboration.**
+**Bring your coding agents into DeepSeek Harness and WhaleIsle—for direct conversations and managed subagent collaboration.**
 
 Connect Claude Code, OpenAI Codex, Google Antigravity, Cognition Devin, and other services compatible with the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/). Manage accounts, models, and runtime settings in **Settings → Agent**, then use the Agent-first picker at the bottom of the conversation to choose an Agent, model, and reasoning level.
 
@@ -16,7 +16,7 @@ Connect Claude Code, OpenAI Codex, Google Antigravity, Cognition Devin, and othe
 - **Follow background work.** See recent activity, active tools, pending questions or approvals, and actual completion, failure, or cancellation outcomes.
 - **Manage multiple accounts.** Create several instances of the same Agent with separate account directories, environment variables, and model settings.
 
-This repository is an independent Cordis plugin with a bundled ACP runtime. It does not include the Whale Isle or DeepSeek Harness host.
+This repository is an independent Cordis plugin with a bundled ACP runtime. It does not include the WhaleIsle or DeepSeek Harness host.
 
 ## Screenshots
 
@@ -24,7 +24,7 @@ This repository is an independent Cordis plugin with a bundled ACP runtime. It d
 
 Switch Agents on the left, search and select models in the center, and adjust advertised reasoning options on the right. The host's native Team control remains available. Narrow windows use a stacked layout.
 
-![Agent-first picker in Whale Isle with Agent tabs, model search, reasoning options, and the native Team control](docs/screenshots/agent-picker.png)
+![Agent-first picker in WhaleIsle with Agent tabs, model search, reasoning options, and the native Team control](docs/screenshots/agent-picker.png)
 
 ### Disable an Agent without signing out
 
@@ -32,7 +32,7 @@ Manage instances and accounts in **Settings → Agent**. In this screenshot, QA 
 
 ![Agent settings showing QA Agent disabled while both the instance list and account details remain signed in](docs/screenshots/agent-account.png)
 
-These screenshots show version 0.4.8 running in Whale Isle with synthetic test Agents. The interface language is Simplified Chinese.
+These screenshots show version 0.4.8 running in WhaleIsle with synthetic test Agents. The interface language is Simplified Chinese.
 
 ## What's new in 0.4.9
 
@@ -56,7 +56,7 @@ Download a `.tgz` plugin package from [GitHub Releases](https://github.com/Chisa
 dsh plugin --profile web add "./dsh-acp-agents-<version>.tgz"
 ```
 
-Replace `<version>` with the version of the downloaded file, and use the profile you actually run instead of `web` if needed. For a Whale Isle-managed profile, use the CLI bundled with Whale Isle. Exit the host normally before upgrading, then restart it after installation. Packages are distributed through GitHub, not the npm registry.
+Replace `<version>` with the version of the downloaded file, and use the profile you actually run instead of `web` if needed. For a WhaleIsle-managed profile, use the CLI bundled with WhaleIsle. Exit the host normally before upgrading, then restart it after installation. Packages are distributed through GitHub, not the npm registry.
 
 **To package the current source**, you can use the bundled runtime without rebuilding it first:
 
@@ -202,7 +202,7 @@ Stop the host and back up the current file before repairing a preserved file and
 ## Compatibility and requirements
 
 - Node.js `^22.19.0 || >=24.0.0`.
-- A DeepSeek Harness / Whale Isle host providing Cordis 4, LLM adapter registration, connection, and Web services.
+- A DeepSeek Harness / WhaleIsle host providing Cordis 4, LLM adapter registration, connection, and Web services.
 - Delegation additionally requires the host's `subagents`, `tools` (including `@deepseek-ai/dsh-tools`), managed local child-session interfaces, and the main-process desktop confirmation channel (`DSH_DESKTOP_INSTALL_URL` + in-process secret `DSH_DESKTOP_INSTALL_TOKEN`). On headless CLI/Web hosts without a desktop confirmation channel, `acp_delegate` fails closed while single-conversation Agent switching remains available.
 - Agent Teams requires a host Team service. Windows terminal sign-in requires correct ConPTY disposal in the host; installing this plugin does not update the host PTY module.
 

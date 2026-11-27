@@ -97,12 +97,12 @@ test('renderReleases shows 已是最新 and an empty CTA when nothing is newer',
 test('a running directory build keeps the registered installation version distinct', () => {
   renderReleases({
     status: 'ok', current: '0.3.5',
-    installed: { version: '0.3.4', registeredInstall: true, installPath: 'C:\\软件\\Whale Isle' },
+    installed: { version: '0.3.4', registeredInstall: true, installPath: 'C:\\软件\\WhaleIsle' },
     releases: [{ tag: 'v0.3.5', version: '0.3.5', current: true, installable: true }],
   });
   assert.equal(el('ver-label').textContent, '当前运行');
   assert.equal(el('ver-num').textContent, 'v0.3.5');
-  assert.equal(el('ver-now-sub').textContent, '本机安装 v0.3.4 · 安装位置 C:\\软件\\Whale Isle');
+  assert.equal(el('ver-now-sub').textContent, '本机安装 v0.3.4 · 安装位置 C:\\软件\\WhaleIsle');
   const html = el('release-list').innerHTML;
   assert.match(html, /运行中/);
   assert.match(html, /当前正在运行此版本/);
@@ -140,7 +140,7 @@ test('renderReleases preserves the full release notes as readable text', () => {
   renderReleases({
     status: 'ok', installed: { version: '0.3.3' },
     releases: [{ tag: 'v0.3.5', version: '0.3.5', newer: true, installable: true,
-      notes: '# Whale Isle 0.3.5\n\n- **完整说明**：' + '较长的更新内容。'.repeat(180) + '\n\n最后一项：[阅读详情](release-notes.en.md)' }],
+      notes: '# WhaleIsle 0.3.5\n\n- **完整说明**：' + '较长的更新内容。'.repeat(180) + '\n\n最后一项：[阅读详情](release-notes.en.md)' }],
   });
   const html = el('release-list').innerHTML;
   assert.match(html, /最后一项：阅读详情/);

@@ -11,7 +11,7 @@
 
 ## User paths
 
-1. 双击 Setup（GUI）：欢迎页（品牌侧栏：官方浅色侧栏底 `rgb(249,250,251)` + 鲸鱼娘大头徽标 + 产品名 `Whale Isle` + 细蓝强调线 + 右缘发丝线，MUI 本地化中文/英文文案）→ MIT 许可页 → 安装模式/目录选择（可改目录）→ 安装进度（右上白底鲸鱼娘大头徽标 header）→ 完成页（默认勾选「运行 Whale Isle」+ 产品仓库链接）。
+1. 双击 Setup（GUI）：欢迎页（品牌侧栏：官方浅色侧栏底 `rgb(249,250,251)` + 鲸鱼娘大头徽标 + 产品名 `WhaleIsle` + 细蓝强调线 + 右缘发丝线，MUI 本地化中文/英文文案）→ MIT 许可页 → 安装模式/目录选择（可改目录）→ 安装进度（右上白底鲸鱼娘大头徽标 header）→ 完成页（默认勾选「运行 WhaleIsle」+ 产品仓库链接）。
 2. 静默安装 `Whale-Isle-Setup-<version>.exe /S`：跳过全部页面直接装完；同版本覆盖与升级通过目录事务替换应用文件，保留用户数据（QA TC-INST-009/012、TC-EXT-007 数据保留场景）。
 3. 卸载（设置 → 应用 / 开始菜单）：品牌化卸载向导，灰阶侧栏区分移除语境；不删 `userData`（桌面 dsh-home、会话都在那里）。
 
@@ -19,7 +19,7 @@
 
 - `oneClick: false`、`allowToChangeInstallationDirectory: true`、桌面 + 开始菜单快捷方式、发行 artifact 名 `Whale-Isle-Setup-${version}.exe` 必须与 release.yml globs、SHA512SUMS 和资产校验器一致；旧版 `Deepseek-Harness-Desktop-Setup-*` 仍可被更新客户端识别。
 - `/S` 静默安装必须保持可用。品牌 GUI 仍由 `customWelcomePage` / `customUnWelcomePage` / `customHeader` 三个宏定义，`customInit` 只负责下述注册表净化。目录事务由上游 `installer-directories.nsh` 与 `scripts/windows-directory-installer.cjs` 接入；`customInstallerExtract` 解压暂存应用并准备 Harness，`customInstall` 在注册完成后清理旧目录。`customUnWelcomePage` 是纯页面声明（替换 electron-builder 模板里的裸 `MUI_UNPAGE_WELCOME` 插入点），必须自己重插 `MUI_UNPAGE_WELCOME` 并重定义 `MUI_WELCOMEPAGE_TITLE_3LINES`——MUI2 每插一页就 UNSET 欢迎页设置，安装侧的 define 到不了卸载器，否则卸载欢迎页标题第三行（「…Uninstall」）被裁。
-- 安装顺序参考锁定的官方桌面实现：在目标目录同卷创建 `.new-<GUID>` 暂存树，7za 解压完成后再关闭旧应用；旧目录改名为 `.old-<GUID>`，新目录晋级到最终路径，再注册安装信息和快捷方式，最后清理旧目录。提取或晋级失败走目录回滚，恢复受阻时保留完整备份；不直接向正在运行的旧目录覆盖文件。保留 Whale Isle 的品牌、AppID、快捷方式及用户数据策略。
+- 安装顺序参考锁定的官方桌面实现：在目标目录同卷创建 `.new-<GUID>` 暂存树，7za 解压完成后再关闭旧应用；旧目录改名为 `.old-<GUID>`，新目录晋级到最终路径，再注册安装信息和快捷方式，最后清理旧目录。提取或晋级失败走目录回滚，恢复受阻时保留完整备份；不直接向正在运行的旧目录覆盖文件。保留 WhaleIsle 的品牌、AppID、快捷方式及用户数据策略，同时在注册表与旧安装探测中兼容旧版 `Whale Isle` 及 `Deepseek-Harness-Desktop`。
 - 暂存树回滚、旧安装目录清理与正常卸载共用 `build/remove-directory.nsh`：递归枚举普通目录，但遇到目录联接或其它目录 reparse point 时只移除联接自身，不进入目标目录。暂存联接可能已指向仍在使用的最终安装目录，旧目录联接也可能在晋级后指向新树，因此不能直接使用会遍历联接目标的递归删除。正常卸载删除失败返回错误；用户数据不在应用目录清理范围内。
 - 换目录或用户范围的升级仍按 electron-builder 顺序调用旧卸载器，再晋级新目录。`--updated` 卸载先把文件和联接本身移动到同卷 `.uninstall-<GUID>` 备份，任何移动或应用目录移除失败都先还原再退出；还原受阻时保留备份并明确报告位置，不交给临时目录自动删除。此路径不遍历联接目标，也支持长路径。
 - 新安装提交后的 `.old-<GUID>` 删除失败不回滚可用的新应用：显示警告，并在残留目录旁保存 `<残留目录>.cleanup.txt`，包含原 Setup 的准确清理命令。释放文件锁后可执行 `Setup /S "--cleanup-old=<残留目录>" /D=<原安装目录>`；该模式仅允许原目录的 `.old-{GUID}` 或 `.uninstall-{GUID}` 同级目录，在安装区段、关闭应用及注册表净化之前退出，不影响当前运行的应用、注册信息或用户数据。清理仍失败返回退出码 2；说明文件创建、写入或关闭失败返回退出码 3；成功后移除说明文件。

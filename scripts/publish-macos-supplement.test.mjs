@@ -24,7 +24,7 @@ const toolSources = new Map([
 ])
 const buildSource = { schemaVersion: 1, sourceTag: tag, sourceSha: sha, toolingSha,
   buildTools: [...toolSources].map(([path, bytes]) => ({ path, sha256: digest(bytes, 'sha256') })) }
-const release = { id: 1, tag_name: tag, target_commitish: sha, name: 'Whale Isle ' + tag,
+const release = { id: 1, tag_name: tag, target_commitish: sha, name: 'WhaleIsle ' + tag,
   body: 'Published notes stay unchanged', draft: false, prerelease: false,
   html_url: 'https://github.com/' + repo + '/releases/tag/' + tag }
 

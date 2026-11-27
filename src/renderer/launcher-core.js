@@ -78,6 +78,7 @@ const ERROR_LABELS = {
   'operation-in-progress': '已有其他操作进行中，请稍后重试。',
   'config-unreadable': '桌面配置无法读取，已停止恢复操作。请先恢复配置文件或读取权限。',
   'delta-not-found': '没有可用的增量包，请改用完整更新。',
+  'executable-renamed': '此版本变更了主程序文件名，无法使用增量包，请改用完整更新。',
   'install-in-progress': '已有安装任务进行中。',
   'dshd/drain-timeout': '桌面端仍有请求未在 30 秒内结束，已取消本次操作，请稍后重试。',
   'dshd/lock-held': '桌面端正在执行其他关闭或更新操作，请稍后重试。',

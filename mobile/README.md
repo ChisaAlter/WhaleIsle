@@ -17,7 +17,7 @@
 5. 模型与思考档走 `session.models` / `session.selectModel`；权限、Plan 与斜杠命令走 Typert `commands/execute`，不能作为聊天文本发送。草稿、附件与异步结果保留设备/会话归属。
 6. Git 走 daemon 隧道 `shell:git-*` 到桌面 Electron Git dispatch，不是 ACP checkout/file RPC。支持 Init、分支搜索/切换/跟踪、**创建并检出分支**、Commit/Push/PR 组合动作、Pull、Publish 与 View PR；具体白名单与恢复边界见 feature card。文件（`workspaceFiles.*`，按会话作用域只读预览）、更改（`git-diff`）、MCP（启停/重连/测试/删除）、技能（详情/调用开关/删除）与插件（启停）走与 Android 相同的正式 Host 服务；读取失败显示原因，不画假列表。MCP/技能的新增编辑与插件安装目前只在电脑端和 Android 提供；打开电脑路径与受限设置不开放。
    - 时间线：运行中的轮询只取最新 6 条消息并与已加载历史按 seq 合并（断档时回退整页），用户向上加载的旧消息不会被刷新丢弃；页面隐藏时暂停轮询。行节点按 id + 内容签名复用；离开底部时显示「回到最新」及新消息提示。发送带稳定 `requestId`（确认丢失后重试不会重复），立即显示待确认气泡；回复进行中按手机偏好排到下一轮或转入当前回复。`session.projections` 提供待发送队列（编辑/删除/转入当前回复）、会话用量、权限、Plan 与模型；历史中仅带附件引用的图片经 `session.attachment` 按需读取。
-7. 侧栏贴边直角，使用桌面鲸屿头像与字标，直接显示工作区分组目录；输入卡以 22px 圆角、细边和无外投影适配竖屏与软键盘。权限、模型、思考及附件来源用跟随触发按钮的锚定菜单，菜单随窗口和软键盘可视区域变化避让；重命名、新会话选择和简短设置用紧凑弹窗，目录浏览和复杂 Git 表单保留长任务面。屏幕返回、浏览器返回共用网页导航决策；交互样式与动效见[设计语言](../docs/design-language.md#手机远程交互)及[手机动效 inventory](../docs/motion.md#手机交互-inventory)。
+7. 侧栏贴边直角，使用桌面 WhaleIsle 头像与双色字标，直接显示工作区分组目录；输入卡以 22px 圆角、细边和无外投影适配竖屏与软键盘。权限、模型、思考及附件来源用跟随触发按钮的锚定菜单，菜单随窗口和软键盘可视区域变化避让；重命名、新会话选择和简短设置用紧凑弹窗，目录浏览和复杂 Git 表单保留长任务面。屏幕返回、浏览器返回共用网页导航决策；交互样式与动效见[设计语言](../docs/design-language.md#手机远程交互)及[手机动效 inventory](../docs/motion.md#手机交互-inventory)。
 8. 开发测试：`node --test "mobile/web/**/*.test.js"`；构建资源与 QA 服务测试：`node --test tools/mobile-web-qa/server.test.mjs tools/mobile-web-qa/runtime-assets.test.mjs`。命令从仓库根目录执行。
 
 应用内扫码的降级（如实呈现，不 vendor 第三方解码库）：

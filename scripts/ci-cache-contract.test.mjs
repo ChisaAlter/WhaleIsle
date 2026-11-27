@@ -33,7 +33,7 @@ test('setup-whale composite action enforces release isolation, out-of-workspace 
 
     const paths = String(step.with?.path || '').trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     for (const cachePath of paths) {
-      if (!cachePath.startsWith('vendor/deepseek-harness/')) {
+      if (!cachePath.replace(/^!/, '').startsWith('vendor/deepseek-harness/')) {
         const outsideWorkspace = cachePath.startsWith('${{ runner.temp }}/../');
         if (!outsideWorkspace) {
           assert.equal(cachePath, 'build/office-runtime-cache');
@@ -52,6 +52,20 @@ test('setup-whale composite action enforces release isolation, out-of-workspace 
   const envRun = String(envStep.run || '');
   assert.match(envRun, /DSH_CLIENT_COMMIT_HASH/);
   assert.match(envRun, /isPr && !harnessChanged && !isRelease/);
+});
+
+test('Harness stage restores cannot overwrite the checked-in sidebar or native sources', () => {
+  const action = readYaml('.github/actions/setup-whale/action.yml');
+  const { path: paths, key, 'restore-keys': restoreKeys } = action.runs.steps
+    .find((step) => step.name === 'Cache deepseek-harness stage artifacts').with;
+  const vendor = 'vendor/deepseek-harness';
+  const sidebar = `${vendor}/packages/client/ui-codex-sidebar/lib`;
+  const patterns = paths.trim().split(/\r?\n/);
+  assert.ok(patterns.indexOf(`!${sidebar}`) > patterns.indexOf(`${vendor}/packages/*/*/lib`));
+  const native = patterns.filter((pattern) => pattern.startsWith(`${vendor}/native/system/packages`));
+  assert.deepEqual(native, [`${vendor}/native/system/packages/*/bin`, `${vendor}/native/system/packages/*/lib`]);
+  assert.ok(key.includes(`'${sidebar}/**'`));
+  assert.doesNotMatch(`${key}\n${restoreKeys}`, /dsh-stages-v1-/);
 });
 
 test('workflows wire setup-whale and mark macos release builds with is-release true', () => {

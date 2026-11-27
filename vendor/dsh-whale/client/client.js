@@ -1208,7 +1208,7 @@ var ZH_CN = Object.freeze({
   "bots.section.showMore_one": "\u518D\u663E\u793A {{count}} \u4F4D\u961F\u53CB",
   "bots.section.showMore_other": "\u518D\u663E\u793A {{count}} \u4F4D\u961F\u53CB",
   // Runtime badge
-  "bots.runtime.local": "\u9CB8\u5C7F\u5185\u6838",
+  "bots.runtime.local": "WhaleIsle \u5185\u6838",
   // Options & filters
   "bots.options.title": "\u961F\u53CB\u663E\u793A\u9009\u9879",
   "bots.options.activeFilters_one": "\u961F\u53CB\u663E\u793A\u9009\u9879\uFF08\u5DF2\u542F\u7528 {{count}} \u9879\u7B5B\u9009\uFF09",
@@ -7172,7 +7172,7 @@ function BotAgentSubpage({ bot }) {
     });
     botsStore.pushToast({ message: zh ? "\u5DF2\u66F4\u65B0\u6A21\u578B\u914D\u7F6E" : "Model settings saved", tone: "success" });
   };
-  const runtimeName = !bot.agent || bot.agent === "deepseek-harness" ? tr("bots.runtime.local", zh ? "\u9CB8\u5C7F\u5185\u6838" : "WhaleIsle Core") : bot.agent;
+  const runtimeName = !bot.agent || bot.agent === "deepseek-harness" ? tr("bots.runtime.local", zh ? "WhaleIsle \u5185\u6838" : "WhaleIsle Core") : bot.agent;
   return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "dsh-bots-psection", children: [
     /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "dsh-bots-pcard", children: [
       /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { fontWeight: 600 }, children: zh ? "\u5E95\u5C42\u667A\u80FD\u4F53" : "Agent runtime" }),
@@ -8522,7 +8522,7 @@ var BOT_TEMPLATES_CODING = Object.freeze([
     firstMessageZh: "\u5217\u51FA\u6240\u6709\u667A\u80FD\u4F53\u5DF2\u5B8C\u6210\u6539\u52A8\u4F46\u5C1A\u672A\u5BA1\u9605\u6216\u672A\u53D1\u8D77 PR \u7684\u5DE5\u4F5C\u533A\uFF0C\u5F25\u8865\u201C\u7B49\u5F85\u5BA1\u6279\u201D\u4E4B\u5916\u7684\u6210\u679C\u76F2\u533A\u3002",
     mascot: "K2",
     watches: "Your WhaleIsle workspaces",
-    watchesZh: "\u4F60\u7684\u9CB8\u5C7F\u672C\u5730\u5DE5\u4F5C\u533A",
+    watchesZh: "\u4F60\u7684 WhaleIsle \u672C\u5730\u5DE5\u4F5C\u533A",
     does: "Lists workspaces whose agent finished with changes nobody reviewed or opened a pull request for.",
     doesZh: "\u6C47\u603B\u667A\u80FD\u4F53\u5DF2\u5B8C\u6210\u4F46\u5C1A\u672A\u5BA1\u9605\u6216\u63D0 PR \u7684\u5DE5\u4F5C\u533A\u4E0E\u6539\u52A8\u91CF\u3002",
     reports: "Here, weekdays at 9 AM",
@@ -8556,7 +8556,7 @@ var BOT_TEMPLATES_CODING = Object.freeze([
     firstMessageZh: "\u68B3\u7406\u5BF9\u5E94 PR \u5DF2\u5408\u5E76\u6216\u8D85\u8FC7\u4E24\u5468\u672A\u66F4\u65B0\u7684\u5DE5\u4F5C\u533A\uFF0C\u5E76\u6807\u660E\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u4EC5\u6E05\u7406\u4F60\u660E\u786E\u52FE\u9009\u7684\u9879\u3002",
     mascot: "J1",
     watches: "Your WhaleIsle workspaces and their pull requests",
-    watchesZh: "\u4F60\u7684\u9CB8\u5C7F\u5DE5\u4F5C\u533A\u53CA\u5173\u8054 PR \u72B6\u6001",
+    watchesZh: "\u4F60\u7684 WhaleIsle \u5DE5\u4F5C\u533A\u53CA\u5173\u8054 PR \u72B6\u6001",
     does: "Lists workspaces that are done or abandoned, with uncommitted changes; removes only the ones you pick.",
     doesZh: "\u5217\u51FA\u5DF2\u5B8C\u6210\u6216\u95F2\u7F6E\u5DE5\u4F5C\u533A\u53CA\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u4EC5\u5728\u786E\u8BA4\u540E\u6E05\u7406\u3002",
     reports: "Here, Fridays at 4 PM",
@@ -11888,7 +11888,7 @@ function BotFirstScreen({ bot, className, onDismiss }) {
   const status = kickoff.status ?? "running";
   const currentStep = kickoff.step ?? "start";
   const rawAgent = bot.agent || bot.model || "";
-  const agentName = !rawAgent || rawAgent === "deepseek-harness" ? tr("bots.runtime.local", zh ? "\u9CB8\u5C7F\u5185\u6838" : "WhaleIsle Core") : rawAgent;
+  const agentName = !rawAgent || rawAgent === "deepseek-harness" ? tr("bots.runtime.local", zh ? "WhaleIsle \u5185\u6838" : "WhaleIsle Core") : rawAgent;
   const subtitle = bot.purpose || bot.description || "";
   const rawError = kickoff.error?.trim() ?? "";
   const displayError = !rawError || /^first message failed$/i.test(rawError) ? zh ? "\u9996\u6761\u62DB\u547C\u53D1\u9001\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u6A21\u578B\u914D\u7F6E\u540E\u91CD\u8BD5" : "First message failed. Check your model settings and retry." : rawError;
@@ -21533,7 +21533,7 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
       /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-settings-crumb-current", children: zh ? currentMeta.zh : currentMeta.en })
     ] })
   ] });
-  const runtimeLabel = !bot.agent || bot.agent === "deepseek-harness" ? tr("bots.runtime.local", zh ? "\u9CB8\u5C7F\u5185\u6838" : "WhaleIsle Core") : bot.agent;
+  const runtimeLabel = !bot.agent || bot.agent === "deepseek-harness" ? tr("bots.runtime.local", zh ? "WhaleIsle \u5185\u6838" : "WhaleIsle Core") : bot.agent;
   const innerContent = /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
     undoAvatar && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-undo-bar", children: [
       /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: zh ? "\u5DF2\u7C98\u8D34\u66F4\u65B0\u5934\u50CF\uFF088 \u79D2\u5185\u53EF\u64A4\u9500\uFF09" : "Avatar updated from clipboard" }),

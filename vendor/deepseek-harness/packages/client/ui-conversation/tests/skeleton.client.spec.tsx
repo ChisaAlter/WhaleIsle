@@ -1060,7 +1060,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 
-  it.each([false, true])('omits only the caption context-menu trigger in Whale Isle (desktop=%s)', desktop => {
+  it.each([false, true])('omits only the caption context-menu trigger in WhaleIsle (desktop=%s)', desktop => {
     if (desktop) vi.stubGlobal('shell', { windowAction: vi.fn() })
     const b = mount(sessionSnapshotOf(), undefined, undefined, { entryActions: true })
     if (desktop) expect(b.headerFactory).not.toHaveBeenCalled()

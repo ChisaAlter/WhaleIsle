@@ -3947,10 +3947,7 @@
       },
       "TS2339": {
         "Property 'beforeApply' does not exist on type '{}'.": 2,
-        "Property 'expectedFromVersion' does not exist on type '{}'.": 2,
-        "Property 'expectedProduct' does not exist on type '{}'.": 2,
         "Property 'expectedSha512' does not exist on type '{}'.": 2,
-        "Property 'expectedToVersion' does not exist on type '{}'.": 2,
         "Property 'fs' does not exist on type '{}'.": 3,
         "Property 'onProgress' does not exist on type '{}'.": 1
       },
@@ -3969,7 +3966,6 @@
         "Parameter 'stagingDir' implicitly has an 'any' type.": 1,
         "Parameter 'target' implicitly has an 'any' type.": 1,
         "Parameter 'targetDir' implicitly has an 'any' type.": 4,
-        "Parameter 'value' implicitly has an 'any' type.": 1,
         "Parameter 'zipFile' implicitly has an 'any' type.": 2
       },
       "TS7008": {

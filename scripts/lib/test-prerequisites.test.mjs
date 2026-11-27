@@ -104,17 +104,17 @@ test('electronBinary prefers ELECTRON_PATH and reports per-platform candidates',
 });
 
 test('packagedExecutable reports the unpacked output for supported platforms', () => {
-  const win = packagedExecutable({ productName: 'Whale Isle', platform: 'win32', existsSync: none });
+  const win = packagedExecutable({ productName: 'WhaleIsle', platform: 'win32', existsSync: none });
   assert.equal(win.ok, false);
   assert.match(win.reason, /npm run dist/);
   const found = packagedExecutable({
-    productName: 'Whale Isle', platform: 'win32',
-    existsSync: existsOnly(path.join('dist', 'win-unpacked', 'Whale Isle.exe')),
+    productName: 'WhaleIsle', platform: 'win32',
+    existsSync: existsOnly(path.join('dist', 'win-unpacked', 'WhaleIsle.exe')),
   });
   assert.equal(found.ok, true);
-  const mac = packagedExecutable({ productName: 'Whale Isle', platform: 'darwin', existsSync: existsOnly(path.join('dist', 'mac', 'Whale Isle.app', 'Contents', 'MacOS', 'Whale Isle')) });
+  const mac = packagedExecutable({ productName: 'WhaleIsle', platform: 'darwin', existsSync: existsOnly(path.join('dist', 'mac', 'WhaleIsle.app', 'Contents', 'MacOS', 'WhaleIsle')) });
   assert.equal(mac.ok, true);
-  assert.match(mac.binary, /Whale Isle\.app/);
+  assert.match(mac.binary, /WhaleIsle\.app/);
 });
 
 test('allPrerequisites returns the first failing check', () => {

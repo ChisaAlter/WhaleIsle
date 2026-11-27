@@ -81,8 +81,9 @@ test('bot-types: constants, folder slug Windows guard, name validation, normaliz
   assert.equal(shared.DEFAULT_TIDY_UP.every, 'night');
   assert.equal(shared.RPC_METHODS.LIST, 'bots.list');
   assert.equal(shared.createDefaultGlobalSettings().botsEnabled, true);
-  assert.equal(shared.BOT_CREATED_KICKOFF, '鲸屿：你刚刚加入团队，请完成首次初始化并简短打个招呼。');
+  assert.equal(shared.BOT_CREATED_KICKOFF, 'WhaleIsle：你刚刚加入团队，请完成首次初始化并简短打个招呼。');
   assert.equal(shared.isBotCreatedKickoff(shared.BOT_CREATED_KICKOFF), true);
+  assert.equal(shared.isBotCreatedKickoff('WhaleIsle：你刚刚加入团队，开始初始化。'), true);
   assert.equal(shared.isBotCreatedKickoff('鲸屿：你刚刚加入团队，开始初始化。'), true);
   assert.equal(shared.isBotCreatedKickoff('Orca: you were just created. Start your first-run setup.'), true);
   assert.equal(shared.isBotCreatedKickoff('你好，请帮我看一下 PR'), false);
@@ -232,10 +233,15 @@ test('bot-avatar & bot-avatar-color: W1-W8 whale mascots first, colors, transpar
 
 test('bot-soul: starterSoul, proposalSoul, and bilingual soulDescription extraction', () => {
   const zhStarter = shared.starterSoul('鲸鱼娘', 'zh-CN');
-  assert.ok(zhStarter.includes('鲸屿'));
+  assert.ok(zhStarter.includes('WhaleIsle'));
+  assert.ok(!zhStarter.includes('鲸屿'));
   assert.ok(!zhStarter.includes('Orca'));
   assert.equal(shared.soulDescription(shared.starterSoul('Leader')), null);
   assert.equal(shared.soulDescription(zhStarter), null);
+  assert.equal(
+    shared.soulDescription('# 旧队友\n\n你是鲸屿的大肥鱼队友「旧队友」：在这里写下你的专长、沟通风格，以及绝对不能越过的边界。\n'),
+    null,
+  );
   assert.equal(
     shared.soulDescription('# 旧队友\n\n在这里描述 旧队友：它的职责、沟通方式，以及绝对不能做的事。\n'),
     null,
@@ -818,7 +824,7 @@ test('bot-package, bot-tools-schema, connector-prompt & locales', () => {
   assert.equal(shared.t('en-US', 'bots.chats.home'), 'Home Chat');
   assert.equal(shared.t('zh-CN', 'bots.items.tab'), '概览');
   assert.equal(shared.t('zh-CN', 'bots.panel.tabTitle'), '大肥鱼');
-  assert.equal(shared.t('zh-CN', 'bots.runtime.local'), '鲸屿内核');
+  assert.equal(shared.t('zh-CN', 'bots.runtime.local'), 'WhaleIsle 内核');
   assert.equal(shared.t('zh-CN', 'bots.row.delete'), '移除队友');
   assert.equal(shared.t('zh-CN', 'bots.row.settings'), '队友设置…');
   assert.equal(shared.t('zh-CN', 'settings.bots.enable'), '启用大肥鱼队友');

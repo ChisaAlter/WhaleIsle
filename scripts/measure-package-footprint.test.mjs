@@ -120,7 +120,7 @@ test('counts all 4 layers without double-counting asarUnpack, handles pax + GNU 
   fs.mkdirSync(path.join(resDir, 'vendor'), { recursive: true });
   fs.mkdirSync(path.join(resDir, 'runtime', 'office-skills', 'docx'), { recursive: true });
 
-  fs.writeFileSync(path.join(appDir, 'Whale Isle.exe'), Buffer.alloc(1000, 1));
+  fs.writeFileSync(path.join(appDir, 'WhaleIsle.exe'), Buffer.alloc(1000, 1));
 
   const asarNormalBuf = Buffer.alloc(500, 2);
   const asarSha = crypto.createHash('sha256').update(asarNormalBuf).digest('hex');

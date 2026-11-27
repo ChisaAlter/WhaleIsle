@@ -967,7 +967,7 @@ async function commitPreparedInstaller(info, dest, onProgress, options = {}, ext
     onProgress?.({ phase: 'manual-install', percent: 100 });
     publishState({ phase: 'available', version: info.latest || info.version });
     return { ...info, ...extra, launched: false, installer: dest, openedInstaller: true, manualInstall: true,
-      message: '已打开安装映像，请将 Whale Isle 拖入 Applications 完成更新' };
+      message: '已打开安装映像，请将 WhaleIsle 拖入 Applications 完成更新' };
   }
   onProgress?.({ phase: 'install', percent: 100, differential: extra.differential });
   // Caller-side gate (launcher runtime installs stop the managed desktop

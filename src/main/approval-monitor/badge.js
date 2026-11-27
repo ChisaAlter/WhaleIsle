@@ -353,17 +353,17 @@ function composeTrayBadgePng(baseBitmap, count) {
  */
 function formatBadgeLabels(count, locale) {
   if (count <= 0) {
-    return { tooltip: 'Whale Isle', overlayDescription: '' };
+    return { tooltip: 'WhaleIsle', overlayDescription: '' };
   }
   if (locale === 'en') {
     const noun = count === 1 ? 'approval' : 'approvals';
     return {
-      tooltip: `Whale Isle (${count} pending ${noun})`,
+      tooltip: `WhaleIsle (${count} pending ${noun})`,
       overlayDescription: `${count} pending ${noun}`,
     };
   }
   return {
-    tooltip: `Whale Isle（${count} 项待审批）`,
+    tooltip: `WhaleIsle（${count} 项待审批）`,
     overlayDescription: `${count} 项待审批`,
   };
 }

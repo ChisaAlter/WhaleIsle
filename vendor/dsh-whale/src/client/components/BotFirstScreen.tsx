@@ -228,7 +228,7 @@ export function BotFirstScreen({ bot, className, onDismiss }: BotFirstScreenProp
   const currentStep = kickoff.step ?? 'start';
   const rawAgent = bot.agent || bot.model || '';
   const agentName = !rawAgent || rawAgent === 'deepseek-harness'
-    ? tr('bots.runtime.local', zh ? '鲸屿内核' : 'WhaleIsle Core')
+    ? tr('bots.runtime.local', zh ? 'WhaleIsle 内核' : 'WhaleIsle Core')
     : rawAgent;
   const subtitle = bot.purpose || bot.description || '';
   const rawError = kickoff.error?.trim() ?? '';

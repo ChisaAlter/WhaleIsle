@@ -340,9 +340,9 @@ async function askPluginRecovery(guidance) {
     if (guidance.kind !== 'disable' || !result) return;
     if (result.ok === false || result.harnessRestarted === false) return;
     if ((result.forensics?.recovery || lastStatus?.recovery || lastStatus?.desktop?.pluginRecovery)?.skipUserPlugins) {
-      await appNotice({ title: '插件已禁用，仍需排查', body: `已禁用 ${guidance.names.join('、')}，鲸屿仍以跳过用户插件模式启动。还有插件加载失败，请查看最新诊断；不会自动继续禁用其他插件。` });
+      await appNotice({ title: '插件已禁用，仍需排查', body: `已禁用 ${guidance.names.join('、')}，WhaleIsle 仍以跳过用户插件模式启动。还有插件加载失败，请查看最新诊断；不会自动继续禁用其他插件。` });
     } else {
-      await appNotice({ title: '已禁用并启动鲸屿', body: `已禁用 ${guidance.names.join('、')}。未卸载插件或清理用户数据，可在「插件排查」中重新启用。` });
+      await appNotice({ title: '已禁用并启动 WhaleIsle', body: `已禁用 ${guidance.names.join('、')}。未卸载插件或清理用户数据，可在「插件排查」中重新启用。` });
     }
   } finally {
     pluginGuidancePending = false;
@@ -693,7 +693,7 @@ async function installTag(tag, kind, button) {
     const result = await api.installRelease(tag);
     if (result?.manualInstall) {
       paintProgress('update-progress', { phase: 'waiting' });
-      $('update-progress').textContent = result.message || '已打开安装映像，请将 Whale Isle 拖入 Applications 完成更新，完成后重新打开应用。';
+      $('update-progress').textContent = result.message || '已打开安装映像，请将 WhaleIsle 拖入 Applications 完成更新，完成后重新打开应用。';
       return;
     }
     if (result?.status === 'installed') {

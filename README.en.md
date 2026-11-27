@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/icon.png" width="84" height="84" alt="Whale Isle" />
+<img src="assets/icon.png" width="84" height="84" alt="WhaleIsle" />
 
-# Whale Isle
+# WhaleIsle
 
 <p>
   An open-source community desktop client built on <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a><br />
@@ -32,7 +32,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/v0.3.16/hero-dark.png" />
   <source media="(prefers-color-scheme: light)" srcset="docs/images/v0.3.16/hero-light.png" />
-  <img src="docs/images/v0.3.16/hero-light.png" width="100%" alt="Whale Isle 0.3.16 workbench showing sessions, syntax-highlighted conversation, and the live Git diff panel" />
+  <img src="docs/images/v0.3.16/hero-light.png" width="100%" alt="WhaleIsle 0.3.16 workbench showing sessions, syntax-highlighted conversation, and the live Git diff panel" />
 </picture>
 
 <p>
@@ -85,24 +85,24 @@
 <table>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-approval.png" width="100%" alt="Whale Isle 0.3.16 minimized approval popup in light and dark themes with taskbar and tray badges" /><br />
+      <img src="docs/images/v0.3.16/showcase-approval.png" width="100%" alt="WhaleIsle 0.3.16 minimized approval popup in light and dark themes with taskbar and tray badges" /><br />
       <strong>Minimized approval popup and badges</strong><br />
       <sub>Approve, deny, or review plans without stealing focus, with queue paging and one-click session jump.</sub>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-project.png" width="100%" alt="Whale Isle Project workspace showing request stages, member progress, and command approval" /><br />
+      <img src="docs/images/v0.3.16/showcase-project.png" width="100%" alt="WhaleIsle Project workspace showing request stages, member progress, and command approval" /><br />
       <strong>Project team workflow</strong><br />
       <sub>Track stages and member progress in the right panel; the coordinator interrupts only for decisions or permissions.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-appearance.png" width="100%" alt="Whale Isle 0.3.16 Appearance settings with paired light and dark themes" /><br />
+      <img src="docs/images/v0.3.16/showcase-appearance.png" width="100%" alt="WhaleIsle 0.3.16 Appearance settings with paired light and dark themes" /><br />
       <strong>Themes and native window materials</strong><br />
       <sub>Paired light and dark themes, wallpaper gallery, glass opacity controls, and Windows 11 acrylic.</sub>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-ecosystem.png" width="100%" alt="Whale Isle 0.3.16 desktop launcher and mobile remote QR connection screen" /><br />
+      <img src="docs/images/v0.3.16/showcase-ecosystem.png" width="100%" alt="WhaleIsle 0.3.16 desktop launcher and mobile remote QR connection screen" /><br />
       <strong>Launcher and mobile remote</strong><br />
       <sub>Manage versions, CNB/GitHub routes, and components from the launcher; pair your phone with one scan.</sub>
     </td>
@@ -124,7 +124,7 @@
 
 ### Quick start
 
-1. Install and launch Whale Isle (use the launcher to manage versions, download routes, imports, and Magpie).
+1. Install and launch WhaleIsle (use the launcher to manage versions, download routes, imports, and Magpie).
 2. Open **Settings → Models** to configure your API provider. Model usage is billed by your chosen provider.
 3. Pick a local folder or mount an SSH remote workspace, then start a new conversation.
 4. Enable optional capabilities as needed: **Settings → Built-in plugins** for Project, **Settings → Whale** for the assistant, and **Settings → Remote** for QR pairing.
@@ -149,10 +149,10 @@
 <details>
 <summary><strong>Frequently asked questions</strong></summary>
 
-- **Does Whale Isle cost money?**
+- **Does WhaleIsle cost money?**
   The app is free and open source under the MIT license. Your model provider charges for API usage.
 - **Where is my data stored, and do upgrades keep it?**
-  Data lives in `%APPDATA%\Deepseek-Harness-Desktop` on Windows and `~/Library/Application Support/Deepseek-Harness-Desktop` on macOS, and stays intact across in-place upgrades. Whale Isle does not read the official `~/.dsh` directory; use the launcher's Import tab to bring over skills, MCP servers, and settings read-only.
+  Data lives in `%APPDATA%\Deepseek-Harness-Desktop` on Windows and `~/Library/Application Support/Deepseek-Harness-Desktop` on macOS, and stays intact across in-place upgrades. WhaleIsle does not read the official `~/.dsh` directory; use the launcher's Import tab to bring over skills, MCP servers, and settings read-only.
 - **How is it different from the official `dsh web`?**
   Core conversation and runtime behavior match the pinned upstream release. The desktop client adds the launcher, resumable delta updates, workspace files and diffs, titlebar Git controls, an integrated terminal, SSH remote workspaces, minimized approval popups, mobile remote, a built-in marketplace, themes, and usage statistics.
 - **How do I update?**
@@ -198,8 +198,8 @@ npm start
 - [Development guide](docs/maintenance/README.md) · [Release process](docs/handbook/modules/release-process.md) · [Contributing](CONTRIBUTING.en.md)
 
 <div align="center">
-  <img src="assets/wechat-group.png" width="168" alt="Whale Isle WeChat community QR code" /><br />
-  <sub>Scan to join the Whale Isle WeChat community</sub>
+  <img src="assets/wechat-group.png" width="168" alt="WhaleIsle WeChat community QR code" /><br />
+  <sub>Scan to join the WhaleIsle WeChat community</sub>
   <br /><br />
   <sub>
     Thanks to <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> ·

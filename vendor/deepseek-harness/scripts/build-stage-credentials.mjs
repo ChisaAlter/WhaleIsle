@@ -89,6 +89,8 @@ const NEVER_ENTERED_DIRS = new Set([
  * @returns whether the path lives in a stage output tree.
  */
 function isGeneratedArtifact(path) {
+  // The adapted Codex sidebar ships checked-in JavaScript, not build output.
+  if (path.startsWith('packages/client/ui-codex-sidebar/lib/')) return false
   return /^packages\/[^/]+\/[^/]+\/lib\//u.test(path)
     || /^vendor\/[^/]+\/lib\//u.test(path)
     || /^apps\/[^/]+\/lib\//u.test(path)

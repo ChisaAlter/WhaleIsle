@@ -209,7 +209,7 @@ export function registerPiAiFlows(ctx: Context, auth: PiAiAuthInjection): void {
           notify: (event) => { relay(event, session) },
           prompt: prompt => session.prompt(restate(prompt)),
         }, {
-          agentName: 'Whale Isle',
+          agentName: 'WhaleIsle',
           ...deviceId === undefined ? {} : { getDeviceId: () => deviceId },
         })
       },

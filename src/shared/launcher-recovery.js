@@ -110,7 +110,7 @@ function skippedBuiltins(lastStart) {
 /** @param {Parameters<typeof skippedBuiltins>[0]} lastStart */
 function skippedBuiltinsVerdict(lastStart) {
   const rows = skippedBuiltins(lastStart).map((row) => (row.error ? `${row.label}（${row.error}）` : row.label));
-  return `鲸屿已启动，但以下内置功能本次未加载，其余功能照常：${rows.join('、')}。重新安装桌面端安装包通常可以修复（源码运行则执行 npm run setup:harness）。`;
+  return `WhaleIsle 已启动，但以下内置功能本次未加载，其余功能照常：${rows.join('、')}。重新安装桌面端安装包通常可以修复（源码运行则执行 npm run setup:harness）。`;
 }
 
 /**
@@ -143,8 +143,8 @@ function startupRecoveryGuidance(status) {
       kind: 'disable',
       names,
       title: '插件加载失败',
-      body: `启动日志显示以下用户插件未能加载：${names.join('、')}。可能存在冲突或版本不兼容。\n\n建议禁用这些插件后启动鲸屿，其余插件保持启用。此操作不会卸载插件或删除会话、角色卡等数据；之后可在「插件排查」中重新启用。`,
-      confirmText: '禁用并启动鲸屿',
+      body: `启动日志显示以下用户插件未能加载：${names.join('、')}。可能存在冲突或版本不兼容。\n\n建议禁用这些插件后启动 WhaleIsle，其余插件保持启用。此操作不会卸载插件或删除会话、角色卡等数据；之后可在「插件排查」中重新启用。`,
+      confirmText: '禁用并启动 WhaleIsle',
     };
   }
   if (!recovery?.skipUserPlugins && forensics.pluginTreeFailure) {
@@ -152,7 +152,7 @@ function startupRecoveryGuidance(status) {
       kind: 'skip',
       names: [],
       title: '用户插件加载失败',
-      body: '启动日志尚不能确定具体的冲突插件。可先跳过全部用户插件启动鲸屿，再在「插件排查」中逐项排查。\n\n不会卸载插件或删除用户数据；跳过期间，用户插件功能暂不可用。',
+      body: '启动日志尚不能确定具体的冲突插件。可先跳过全部用户插件启动 WhaleIsle，再在「插件排查」中逐项排查。\n\n不会卸载插件或删除用户数据；跳过期间，用户插件功能暂不可用。',
       confirmText: '跳过用户插件并启动',
     };
   }
@@ -182,7 +182,7 @@ function recoveryVerdict(lastStart, recovery, forensics) {
   if (recovery?.skipUserPlugins) {
     const names = disableableSuspectNames(forensics);
     return names.length
-      ? `鲸屿已跳过用户插件启动。失败插件：${names.join('、')}。建议点击「禁用并启动鲸屿」，恢复其余用户插件。`
+      ? `WhaleIsle 已跳过用户插件启动。失败插件：${names.join('、')}。建议点击「禁用并启动 WhaleIsle」，恢复其余用户插件。`
       : '当前在跳过用户插件模式下运行；完整加载请点「恢复完整插件并启动」。禁用单项不会自动加载全部用户插件。';
   }
   if (forensics?.genericCause) {

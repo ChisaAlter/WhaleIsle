@@ -20,7 +20,7 @@ const UPDATE_DIALOG_IPC = {
 
 const DEFAULT_TEXT = {
   acknowledge: '知道了',
-  title: '鲸屿',
+  title: 'WhaleIsle',
   close: '关闭',
   technicalDetails: '技术细节',
 };

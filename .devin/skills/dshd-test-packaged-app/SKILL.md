@@ -1,9 +1,9 @@
 ---
 name: dshd-test-packaged-app
-description: Test a packaged Whale Isle build on macOS — locate production-client freshness and isolated-runtime checks, DMG installation, cold start, userData/logs, launcher controls, and this VM's accessibility workaround.
+description: Test a packaged WhaleIsle build on macOS — locate production-client freshness and isolated-runtime checks, DMG installation, cold start, userData/logs, launcher controls, and this VM's accessibility workaround.
 ---
 
-# Testing a packaged Whale Isle build (macOS)
+# Testing a packaged WhaleIsle build (macOS)
 
 The [maintenance guide](../../../docs/maintenance/README.md) owns the workflow. See [Mac local package verification](../../../docs/handbook/modules/release-process.md#mac-本地包验证) for production-client rebuilding, installed-artifact identity, isolated userData and actual runtime-bundle checks.
 

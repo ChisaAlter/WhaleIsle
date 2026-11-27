@@ -49,8 +49,8 @@
 
   const COPY = {
     zh: {
-      title: '支持鲸屿项目',
-      invite: '喜欢鲸屿的话，欢迎点个 Star 支持一下。',
+      title: '支持 WhaleIsle 项目',
+      invite: '喜欢 WhaleIsle 的话，欢迎点个 Star 支持一下。',
       starBtn: '一键点 Star',
       starringBtn: '正在点 Star…',
       browserBtn: '打开 GitHub 页面点 Star',
@@ -64,8 +64,8 @@
       },
     },
     en: {
-      title: 'Star Whale Isle',
-      invite: 'Enjoying Whale Isle? Give it a Star on GitHub.',
+      title: 'Star WhaleIsle',
+      invite: 'Enjoying WhaleIsle? Give it a Star on GitHub.',
       starBtn: 'Star on GitHub',
       starringBtn: 'Starring…',
       browserBtn: 'Open GitHub to Star',

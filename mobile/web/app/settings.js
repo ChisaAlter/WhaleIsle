@@ -646,7 +646,7 @@ function renderUsagePane() {
 
 function renderAboutPane() {
   options.append(sectionNode(null, null, groupNode(
-    hairRow('应用', '', valueNode('鲸屿 Whale Isle · 手机远程')),
+    hairRow('应用', '', valueNode('WhaleIsle（鲸屿） · 手机远程')),
     hairRow('客户端', '', valueNode(nativeAndroidApp ? 'Android 应用内页面' : '浏览器')),
     hairRow('连接', '', valueNode(connectionLabel())),
     hairRow('电脑', '', valueNode(state.hostName)),

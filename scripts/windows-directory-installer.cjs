@@ -3,6 +3,7 @@
 const { copyFile, mkdir, readFile, rm, writeFile } = require('node:fs/promises');
 const { basename, dirname, join } = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { LEGACY_PRODUCT_NAMES, LEGACY_LAUNCHER_NAMES } = require('../src/shared/product-identity');
 
 /** Keep NSIS from traversing dependency junctions while retiring/rolling back a tree. */
 function directoryRemovalScript(source, prefix = '') {
@@ -22,6 +23,174 @@ function silentUninstallFailureScript(source) {
   return replaceOnce(source,
     'MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0"',
     'MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0" /SD IDOK');
+}
+
+const LEGACY_APP_FILENAMES = Object.freeze([
+  ...LEGACY_PRODUCT_NAMES,
+  ...LEGACY_LAUNCHER_NAMES,
+]);
+
+/**
+ * Preserve existing legacy install roots on interactive upgrades instead of nesting a child folder.
+ * @param {string} source
+ */
+function assistedInstallerScript(source) {
+  const legacyChecks = LEGACY_APP_FILENAMES.flatMap((name) => [
+    '      ${If} $0 == ""',
+    `        \${StrContains} $0 "${name}" $INSTDIR`,
+    '      ${EndIf}',
+  ]).join('\n');
+  return replaceOnce(
+    source.replaceAll('\r\n', '\n'),
+    [
+      '    Function instFilesPre',
+      '      ${StrContains} $0 "${APP_FILENAME}" $INSTDIR',
+      '      ${If} $0 == ""',
+      '        StrCpy $INSTDIR "$INSTDIR\\${APP_FILENAME}"',
+      '      ${endIf}',
+      '    FunctionEnd',
+    ].join('\n'),
+    [
+      '    Function instFilesPre',
+      '      ReadRegStr $0 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation',
+      '      ${If} $0 != ""',
+      '      ${AndIf} $INSTDIR == $0',
+      '        Return',
+      '      ${EndIf}',
+      '      ${StrContains} $0 "${APP_FILENAME}" $INSTDIR',
+      legacyChecks,
+      '      ${If} $0 == ""',
+      '        StrCpy $INSTDIR "$INSTDIR\\${APP_FILENAME}"',
+      '      ${endIf}',
+      '    FunctionEnd',
+    ].join('\n'),
+  );
+}
+
+/**
+ * Detect and stop legacy executable names in $INSTDIR or previous InstallLocation when PowerShell is unavailable.
+ * @param {string} source
+ */
+function legacyProcessCheckScript(source) {
+  const normalized = source.replaceAll('\r\n', '\n');
+  const legacyInstBranches = LEGACY_APP_FILENAMES.flatMap((name, index) => [
+    index === 0 ? `      \${If} \${FileExists} "$INSTDIR\\${name}.exe"` : `      \${ElseIf} \${FileExists} "$INSTDIR\\${name}.exe"`,
+    `        StrCpy $dshRunningExeName "${name}.exe"`,
+  ]).concat(['      ${EndIf}']).join('\n');
+  const legacyRegBranches = LEGACY_APP_FILENAMES.flatMap((name, index) => [
+    index === 0 ? `        \${If} \${FileExists} "$0\\${name}.exe"` : `        \${ElseIf} \${FileExists} "$0\\${name}.exe"`,
+    `          StrCpy $dshRunningExeName "${name}.exe"`,
+  ]).concat(['        ${EndIf}']).join('\n');
+  let adapted = replaceOnce(
+    normalized,
+    '!macro _CHECK_APP_RUNNING\n  ${GetProcessInfo} 0 $pid $1 $2 $3 $4\n  ${if} $3 != "${APP_EXECUTABLE_FILENAME}"',
+    [
+      'Var /GLOBAL dshRunningExeName',
+      '!macro _CHECK_APP_RUNNING',
+      '  StrCpy $dshRunningExeName "${APP_EXECUTABLE_FILENAME}"',
+      '  ${IfNot} ${FileExists} "$INSTDIR\\$dshRunningExeName"',
+      legacyInstBranches,
+      '    ${If} $dshRunningExeName == "${APP_EXECUTABLE_FILENAME}"',
+      '      ReadRegStr $0 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation',
+      '      ${If} $0 != ""',
+      legacyRegBranches,
+      '      ${EndIf}',
+      '    ${EndIf}',
+      '  ${EndIf}',
+      '  ${GetProcessInfo} 0 $pid $1 $2 $3 $4',
+      '  ${if} $3 != "$dshRunningExeName"',
+    ].join('\n'),
+  );
+  adapted = adapted.replaceAll('!insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}"', '!insertmacro FIND_PROCESS "$dshRunningExeName"');
+  adapted = adapted.replaceAll('!insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}"', '!insertmacro KILL_PROCESS "$dshRunningExeName"');
+  return adapted;
+}
+
+/**
+ * Preserve shortcut state and rewrite shortcut targets across product executable renames.
+ * @param {string} source
+ */
+function desktopInstallSection(source) {
+  const normalized = source.replaceAll('\r\n', '\n');
+  const legacyShortcutFallback = LEGACY_APP_FILENAMES.flatMap((name, index) => [
+    index === 0 ? `    \${If} \${FileExists} "$INSTDIR\\${name}.exe"` : `    \${ElseIf} \${FileExists} "$INSTDIR\\${name}.exe"`,
+    `      StrCpy $oldShortcutName "${name}"`,
+  ]).concat(['    ${EndIf}']).join('\n');
+  let adapted = replaceOnce(
+    normalized,
+    '!insertmacro setLinkVars\n!insertmacro dshStageApplication',
+    [
+      '!insertmacro setLinkVars',
+      'ReadRegStr $R1 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" ShortcutName',
+      '${If} $R1 == ""',
+      '${AndIfNot} ${FileExists} "$appExe"',
+      legacyShortcutFallback,
+      '  StrCpy $oldDesktopLink "$DESKTOP\\$oldShortcutName.lnk"',
+      '  ${If} $oldMenuDirectory == ""',
+      '    StrCpy $oldStartMenuLink "$SMPROGRAMS\\$oldShortcutName.lnk"',
+      '  ${Else}',
+      '    StrCpy $oldStartMenuLink "$SMPROGRAMS\\$oldMenuDirectory\\$oldShortcutName.lnk"',
+      '  ${EndIf}',
+      '${EndIf}',
+      '!insertmacro dshStageApplication',
+    ].join('\n'),
+  );
+  const legacyExistsOr = LEGACY_APP_FILENAMES
+    .map((name) => `    \${orIf} \${FileExists} "$INSTDIR\\${name}.exe"`)
+    .join('\n');
+  adapted = replaceOnce(
+    adapted,
+    [
+      '  ${if} $R1 == "true"',
+      '  ${andIf} ${FileExists} "$appExe"',
+      '    StrCpy $keepShortcuts "true"',
+      '  ${endIf}',
+    ].join('\n'),
+    [
+      '  ${if} $R1 == "true"',
+      '    ${if} ${FileExists} "$appExe"',
+      legacyExistsOr,
+      '      StrCpy $keepShortcuts "true"',
+      '    ${endIf}',
+      '  ${endIf}',
+    ].join('\n'),
+  );
+  return replaceOnce(
+    adapted,
+    '!insertmacro addStartMenuLink $keepShortcuts\n!insertmacro addDesktopLink $keepShortcuts',
+    [
+      '!insertmacro addStartMenuLink $keepShortcuts',
+      '!insertmacro addDesktopLink $keepShortcuts',
+      '${If} $oldStartMenuLink != $newStartMenuLink',
+      '  ${If} ${FileExists} "$oldStartMenuLink"',
+      '    Delete "$oldStartMenuLink"',
+      '    WinShell::UninstShortcut "$oldStartMenuLink"',
+      '    !insertmacro cleanupOldMenuDirectory',
+      '  ${EndIf}',
+      '  ${If} $keepShortcuts == "true"',
+      '  ${AndIf} ${FileExists} "$newStartMenuLink"',
+      '    Delete "$newStartMenuLink"',
+      '    CreateShortCut "$newStartMenuLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"',
+      '    ClearErrors',
+      '    WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"',
+      '  ${EndIf}',
+      '${EndIf}',
+      '${If} $oldDesktopLink != $newDesktopLink',
+      '  ${If} ${FileExists} "$oldDesktopLink"',
+      '    Delete "$oldDesktopLink"',
+      '    WinShell::UninstShortcut "$oldDesktopLink"',
+      '  ${EndIf}',
+      '  ${If} $keepShortcuts == "true"',
+      '  ${AndIf} ${FileExists} "$newDesktopLink"',
+      '    Delete "$newDesktopLink"',
+      '    CreateShortCut "$newDesktopLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"',
+      '    ClearErrors',
+      '    WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"',
+      '    System::Call \'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)\'',
+      '  ${EndIf}',
+      '${EndIf}',
+    ].join('\n'),
+  );
 }
 
 /** Commit the new installation before reporting a failed retirement cleanup. */
@@ -117,7 +286,7 @@ async function installWindowsDirectoryInstaller() {
     try {
       await mkdir(directory, { recursive: true });
       const section = join(directory, 'installSection.nsh');
-      await writeFile(section, official.directoryInstallSection(await readFile(join(templates, 'installSection.nsh'), 'utf8')));
+      await writeFile(section, desktopInstallSection(official.directoryInstallSection(await readFile(join(templates, 'installSection.nsh'), 'utf8'))));
       const directories = join(directory, 'installer-directories.nsh');
       await writeFile(directories, directoryTransactionsScript(await readFile(join(__dirname,
         '../vendor/deepseek-harness/apps/desktop/scripts/installer-directories.nsh'), 'utf8')));
@@ -131,10 +300,18 @@ async function installWindowsDirectoryInstaller() {
         return text.replace(before, `!include "${target}"`);
       }
       let adapted = replaceInclude(source, 'installSection.nsh', section);
+      if (adapted.includes('!include "assistedInstaller.nsh"')) {
+        const assisted = join(directory, 'assistedInstaller.nsh');
+        await writeFile(assisted, assistedInstallerScript(await readFile(join(templates, 'assistedInstaller.nsh'), 'utf8')));
+        adapted = replaceInclude(adapted, 'assistedInstaller.nsh', assisted);
+      }
       for (const helper of ['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh']) {
         const target = join(directory, helper);
         const helperSource = official.directoryInstallerExits(await readFile(join(templates, 'include', helper), 'utf8'));
-        await writeFile(target, helper === 'installUtil.nsh' ? silentUninstallFailureScript(helperSource) : helperSource);
+        const adaptedHelper = helper === 'installUtil.nsh'
+          ? silentUninstallFailureScript(helperSource)
+          : legacyProcessCheckScript(helperSource);
+        await writeFile(target, adaptedHelper);
         adapted = replaceInclude(adapted, helper, target);
       }
       // Preserve uninstall UI/data policy; recursive removal never follows runtime junctions.
@@ -161,6 +338,9 @@ async function installWindowsDirectoryInstaller() {
 }
 
 module.exports = {
+  assistedInstallerScript,
+  desktopInstallSection,
+  legacyProcessCheckScript,
   directoryRemovalScript,
   directoryTransactionsScript,
   transactionalUninstallerScript,

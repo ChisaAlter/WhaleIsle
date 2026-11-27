@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const { buildDelta } = require('../src/launcher/delta/build.js');
 const { deltaAssetName } = require('../src/launcher/delta/manifest.js');
-const { PRODUCT_NAME, LEGACY_PRODUCT_NAME } = require('../src/shared/product-identity.js');
+const { PRODUCT_NAME, LEGACY_PRODUCT_NAMES } = require('../src/shared/product-identity.js');
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoVersion = require('../package.json').version;
@@ -42,7 +42,7 @@ function isVersionLike(spec) {
 
 function installedDirCandidates() {
   const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs')].filter(Boolean);
-  const names = [PRODUCT_NAME, LEGACY_PRODUCT_NAME];
+  const names = [PRODUCT_NAME, ...LEGACY_PRODUCT_NAMES];
   const out = [];
   for (const root of roots) {
     for (const name of names) {

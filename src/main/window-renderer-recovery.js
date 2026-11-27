@@ -45,7 +45,7 @@ async function writeRendererReport(why, contents, diagnostics = {}) {
     rendererStack: diagnostics.stack,
     rendererMemory: diagnostics.memory,
     app: {
-      name: 'Whale Isle',
+      name: 'WhaleIsle',
       version: app.getVersion(),
       platform: process.platform,
       arch: process.arch,

@@ -631,7 +631,7 @@ test('Windows tree cleanup yields during process lookup and termination, preserv
   childAlive = false;
   complete(null, '');
   await pending;
-  for (const name of ['electron.exe', 'Whale Isle.exe', 'unrelated.exe', '']) {
+  for (const name of ['electron.exe', 'WhaleIsle.exe', 'unrelated.exe', '']) {
     const commands = [];
     const stopped = await killTree(CHILD_PID, (command, args, options, callback) => {
       commands.push(command);

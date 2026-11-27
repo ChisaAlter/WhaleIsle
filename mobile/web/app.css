@@ -140,15 +140,10 @@ button { cursor: pointer; }
 .brand-wordmark { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--dsw-alias-label-primary); }
 .brand-avatar { display: block; width: 38px; height: 38px; flex: none; object-fit: contain; }
 .brand-name-block { display: inline-flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; }
-.brand-title-row { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; white-space: nowrap; }
-.brand-chinese { display: inline-flex; align-items: center; font-size: 18px; line-height: 22px; font-weight: 700; letter-spacing: -0.04em; }
-.brand-isle-glyph { color: var(--dsw-alias-state-business-primary); }
-.brand-english { font-size: 10px; line-height: 12px; font-weight: 600; letter-spacing: 0.12em; }
+.brand-title-row { display: inline-flex; align-items: baseline; margin: 0; white-space: nowrap; }
+.brand-name { display: inline-flex; align-items: baseline; font-size: 18px; line-height: 22px; font-weight: 700; letter-spacing: -0.03em; }
+.brand-isle-word { color: var(--dsw-alias-state-business-primary); }
 .brand-attribution { color: var(--dsw-alias-label-tertiary); font-size: 8px; line-height: 10px; font-weight: 500; letter-spacing: 0.04em; white-space: nowrap; }
-html[lang|="en"] .brand-english { order: -1; font-size: 18px; line-height: 22px; font-weight: 700; letter-spacing: -0.04em; }
-html[lang|="en"] .brand-chinese { font-size: 10px; line-height: 12px; font-weight: 600; letter-spacing: 0.12em; }
-html[lang|="en"] .brand-isle-glyph { color: inherit; }
-html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primary); }
 .connect-brand .lead { margin-top: 16px; font-size: 14px; line-height: 22px; color: var(--mobile-connect-muted); }
 .hero-mark { display: block; width: 48px; height: 48px; flex: none; object-fit: contain; }
 .blank h2 {

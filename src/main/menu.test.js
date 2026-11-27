@@ -17,7 +17,7 @@ function loadMenu(platform, shortcuts) {
         setApplicationMenu: menu => { applicationMenu = menu; },
       },
       app: {
-        name: 'Whale Isle',
+        name: 'WhaleIsle',
         // Non-Mac platforms have no Dock API.
         ...(platform === 'darwin' ? { dock: { setMenu: menu => { dockMenu = menu; } } } : {}),
       },
@@ -54,7 +54,7 @@ function loadMenu(platform, shortcuts) {
 
 test('macOS exposes native application, editing and window menus', () => {
   const { applicationMenu: menu, dockMenu, calls } = loadMenu('darwin');
-  const app = menu.find(item => item.label === 'Whale Isle');
+  const app = menu.find(item => item.label === 'WhaleIsle');
   for (const role of ['about', 'services', 'hide', 'hideOthers', 'unhide', 'quit']) {
     assert.ok(app.submenu.some(item => item.role === role), role);
   }
@@ -129,7 +129,7 @@ for (const platform of ['win32', 'linux']) {
     const { applicationMenu: menu, dockMenu, calls } = loadMenu(platform);
     assert.equal(dockMenu, undefined);
     assert.equal(menu.some(item => ['editMenu', 'windowMenu'].includes(item.role)), false);
-    assert.equal(menu.some(item => item.label === 'Whale Isle'), false);
+    assert.equal(menu.some(item => item.label === 'WhaleIsle'), false);
     const file = menu.find(item => item.label === '文件');
     assert.equal(file.submenu.at(-1).role, 'quit');
     file.submenu.find(item => item.label === '设置…').click();

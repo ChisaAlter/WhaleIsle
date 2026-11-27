@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const WELCOME_LOCALE = { id: 'zh-CN', messages: { welcomeTitle: '鲸屿' } };
+const WELCOME_LOCALE = { id: 'zh-CN', messages: { welcomeTitle: 'WhaleIsle' } };
 
 function fakeRenderer(bootstrap) {
   return {

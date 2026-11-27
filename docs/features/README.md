@@ -32,7 +32,7 @@
 | [Whale UI](openui.md) | 正文、工具卡和会话面板的统一交互页面与原会话动作 | `ui-chat` / `src/whale-ui` / `src/main/openui.js` | 语言、状态与动作回归，生产构建和实际应用检查 |
 | [release-process](release-process.md) | 固定候选、影响验收、失败分级与原包晋级 | release/publish workflows | 计划、验收记录、CI 资格和工作流测试 |
 | [window-motion](window-motion.md) | 20px 透明圆角与 Windows 原生动画同时验收 | `shellWindowChrome` / window factories | 参数单测 + HWND/IPC 实机 + 可见过渡 |
-| [desktop-branding](desktop-branding.md) | 桌面与 Web 侧栏「鲸屿 · Whale Isle」，保留 Harness 归属 | `ui-brand-official` 品牌槽位 | 定向测试、官方构建、深浅色复核 |
+| [desktop-branding](desktop-branding.md) | 桌面与 Web 侧栏双色驼峰「WhaleIsle」，保留 Harness 归属 | `ui-brand-official` 品牌槽位 | 定向测试、官方构建、深浅色复核 |
 | [vision-fallback](vision-fallback.md) | 识图路由的图片准入、描述与主请求重写 | llm-vision-fallback / agent-loop | 无密钥组合与图片准入 |
 | [core-regression-gates](core-regression-gates.md) | 核心会话、模型和工具回归阻断 CI | test.yml | 核心集合与 CI 契约 |
 | [wallpaper-gallery](wallpaper-gallery.md) | Appearance 行 + 图库窗；图源只在窗内 | `WallpaperRow` / `WallpaperGalleryModal` | TC-APP-002…010 |

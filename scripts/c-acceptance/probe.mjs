@@ -1,4 +1,3 @@
-// CDP probe: dump live UI landmarks of the running Whale Isle web UI.
 import { chromium } from 'file:///C:/Ai/Deepseek-Harness-Desktop/vendor/deepseek-harness/node_modules/.pnpm/playwright-core@1.61.1/node_modules/playwright-core/index.mjs'
 
 const browser = await chromium.connectOverCDP('http://localhost:9333')
