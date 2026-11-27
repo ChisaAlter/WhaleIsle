@@ -3,7 +3,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..');
-const ENGINE_SWITCH_RE = /^--(inspect(-brk)?|remote-debugging-(port|address)|disable-gpu|use-gl|enable-logging|headless|v|vmodule)(?:=.*)?$/;
+const ENGINE_BOOLEAN_SWITCH_RE = /^--(disable-gpu|enable-logging|headless)$/;
+const ENGINE_VALUE_SWITCH_RE = /^--(inspect(-brk)?|remote-debugging-(port|address)|use-gl|v|vmodule)(?:=(.*))?$/;
 
 /**
  * Partition CLI arguments so V8 inspector and Chromium switches precede `'.'`.
@@ -15,9 +16,25 @@ function buildElectronArgs(argv = []) {
   const engineFlags = [];
   /** @type {string[]} */
   const appArgs = [];
-  for (const arg of argv) {
-    if (ENGINE_SWITCH_RE.test(arg)) engineFlags.push(arg);
-    else appArgs.push(arg);
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--') {
+      appArgs.push(...argv.slice(i));
+      break;
+    }
+    if (ENGINE_BOOLEAN_SWITCH_RE.test(arg)) {
+      engineFlags.push(arg);
+      continue;
+    }
+    const valMatch = ENGINE_VALUE_SWITCH_RE.exec(arg);
+    if (valMatch) {
+      engineFlags.push(arg);
+      if (valMatch[4] === undefined && i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+        engineFlags.push(argv[++i]);
+      }
+      continue;
+    }
+    appArgs.push(arg);
   }
   return [...engineFlags, '.', ...appArgs];
 }

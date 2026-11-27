@@ -11,6 +11,10 @@ test('buildElectronArgs places --remote-debugging-port and --inspect before app 
     buildElectronArgs(['--remote-debugging-port=9223', '--inspect=127.0.0.1:9229', '--foo']),
     ['--remote-debugging-port=9223', '--inspect=127.0.0.1:9229', '.', '--foo'],
   );
+  assert.deepEqual(
+    buildElectronArgs(['--remote-debugging-port', '9223', '--inspect', '9229', '--disable-gpu', '--', '--inspect=app']),
+    ['--remote-debugging-port', '9223', '--inspect', '9229', '--disable-gpu', '.', '--', '--inspect=app'],
+  );
   assert.deepEqual(buildElectronArgs(['--smoke-mode']), ['.', '--smoke-mode']);
 });
 

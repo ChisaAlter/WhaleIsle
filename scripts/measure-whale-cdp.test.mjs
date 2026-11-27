@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessScenario, parseCliArgs } from './measure-whale-cdp.mjs';
+import { applyInitialState, assessScenario, cleanupState, measureUnlockResume, parseCliArgs } from './measure-whale-cdp.mjs';
 
 test('assessScenario rejects sleep regression to 50ms while proving old 110/50 formula was >2x too loose', () => {
   const seconds = 60;
@@ -134,4 +134,52 @@ test('assessScenario validates power-paused, power-save and normal Work-Done Ora
   });
   assert.equal(powerSave.validScenario, true);
   assert.equal(parseCliArgs(['9223', '30', '', 'power-paused', '--main-inspect', '9229']).mainInspectPort, 9229);
+});
+
+test('power-save state restores prior lastInteract/powerSave and cleanup emits unlock-screen when measureUnlockResume fails early', async () => {
+  const petCalls = [];
+  const fakePet = {
+    socket: { close() { petCalls.push('pet-closed'); } },
+    async evaluate(expr) {
+      petCalls.push(expr);
+      if (expr === 'sleeping' || expr === 'Boolean(panel)') return false;
+      if (expr.includes('lastInteract: idle.lastInteract')) return { lastInteract: 4321, powerSave: false };
+      if (expr === 'window.__dshdPetPerf.start()') throw new Error('start boom');
+      return null;
+    },
+  };
+  const initial = await applyInitialState(fakePet, parseCliArgs(['9223', '5', '', 'power-save']));
+  assert.deepEqual(initial.prevPowerSave, { lastInteract: 4321, powerSave: false });
+  await cleanupState(fakePet, null, {
+    scenario: 'power-save',
+    wasSleeping: false,
+    wasPanelOpen: false,
+    overridesApplied: false,
+    perfStarted: false,
+    powerPausedActive: false,
+    prevPowerSave: initial.prevPowerSave,
+  });
+  assert.ok(petCalls.includes('idle.lastInteract = 4321; settings.powerSave = false;'));
+
+  const mainCalls = [];
+  const fakeMain = {
+    socket: { close() { mainCalls.push('main-closed'); } },
+    async evaluate(expr) { mainCalls.push(expr); return null; },
+  };
+  const pausedState = {
+    scenario: 'power-paused',
+    wasSleeping: false,
+    wasPanelOpen: false,
+    overridesApplied: false,
+    perfStarted: false,
+    powerPausedActive: true,
+    prevPowerSave: null,
+  };
+  await assert.rejects(
+    () => measureUnlockResume(fakePet, fakeMain, () => { pausedState.powerPausedActive = false; }),
+    /start boom/,
+  );
+  assert.equal(pausedState.powerPausedActive, true);
+  await cleanupState(fakePet, fakeMain, pausedState);
+  assert.ok(mainCalls.some((c) => c.includes("emit('unlock-screen')")));
 });

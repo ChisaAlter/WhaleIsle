@@ -301,16 +301,26 @@ async function connectMainInspector(inspectPort) {
 /** @typedef {Awaited<ReturnType<typeof openWsCdp>>} CdpClient */
 
 /**
+ * Capture prior pet state, apply initial scenario overrides, and return restore metadata.
  * @param {CdpClient} pet
  * @param {ReturnType<typeof parseCliArgs>} opts
  */
-async function applyInitialState(pet, opts) {
+export async function applyInitialState(pet, opts) {
   const wasSleeping = Boolean(await pet.evaluate('sleeping'));
   const wasPanelOpen = Boolean(await pet.evaluate('Boolean(panel)'));
+  /** @type {{ lastInteract: number | null, powerSave: boolean } | null} */
+  let prevPowerSave = null;
   if (opts.scenario === 'sleep' && !wasSleeping) { await pet.evaluate('sleepEnter()'); }
   if (opts.scenario !== 'sleep' && wasSleeping) { await pet.evaluate('wake()'); }
   if (opts.scenario === 'card' && !wasPanelOpen) { await pet.evaluate('openPanel()'); }
   if (opts.scenario === 'power-save') {
+    const prev = /** @type {{ lastInteract?: unknown, powerSave?: unknown } | null} */ (
+      await pet.evaluate('({ lastInteract: idle.lastInteract, powerSave: Boolean(settings.powerSave) })')
+    );
+    prevPowerSave = {
+      lastInteract: typeof prev?.lastInteract === 'number' && Number.isFinite(prev.lastInteract) ? prev.lastInteract : null,
+      powerSave: Boolean(prev?.powerSave),
+    };
     await pet.evaluate('idle.lastInteract = performance.now() - 70000; settings.powerSave = true;');
   }
   let overridesApplied = false;
@@ -323,7 +333,7 @@ async function applyInitialState(pet, opts) {
     overridesApplied = true;
     process.stderr.write(`pet-measure: overrides ${JSON.stringify(applied)}\n`);
   }
-  return { wasSleeping, wasPanelOpen, overridesApplied };
+  return { wasSleeping, wasPanelOpen, overridesApplied, prevPowerSave };
 }
 
 /**
@@ -352,12 +362,14 @@ async function collectSamples(pet, seconds) {
 /**
  * @param {CdpClient} pet
  * @param {CdpClient} mainInsp
+ * @param {() => void} [onUnlocked]
  * @returns {Promise<number | null>}
  */
-async function measureUnlockResume(pet, mainInsp) {
+export async function measureUnlockResume(pet, mainInsp, onUnlocked) {
   await pet.evaluate('window.__dshdPetPerf.start()');
   const t0 = Date.now();
   await mainInsp.evaluate("process.mainModule.require('electron').powerMonitor.emit('unlock-screen')");
+  onUnlocked?.();
   let resumeMs = /** @type {number | null} */ (null);
   while (Date.now() - t0 < 4000) {
     const progressed = await pet.evaluate('(window.__dshdPetPerf.snapshot().frameProduction?.count || 0) > 0');
@@ -372,11 +384,12 @@ async function measureUnlockResume(pet, mainInsp) {
 }
 
 /**
- * @param {CdpClient} pet
- * @param {CdpClient | null} mainInsp
- * @param {{ scenario: string, wasSleeping: boolean, wasPanelOpen: boolean, overridesApplied: boolean, perfStarted: boolean, powerPausedActive: boolean }} state
+ * Restore all scenario overrides and close CDP sockets cleanly.
+ * @param {{ evaluate: (expr: string) => Promise<unknown>, socket?: { close?: () => void } }} pet
+ * @param {{ evaluate: (expr: string) => Promise<unknown>, socket?: { close?: () => void } } | null} mainInsp
+ * @param {{ scenario: string, wasSleeping: boolean, wasPanelOpen: boolean, overridesApplied: boolean, perfStarted: boolean, powerPausedActive: boolean, prevPowerSave?: { lastInteract: number | null, powerSave: boolean } | null }} state
  */
-async function cleanupState(pet, mainInsp, state) {
+export async function cleanupState(pet, mainInsp, state) {
   try {
     if (state.powerPausedActive && mainInsp) {
       await mainInsp.evaluate("process.mainModule.require('electron').powerMonitor.emit('unlock-screen')");
@@ -386,12 +399,16 @@ async function cleanupState(pet, mainInsp, state) {
     }
     if (state.perfStarted) { await pet.evaluate('window.__dshdPetPerf.stop()'); }
     if (state.overridesApplied) { await pet.evaluate('window.__dshdPetDiag.setOverrides({})'); }
+    if (state.prevPowerSave) {
+      const lastInteractExpr = state.prevPowerSave.lastInteract === null ? 'performance.now()' : String(state.prevPowerSave.lastInteract);
+      await pet.evaluate(`idle.lastInteract = ${lastInteractExpr}; settings.powerSave = ${Boolean(state.prevPowerSave.powerSave)};`);
+    }
     if (state.scenario === 'card' && !state.wasPanelOpen) { await pet.evaluate('closePanel()'); }
     if (state.scenario === 'sleep' && !state.wasSleeping) { await pet.evaluate('wake()'); }
     if (state.scenario !== 'sleep' && state.wasSleeping) { await pet.evaluate('sleepEnter()'); }
   } finally {
-    pet.socket.close();
-    mainInsp?.socket.close();
+    pet.socket?.close?.();
+    mainInsp?.socket?.close?.();
   }
 }
 
@@ -406,6 +423,7 @@ async function main(opts) {
     overridesApplied: false,
     perfStarted: false,
     powerPausedActive: false,
+    prevPowerSave: /** @type {{ lastInteract: number | null, powerSave: boolean } | null} */ (null),
   };
 
   try {
@@ -431,8 +449,7 @@ async function main(opts) {
     const cursorSends = mainInsp ? /** @type {number | null} */ (await mainInsp.evaluate('globalThis.__whaleCdpCursorWrap?.readCursor() ?? null')) : null;
     let resumeMs = /** @type {number | null} */ (null);
     if (opts.scenario === 'power-paused' && mainInsp) {
-      state.powerPausedActive = false;
-      resumeMs = await measureUnlockResume(pet, mainInsp);
+      resumeMs = await measureUnlockResume(pet, mainInsp, () => { state.powerPausedActive = false; });
     }
 
     const counts = timings.counts || /** @type {{ inferenceError?: number }} */ (await pet.evaluate('window.__dshdPetPerf.snapshot().counts'));
