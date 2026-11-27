@@ -290,3 +290,23 @@ test('Office preparation stages the current skill package separately from primar
   assert.throws(() => stageOfficeSkills(output, incomplete), /Office 技能源文件缺失/);
   assert.ok(fs.existsSync(path.join(staged, 'office', 'SKILL.md')));
 });
+
+test('runtimeFileExclusion excludes libreoffice-kit-wasm on win32-x64 while keeping native engine and kit', t => {
+  assert.equal(runtimeFileExclusion('@deepseek-ai/libreoffice-kit-wasm', '', 'win32', 'x64'), true);
+  assert.equal(runtimeFileExclusion('@deepseek-ai/libreoffice-kit-wasm', '', 'darwin', 'arm64'), false);
+  assert.equal(runtimeFileExclusion('@deepseek-ai/libreoffice-kit-wasm', '', 'linux', 'x64'), false);
+  assert.equal(runtimeFileExclusion('@deepseek-ai/libreoffice-kit', '', 'win32', 'x64'), false);
+  assert.equal(runtimeFileExclusion('@deepseek-ai/libreoffice-kit-win32-x64', '', 'win32', 'x64'), false);
+
+  const { root, write } = fixture(t);
+  write('plugin');
+  write('@deepseek-ai/libreoffice-kit');
+  write('@deepseek-ai/libreoffice-kit-win32-x64');
+  const wasmDir = write('@deepseek-ai/libreoffice-kit-wasm');
+  writeFile(wasmDir, 'soffice.wasm', 'wasm');
+
+  pruneRuntimeFiles(root, { platform: 'win32', arch: 'x64' });
+  assert.equal(fs.existsSync(wasmDir), false);
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/@deepseek-ai/libreoffice-kit/package.json')), true);
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/package.json')), true);
+});

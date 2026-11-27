@@ -14,7 +14,8 @@ const { OFFICE_SKILL_FOLDERS } = require('../src/main/office-runtime');
 const { runSkipComposeContract } = require('./check-skip-compose-contract');
 const { assembleRuntimeInstances } = require('./runtime-instance-graph');
 const { selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExclusion,
-  pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest } = require('./production-runtime');
+  pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest,
+  verifyLibreOfficeKitClosure } = require('./production-runtime');
 const { RUNTIME_LINKS, removeRuntimeLinks } = require('../src/shared/runtime-links');
 const { writeRuntimeArchiveIdentity } = require('../src/shared/harness-runtime-identity');
 const { writeRuntimeArchive } = require('./runtime-archive');
@@ -1262,9 +1263,16 @@ async function repairFlattenedVersionIsolation(harnessSrc, harnessDest, workspac
 }
 
 function assembleCanonicalRuntime(harnessSrc, harnessDest, sources, target = {}) {
+  const exclusionTarget = /** @type {{ platform?: NodeJS.Platform; arch?: NodeJS.Architecture }} */ (target);
   return assembleRuntimeInstances(harnessSrc, harnessDest, sources, {
-    resolvePackageFrom, runtimeDependencyEntries,
-    collectFiles: (...args) => collectFiles(...args, target), copyFiles,
+    resolvePackageFrom: (/** @type {string} */ from, /** @type {string} */ name, /** @type {string} */ root) => (
+      runtimeFileExclusion(name, '', exclusionTarget.platform, exclusionTarget.arch)
+        ? null
+        : resolvePackageFrom(from, name, root)
+    ),
+    runtimeDependencyEntries,
+    collectFiles: (...args) => collectFiles(...args, target),
+    copyFiles,
     runtimeOmitRootDirs,
     samePublishedPackageFiles: (...args) => samePublishedPackageFiles(...args, target),
     devOnlyNames: DEV_ONLY_WORKSPACE_NAMES,
@@ -1676,6 +1684,20 @@ function directorySize(root) {
 }
 
 /**
+ * Verify LibreOffice Kit and its target-native engine inside harnessDest.
+ * @param {string} harnessDest
+ * @param {{ platform?: string; arch?: string }} [target]
+ * @param {{ forbidWasm?: boolean }} [options]
+ */
+function assertLibreOfficeKitEngine(harnessDest, target = {}, options = {}) {
+  return verifyLibreOfficeKitClosure(harnessDest, target, options, {
+    resolvePackageFrom,
+    countResolvers,
+    longPath,
+  });
+}
+
+/**
  * P3 Office closure: the packaged build must ship the locked win-x64 payload
  * (resources/runtime/primary-runtime), the skill assets
  * (resources/runtime/office-skills), and the complete LibreOffice Kit
@@ -1684,8 +1706,9 @@ function directorySize(root) {
  * missing engine fails the build instead of degrading silently.
  * @param {string} resources - packaged resources directory
  * @param {string} harnessDest - assembled (pre-tar) harness runtime
+ * @param {{ platform?: string; arch?: string }} [target]
  */
-function assertOfficeRuntime(resources, harnessDest) {
+function assertOfficeRuntime(resources, harnessDest, target = { platform: 'win32', arch: 'x64' }) {
   const payload = path.join(resources, 'runtime', 'primary-runtime');
   const manifestFile = path.join(payload, 'runtime.json');
   if (!fs.existsSync(manifestFile)) {
@@ -1714,64 +1737,7 @@ function assertOfficeRuntime(resources, harnessDest) {
     throw new Error(`安装包的 Office 运行时不完整：${missingPayload.join(', ')}`);
   }
 
-  const nm = path.join(harnessDest, 'node_modules', '@deepseek-ai');
-  // Resolve the kit the way the runtime does — from the provider package's own
-  // dir — because flattening may nest it below the top-level slot (which can
-  // even hold an unreachable stale store copy of another version).
-  const skillDir = path.join(nm, 'dsh-skill-office');
-  const providerDir = path.join(nm, 'dsh-office-kit');
-  const kitDir = resolvePackageFrom(providerDir, '@deepseek-ai/libreoffice-kit', harnessDest);
-  const engineDir = kitDir
-    && resolvePackageFrom(kitDir, '@deepseek-ai/libreoffice-kit-win32-x64', harnessDest);
-  const requiredClosure = [
-    path.join(providerDir, 'package.json'),
-    path.join(nm, 'dsh-tool-office', 'package.json'),
-    path.join(skillDir, 'package.json'),
-    path.join(nm, 'dsh-tool-workspace-dependencies', 'package.json'),
-    ...(kitDir ? [path.join(kitDir, 'lib', 'cli.js')] : []),
-    ...(engineDir
-      ? [path.join(engineDir, 'prebuilds.json')]
-      : []),
-  ];
-  if (!kitDir || !engineDir) {
-    throw new Error(
-      `安装包的 LibreOffice Kit 闭包不完整：dsh-office-kit 无法解析 kit/engine`
-      + `（kit=${kitDir || 'unresolved'} engine=${engineDir || 'unresolved'}）`,
-    );
-  }
-  const missingClosure = requiredClosure.filter((file) => !fs.existsSync(file));
-  if (missingClosure.length > 0) {
-    throw new Error(`安装包的 LibreOffice Kit 闭包不完整：${missingClosure.join(', ')}`);
-  }
-  const kitVersion = JSON.parse(fs.readFileSync(path.join(kitDir, 'package.json'), 'utf8')).version;
-  // The pnpm store can hold an orphaned kit copy (installed under an older
-  // lockfile) which flattening hoists to the top-level slot — dead weight that
-  // would wrongly serve any consumer resolving from a shallow position.
-  for (const sibling of ['libreoffice-kit', 'libreoffice-kit-win32-x64']) {
-    if (fs.existsSync(path.join(harnessDest, RUNTIME_LINKS))) break;
-    const stale = path.join(nm, sibling);
-    if (path.resolve(stale) === path.resolve(kitDir) || path.resolve(stale) === path.resolve(engineDir || '')) { continue; }
-    const manifestFile = path.join(stale, 'package.json');
-    if (!fs.existsSync(manifestFile)) { continue; }
-    const staleVersion = JSON.parse(fs.readFileSync(manifestFile, 'utf8')).version;
-    if (countResolvers(harnessDest, `@deepseek-ai/${sibling}`, stale) > 0) { continue; }
-    console.log(`Office 孤儿副本清理: @deepseek-ai/${sibling}@${staleVersion}（零解析者，实际解析到 ${path.resolve(stale) === path.resolve(engineDir) ? engineDir : kitDir}）`);
-    fs.rmSync(longPath(stale), { recursive: true, force: true });
-  }
-  const engineManifest = JSON.parse(fs.readFileSync(path.join(engineDir, 'package.json'), 'utf8'));
-  const prebuilds = JSON.parse(fs.readFileSync(path.join(engineDir, 'prebuilds.json'), 'utf8'));
-  if (engineManifest.version !== kitVersion
-    || prebuilds.version !== kitVersion
-    || prebuilds.status !== 'built'
-    || prebuilds.platform !== 'win32-x64'
-    || prebuilds.engine?.kind !== 'native' || typeof prebuilds.engine.executable !== 'string'
-    || typeof prebuilds.engine.programDirectory !== 'string') {
-    throw new Error(`Office 引擎与 kit 不一致：kit@${kitVersion} engine@${engineManifest.version} prebuilds=${prebuilds.platform}/${prebuilds.status}`);
-  }
-  for (const relative of [prebuilds.engine.executable, prebuilds.engine.programDirectory]) {
-    const file = path.join(engineDir, relative);
-    if (!fs.existsSync(file)) throw new Error(`Office 引擎资源缺失：${file}`);
-  }
+  const { kitVersion, engineDir } = assertLibreOfficeKitEngine(harnessDest, target, { forbidWasm: true });
   console.log(
     `Office 闭包校验通过：kit@${kitVersion} + win32-x64 引擎`
     + `（engine ${(directorySize(engineDir) / 1048576).toFixed(1)} MB，`
@@ -1850,9 +1816,11 @@ module.exports = async function afterPack(context) {
   // Office payload and the acrylic bridge are Windows x64 deliverables.
   if (context.electronPlatformName === 'win32') {
     pruneOfficeRuntime(path.join(resources, 'runtime', 'primary-runtime'), target);
-    assertOfficeRuntime(resources, harnessDest);
+    assertOfficeRuntime(resources, harnessDest, target);
     const { buildWindowAcrylic, filename } = require('./build-window-acrylic.cjs');
     await buildWindowAcrylic(path.join(resources, filename));
+  } else if (context.electronPlatformName === 'darwin') {
+    assertLibreOfficeKitEngine(harnessDest, target, { forbidWasm: false });
   }
   // Skip compose contract against the REAL packaged CLI: unit tests mock
   // dsh.start, so this dist-path gate is the only automated place where the
@@ -1908,6 +1876,7 @@ module.exports.resolveDeployDir = resolveDeployDir;
 module.exports.resolveResourcesDir = resolveResourcesDir;
 module.exports.assertDesktopForkRuntime = assertDesktopForkRuntime;
 module.exports.assertHarnessRuntime = assertHarnessRuntime;
+module.exports.assertLibreOfficeKitEngine = assertLibreOfficeKitEngine;
 module.exports.assertOfficeRuntime = assertOfficeRuntime;
 module.exports.assertHarnessVersions = assertHarnessVersions;
 module.exports.assertNodePtyPrebuild = assertNodePtyPrebuild;
