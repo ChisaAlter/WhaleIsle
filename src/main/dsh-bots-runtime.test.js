@@ -2088,3 +2088,165 @@ test('Bot mail pipeline regressions: internal notice channel, coalescing, inbox 
     assert.equal(mockWake.prompted.filter((p) => String(p.requestId || '').startsWith('bot-item-mail-')).length, 0);
   });
 });
+
+test('agent/created resume prunes persisted closed-item & duplicate mail, and listChats deduplicates bot_work against worker chats', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+
+  await withTempDir('stale-mail-and-worker-dedupe', async ({ root, onClose }) => {
+    const dshHome = path.join(root, 'dsh-home');
+    fs.mkdirSync(dshHome, { recursive: true });
+
+    const { ctx, controller } = createMockHarness();
+    const rt = createBotsRuntime({ ctx, dshHome, enableSchedulers: false, getController: () => controller });
+    onClose(() => rt.close());
+    await rt.recoveryPromise;
+
+    const created = await rt.botsService.createBot({ name: 'Claude Duts', skipKickoff: true });
+    const botId = created.bot.id;
+    const homeSid = created.sessionId;
+
+    // 1. Seed canceled Item #1 + open Item #2, then simulate an agent resuming from disk with persisted stale & duplicate mail
+    const closedItem = rt.itemsStore.add({
+      ownerBotId: botId,
+      chatId: homeSid,
+      source: { kind: 'home', title: null },
+      title: '反思提案：汇报先状态一句话',
+      status: 'needs_you',
+    }, { kind: 'orca', why: 'tidy_up_reflection' }).item;
+    rt.itemsStore.set(closedItem.uid, { status: 'canceled', reason: '忽略此类建议' }, { kind: 'bot', botId, chatId: homeSid });
+
+    const openItem = rt.itemsStore.add({
+      ownerBotId: botId,
+      chatId: homeSid,
+      source: { kind: 'home', title: null },
+      title: '持续跟进项',
+      status: 'working',
+    }, { kind: 'bot', botId, chatId: homeSid }).item;
+
+    const resumedQueue = [
+      ...Array.from({ length: 6 }, (_, i) => ({
+        id: `legacy-canceled-${i + 5}`,
+        role: 'user',
+        source: { kind: 'user', rpcId: `bot-item-mail-${i + 5}` },
+        content: [{
+          type: 'text',
+          text: `[WhaleIsle: Work Item update]\nItem: #${closedItem.number} "反思提案：汇报先状态一句话" (canceled)\n- Owner commented: 忽略此类建议\nReview the item update and continue or reply on the Work Item as needed.`,
+        }],
+      })),
+      {
+        id: 'dup-open-old',
+        role: 'user',
+        source: { kind: 'dsh-bots:mail', itemUid: openItem.uid },
+        content: [{ type: 'text', text: `[WhaleIsle: Work Item update]\nItem: #${openItem.number} "持续跟进项" (working)\n- Owner commented: old` }],
+      },
+      {
+        id: 'dup-open-new',
+        role: 'user',
+        source: { kind: 'dsh-bots:mail', itemUid: openItem.uid },
+        content: [{ type: 'text', text: `[WhaleIsle: Work Item update]\nItem: #${openItem.number} "持续跟进项" (working)\n- Owner commented: newest` }],
+      },
+      {
+        id: 'real-owner-msg',
+        role: 'user',
+        source: { kind: 'user', rpcId: 'user-msg-1' },
+        content: [{ type: 'text', text: '帮我看一下最新进展' }],
+      },
+    ];
+    const resumedAgent = {
+      id: homeSid,
+      inbox: {
+        nextTurn: resumedQueue,
+        remove(id) {
+          const idx = this.nextTurn.findIndex((m) => m.id === id);
+          if (idx < 0) return false;
+          this.nextTurn.splice(idx, 1);
+          return true;
+        },
+      },
+      followup: async () => {},
+    };
+
+    ctx.emit('agent/created', { agent: resumedAgent, source: 'resume' });
+    assert.deepEqual(
+      resumedAgent.inbox.nextTurn.map((m) => m.id),
+      ['dup-open-new', 'real-owner-msg'],
+      'agent/created must prune all 6 persisted canceled-item notices and collapse duplicate open-item mail while preserving owner messages',
+    );
+
+    // 2. Legacy unlinked worker chat + bot_work created 2.8s apart (exact Claude Duts DB shape) must dedupe into ONE titled worker chat
+    const baseTs = 1795334951372;
+    rt.botsStore.upsertChat({
+      sessionId: 'bot-chat-legacy-worker',
+      botId,
+      kind: 'worker',
+      origin: 'work',
+      title: 'ChisaBot 仓库摸底（只读）',
+      createdAt: baseTs,
+      updatedAt: baseTs + 10_000,
+    }, baseTs);
+    const legacyWork = rt.workStore.startWork({
+      botId,
+      source: 'app',
+      externalId: homeSid,
+      taskId: 'task-2876d023-f5b',
+      dispatchId: 'disp-7aa4f809-fde',
+    }, baseTs + 2814);
+    rt.workStore.closeWork(legacyWork.id, { reason: 'owner_reset', now: baseTs + 50_000 });
+
+    // 3. Explicitly linked running worker chat (new bot_work_start shape) must also appear ONCE with running metadata
+    const activeWorkId = 'work-explicit-active';
+    rt.botsStore.upsertChat({
+      sessionId: 'bot-chat-explicit-worker',
+      botId,
+      kind: 'worker',
+      origin: 'work',
+      title: '重构队列模块',
+      workId: activeWorkId,
+      dispatchId: 'disp-explicit-1',
+      taskId: 'task-explicit-1',
+      createdAt: baseTs + 100_000,
+      updatedAt: baseTs + 100_000,
+    }, baseTs + 100_000);
+    rt.workStore.startWork({
+      id: activeWorkId,
+      botId,
+      source: 'app',
+      externalId: homeSid,
+      taskId: 'task-explicit-1',
+      dispatchId: 'disp-explicit-1',
+    }, baseTs + 100_500);
+
+    // 4. Orphan closed bot_work tombstone (worker chat deleted) must NOT leak as an unclickable raw task-xxxx row
+    const orphanWork = rt.workStore.startWork({
+      botId,
+      source: 'app',
+      externalId: homeSid,
+      taskId: 'task-orphan-9999',
+      dispatchId: 'disp-orphan-9999',
+    }, baseTs + 900_000);
+    rt.workStore.closeWork(orphanWork.id, { reason: 'task_gone', now: baseTs + 901_000 });
+
+    const tree = rt.sessionRuntime.buildChatTree(botId);
+    const homeRow = tree.chats.find((c) => c.origin === 'home');
+    const legacyWorkerRow = tree.chats.find((c) => c.sessionId === 'bot-chat-legacy-worker');
+    const explicitWorkerRow = tree.chats.find((c) => c.sessionId === 'bot-chat-explicit-worker');
+    assert.ok(homeRow && legacyWorkerRow && explicitWorkerRow);
+    assert.equal(homeRow.running.length, 0, 'open worker chat must not duplicate into homeRow.running');
+    assert.equal(homeRow.finished.length, 0, 'paired legacy worker and orphan closed tombstone must not duplicate into homeRow.finished');
+    assert.equal(legacyWorkerRow.title, 'ChisaBot 仓库摸底（只读）');
+    assert.equal(legacyWorkerRow.workState, 'done');
+    assert.equal(legacyWorkerRow.taskId, 'task-2876d023-f5b');
+    assert.equal(explicitWorkerRow.workState, 'running');
+    assert.equal(explicitWorkerRow.workId, activeWorkId);
+    assert.equal(explicitWorkerRow.live, 'replying');
+
+    // 5. Deleting a running worker chat stops its linked bot_work row too
+    await rt.sessionRuntime.deleteChat(botId, 'bot-chat-explicit-worker');
+    const stoppedWork = rt.workStore.getWorkById(activeWorkId);
+    assert.ok(stoppedWork?.closedAt, 'deleteChat on a worker chat must close its linked bot_work row');
+    const treeAfterDelete = rt.sessionRuntime.buildChatTree(botId);
+    const homeAfterDelete = treeAfterDelete.chats.find((c) => c.origin === 'home');
+    assert.equal(homeAfterDelete.running.length, 0);
+    assert.equal(homeAfterDelete.finished.length, 0, 'deleted worker chat must not leave a ghost task-xxxx row under Home Chat');
+  });
+});

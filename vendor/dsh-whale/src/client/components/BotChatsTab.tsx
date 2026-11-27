@@ -44,6 +44,7 @@ import {
   IconStopSquare,
   IconTrash,
   IconUsers,
+  IconWrench,
   IconX,
   IconZap,
 } from './Icons';
@@ -93,6 +94,9 @@ function chatOriginIcon(origin: string) {
   }
   if (origin === 'automation') {
     return <IconZap size={13} />;
+  }
+  if (origin === 'work') {
+    return <IconWrench size={13} />;
   }
   return <IconMessageSquare size={13} />;
 }

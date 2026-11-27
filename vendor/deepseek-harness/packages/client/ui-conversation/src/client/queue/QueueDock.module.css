@@ -4,7 +4,9 @@
 .dock {
   box-sizing: border-box;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr;
+  min-width: 0;
   min-height: 0;
   flex: none;
   transition: grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out);
@@ -45,6 +47,7 @@
    busy main thread cannot make it jump. `clip` is neither a scroll container
    nor a backdrop root. */
 .clip {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -63,6 +66,7 @@
 
 .surface[data-state] {
   flex: none;
+  min-width: 0;
   margin-bottom: -3px;
   pointer-events: auto;
   transform: none;
@@ -90,14 +94,20 @@
 }
 
 .panel {
+  box-sizing: border-box;
   position: relative;
   isolation: isolate;
   overflow: hidden;
   width: 100%;
+  min-width: 0;
   padding: 2px 0;
   border-radius: var(--dsw-radius-lg) var(--dsw-radius-lg) 0 0;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.panelBody {
+  min-width: 0;
 }
 
 .panel::before {

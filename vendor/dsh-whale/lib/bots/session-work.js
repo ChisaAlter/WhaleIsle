@@ -4,8 +4,11 @@
  */
 import crypto from 'node:crypto';
 import { orderBotChats } from '../../src/shared/index.js';
+import { isClosedStatus } from './items-validation.js';
 
 const freshSignal = () => new AbortController().signal;
+const LEGACY_WORKER_MATCH_BEFORE_MS = 5_000;
+const LEGACY_WORKER_MATCH_AFTER_MS = 60_000;
 
 /** @param {any} bot @param {(b: any) => string} homeDirFor @param {Record<string, any>} options @param {number} now @param {{ ownerChat: string, defaultPreset: string }} defaults */
 export function buildSideChatSpec(bot, homeDirFor, options, now, { ownerChat, defaultPreset }) {
@@ -36,6 +39,7 @@ export function buildSideChatSpec(bot, homeDirFor, options, now, { ownerChat, de
       ...(options.dispatchId ? { dispatchId: options.dispatchId } : {}),
       ...(options.taskId ? { taskId: options.taskId } : {}),
       ...(options.workId ? { workId: options.workId } : {}),
+      ...(options.parentSessionId ? { parentSessionId: options.parentSessionId } : {}),
       createdAt: now,
       updatedAt: now,
     },
@@ -195,6 +199,10 @@ export function createSessionWorkOps(deps) {
     for (const w of chatWorkers) {
       await stopWork(bot.id, w.id).catch(() => null);
     }
+    const ownWorkRef = chat.workId ?? chat.dispatchId ?? null;
+    if (ownWorkRef) {
+      await stopWork(bot.id, ownWorkRef, { sessionId: sid }).catch(() => null);
+    }
 
     liveBySession.delete(sid);
     startingSessions.delete(sid);
@@ -212,22 +220,137 @@ export function createSessionWorkOps(deps) {
     return { ok: true, deleted: true, botId: bot.id, sessionId: sid, deletedAt: now };
   }
 
-  /** @param {any} chat @param {any} bot @param {any[] | null} [preloadedWorkers] */
-  function decorateChatRow(chat, bot, preloadedWorkers = null) {
+  /** @param {any} w @param {any[]} legacyPool @param {Map<string, any>} matchedWorkByChatSessionId */
+  function matchLegacyWorkerChat(w, legacyPool, matchedWorkByChatSessionId) {
+    const wCreated = Number(w.createdAt ?? 0);
+    if (!wCreated) return null;
+    let bestChat = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const c of legacyPool) {
+      if (matchedWorkByChatSessionId.has(c.sessionId)) continue;
+      const delta = wCreated - Number(c.createdAt ?? 0);
+      if (delta < -LEGACY_WORKER_MATCH_BEFORE_MS || delta > LEGACY_WORKER_MATCH_AFTER_MS) continue;
+      const dist = Math.abs(delta);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestChat = c;
+      }
+    }
+    return bestChat;
+  }
+
+  /**
+   * Pair `bot_work` rows with their backing `kind === 'worker'` `bot_chats` rows so a single
+   * dispatched worker is never rendered twice (once as a raw `task-xxxx` entry and again as its chat row).
+   * @param {any[]} chatRows
+   * @param {any[]} allWorkers
+   */
+  function linkWorkersAndChats(chatRows, allWorkers) {
+    /** @type {Map<string, any>} */
+    const matchedChatByWorkId = new Map();
+    /** @type {Map<string, any>} */
+    const matchedWorkByChatSessionId = new Map();
+    /** @type {Set<string>} */
+    const openNonHomeChatIds = new Set();
+    /** @type {Map<string, any>} */
+    const chatByRef = new Map();
+    const workerChats = [];
+
+    for (const chat of chatRows) {
+      if (!chat.closedAt && chat.origin !== 'home') openNonHomeChatIds.add(chat.sessionId);
+      if (chat.kind !== 'worker') continue;
+      workerChats.push(chat);
+      for (const ref of [chat.workId, chat.dispatchId, chat.taskId]) {
+        if (ref) chatByRef.set(String(ref), chat);
+      }
+    }
+
+    /** @type {any[]} */
+    const unmatchedWorks = [];
+    for (const w of allWorkers) {
+      const explicit = chatByRef.get(String(w.id)) ?? chatByRef.get(String(w.dispatchId)) ?? chatByRef.get(String(w.taskId));
+      if (explicit && !matchedWorkByChatSessionId.has(explicit.sessionId)) {
+        matchedChatByWorkId.set(w.id, explicit);
+        matchedWorkByChatSessionId.set(explicit.sessionId, w);
+      } else {
+        unmatchedWorks.push(w);
+      }
+    }
+
+    const legacyPool = workerChats.filter(
+      (c) => !matchedWorkByChatSessionId.has(c.sessionId) && !c.workId && !c.dispatchId && !c.taskId,
+    );
+    for (const w of unmatchedWorks) {
+      const bestChat = matchLegacyWorkerChat(w, legacyPool, matchedWorkByChatSessionId);
+      if (bestChat) {
+        matchedChatByWorkId.set(w.id, bestChat);
+        matchedWorkByChatSessionId.set(bestChat.sessionId, w);
+      }
+    }
+
+    return { matchedChatByWorkId, matchedWorkByChatSessionId, openNonHomeChatIds };
+  }
+
+  /** @param {any} w @param {any} linkedChat */
+  function projectWorker(w, linkedChat) {
+    const base = {
+      id: w.id,
+      dispatchId: w.dispatchId,
+      taskId: w.taskId,
+      ...(linkedChat?.sessionId ? { sessionId: linkedChat.sessionId } : {}),
+      ...(linkedChat?.title ? { title: linkedChat.title } : {}),
+    };
+    if (!w.closedAt) return { ...base, state: 'running', createdAt: w.createdAt };
+    return { ...base, state: w.closeReason === 'start_failed' ? 'failed' : 'done', closedAt: w.closedAt };
+  }
+
+  /** @param {any[]} workers @param {ReturnType<typeof linkWorkersAndChats> | null} linkCtx */
+  function partitionChatWorkers(workers, linkCtx) {
+    const running = [];
+    const finished = [];
+    for (const w of workers) {
+      const linkedChat = linkCtx?.matchedChatByWorkId?.get(w.id) ?? null;
+      if (linkedChat && linkCtx?.openNonHomeChatIds?.has(linkedChat.sessionId)) continue;
+      if (!w.closedAt) {
+        running.push(projectWorker(w, linkedChat));
+      } else if (linkedChat?.sessionId || linkedChat?.title) {
+        finished.push(projectWorker(w, linkedChat));
+      }
+    }
+    return { running, finished };
+  }
+
+  /** @param {any} chat @param {any} linkedWork */
+  function linkedWorkMeta(chat, linkedWork) {
+    if (!linkedWork) return {};
+    return {
+      workId: chat.workId ?? linkedWork.id,
+      dispatchId: chat.dispatchId ?? linkedWork.dispatchId,
+      taskId: chat.taskId ?? linkedWork.taskId,
+      workState: linkedWork.closedAt ? (linkedWork.closeReason === 'start_failed' ? 'failed' : 'done') : 'running',
+    };
+  }
+
+  /** @param {any} live @param {any} linkedWork */
+  function resolveChatDotState(live, linkedWork) {
+    const base = live?.state ?? 'idle';
+    return base === 'idle' && linkedWork && !linkedWork.closedAt ? 'working' : base;
+  }
+
+  /** @param {any} chat @param {any} live */
+  function isChatUnread(chat, live) {
+    return Boolean(live?.updatedAt && (!chat.seenAt || live.updatedAt > chat.seenAt));
+  }
+
+  /** @param {any} chat @param {any} bot @param {any[] | null} [preloadedWorkers] @param {ReturnType<typeof linkWorkersAndChats> | null} [linkCtx] */
+  function decorateChatRow(chat, bot, preloadedWorkers = null, linkCtx = null) {
     const live = liveBySession.get(chat.sessionId);
-    const dotState = live?.state ?? 'idle';
-    const lastActiveAt = Math.max(chat.updatedAt ?? 0, live?.updatedAt ?? 0);
-    const unread = Boolean(live?.updatedAt && (!chat.seenAt || live.updatedAt > chat.seenAt));
+    const linkedWork = linkCtx?.matchedWorkByChatSessionId?.get(chat.sessionId) ?? null;
+    const dotState = resolveChatDotState(live, linkedWork);
     const workers = Array.isArray(preloadedWorkers)
       ? preloadedWorkers
       : (workStore.listChatWorkersByBot(bot.id, { chatIds: [chat.sessionId] }).get(chat.sessionId) ?? []);
-    const running = workers.filter((/** @type {any} */ w) => !w.closedAt).map((/** @type {any} */ w) => ({
-      id: w.id, dispatchId: w.dispatchId, taskId: w.taskId, state: 'running', createdAt: w.createdAt,
-    }));
-    const finished = workers.filter((/** @type {any} */ w) => Boolean(w.closedAt)).map((/** @type {any} */ w) => ({
-      id: w.id, dispatchId: w.dispatchId, taskId: w.taskId, state: w.closeReason === 'start_failed' ? 'failed' : 'done',
-      closedAt: w.closedAt,
-    }));
+    const { running, finished } = partitionChatWorkers(workers, linkCtx);
     return {
       ...chat,
       id: chat.sessionId,
@@ -236,8 +359,9 @@ export function createSessionWorkOps(deps) {
       dotState,
       live: liveKindFromDot(dotState),
       preview: live?.preview ?? chat.preview ?? null,
-      lastActiveAt,
-      unread,
+      lastActiveAt: Math.max(chat.updatedAt ?? 0, live?.updatedAt ?? 0),
+      unread: isChatUnread(chat, live),
+      ...linkedWorkMeta(chat, linkedWork),
       running,
       runningTotal: running.length,
       finished,
@@ -252,7 +376,9 @@ export function createSessionWorkOps(deps) {
     const workersByChat = preloadedWorkersByChat instanceof Map
       ? preloadedWorkersByChat
       : workStore.listChatWorkersByBot(bot.id, { chatIds: rows.map((/** @type {any} */ r) => r.sessionId) });
-    return orderBotChats(rows.map((/** @type {any} */ row) => decorateChatRow(row, bot, workersByChat.get(row.sessionId) ?? [])));
+    const flatWorkers = [...workersByChat.values()].flat();
+    const linkCtx = linkWorkersAndChats(rows, flatWorkers);
+    return orderBotChats(rows.map((/** @type {any} */ row) => decorateChatRow(row, bot, workersByChat.get(row.sessionId) ?? [], linkCtx)));
   }
 
   /** @param {{ botId?: string | null, query?: string, limit?: number }} [opts] */
@@ -422,6 +548,121 @@ export function prunePendingItemMailFromInbox(liveAgent, items) {
     if (remove.call(liveAgent.inbox, msg.id)) removed += 1;
   }
   return removed;
+}
+
+/** @param {any} msg */
+function isAnyItemMailMessage(msg) {
+  const source = msg?.source;
+  if (!source || typeof source !== 'object') return false;
+  if (source.kind === 'dsh-bots:mail') return true;
+  return typeof source.rpcId === 'string' && source.rpcId.startsWith('bot-item-mail-');
+}
+
+/** @param {any} msg */
+function extractItemRefsFromMailMessage(msg) {
+  /** @type {Set<string>} */
+  const uids = new Set();
+  /** @type {Set<number>} */
+  const numbers = new Set();
+  const source = msg?.source;
+  if (source && typeof source === 'object') {
+    if (typeof source.itemUid === 'string' && source.itemUid) uids.add(source.itemUid);
+    if (Array.isArray(source.itemUids)) {
+      for (const uid of source.itemUids) {
+        if (typeof uid === 'string' && uid) uids.add(uid);
+      }
+    }
+  }
+  if (uids.size === 0) {
+    const text = extractMessageText(msg);
+    for (const match of text.matchAll(/(?:^|\n)(?:Item:|-)\s*#(\d+)\b(?:\s*\(([0-9a-f-]{8,})\))?/giu)) {
+      const num = Number(match[1]);
+      if (Number.isInteger(num) && num > 0) numbers.add(num);
+      if (match[2]) uids.add(match[2]);
+    }
+  }
+  return { uids: [...uids], numbers: [...numbers] };
+}
+
+/** @param {any} msg @param {any} itemsStore */
+function resolveOpenItemKeyForMail(msg, itemsStore) {
+  const refs = extractItemRefsFromMailMessage(msg);
+  if (refs.uids.length === 0 && refs.numbers.length === 0) return { hasRefs: false, key: '' };
+  const resolved = [
+    ...refs.uids.map((uid) => itemsStore.get?.(uid) ?? null),
+    ...refs.numbers.map((num) => itemsStore.byNumber?.(num) ?? null),
+  ];
+  const openUids = [...new Set(resolved.filter((item) => item && !isClosedStatus(item.status)).map((item) => String(item.uid)))].sort();
+  return { hasRefs: true, key: openUids.join(',') };
+}
+
+/**
+ * Remove stale item-mail messages (all referenced items closed/missing) and collapse duplicate
+ * queued mail targeting the same open item set (keeping the newest) from a restored/live inbox.
+ * @param {any} liveAgent
+ * @param {any} itemsStore
+ */
+export function pruneStaleItemMailFromInbox(liveAgent, itemsStore) {
+  const nextTurn = liveAgent?.inbox?.nextTurn;
+  const remove = liveAgent?.inbox?.remove;
+  if (!Array.isArray(nextTurn) || nextTurn.length === 0 || typeof remove !== 'function' || !itemsStore) return 0;
+
+  /** @type {Array<{ msg: any, key: string }>} */
+  const openEntries = [];
+  let removed = 0;
+
+  for (const msg of [...nextTurn]) {
+    if (!isAnyItemMailMessage(msg)) continue;
+    const { hasRefs, key } = resolveOpenItemKeyForMail(msg, itemsStore);
+    if (!hasRefs) continue;
+    if (!key) {
+      if (remove.call(liveAgent.inbox, msg.id)) removed += 1;
+      continue;
+    }
+    openEntries.push({ msg, key });
+  }
+
+  /** @type {Set<string>} */
+  const keptKeys = new Set();
+  for (let i = openEntries.length - 1; i >= 0; i -= 1) {
+    const entry = openEntries[i];
+    if (keptKeys.has(entry.key)) {
+      if (remove.call(liveAgent.inbox, entry.msg.id)) removed += 1;
+    } else {
+      keptKeys.add(entry.key);
+    }
+  }
+  return removed;
+}
+
+/**
+ * Install an `agent/created` hook (and immediate live-agent sweep) that prunes persisted closed-item
+ * and duplicate item-mail entries before restored agents release queued input.
+ * @param {{ ctx: any, botsStore: any, itemsStore: any }} deps
+ */
+export function installStaleInboxMailPruner({ ctx, botsStore, itemsStore }) {
+  /** @param {string} sid */
+  const isBotSession = (sid) => Boolean(
+    sid && (botsStore.getChat(sid) || botsStore.listBots().some((/** @type {any} */ bot) => bot.chatSessionId === sid)),
+  );
+  /** @param {any} agent */
+  const pruneAgent = (agent) => {
+    const sid = String(agent?.id ?? '');
+    if (!isBotSession(sid)) return 0;
+    try { return pruneStaleItemMailFromInbox(agent, itemsStore); } catch { return 0; }
+  };
+  const pruneAll = () => {
+    const agentsMap = ctx?.get?.('agents');
+    if (!agentsMap || typeof agentsMap.values !== 'function') return 0;
+    let removed = 0;
+    for (const agent of agentsMap.values()) removed += pruneAgent(agent);
+    return removed;
+  };
+  const off = typeof ctx?.on === 'function'
+    ? ctx.on('agent/created', (/** @type {any} */ payload) => { pruneAgent(payload?.agent ?? payload); }, { global: true })
+    : null;
+  pruneAll();
+  return { pruneAll, dispose: () => { try { off?.(); } catch { /* Ignore cleanup error. */ } } };
 }
 
 /**

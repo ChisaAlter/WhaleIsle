@@ -29,6 +29,7 @@ import {
   IconSpinner,
   IconStopSquare,
   IconTrash,
+  IconWrench,
   IconZap,
 } from './Icons';
 
@@ -113,6 +114,9 @@ function triggerChatPaneRimFlash(botId: string, sessionId: string): void {
 function ChatOriginIcon({ origin }: { origin: string }) {
   if (origin === 'automation') {
     return <IconZap size={14} />;
+  }
+  if (origin === 'work') {
+    return <IconWrench size={14} />;
   }
   if (origin === 'side') {
     return <IconMessageSquare size={14} />;
@@ -224,7 +228,7 @@ function BotChatWorkerRows({
       {[...shownRunning, ...shownFinished].map((worker, idx) => {
         const key = workerRowKey(worker, `${keyPrefix}-w-${idx}`);
         const menuKey = `worker:${key}`;
-        const label = worker.title ?? worker.label ?? worker.statusText ?? worker.taskId ?? 'Worker';
+        const label = worker.title ?? worker.label ?? worker.statusText ?? (zh ? '后台任务' : 'Worker');
         const active = isWorkerActive(worker);
         const elapsed = active
           ? formatElapsedDuration(worker.startedAt ?? worker.createdAt ?? worker.updatedAt, tickNow)
@@ -253,9 +257,11 @@ function BotChatWorkerRows({
               e.stopPropagation();
               onOpenWorkerContextMenu(worker, menuKey, label, isRowActive, canStop, e.clientX, e.clientY, e.currentTarget);
             } : undefined}
-            title={worker.statusText || label}
+            title={worker.statusText || worker.taskId || label}
           >
-            <span className="dsh-bots-worker-dot" data-state={worker.state} />
+            <span className="dsh-bots-worker-icon" aria-hidden="true">
+              <span className="dsh-bots-worker-dot" data-state={worker.state} />
+            </span>
             <span className="dsh-bots-subrow-title">{label}</span>
             {(elapsed || hasMenu) && (
               <span className="dsh-bots-worker-tail">
@@ -672,6 +678,28 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
                 <IconExternalLink size={13} />
                 <span>{zh ? '打开对话' : 'Open chat'}</span>
               </button>
+              {menuState.chat.workState === 'running' && (menuState.chat.workId || menuState.chat.dispatchId) && (
+                <button
+                  type="button"
+                  className="dsh-bots-menu-item"
+                  role="menuitem"
+                  disabled={stoppingKey === menuState.key}
+                  onClick={() => {
+                    const { chat, key } = menuState;
+                    setMenuState(null);
+                    void handleStopWorker({
+                      id: chat.workId ?? chat.dispatchId,
+                      dispatchId: chat.dispatchId,
+                      sessionId: chat.sessionId,
+                      title: chat.title,
+                      state: 'running',
+                    }, key);
+                  }}
+                >
+                  <IconStopSquare size={13} />
+                  <span>{zh ? '停止运行' : 'Stop worker'}</span>
+                </button>
+              )}
               <div className="dsh-bots-menu-sep" />
               <button
                 type="button"

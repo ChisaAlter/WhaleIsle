@@ -77,11 +77,12 @@ function validateWorkStartInputs(runtime, worktreeRunner, args) {
  * @param {any} args
  * @param {any} worktreeRunner
  * @param {any} prepared
- * @param {string} dispatchId
+ * @param {{ workId: string, dispatchId: string, taskId: string }} workMeta
  * @param {any} reportToolAsyncError
  * @returns {Promise<{ ok: true, started: any } | { ok: false, error: string }>}
  */
-async function startWorkerSideSession(runtime, caller, args, worktreeRunner, prepared, dispatchId, reportToolAsyncError) {
+async function startWorkerSideSession(runtime, caller, args, worktreeRunner, prepared, workMeta, reportToolAsyncError) {
+  const { workId, dispatchId, taskId } = workMeta;
   try {
     return {
       ok: true,
@@ -89,6 +90,7 @@ async function startWorkerSideSession(runtime, caller, args, worktreeRunner, pre
         title: args.title || `Worker · ${path.basename(args.cwd)}`,
         kind: 'worker', origin: 'work', owner: BOT_OWNER_WORK,
         preset: BOT_WORKER_PRESET_ID, cwd: prepared.cwd,
+        workId, dispatchId, taskId, parentSessionId: caller.sessionId,
       }),
     };
   } catch (error) {
@@ -113,6 +115,7 @@ export async function executeWorkStart(runtime, caller, args, deps) {
   );
   if (refused) return refused;
 
+  const workId = crypto.randomUUID();
   const dispatchId = `disp-${crypto.randomUUID().slice(0, 12)}`;
   const taskId = `task-${crypto.randomUUID().slice(0, 12)}`;
   let prepared;
@@ -124,12 +127,14 @@ export async function executeWorkStart(runtime, caller, args, deps) {
     return errOut(String(/** @type {any} */ (error)?.message ?? error));
   }
 
-  const sessionRes = await startWorkerSideSession(runtime, caller, args, worktreeRunner, prepared, dispatchId, reportToolAsyncError);
+  const sessionRes = await startWorkerSideSession(
+    runtime, caller, args, worktreeRunner, prepared, { workId, dispatchId, taskId }, reportToolAsyncError,
+  );
   if (!sessionRes.ok) return errOut(sessionRes.error);
   const started = sessionRes.started;
 
   const work = runtime.workStore.startWork({
-    botId: caller.bot.id, source: 'app', externalId: caller.sessionId, taskId, dispatchId,
+    id: workId, botId: caller.bot.id, source: 'app', externalId: caller.sessionId, taskId, dispatchId,
   });
   const itemUid = args.itemUid ? resolveItemUid(runtime.itemsStore, args.itemUid) : null;
   if (itemUid) {
