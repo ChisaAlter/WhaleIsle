@@ -188,6 +188,17 @@ async function mount() {
   // are safe no-ops until main starts pushing).
   petLifetime.keep(petShell.onDsh?.((ev) => onDshEvent(ev)));
   petLifetime.keep(petShell.onAlert?.((al) => onDshAlert(al)));
+  let powerPaused = false;
+  /** @type {(() => void) | null} */
+  let resumeLoop = null;
+  petLifetime.keep(petShell.onPower?.((/** @type {any} */ ev) => {
+    const nextPaused = ev?.paused === true;
+    if (nextPaused === powerPaused) { return; }
+    powerPaused = nextPaused;
+    if (!powerPaused && resumeLoop) {
+      resumeLoop();
+    }
+  }));
   bindChatDom();
   // Live engine first: THA4 renders every pixel continuously (the liveliness
   // the part rig could only fake), and Anime4K restores the line art so it
@@ -233,7 +244,19 @@ async function mount() {
   // Pace inference on a steady cadence: an irregular rate (chasing max
   // speed) reads as flicker.
   let lastFrameAt = 0;
+  let loopScheduled = false;
+  const scheduleLoop = () => {
+    if (loopScheduled || powerPaused) { return; }
+    loopScheduled = true;
+    petLifetime.frame(loop);
+  };
+  resumeLoop = () => {
+    lastFrameAt = 0;
+    scheduleLoop();
+  };
   const loop = (now) => {
+    loopScheduled = false;
+    if (powerPaused) { return; }
     try {
       if (petPerf.enabled) { petPerf.record('displayRefresh', 0); }
       tickPhysics(now);
@@ -270,10 +293,10 @@ async function mount() {
       // freeze the whole pet until reload.
       console.error('pet: frame error', err);
     }
-    petLifetime.frame(loop);
+    scheduleLoop();
   };
   renderLoopActive = true;
-  petLifetime.frame(loop);
+  scheduleLoop();
 }
 
 // Diagnostics surface for scripts/measure-whale-cdp.mjs. Everything here is
