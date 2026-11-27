@@ -3,9 +3,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const YAML = require('yaml');
 const { readSessionDisplayMeta, scanImportPipelineAsync } = require('./data-import-session-meta');
 const { randomUUID } = require('crypto');
 const { getDesktopDshHome, tryGetDesktopDshHome } = require('../shared/dsh-home');
+const { isPathInside } = require('./workspace-authority');
 const { DROPPED, OFFICIAL_TEMPLATE_BUNDLES, listInstalledPlugins, listInstalledPluginsAsync } = require('./plugins');
 const { isValidGithubSpec, isValidPackageName } = require('../host/install-dsh-plugin-client');
 const { replaceDirJournaled, commitStagedDir, recoverImportTransactions, reconcileImportTransactionsSync, overlayDir, nextOpId, parentChainIsLinkFree } = require('./import-transaction');
@@ -81,10 +83,7 @@ function isUnsafeRel(rel) {
 }
 
 function isInside(root, target) {
-  const resolvedRoot = path.resolve(root);
-  const resolvedTarget = path.resolve(target);
-  const rel = path.relative(resolvedRoot, resolvedTarget);
-  return rel === '' || (Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel));
+  return isPathInside(root, target);
 }
 
 function* walkSessionDirectoryEntries(sessionsRoot) {
@@ -243,142 +242,58 @@ function pluginCandidates(sourceHome) {
   });
 }
 
-function coerceYaml(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) {
-    return '';
+/**
+ * @param {unknown} text
+ * @param {{ strict?: boolean }} [options]
+ * @returns {Array<Record<string, any>>}
+ */
+function parseMcpServersYaml(text, options = {}) {
+  const source = String(text || '').trim();
+  if (!source) return [];
+  try {
+    const parsed = YAML.parse(source);
+    const rows = Array.isArray(parsed?.servers) ? parsed.servers : [];
+    return rows.filter((/** @type {any} */ row) => row && typeof row === 'object' && !Array.isArray(row) && row.id != null && String(row.id));
+  } catch (error) {
+    if (options.strict) throw error;
+    return [];
   }
-  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
-    const inner = raw.slice(1, -1);
-    try {
-      return JSON.parse(raw.startsWith('"') ? raw : `"${inner.replace(/"/g, '\\"')}"`);
-    } catch {
-      return inner;
-    }
-  }
-  if (raw === 'true') {
-    return true;
-  }
-  if (raw === 'false') {
-    return false;
-  }
-  if (raw === 'null' || raw === '~') {
-    return null;
-  }
-  if (/^-?\d+(\.\d+)?$/.test(raw)) {
-    return Number(raw);
-  }
-  return raw;
 }
 
-function parseMcpServersYaml(text) {
-  const servers = [];
-  let current = null;
-  let inHeaders = false;
-  for (const rawLine of String(text || '').split(/\r?\n/)) {
-    if (!rawLine.trim() || rawLine.trim().startsWith('#')) {
-      continue;
-    }
-    const indent = rawLine.match(/^ */)[0].length;
-    const line = rawLine.trim();
-    if (line === 'servers:') {
-      current = null;
-      inHeaders = false;
-      continue;
-    }
-    if (line.startsWith('- ')) {
-      current = {};
-      servers.push(current);
-      inHeaders = false;
-      const rest = line.slice(2).trim();
-      if (rest.includes(':')) {
-        const idx = rest.indexOf(':');
-        const key = rest.slice(0, idx).trim();
-        const val = rest.slice(idx + 1);
-        if (key === 'headers' && !String(val).trim()) {
-          inHeaders = true;
-          current.headers = {};
-        } else {
-          current[key] = coerceYaml(val);
-        }
-      }
-      continue;
-    }
-    if (!current) {
-      continue;
-    }
-    const idx = line.indexOf(':');
-    if (idx === -1) {
-      continue;
-    }
-    const key = line.slice(0, idx).trim();
-    const val = line.slice(idx + 1);
-    if (key === 'headers' && !String(val).trim()) {
-      inHeaders = true;
-      current.headers = {};
-      continue;
-    }
-    if (inHeaders && indent >= 6) {
-      current.headers = current.headers || {};
-      current.headers[key] = coerceYaml(val);
-      continue;
-    }
-    inHeaders = false;
-    current[key] = coerceYaml(val);
-  }
-  return servers.filter((row) => row && row.id != null && String(row.id));
-}
-
-function readMcpServers(home) {
-  return parseMcpServersYaml(readTextFile(path.join(home, MCP_FILE)) || '');
-}
-
-function dumpYamlScalar(value) {
-  if (value === true || value === false) {
-    return String(value);
-  }
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'number') {
-    return String(value);
-  }
-  const text = String(value);
-  if (text === '' || /[:#{}[\],&*?!|>%@`]|^\s|\s$|\n/.test(text)) {
-    return JSON.stringify(text);
-  }
-  return text;
+/**
+ * @param {string} home
+ * @param {{ strict?: boolean }} [options]
+ * @returns {Array<Record<string, any>>}
+ */
+function readMcpServers(home, options) {
+  return parseMcpServersYaml(readTextFile(path.join(home, MCP_FILE)) || '', options);
 }
 
 function dumpMcpServersYaml(servers) {
-  const lines = ['servers:'];
-  for (const server of servers) {
-    let first = true;
-    for (const [key, value] of Object.entries(server)) {
-      if (key === 'headers' && value && typeof value === 'object' && !Array.isArray(value)) {
-        lines.push(`${first ? '  - ' : '    '}headers:`);
-        first = false;
-        for (const [headerKey, headerVal] of Object.entries(value)) {
-          lines.push(`      ${headerKey}: ${dumpYamlScalar(headerVal)}`);
+  const sanitized = (Array.isArray(servers) ? servers : []).map((/** @type {any} */ server) => {
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    for (const [key, value] of Object.entries(server || {})) {
+      if (value === undefined || value === null) continue;
+      if (key === 'headers' && typeof value === 'object' && !Array.isArray(value)) {
+        /** @type {Record<string, string>} */
+        const cleanHeaders = {};
+        for (const [hk, hv] of Object.entries(value)) {
+          if (hv !== undefined && hv !== null) cleanHeaders[hk] = String(hv);
         }
+        if (Object.keys(cleanHeaders).length > 0) out.headers = cleanHeaders;
         continue;
       }
       if (Array.isArray(value)) {
-        lines.push(`${first ? '  - ' : '    '}${key}:`);
-        first = false;
-        for (const item of value) {
-          lines.push(`      - ${dumpYamlScalar(item)}`);
-        }
+        out[key] = value.filter((item) => item !== undefined && item !== null);
         continue;
       }
-      if (value && typeof value === 'object') {
-        continue;
-      }
-      lines.push(`${first ? '  - ' : '    '}${key}: ${dumpYamlScalar(value)}`);
-      first = false;
+      if (typeof value === 'object') continue;
+      out[key] = value;
     }
-  }
-  return `${lines.join('\n')}\n`;
+    return out;
+  });
+  return YAML.stringify({ servers: sanitized });
 }
 
 function publicMcpRow(server, destIds) {
@@ -1006,9 +921,14 @@ function probeImportHold({
 
 function writeJournal(file, payload) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(payload, null, 2)}\n`);
-  fs.renameSync(tmp, file);
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    try { fs.unlinkSync(tmp); } catch { /* Best-effort cleanup of staged journal file. */ }
+    throw error;
+  }
 }
 
 /**
@@ -1327,7 +1247,7 @@ async function mergeDirJournaled(sourceDir, destDir, { overwrite, journalFile } 
   try {
     // Stage the union: destination first, then overlay source files.
     if (fs.existsSync(destDir)) {
-      await fs.promises.cp(destDir, tmp, { recursive: true });
+      await fs.promises.cp(destDir, tmp, { recursive: true, verbatimSymlinks: true });
     } else {
       await fs.promises.mkdir(tmp, { recursive: true });
     }
@@ -1760,10 +1680,10 @@ function importMcp({ scan, selectedIds, overwrite }) {
   if (!chosen.length) {
     return results;
   }
-  const sourceServers = readMcpServers(scan.sourceHome);
+  const sourceServers = readMcpServers(scan.sourceHome, { strict: true });
   const destFile = path.join(scan.destHome, MCP_FILE);
   inspectPrivateImportFile(destFile);
-  const destServers = readMcpServers(scan.destHome);
+  const destServers = readMcpServers(scan.destHome, { strict: true });
   const destById = new Map(destServers.map((row) => [String(row.id), row]));
   let changed = false;
   for (const id of chosen) {

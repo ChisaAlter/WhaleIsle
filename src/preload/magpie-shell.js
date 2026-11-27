@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-if (process.isMainFrame && location.protocol === 'file:') {
+if (process.isMainFrame && /^file:.*magpie-shell\.html(?:[?#].*)?$/u.test(location.href)) {
   contextBridge.exposeInMainWorld('shell', {
     platform: process.platform,
     windowAction: (/** @type {unknown} */ action) => ipcRenderer.send('magpie:window', action),

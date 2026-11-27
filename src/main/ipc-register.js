@@ -42,7 +42,9 @@ const MAX_IPC_STRING = 128 * 1024;
  * @returns {value is Record<string, unknown>}
  */
 function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 /**

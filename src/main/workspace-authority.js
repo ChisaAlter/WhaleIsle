@@ -61,7 +61,7 @@ function createWorkspaceAuthority({
    * @returns {string | null} the canonical real authorized cwd, or null.
    */
   function resolveAuthorizedCwd(candidate) {
-    if (typeof candidate !== 'string' || candidate.trim() === '') {
+    if (typeof candidate !== 'string' || candidate.trim() === '' || /[\0\r\n]/.test(candidate)) {
       return null;
     }
     const resolved = path.resolve(candidate);
@@ -106,9 +106,11 @@ function createWorkspaceAuthority({
     const base = resolveAuthorizedCwd(cwd);
     if (base === null) return null;
     const rel = typeof relativePath === 'string' ? relativePath : '';
+    if (/[\0\r\n]/.test(rel)) return null;
     const target = path.resolve(base, rel);
     const fromBase = path.relative(base, target);
     if (escapesBase(fromBase)) return null;
+    if (hasUnsafeRelativeChars(fromBase)) return null;
     if (hasGitDirSegment(fromBase)) return null;
     let node = target;
     while (true) {
@@ -220,6 +222,20 @@ function containedIn(root, candidate) {
 function escapesBase(fromBase) {
   if (path.isAbsolute(fromBase)) return true;
   return fromBase === '..' || fromBase.startsWith(`..${path.sep}`);
+}
+
+/**
+ * Reject control characters on all platforms and illegal NTFS filename
+ * characters (notably `"`, which breaks out of cmd.exe quoted wrapper args)
+ * inside workspace-relative paths on Windows.
+ * @param {string} fromBase
+ * @param {NodeJS.Platform} [platform]
+ * @returns {boolean}
+ */
+function hasUnsafeRelativeChars(fromBase, platform = process.platform) {
+  if (/[\0\r\n]/.test(fromBase)) return true;
+  if (platform === 'win32' && /["<>|*?:]/.test(fromBase)) return true;
+  return false;
 }
 
 /**

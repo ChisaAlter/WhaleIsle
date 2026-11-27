@@ -374,16 +374,12 @@ async function assertResolvedWallpaperHost(hostname, url, lookup = dns.promises.
   try {
     records = await lookup(host, { all: true, verbatim: true });
   } catch {
-    // Let fetch produce its own DNS failure message.
-    return null;
+    throw new Error(catalogError(url, '域名解析失败'));
   }
-  const list = Array.isArray(records)
-    ? records.filter((record) => record && typeof record.address === 'string')
-    : [];
+  const list = Array.isArray(records) ? records.filter((record) => record && typeof record.address === 'string') : [];
+  if (list.length === 0) throw new Error(catalogError(url, '域名解析失败'));
   for (const record of list) {
-    if (isBlockedWallpaperHost(record.address)) {
-      throw new Error(catalogError(url, '解析到不允许的内网地址'));
-    }
+    if (isBlockedWallpaperHost(record.address)) throw new Error(catalogError(url, '解析到不允许的内网地址'));
   }
   return list;
 }

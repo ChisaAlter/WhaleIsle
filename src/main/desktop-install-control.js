@@ -95,9 +95,10 @@ function resolveConfirmAuditPath(overridePath) {
   return path.join(home, 'logs', 'confirm-audit.jsonl');
 }
 
+const CONFIRM_AUDIT_MAX_BYTES = 2 * 1024 * 1024;
+
 /**
  * Best-effort JSONL audit append for `/desktop/confirm` and `/desktop/plugin`.
- * Never throws or blocks the confirmation response path.
  * @param {Record<string, unknown>} entry
  * @param {unknown} [overridePath]
  */
@@ -105,11 +106,9 @@ function appendConfirmAudit(entry, overridePath) {
   try {
     const filePath = resolveConfirmAuditPath(overridePath);
     if (!filePath) return;
-    const record = /** @type {Record<string, unknown>} */ (redactAuditSecrets({
-      ts: new Date().toISOString(),
-      ...entry,
-    }));
+    const record = /** @type {Record<string, unknown>} */ (redactAuditSecrets({ ts: new Date().toISOString(), ...entry }));
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    try { if (fs.statSync(filePath).size >= CONFIRM_AUDIT_MAX_BYTES) fs.renameSync(filePath, `${filePath}.1`); } catch { /* Missing log or rotation failure falls through to append. */ }
     fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
   } catch (error) {
     console.warn('[desktop-install-control] confirm audit log write failed', error);
@@ -722,7 +721,8 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
     onceGrants: new Map(),
   };
   return async (req, res) => {
-    const pathname = new URL(req.url ?? '/', 'http://dshd.internal').pathname;
+    let pathname;
+    try { pathname = new URL(req.url ?? '/', 'http://dshd.internal').pathname; } catch { sendJson(res, 400, { ok: false, error: 'invalid url' }); return; }
     if (pathname !== '/install' && !pathname.startsWith('/desktop/')) {
       sendJson(res, 404, { ok: false, error: 'not found' });
       return;

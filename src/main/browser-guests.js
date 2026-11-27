@@ -10,6 +10,7 @@
 const { randomUUID } = require('node:crypto');
 const { app, session } = require('electron');
 const { createRegisterIpc } = require('./ipc-register');
+const { FRAME_RESOURCE_TYPES, isBlockedControlUrl } = require('./guest-network-policy');
 
 const CHANNELS = {
   acquire: 'shell:browser-acquire',
@@ -152,6 +153,17 @@ class BrowserGuests {
       // unparseable requests are denied instead of propagated.
       let url;
       try { url = new URL(details.url); } catch { callback({ cancel: true }); return; }
+      const isFrame = typeof details.resourceType === 'string' && FRAME_RESOURCE_TYPES.has(details.resourceType);
+      if (isFrame) {
+        const isAboutBlank = url.protocol === 'about:' && url.pathname === 'blank';
+        const isHttp = url.protocol === 'http:' || url.protocol === 'https:';
+        callback({
+          cancel: isAboutBlank
+            ? false
+            : !(isHttp && url.username === '' && url.password === '' && !this.isApplicationHost(url)),
+        });
+        return;
+      }
       const network = ['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol);
       callback({
         cancel: network
@@ -169,15 +181,7 @@ class BrowserGuests {
   }
 
   isApplicationHost(url) {
-    const value = this.hostUrl();
-    if (value === undefined) return false;
-    try {
-      const host = new URL(value);
-      return url.port === host.port
-        && (url.hostname === host.hostname || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname));
-    } catch {
-      return false;
-    }
+    return isBlockedControlUrl(url, { getHarnessOrigin: this.hostUrl });
   }
 }
 

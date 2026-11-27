@@ -45,6 +45,6 @@ const api = {
   },
 };
 
-if (/^file:.*approval-popup\.html(?:[?#].*)?$/u.test(location.href)) {
+if (process.isMainFrame && /^file:.*approval-popup\.html(?:[?#].*)?$/u.test(location.href)) {
   contextBridge.exposeInMainWorld('dshApprovalPopup', api);
 }
