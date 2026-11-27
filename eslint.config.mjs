@@ -240,6 +240,22 @@ export default [
       globals: globals.browser,
     },
   },
+  // Own plugin lib trees must not ship undefined identifiers (`no-undef` catches missing imports before runtime).
+  {
+    files: [
+      'vendor/dsh-whale/lib/**/*.{js,mjs,cjs}',
+      'vendor/dsh-project/lib/**/*.{js,mjs,cjs}',
+      'vendor/dsh-deepseek-tools/lib/**/*.{js,mjs,cjs}',
+      'vendor/dsh-task-control/lib/**/*.{js,mjs,cjs}',
+      'vendor/dsh-platform-session/lib/**/*.{js,mjs,cjs}',
+      'vendor/dsh-shared/**/*.{js,mjs,cjs}',
+      'vendor/dsh-remote/**/*.{js,mjs,cjs}',
+      'dsh-acp/**/*.{js,mjs,cjs}',
+    ],
+    rules: {
+      'no-undef': 'error',
+    },
+  },
   // Preloads run in an isolated world with both require() and DOM access.
   {
     files: ['src/preload/**/*.js'],
