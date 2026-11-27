@@ -7,6 +7,7 @@
 
 const { EventEmitter } = require('events');
 const { spawn, execFile } = require('child_process');
+const { randomUUID } = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { listLanAddresses, preferredLanIp } = require('../shared/lan');
@@ -15,34 +16,12 @@ const { startGitTunnelServer } = require('./dshd-git-tunnel');
 const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
 const { passSecretToChild } = require('../shared/secret');
 const {
-  VENDOR_ROOT,
-  SERVER_EXPORT,
-  RUNNER_PATH,
-  DAEMON_READY_TIMEOUT_MS,
-  DAEMON_STOP_TIMEOUT_MS,
-  DAEMON_STDERR_TAIL_LIMIT,
-  desktopDshVendorDir,
-  readDefaults,
-  DSH_VENDOR_PACKAGES,
-  loadServerApi,
-  modeIsAway,
-  resolvedAppBaseUrl,
-  mobileBindAddress,
-  TRANSPORT_MODE_RANK,
-  lanPairingEndpoints,
-  iceServersFromConfig,
-  bestActiveTransportMode,
-  daemonListen,
-  relayUseTls,
-  publicDevicesFromStore,
-  relayStatusFromLogRecord,
-  wireLineReader,
-  waitForExit,
-  daemonStartCancelled,
-  resolveDesktopChisaCodeHome,
-  dshVendorDirForChild,
-  ensureDshAcpShim,
-  buildDaemonChildEnv,
+  VENDOR_ROOT, SERVER_EXPORT, RUNNER_PATH, DAEMON_READY_TIMEOUT_MS, DAEMON_STOP_TIMEOUT_MS,
+  DAEMON_STDERR_TAIL_LIMIT, desktopDshVendorDir, readDefaults, DSH_VENDOR_PACKAGES, loadServerApi,
+  modeIsAway, resolvedAppBaseUrl, mobileBindAddress, TRANSPORT_MODE_RANK, lanPairingEndpoints,
+  iceServersFromConfig, bestActiveTransportMode, daemonListen, relayUseTls, publicDevicesFromStore,
+  relayStatusFromLogRecord, wireLineReader, waitForExit, daemonStartCancelled,
+  resolveDesktopChisaCodeHome, dshVendorDirForChild, ensureDshAcpShim, buildDaemonChildEnv,
 } = require('./dshd-remote-helpers');
 
 /**
@@ -64,6 +43,7 @@ class DshdRemote extends EventEmitter {
    * @param {string} [options.execPath] - node/electron executable override (tests)
    * @param {number} [options.readyTimeoutMs]
    * @param {number} [options.stopTimeoutMs]
+   * @param {number} [options.revokeAckTimeoutMs]
    * @param {typeof execFile} [options.execFile] - owned Windows taskkill command
    */
   constructor(options = {}) {
@@ -86,9 +66,11 @@ class DshdRemote extends EventEmitter {
     this.gitTunnelStarting = null;
     this.readyTimeoutMs = options.readyTimeoutMs || DAEMON_READY_TIMEOUT_MS;
     this.stopTimeoutMs = options.stopTimeoutMs || DAEMON_STOP_TIMEOUT_MS;
+    this.revokeAckTimeoutMs = typeof options.revokeAckTimeoutMs === 'number' ? options.revokeAckTimeoutMs : 5_000;
     this.execFile = options.execFile || execFile;
     this.daemon = null;
     this.pendingDaemon = null;
+    this.pendingRevokeAcks = new Map();
     this.mobileWebServer = null;
     this.mobileWebStarting = null;
     this.serverApi = null;
@@ -252,38 +234,16 @@ class DshdRemote extends EventEmitter {
     const activeTransportMode = bestActiveTransportMode(this.clientTransportModes);
 
     return {
-      available: true,
-      protocol: 'chisacode-v2',
-      enabled,
-      listening,
-      starting: Boolean(this.starting),
-      port: Number(daemonListen(config).split(':').pop()),
-      token: '',
-      mode: away ? 'relay' : 'lan',
-      lanReady,
-      bindAddress: this.mobileWebServer?.address()?.address || mobileBindAddress(config),
-      lanTls: false,
-      tlsFingerprint: '',
-      addresses,
-      iceServers,
-      activeTransportMode,
-      activeTransportModes,
-      relayUrl: relayEndpoint,
-      defaultRelayUrl: defaults.relayEndpoint,
-      relayTokenSet: true,
-      legacyRelayTokenSet: Boolean(config.remoteRelayToken),
-      relayConfigured: relayReady,
-      relayConnected: Boolean(this.relayState.connected),
-      relayError: this.relayState.lastError || '',
-      error: this.error || '',
-      target: null,
-      devices,
-      pairingQr: '',
-      pairingExpiresAtMs: this.pairing.expiresAtMs || null,
-      pairingLinkUrl: this.pairing.linkUrl || '',
-      urls: pairingUrl
-        ? [{ address: snapshotAddress, url: pairingUrl, pairingUrl }]
-        : [],
+      available: true, protocol: 'chisacode-v2', enabled, listening, starting: Boolean(this.starting),
+      port: Number(daemonListen(config).split(':').pop()), token: '', mode: away ? 'relay' : 'lan',
+      lanReady, bindAddress: this.mobileWebServer?.address()?.address || mobileBindAddress(config),
+      lanTls: false, tlsFingerprint: '', addresses, iceServers, activeTransportMode, activeTransportModes,
+      relayUrl: relayEndpoint, defaultRelayUrl: defaults.relayEndpoint, relayTokenSet: true,
+      legacyRelayTokenSet: Boolean(config.remoteRelayToken), relayConfigured: relayReady,
+      relayConnected: Boolean(this.relayState.connected), relayError: this.relayState.lastError || '',
+      error: this.error || '', target: null, devices, pairingQr: '',
+      pairingExpiresAtMs: this.pairing.expiresAtMs || null, pairingLinkUrl: this.pairing.linkUrl || '',
+      urls: pairingUrl ? [{ address: snapshotAddress, url: pairingUrl, pairingUrl }] : [],
     };
   }
 
@@ -670,16 +630,39 @@ class DshdRemote extends EventEmitter {
     if (isCurrentChild) {
       this.applyClientTransportRecord(msg, record);
     }
-    if (msg === 'dshd_daemon_ready') {
-      handle.readyResolve();
-    } else if (msg === 'dshd_daemon_start_failed') {
-      handle.readyReject(new Error(`远程守护进程启动失败：${record.error || 'unknown'}`));
+    if (msg === 'dshd_daemon_device_revoked' || msg === 'dshd_daemon_revoke_error'
+      || msg === 'dshd_daemon_ready' || msg === 'dshd_daemon_start_failed') {
+      this.applyDaemonControlRecord(handle, msg, record);
     }
     // Info-level daemon chatter stays out of the dsh log; lifecycle lines,
     // transport upgrades, and warn+ records are the operator-relevant slice.
     if (this.isOperatorDaemonLog(msg, record)) {
       this.log?.(`[dshd-daemon] ${line}`);
     }
+  }
+
+  /** @param {any} handle @param {string} msg @param {Record<string, any>} record */
+  applyDaemonControlRecord(handle, msg, record) {
+    if (msg === 'dshd_daemon_ready') { handle.readyResolve(); return; }
+    if (msg === 'dshd_daemon_start_failed') {
+      handle.readyReject(new Error(`远程守护进程启动失败：${record.error || 'unknown'}`));
+      return;
+    }
+    if (typeof record.requestId !== 'string') return;
+    if (msg === 'dshd_daemon_device_revoked') {
+      this.settleRevokeAck(record.requestId, { ok: true, state: 'confirmed', disconnected: Number(record.disconnected) || 0 });
+    } else {
+      this.settleRevokeAck(record.requestId, { ok: false, state: 'daemon-error', error: String(record.error || 'unknown') });
+    }
+  }
+
+  /** @param {string} requestId @param {Record<string, any>} revokeResult */
+  settleRevokeAck(requestId, revokeResult) {
+    const entry = this.pendingRevokeAcks.get(requestId);
+    if (!entry) return;
+    this.pendingRevokeAcks.delete(requestId);
+    clearTimeout(entry.timer);
+    entry.resolve({ ...this.snapshot(), revokeResult });
   }
 
   /**
@@ -690,6 +673,9 @@ class DshdRemote extends EventEmitter {
    * @param {string | null} signal
    */
   handleDaemonExit(handle, code, signal) {
+    for (const [requestId, entry] of [...this.pendingRevokeAcks.entries()]) {
+      if (entry.handle === handle) this.settleRevokeAck(requestId, { ok: false, state: 'daemon-exited' });
+    }
     handle.readyReject(new Error(`远程守护进程提前退出（${signal || `code ${code}`}）`));
     if (this.pendingDaemon === handle) this.pendingDaemon = null;
     if (this.daemon !== handle) {
@@ -837,17 +823,51 @@ class DshdRemote extends EventEmitter {
 
   async revokePairingLink() { await this.refreshPairing({ revokeLink: true }); return this.snapshot(); }
   rotateToken() { return this.refreshPairing().then(() => { this.pairingEnsureBlocked = false; return this.snapshot(); }); }
-  unbindDevice(id) {
+  /** @param {string} deviceId */
+  revokeDeviceInStore(deviceId) {
     const store = this.deviceStore();
-    if (store && typeof store.revokeDevice === 'function' && id) {
-      const deviceId = String(id).trim();
+    if (!store || typeof store.revokeDevice !== 'function') return 'no-store';
+    try {
       store.revokeDevice(deviceId);
-      const child = this.daemon?.child;
-      if (deviceId && child?.stdin && !child.killed) {
-        try { passSecretToChild(child, 'revoke-device', deviceId); } catch { /* child already gone */ }
-      }
+      return 'ok';
+    } catch (err) {
+      this.log?.(`[dshd-remote] 吊销设备落盘失败：${err instanceof Error ? err.message : err}`);
+      return 'failed';
+    }
+  }
+  unbindDevice(id) {
+    const deviceId = id ? String(id).trim() : '';
+    if (!deviceId || this.revokeDeviceInStore(deviceId) !== 'ok') return this.snapshot();
+    const child = this.daemon?.child ?? this.pendingDaemon?.child;
+    if (child?.stdin && !child.killed) {
+      try { passSecretToChild(child, 'revoke-device', deviceId); } catch { /* child already gone */ }
     }
     return this.snapshot();
+  }
+  /** @param {string} id */
+  async unbindDeviceWithAck(id) {
+    const deviceId = id ? String(id).trim() : '';
+    if (!deviceId) return { ...this.snapshot(), revokeResult: { ok: false, state: 'invalid-device-id' } };
+    if (!this.serverApi) {
+      try { await this.ensureApi(); } catch { /* handled by revokeDeviceInStore no-store status */ }
+    }
+    if (this.revokeDeviceInStore(deviceId) !== 'ok') {
+      return { ...this.snapshot(), revokeResult: { ok: false, state: 'store-failed' } };
+    }
+    const handle = this.daemon || this.pendingDaemon;
+    const child = handle?.child;
+    if (!child?.stdin || child.killed) return { ...this.snapshot(), revokeResult: { ok: true, state: 'daemon-offline' } };
+    const requestId = randomUUID();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { this.settleRevokeAck(requestId, { ok: false, state: 'timeout' }); }, this.revokeAckTimeoutMs);
+      timer.unref?.();
+      this.pendingRevokeAcks.set(requestId, { resolve, timer, handle });
+      try {
+        passSecretToChild(child, 'revoke-device', `${deviceId} ${requestId}`);
+      } catch {
+        this.settleRevokeAck(requestId, { ok: false, state: 'daemon-exited' });
+      }
+    });
   }
   renameDevice(id, name) {
     const store = this.deviceStore();
@@ -872,18 +892,8 @@ class DshdRemote extends EventEmitter {
 }
 
 module.exports = {
-  DshdRemote,
-  loadServerApi,
-  DSH_VENDOR_PACKAGES,
-  VENDOR_ROOT,
-  RUNNER_PATH,
-  desktopDshVendorDir,
-  dshVendorDirForChild,
-  readDefaults,
-  relayStatusFromLogRecord,
-  resolveDesktopChisaCodeHome,
-  ensureDshAcpShim,
-  buildDaemonChildEnv,
-  publicDevicesFromStore,
+  DshdRemote, loadServerApi, DSH_VENDOR_PACKAGES, VENDOR_ROOT, RUNNER_PATH,
+  desktopDshVendorDir, dshVendorDirForChild, readDefaults, relayStatusFromLogRecord,
+  resolveDesktopChisaCodeHome, ensureDshAcpShim, buildDaemonChildEnv, publicDevicesFromStore,
   relayUseTls,
 };

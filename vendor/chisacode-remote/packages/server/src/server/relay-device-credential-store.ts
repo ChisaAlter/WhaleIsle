@@ -1,5 +1,16 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeSync,
+} from "node:fs";
 import path from "node:path";
 import type pino from "pino";
 import { z } from "zod/v3";
@@ -9,6 +20,53 @@ import { computeRelayDeviceAuthProof, verifyRelayDeviceAuthProof } from "./relay
 
 const DEVICE_STORE_FILENAME = "relay-devices.json";
 const MAX_RECENT_CHALLENGES = 32;
+const LOCK_STALE_MS = 10_000;
+const LOCK_WAIT_MS = 2_000;
+const LOCK_POLL_MS = 10;
+const SLEEP_WAIT_BUFFER = new Int32Array(new SharedArrayBuffer(4));
+export const RELAY_DEVICE_STORE_BUSY = "RELAY_DEVICE_STORE_BUSY";
+
+function createStoreBusyError(filePath: string): Error & { code: string } {
+  const error = new Error(`Relay device credential store busy: ${filePath}`) as Error & {
+    code: string;
+  };
+  error.code = RELAY_DEVICE_STORE_BUSY;
+  return error;
+}
+
+function isBusyError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === RELAY_DEVICE_STORE_BUSY,
+  );
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function withWindowsRetry<T>(fn: () => T): T {
+  const maxAttempts = process.platform === "win32" ? 15 : 1;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return fn();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const transient = code === "EPERM" || code === "EACCES" || code === "EBUSY";
+      if (!transient || attempt >= maxAttempts) {
+        throw error;
+      }
+      Atomics.wait(SLEEP_WAIT_BUFFER, 0, 0, 10);
+    }
+  }
+}
 
 const DeviceRecordSchema = z.object({
   deviceId: z.string().min(8),
@@ -135,14 +193,23 @@ export class RelayDeviceCredentialStore {
     }
     // COMPAT(pairingTokenFiles): accept pre-2026-10-25 offers in relay-devices.json.
     // Remove after the supported desktop floor includes per-token files.
-    this.data = this.load();
-    const legacy = this.data.pairingTokens.find((entry) =>
-      safeEqualHex(entry.tokenHash, tokenHash),
-    );
-    if (!legacy || legacy.consumedAt || legacy.expiresAtMs <= Date.now()) return false;
-    legacy.consumedAt = new Date().toISOString();
-    this.persist();
-    return true;
+    try {
+      return this.mutate((data) => {
+        const legacy = data.pairingTokens.find((entry) =>
+          safeEqualHex(entry.tokenHash, tokenHash),
+        );
+        if (!legacy || legacy.consumedAt || legacy.expiresAtMs <= Date.now()) {
+          return { result: false, changed: false };
+        }
+        legacy.consumedAt = new Date().toISOString();
+        return { result: true, changed: true };
+      });
+    } catch (error) {
+      if (isBusyError(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   /** Whether the displayed QR remains unexpired and has not been used. */
@@ -183,28 +250,30 @@ export class RelayDeviceCredentialStore {
     if (deviceId.length < 8) {
       throw new Error("deviceId must be at least 8 characters");
     }
-    if (this.getDevice(deviceId) && !this.getDevice(deviceId)?.revokedAt) {
-      throw new Error("deviceId already registered");
-    }
-    const deviceSecret = randomToken(32);
-    const now = new Date().toISOString();
-    // Replace revoked record with same id if present.
-    this.data.devices = this.data.devices.filter((device) => device.deviceId !== deviceId);
-    // Label cap matches DeviceRecordSchema; an overlong persisted label would
-    // make the whole store file fail to parse (and drop every device) on load.
-    const normalizedLabel = label?.trim().slice(0, 120);
-    this.data.devices.push({
-      deviceId,
-      secret: deviceSecret,
-      secretHash: sha256Hex(deviceSecret),
-      createdAt: now,
-      lastUsedAt: now,
-      revokedAt: null,
-      recentChallengeHashes: [],
-      ...(normalizedLabel ? { label: normalizedLabel } : {}),
+    return this.mutate((data) => {
+      const existing = data.devices.find((device) => device.deviceId === deviceId);
+      if (existing && !existing.revokedAt) {
+        throw new Error("deviceId already registered");
+      }
+      const deviceSecret = randomToken(32);
+      const now = new Date().toISOString();
+      // Replace revoked record with same id if present.
+      data.devices = data.devices.filter((device) => device.deviceId !== deviceId);
+      // Label cap matches DeviceRecordSchema; an overlong persisted label would
+      // make the whole store file fail to parse (and drop every device) on load.
+      const normalizedLabel = label?.trim().slice(0, 120);
+      data.devices.push({
+        deviceId,
+        secret: deviceSecret,
+        secretHash: sha256Hex(deviceSecret),
+        createdAt: now,
+        lastUsedAt: now,
+        revokedAt: null,
+        recentChallengeHashes: [],
+        ...(normalizedLabel ? { label: normalizedLabel } : {}),
+      });
+      return { result: { deviceId, deviceSecret }, changed: true };
     });
-    this.persist();
-    return { deviceId, deviceSecret };
   }
 
   /**
@@ -214,16 +283,18 @@ export class RelayDeviceCredentialStore {
    * @returns true when the device exists un-revoked; an unchanged label is a no-op success
    */
   renameDevice(deviceId: string, label: string): boolean {
-    const device = this.getDevice(deviceId);
-    if (!device || device.revokedAt) {
-      return false;
-    }
     const next = label.trim().slice(0, 120);
-    if (next && device.label !== next) {
-      device.label = next;
-      this.persist();
-    }
-    return true;
+    return this.mutate((data) => {
+      const device = data.devices.find((entry) => entry.deviceId === deviceId);
+      if (!device || device.revokedAt) {
+        return { result: false, changed: false };
+      }
+      if (next && device.label !== next) {
+        device.label = next;
+        return { result: true, changed: true };
+      }
+      return { result: true, changed: false };
+    });
   }
 
   /**
@@ -232,16 +303,25 @@ export class RelayDeviceCredentialStore {
    * @param deviceSecret Raw secret
    */
   verifyDeviceSecret(deviceId: string, deviceSecret: string): boolean {
-    const device = this.getDevice(deviceId);
-    if (!device || device.revokedAt) {
-      return false;
+    try {
+      return this.mutate((data) => {
+        const device = data.devices.find((entry) => entry.deviceId === deviceId);
+        if (!device || device.revokedAt) {
+          return { result: false, changed: false };
+        }
+        const ok = safeEqualHex(device.secretHash, sha256Hex(deviceSecret));
+        if (!ok) {
+          return { result: false, changed: false };
+        }
+        device.lastUsedAt = new Date().toISOString();
+        return { result: true, changed: true };
+      });
+    } catch (error) {
+      if (isBusyError(error)) {
+        return false;
+      }
+      throw error;
     }
-    const ok = safeEqualHex(device.secretHash, sha256Hex(deviceSecret));
-    if (ok) {
-      device.lastUsedAt = new Date().toISOString();
-      this.persist();
-    }
-    return ok;
   }
 
   /**
@@ -256,30 +336,38 @@ export class RelayDeviceCredentialStore {
     daemonPublicKeyB64: string;
     clientPublicKeyB64: string;
   }): boolean {
-    const device = this.getDevice(input.deviceId);
-    if (!device || device.revokedAt) {
-      return false;
+    try {
+      return this.mutate((data) => {
+        const device = data.devices.find((entry) => entry.deviceId === input.deviceId);
+        if (!device || device.revokedAt) {
+          return { result: false, changed: false };
+        }
+        const challengeHash = sha256Hex(input.challenge);
+        if (device.recentChallengeHashes.some((entry) => safeEqualHex(entry, challengeHash))) {
+          return { result: false, changed: false };
+        }
+        const expected = computeRelayDeviceAuthProof(device.secret, {
+          serverId: input.serverId,
+          daemonPublicKeyB64: input.daemonPublicKeyB64,
+          clientPublicKeyB64: input.clientPublicKeyB64,
+          deviceId: input.deviceId,
+          challenge: input.challenge,
+        });
+        if (!verifyRelayDeviceAuthProof(expected, input.proof)) {
+          return { result: false, changed: false };
+        }
+        device.lastUsedAt = new Date().toISOString();
+        device.recentChallengeHashes = [...device.recentChallengeHashes, challengeHash].slice(
+          -MAX_RECENT_CHALLENGES,
+        );
+        return { result: true, changed: true };
+      });
+    } catch (error) {
+      if (isBusyError(error)) {
+        return false;
+      }
+      throw error;
     }
-    const challengeHash = sha256Hex(input.challenge);
-    if (device.recentChallengeHashes.some((entry) => safeEqualHex(entry, challengeHash))) {
-      return false;
-    }
-    const expected = computeRelayDeviceAuthProof(device.secret, {
-      serverId: input.serverId,
-      daemonPublicKeyB64: input.daemonPublicKeyB64,
-      clientPublicKeyB64: input.clientPublicKeyB64,
-      deviceId: input.deviceId,
-      challenge: input.challenge,
-    });
-    if (!verifyRelayDeviceAuthProof(expected, input.proof)) {
-      return false;
-    }
-    device.lastUsedAt = new Date().toISOString();
-    device.recentChallengeHashes = [...device.recentChallengeHashes, challengeHash].slice(
-      -MAX_RECENT_CHALLENGES,
-    );
-    this.persist();
-    return true;
   }
 
   /**
@@ -287,22 +375,106 @@ export class RelayDeviceCredentialStore {
    * @param deviceId Device id
    */
   revokeDevice(deviceId: string): boolean {
-    const device = this.getDevice(deviceId);
-    if (!device) {
-      return false;
+    return this.mutate((data) => {
+      const device = data.devices.find((entry) => entry.deviceId === deviceId);
+      if (!device) {
+        return { result: false, changed: false };
+      }
+      if (!device.revokedAt) {
+        device.revokedAt = new Date().toISOString();
+        return { result: true, changed: true };
+      }
+      return { result: true, changed: false };
+    });
+  }
+
+  private mutate<T>(fn: (data: DeviceStore) => { result: T; changed: boolean }): T {
+    const release = this.acquireLock();
+    try {
+      this.data = this.load();
+      const { result, changed } = fn(this.data);
+      if (changed) {
+        this.persist();
+      }
+      return result;
+    } finally {
+      release();
     }
-    if (!device.revokedAt) {
-      device.revokedAt = new Date().toISOString();
-      this.persist();
+  }
+
+  private acquireLock(): () => void {
+    const lockPath = `${this.filePath}.lock`;
+    mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    while (true) {
+      try {
+        const fd = openSync(lockPath, "wx", 0o600);
+        try {
+          writeSync(fd, JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }));
+        } finally {
+          closeSync(fd);
+        }
+        return () => {
+          withWindowsRetry(() => {
+            try {
+              unlinkSync(lockPath);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+                throw error;
+              }
+            }
+          });
+        };
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        const retryableLockError =
+          code === "EEXIST" || (process.platform === "win32" && (code === "EPERM" || code === "EACCES"));
+        if (!retryableLockError) {
+          throw error;
+        }
+        if (code === "EEXIST" && this.tryReclaimStaleLock(lockPath)) {
+          continue;
+        }
+        if (Date.now() >= deadline) {
+          this.emitWarning("relay_device_store_busy", { filePath: this.filePath, lockPath });
+          throw createStoreBusyError(this.filePath);
+        }
+        Atomics.wait(SLEEP_WAIT_BUFFER, 0, 0, LOCK_POLL_MS);
+      }
     }
-    return true;
+  }
+
+  private tryReclaimStaleLock(lockPath: string): boolean {
+    try {
+      const stat = statSync(lockPath);
+      const staleByAge = Date.now() - stat.mtimeMs > LOCK_STALE_MS;
+      let ownerDead = false;
+      try {
+        const parsed = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: unknown };
+        if (typeof parsed.pid === "number" && Number.isInteger(parsed.pid) && parsed.pid > 0) {
+          ownerDead = !isPidAlive(parsed.pid);
+        }
+      } catch {
+        // Corrupt or partially written lock; reclaim only once stale by mtime.
+      }
+      if (!ownerDead && !staleByAge) {
+        return false;
+      }
+      unlinkSync(lockPath);
+      return true;
+    } catch (error) {
+      // Lock vanished between EEXIST and inspection: retry immediately.
+      return (error as NodeJS.ErrnoException).code === "ENOENT";
+    }
   }
 
   private load(): DeviceStore {
     let raw: string;
     try {
-      ensurePrivateFile(this.filePath);
-      raw = readFileSync(this.filePath, "utf8");
+      raw = withWindowsRetry(() => {
+        ensurePrivateFile(this.filePath);
+        return readFileSync(this.filePath, "utf8");
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return { v: 1, devices: [], pairingTokens: [] };
@@ -373,6 +545,9 @@ export class RelayDeviceCredentialStore {
   }
 
   private persist(): void {
-    writePrivateFileAtomicSync(this.filePath, `${JSON.stringify(this.data, null, 2)}\n`);
+    const serialized = `${JSON.stringify(this.data, null, 2)}\n`;
+    withWindowsRetry(() => {
+      writePrivateFileAtomicSync(this.filePath, serialized);
+    });
   }
 }

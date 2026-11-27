@@ -60,6 +60,7 @@ export interface RelaySocketLike {
 export interface AttachEncryptedSocketOptions {
   connectionId?: string;
   initialMode?: TransportMode;
+  handshakeTimeoutMs?: number;
   iceServers?: readonly IceServerConfig[];
   enableWebRtcUpgrade?: boolean;
   onTransportModeChange?: (mode: TransportMode) => void;
@@ -641,6 +642,44 @@ function isPositiveRelayDeviceAuthResult(data: string | ArrayBuffer): boolean {
   }
 }
 
+const DEFAULT_E2EE_HANDSHAKE_TIMEOUT_MS = 15_000;
+
+async function createDaemonChannelWithTimeout(
+  relayTransport: RelayTransport,
+  daemonKeyPair: KeyPair,
+  callbacks: Parameters<typeof createDaemonChannel>[2],
+  socket: RelayWebSocketLike,
+  handshakeTimeoutMs: number,
+  onTimeout: () => void,
+): Promise<EncryptedChannel> {
+  if (!(handshakeTimeoutMs > 0) || !Number.isFinite(handshakeTimeoutMs)) {
+    return createDaemonChannel(relayTransport, daemonKeyPair, callbacks);
+  }
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const handshakePromise = createDaemonChannel(relayTransport, daemonKeyPair, callbacks);
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      try {
+        socket.close(1008, "E2EE handshake timeout");
+      } catch {
+        // ignore close errors
+      }
+      reject(new Error(`E2EE handshake timed out after ${handshakeTimeoutMs}ms`));
+    }, handshakeTimeoutMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([handshakePromise, timeoutPromise]);
+  } finally {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+    // Avoid unhandled rejection if handshake settles after timeout rejection.
+    void handshakePromise.catch(() => {});
+  }
+}
+
 export async function attachEncryptedSocket(
   socket: RelayWebSocketLike,
   daemonKeyPair: KeyPair,
@@ -650,6 +689,7 @@ export async function attachEncryptedSocket(
   upgradeOptions?: AttachEncryptedSocketOptions,
 ): Promise<void> {
   let rtcController: WebRtcHostSessionController | null = null;
+  let handshakeTimedOut = false;
   const connectionId = upgradeOptions?.connectionId;
   try {
     const relayTransport = createRelayTransportAdapter(socket, logger);
@@ -681,14 +721,23 @@ export async function attachEncryptedSocket(
       }
       emitter.emit("close", code, reason);
     };
-    const channel = await createDaemonChannel(relayTransport, daemonKeyPair, {
-      onmessage: emitMessage,
-      onclose: finalizeClose,
-      onerror: (error) => {
-        logger.warn({ err: error }, "relay_e2ee_error");
-        emitter.emit("error", error);
+    const channel = await createDaemonChannelWithTimeout(
+      relayTransport,
+      daemonKeyPair,
+      {
+        onmessage: emitMessage,
+        onclose: finalizeClose,
+        onerror: (error) => {
+          logger.warn({ err: error }, "relay_e2ee_error");
+          emitter.emit("error", error);
+        },
       },
-    });
+      socket,
+      upgradeOptions?.handshakeTimeoutMs ?? DEFAULT_E2EE_HANDSHAKE_TIMEOUT_MS,
+      () => {
+        handshakeTimedOut = true;
+      },
+    );
     if (upgradeOptions?.enableWebRtcUpgrade !== false) {
       rtcController = new WebRtcHostSessionController({
         channel,
@@ -737,10 +786,12 @@ export async function attachEncryptedSocket(
     rtcController?.dispose();
     rtcController = null;
     logger.warn({ err: error }, "relay_e2ee_handshake_failed");
-    try {
-      socket.close(1011, "E2EE handshake failed");
-    } catch {
-      // ignore
+    if (!handshakeTimedOut) {
+      try {
+        socket.close(1011, "E2EE handshake failed");
+      } catch {
+        // ignore
+      }
     }
   }
 }
