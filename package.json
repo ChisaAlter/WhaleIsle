@@ -98,6 +98,7 @@
       "src/**/*",
       "!src/native/**",
       "!src/whale-ui/**",
+      "!src/renderer/openui/**",
       "!**/*.test.js",
       "!src/renderer/pet-live2d/avatar/model_hd.onnx",
       "!src/renderer/pet-live2d/avatar/character_hd.png",

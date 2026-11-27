@@ -15,8 +15,13 @@ directories:
 files:
   - src/**/*
   - '!**/*.test.js'
+  - '!src/native/**'
+  - '!src/whale-ui/**'
+  - '!src/renderer/whale-ui/**'
+  - '!src/renderer/openui/**'
   - '!src/renderer/pet-live2d/**'
   - '!src/renderer/pet/**'
+  - '!node_modules/node-pty/**'
   - assets/icon.ico
   - assets/icon.png
   - assets/icon.svg

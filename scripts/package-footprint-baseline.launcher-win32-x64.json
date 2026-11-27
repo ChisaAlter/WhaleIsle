@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 1,
+  "target": "launcher-win32-x64",
+  "source": {
+    "input": "win-unpacked",
+    "commit": "aa22a148d63"
+  },
+  "totals": {
+    "bytes": 336451028,
+    "files": 907,
+    "byLayer": {
+      "base": {
+        "bytes": 324045260,
+        "files": 19
+      },
+      "asar": {
+        "bytes": 10279736,
+        "files": 816
+      },
+      "asar-unpacked": {
+        "bytes": 2015197,
+        "files": 71
+      },
+      "tar": {
+        "bytes": 0,
+        "files": 0
+      },
+      "res": {
+        "bytes": 110835,
+        "files": 1
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "electron-base",
+      "owner": "A",
+      "bytes": 324045260,
+      "files": 19,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": 327285713,
+      "status": "ok"
+    },
+    {
+      "id": "office-kit-wasm",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "office-kit-native",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "office-python-tk",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "office-python",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "shared-node",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pnpm-office",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pnpm-bundled",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "dshd-remote",
+      "owner": "D×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-ort-nonjsep",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-ort",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-anime4k",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-model",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-rig",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "mobile-whale-ui-dup",
+      "owner": "E",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "mobile-head-dup",
+      "owner": "E",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "renderer-openui",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": 0,
+      "status": "ok"
+    },
+    {
+      "id": "launcher-node-pty",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": 0,
+      "status": "ok"
+    },
+    {
+      "id": "launcher-whale-ui",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": 0,
+      "status": "ok"
+    },
+    {
+      "id": "whale-ui-renderer",
+      "owner": "A",
+      "bytes": 1448198,
+      "files": 82,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": 1520608,
+      "status": "ok"
+    },
+    {
+      "id": "harness-apps-web-dist-dup",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-web-frontend",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "dsh-im-sharp",
+      "owner": "B",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-sharp",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "inspector-lighthouse",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "inspector",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "sherpa-onnx",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-runtime-other",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "desktop-other",
+      "owner": "A",
+      "bytes": 10957570,
+      "files": 806,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": 11505449,
+      "status": "ok"
+    }
+  ],
+  "forbidden": [],
+  "duplicates": [],
+  "unclassified": {
+    "bytes": 0,
+    "files": 0,
+    "top": []
+  },
+  "installer": null
+}

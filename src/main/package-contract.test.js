@@ -174,3 +174,22 @@ test('ACP resource filter includes the runtime but excludes independent-reposito
     assert.equal(filter(path.join(source, name), file), false, `private/build-only resource: ${name}`);
   }
 });
+
+test('launcher package and main app exclude non-shipped renderer/native surfaces', () => {
+  const { parse: parseYaml } = require('yaml');
+  const launcherConfig = parseYaml(fs.readFileSync(path.join(ROOT, 'electron-builder.launcher.yml'), 'utf8'));
+  const launcherFiles = launcherConfig?.files;
+  assert.equal(Array.isArray(launcherFiles), true, 'launcher files filter is missing');
+  for (const pattern of [
+    '!src/native/**',
+    '!src/whale-ui/**',
+    '!src/renderer/whale-ui/**',
+    '!src/renderer/openui/**',
+    '!src/renderer/pet-live2d/**',
+    '!src/renderer/pet/**',
+    '!node_modules/node-pty/**',
+  ]) {
+    assert.equal(launcherFiles.includes(pattern), true, `launcher config missing exclusion: ${pattern}`);
+  }
+  assert.equal(pkg.build?.files?.includes('!src/renderer/openui/**'), true, 'main manifest missing !src/renderer/openui/**');
+});
