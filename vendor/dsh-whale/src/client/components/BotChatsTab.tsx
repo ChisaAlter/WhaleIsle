@@ -74,6 +74,7 @@ interface ChatContextMenuState {
   x: number;
   y: number;
   triggerEl: HTMLElement | null;
+  contextTriggerEl: HTMLElement | null;
 }
 
 interface WorkerTooltipState {
@@ -277,6 +278,7 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
     open: Boolean(menuState),
     popoverRef: menuRef,
     triggerEl: menuState?.triggerEl ?? null,
+    contextTriggerEl: menuState?.contextTriggerEl ?? null,
     onClose: () => setMenuState(null),
     closeOnScroll: true,
   });
@@ -537,9 +539,10 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
     x: number,
     y: number,
     triggerEl: HTMLElement | null = null,
+    contextTriggerEl: HTMLElement | null = null,
   ) => {
     setTooltip(null);
-    setMenuState({ chat, isHome, isRunning, x, y, triggerEl });
+    setMenuState({ chat, isHome, isRunning, x, y, triggerEl, contextTriggerEl });
   };
 
   const showWorkerTooltip = (worker: ExtendedWorkerRow, el: HTMLElement) => {
@@ -660,7 +663,8 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
           onClick={() => openChat(chat, isHome)}
           onContextMenu={(e) => {
             e.preventDefault();
-            openChatMenuAt(chat, isHome, isRunning, e.clientX, e.clientY);
+            e.stopPropagation();
+            openChatMenuAt(chat, isHome, isRunning, e.clientX, e.clientY, null, e.currentTarget);
           }}
         >
           {workers.length > 0 && !isSearching ? (

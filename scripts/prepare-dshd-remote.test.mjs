@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { withOwnedTempDir } from '../src/shared/fs-safe.js';
-import { stageAndPromoteRuntime } from './prepare-dshd-remote.mjs';
+import { stageAndPromoteRuntime, pruneSqlitePrebuilds } from './prepare-dshd-remote.mjs';
 
 test('stageAndPromoteRuntime cleans staging on failure without publishing an unverified runtime', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-dshd-remote-stage-'));
@@ -89,5 +89,35 @@ test('failed runtime promotion restores the old runtime or retains its backup if
     assert.equal(readVersion(destination), 'v2');
     assert.equal(readVersion(backup), 'v1');
     assert.deepEqual(fs.readdirSync(dir), ['desktop-runtime', path.basename(backup)]);
+  });
+});
+
+test('pruneSqlitePrebuilds keeps only the target platform prebuild and strips C++ build artifacts', async () => {
+  await withOwnedTempDir('whale-sqlite-prebuild-', async (dir) => {
+    const sqlitePkg = path.join(dir, 'better-sqlite3');
+    for (const rel of [
+      path.join('prebuilds', 'win32-x64.node'),
+      path.join('prebuilds', 'darwin-arm64.node'),
+      path.join('deps', 'sqlite3.c'),
+      path.join('src', 'better_sqlite3.cpp'),
+      'binding.gyp',
+      path.join('build', 'Release', 'better_sqlite3.node'),
+    ]) {
+      const targetFile = path.join(sqlitePkg, rel);
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.writeFileSync(targetFile, 'stub');
+    }
+
+    pruneSqlitePrebuilds(sqlitePkg, 'win32-x64');
+
+    assert.equal(fs.existsSync(path.join(sqlitePkg, 'prebuilds', 'win32-x64.node')), true);
+    assert.equal(fs.existsSync(path.join(sqlitePkg, 'prebuilds', 'darwin-arm64.node')), false);
+    for (const removed of ['deps', 'src', 'binding.gyp', 'build']) {
+      assert.equal(fs.existsSync(path.join(sqlitePkg, removed)), false);
+    }
+    assert.throws(
+      () => pruneSqlitePrebuilds(sqlitePkg, 'linux-arm64'),
+      /better-sqlite3 prebuild is missing for linux-arm64/,
+    );
   });
 });

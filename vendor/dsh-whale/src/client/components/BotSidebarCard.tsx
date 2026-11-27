@@ -33,6 +33,7 @@ import { BotAvatar } from './BotAvatar';
 import { BotChevron, BotDisclosure } from './BotDisclosure';
 import { BotHoverCard } from './BotHoverCard';
 import { BotSubChatList } from './BotSubChatList';
+import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 import {
   IconCopy,
   IconEdit,
@@ -100,27 +101,12 @@ function BotContextMenu({
   const { locale, tr } = useBotsLocale();
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const handleDown = (event: globalThis.MouseEvent) => {
-      if (event.button === 2 && triggerRef?.current?.contains(event.target as Node)) {
-        return;
-      }
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleDown);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleDown);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [onClose, triggerRef]);
+  useAnchoredPopoverDismiss({
+    open: true,
+    popoverRef: menuRef,
+    contextTriggerRef: triggerRef,
+    onClose,
+  });
 
   if (typeof document === 'undefined') {
     return null;

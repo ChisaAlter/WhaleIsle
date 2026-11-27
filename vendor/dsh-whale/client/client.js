@@ -3602,6 +3602,8 @@ function useAnchoredPopoverDismiss({
   popoverRef,
   triggerRef,
   triggerEl,
+  contextTriggerRef,
+  contextTriggerEl,
   onClose,
   closeOnScroll = false
 }) {
@@ -3611,7 +3613,7 @@ function useAnchoredPopoverDismiss({
     if (!open || typeof document === "undefined") {
       return void 0;
     }
-    const isInside = (target) => {
+    const isInside = (target, button) => {
       if (!isDomNode(target)) {
         return false;
       }
@@ -3621,6 +3623,12 @@ function useAnchoredPopoverDismiss({
       const trigger = triggerEl ?? triggerRef?.current ?? null;
       if (trigger?.contains(target)) {
         return true;
+      }
+      if (button === 2) {
+        const contextTrigger = contextTriggerEl ?? contextTriggerRef?.current ?? null;
+        if (contextTrigger?.contains(target)) {
+          return true;
+        }
       }
       return false;
     };
@@ -3633,7 +3641,7 @@ function useAnchoredPopoverDismiss({
       }
     };
     const handlePointerDown = (event) => {
-      if (isInside(event.target)) {
+      if (isInside(event.target, event.button)) {
         return;
       }
       suppressMouseDown = true;
@@ -3650,7 +3658,7 @@ function useAnchoredPopoverDismiss({
         clearSuppressTimer();
         return;
       }
-      if (isInside(event.target)) {
+      if (isInside(event.target, event.button)) {
         return;
       }
       onCloseRef.current();
@@ -3686,7 +3694,7 @@ function useAnchoredPopoverDismiss({
         window.removeEventListener("scroll", handleScroll, true);
       }
     };
-  }, [open, popoverRef, triggerRef, triggerEl, closeOnScroll]);
+  }, [open, popoverRef, triggerRef, triggerEl, contextTriggerRef, contextTriggerEl, closeOnScroll]);
 }
 
 // vendor/dsh-whale/src/client/components/AvatarPicker.tsx
@@ -16651,6 +16659,7 @@ function BotChatsTab({ bot }) {
     open: Boolean(menuState),
     popoverRef: menuRef,
     triggerEl: menuState?.triggerEl ?? null,
+    contextTriggerEl: menuState?.contextTriggerEl ?? null,
     onClose: () => setMenuState(null),
     closeOnScroll: true
   });
@@ -16879,9 +16888,9 @@ function BotChatsTab({ bot }) {
       });
     }
   };
-  const openChatMenuAt = (chat, isHome, isRunning, x, y, triggerEl = null) => {
+  const openChatMenuAt = (chat, isHome, isRunning, x, y, triggerEl = null, contextTriggerEl = null) => {
     setTooltip(null);
-    setMenuState({ chat, isHome, isRunning, x, y, triggerEl });
+    setMenuState({ chat, isHome, isRunning, x, y, triggerEl, contextTriggerEl });
   };
   const showWorkerTooltip = (worker, el) => {
     if (hoverTimerRef.current !== null) {
@@ -16987,7 +16996,8 @@ function BotChatsTab({ bot }) {
           onClick: () => openChat(chat, isHome),
           onContextMenu: (e) => {
             e.preventDefault();
-            openChatMenuAt(chat, isHome, isRunning, e.clientX, e.clientY);
+            e.stopPropagation();
+            openChatMenuAt(chat, isHome, isRunning, e.clientX, e.clientY, null, e.currentTarget);
           },
           children: [
             workers.length > 0 && !isSearching ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
@@ -21843,34 +21853,23 @@ var import_jsx_runtime33 = require("react/jsx-runtime");
 function GroupContextMenu({
   group,
   position,
+  triggerRef,
   onClose,
   onStartRename
 }) {
   const { tr } = useBotsLocale();
   const menuRef = (0, import_react33.useRef)(null);
-  (0, import_react33.useEffect)(() => {
-    const handleDown = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        onClose();
-      }
-    };
-    const handleKey = (event) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose]);
+  useAnchoredPopoverDismiss({
+    open: true,
+    popoverRef: menuRef,
+    contextTriggerRef: triggerRef,
+    onClose
+  });
   if (typeof document === "undefined") {
     return null;
   }
-  const left = Math.min(position.x, window.innerWidth - 205);
-  const top = Math.min(position.y, window.innerHeight - 200);
+  const left = Math.max(8, Math.min(position.x, window.innerWidth - 205));
+  const top = Math.max(8, Math.min(position.y, window.innerHeight - 200));
   return (0, import_react_dom10.createPortal)(
     /* @__PURE__ */ (0, import_jsx_runtime33.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime33.jsxs)(
@@ -21950,6 +21949,7 @@ function BotGroupSidebarCard({
   const [renaming, setRenaming] = (0, import_react33.useState)(false);
   const [renameText, setRenameText] = (0, import_react33.useState)(group.name);
   const [menuPos, setMenuPos] = (0, import_react33.useState)(null);
+  const cardRef = (0, import_react33.useRef)(null);
   (0, import_react33.useEffect)(() => {
     setRenameText(group.name);
   }, [group.name]);
@@ -21984,6 +21984,7 @@ function BotGroupSidebarCard({
     /* @__PURE__ */ (0, import_jsx_runtime33.jsxs)(
       "div",
       {
+        ref: cardRef,
         className: "dsh-bots-card",
         "data-active": isActive ? "true" : "false",
         "data-unread": group.unread ? "true" : "false",
@@ -22034,6 +22035,7 @@ function BotGroupSidebarCard({
       {
         group,
         position: menuPos,
+        triggerRef: cardRef,
         onClose: () => setMenuPos(null),
         onStartRename: () => setRenaming(true)
       }
@@ -22399,7 +22401,7 @@ function BotChatWorkerRows({
           onContextMenu: hasMenu ? (e) => {
             e.preventDefault();
             e.stopPropagation();
-            onOpenWorkerContextMenu(worker, menuKey, label, isRowActive, canStop, e.clientX, e.clientY);
+            onOpenWorkerContextMenu(worker, menuKey, label, isRowActive, canStop, e.clientX, e.clientY, e.currentTarget);
           } : void 0,
           title: worker.statusText || label,
           children: [
@@ -22488,6 +22490,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
     open: Boolean(menuState),
     popoverRef: menuRef,
     triggerEl: menuState?.triggerEl ?? null,
+    contextTriggerEl: menuState?.contextTriggerEl ?? null,
     onClose: () => setMenuState(null)
   });
   const { homeRunning, homeFinished, subChats } = (0, import_react35.useMemo)(() => {
@@ -22577,14 +22580,14 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
     x: Math.max(8, Math.min(x, window.innerWidth - 188)),
     y: Math.max(8, Math.min(y, window.innerHeight - 148))
   });
-  const openChatMenuAt = (chat, isActive, x, y, triggerEl = null) => {
+  const openChatMenuAt = (chat, isActive, x, y, triggerEl = null, contextTriggerEl = null) => {
     const key = chatRowKey(chat);
     const pos = clampMenuPos(x, y);
-    setMenuState({ kind: "chat", key, chat, isActive, ...pos, triggerEl });
+    setMenuState({ kind: "chat", key, chat, isActive, ...pos, triggerEl, contextTriggerEl });
   };
-  const openWorkerMenuAt = (worker, key, label, isActive, canStop, x, y, triggerEl = null) => {
+  const openWorkerMenuAt = (worker, key, label, isActive, canStop, x, y, triggerEl = null, contextTriggerEl = null) => {
     const pos = clampMenuPos(x, y);
-    setMenuState({ kind: "worker", key, worker, label, isActive, canStop, ...pos, triggerEl });
+    setMenuState({ kind: "worker", key, worker, label, isActive, canStop, ...pos, triggerEl, contextTriggerEl });
   };
   if (!hasVisibleHomeWorkers && subChats.length === 0) {
     return null;
@@ -22613,8 +22616,8 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
             openWorkerMenuAt(worker, key, label, isActive, canStop, rect.left, rect.bottom + 4, triggerEl);
           }
         },
-        onOpenWorkerContextMenu: (worker, key, label, isActive, canStop, x, y) => {
-          openWorkerMenuAt(worker, key, label, isActive, canStop, x, y);
+        onOpenWorkerContextMenu: (worker, key, label, isActive, canStop, x, y, contextTriggerEl) => {
+          openWorkerMenuAt(worker, key, label, isActive, canStop, x, y, null, contextTriggerEl);
         }
       }
     ),
@@ -22649,7 +22652,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
             onContextMenu: (e) => {
               e.preventDefault();
               e.stopPropagation();
-              openChatMenuAt(chat, isActive, e.clientX, e.clientY);
+              openChatMenuAt(chat, isActive, e.clientX, e.clientY, null, e.currentTarget);
             },
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime35.jsxs)("span", { className: "dsh-bots-subrow-icon", children: [
@@ -22725,8 +22728,8 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
                 openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, rect.left, rect.bottom + 4, triggerEl);
               }
             },
-            onOpenWorkerContextMenu: (worker, key, wLabel, wIsActive, canStop, x, y) => {
-              openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, x, y);
+            onOpenWorkerContextMenu: (worker, key, wLabel, wIsActive, canStop, x, y, contextTriggerEl) => {
+              openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, x, y, null, contextTriggerEl);
             }
           }
         ) })
@@ -22852,27 +22855,12 @@ function BotContextMenu({
 }) {
   const { locale, tr } = useBotsLocale();
   const menuRef = (0, import_react36.useRef)(null);
-  (0, import_react36.useEffect)(() => {
-    const handleDown = (event) => {
-      if (event.button === 2 && triggerRef?.current?.contains(event.target)) {
-        return;
-      }
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        onClose();
-      }
-    };
-    const handleKey = (event) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose, triggerRef]);
+  useAnchoredPopoverDismiss({
+    open: true,
+    popoverRef: menuRef,
+    contextTriggerRef: triggerRef,
+    onClose
+  });
   if (typeof document === "undefined") {
     return null;
   }

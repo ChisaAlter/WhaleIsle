@@ -1211,3 +1211,110 @@ test('threads search, filter popover, 409 running archive refusal, memory CRUD, 
     await b.cleanup()
   }
 })
+
+test('memory search debounces across identical SSE updates, re-queries on real content change, and falls back to latest memory on 500', async () => {
+  let failMemorySearch = false
+  let extraMatches = []
+  const baseFiles = [
+    { name: 'csrf-guide', description: 'CSRF defense notes', type: 'reference', modified: '2026-11-21T10:00:00.000Z', text: 'Always verify CSRF token.' },
+  ]
+  const b = makeBench({
+    memoryStore: {
+      'p-11111111': Object.fromEntries(baseFiles.map((f) => [f.name, structuredClone(f)])),
+    },
+    onApi({ method, pathname, search }) {
+      if (method === 'GET' && pathname === '/projects/p-11111111/memory' && new URLSearchParams(search).has('q')) {
+        if (failMemorySearch) return { status: 500, body: { error: 'search_failed' } }
+        const q = new URLSearchParams(search).get('q') || ''
+        if (q === 'CSRF') {
+          return {
+            status: 200,
+            body: {
+              matches: [
+                { name: 'csrf-guide', description: 'CSRF defense notes', type: 'reference', modified: '2026-11-21T10:00:00.000Z', size: 25 },
+                ...extraMatches,
+              ],
+            },
+          }
+        }
+        return { status: 200, body: { matches: [] } }
+      }
+      return null
+    },
+  })
+
+  try {
+    await b.mountPage()
+    const memTab = b.container.querySelector('#pj-drawer-tab-memory')
+    assert.ok(memTab)
+    await act(async () => { memTab.click() })
+
+    const searchInput = b.container.querySelector('input[type="search"]')
+    assert.ok(searchInput)
+
+    // Case a) Type CSRF and fire 3 identical-memory SSE updates during the 160ms debounce window
+    await act(async () => {
+      setControlValue(b.dom, searchInput, 'CSRF')
+      b.eventSources[0].emit('open', {})
+    })
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 45))
+        b.eventSources[0].emit('update', { type: 'task:updated', projectId: 'p-11111111', ts: Date.now() + i })
+      })
+    }
+    await act(async () => { await new Promise((r) => setTimeout(r, 240)) })
+
+    const csrfCalls = () => b.apiCalls.filter((c) => c.method === 'GET' && c.pathname === '/projects/p-11111111/memory' && c.search === '?q=CSRF')
+    assert.equal(csrfCalls().length, 1, 'identical SSE refreshes must not reset debounce or double-fetch')
+    assert.ok(b.container.querySelector('[data-memory-topic="csrf-guide"]'))
+
+    // Case b) Real memory content addition via SSE triggers exactly 1 new search and renders new item
+    extraMatches = [{ name: 'csrf-extra', description: 'CSRF token rotation', type: 'reference', modified: '2026-11-27T00:00:00.000Z', size: 18 }]
+    await globalThis.fetch('/projects-api/projects/p-11111111/memory', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'csrf-extra',
+        description: 'CSRF token rotation',
+        type: 'reference',
+        text: 'Rotate CSRF token.',
+      }),
+    })
+    await act(async () => {
+      b.eventSources[0].emit('update', { type: 'memory:updated', projectId: 'p-11111111', ts: Date.now() + 99 })
+      await new Promise((r) => setTimeout(r, 150))
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 260))
+    })
+    assert.equal(csrfCalls().length, 2, 'real memory change must re-run search once')
+    assert.ok(b.container.querySelector('[data-memory-topic="csrf-extra"]'))
+
+    // Case c) Search endpoint 500 falls back to latest memory content added via SSE
+    failMemorySearch = true
+    await globalThis.fetch('/projects-api/projects/p-11111111/memory', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'offline-notes',
+        description: 'offline fallback entry',
+        type: 'reference',
+        text: 'Offline fallback.',
+      }),
+    })
+    await act(async () => {
+      b.eventSources[0].emit('update', { type: 'memory:updated', projectId: 'p-11111111', ts: Date.now() + 199 })
+      await new Promise((r) => setTimeout(r, 150))
+    })
+    await act(async () => {
+      setControlValue(b.dom, searchInput, 'offline')
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 260))
+    })
+    assert.ok(b.container.querySelector('[data-memory-topic="offline-notes"]'))
+  } finally {
+    await b.cleanup()
+  }
+})

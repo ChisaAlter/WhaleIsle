@@ -556,6 +556,9 @@ function registerIpc({
     if (!REMOTE_FEATURE_ENABLED) {
       return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});
     }
+    if (remote && typeof remote.unbindDeviceWithAck === 'function') {
+      return remote.unbindDeviceWithAck(id);
+    }
     if (remote && typeof remote.unbindDevice === 'function') {
       return remote.unbindDevice(id);
     }

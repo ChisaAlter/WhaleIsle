@@ -42,19 +42,70 @@ const DEFAULT_PROJECTS = [
 const DEFAULT_BASELINE = resolve(SCRIPT_DIR, 'typecheck-baseline.json');
 const DIFF_PREVIEW = 30;
 
+export const A_CLASS_CODES = new Set([
+  'TS2554', 'TS2353', 'TS2769', 'TS2810', 'TS2349', 'TS2538', 'TS8024', 'TS2739',
+  'TS2722', 'TS2367', 'TS1064', 'TS2341', 'TS2551', 'TS2698', 'TS2783', 'TS2719',
+  'TS2488', 'TS2454', 'TS1345', 'TS2351', 'TS2362', 'TS2365', 'TS8032', 'TS2416',
+  'TS2741', 'TS2358',
+]);
+const B_CLASS_CODES = new Set(['TS2304', 'TS2307', 'TS7026', 'TS17004', 'TS2552', 'TS2550', 'TS2882', 'TS6142']);
+const C_CLASS_CODES = new Set(['TS2339', 'TS2345', 'TS2322']);
+const D_CLASS_CODES = new Set(['TS18047', 'TS18046', 'TS2531', 'TS18048', 'TS2532']);
+const B_HIGH_RISK_CODES = new Set(['TS2304', 'TS2552', 'TS2550', 'TS2307']);
+export const HARD_FAIL_CODES = new Set([...A_CLASS_CODES, ...B_HIGH_RISK_CODES]);
+
+export const HARD_FAIL_EXEMPT = Object.freeze({
+  mobileWebQueryImports: true,
+  unresolvedModules: Object.freeze([
+    Object.freeze({ file: 'mobile/web/chisacode/entry.mjs', code: 'TS2307', specifier: '@chisacode/client' }),
+    Object.freeze({ file: 'mobile/web/chisacode/entry.mjs', code: 'TS2307', specifier: '@chisacode/client/relay-device-credentials' }),
+    Object.freeze({ file: 'mobile/web/chisacode/entry.mjs', code: 'TS2307', specifier: '@chisacode/protocol/connection-offer' }),
+    Object.freeze({ file: 'mobile/web/chisacode/entry.mjs', code: 'TS2307', specifier: '@chisacode/protocol/daemon-endpoints' }),
+    Object.freeze({ file: 'mobile/web/chisacode/session.js', code: 'TS2307', specifier: '@chisacode/client' }),
+    Object.freeze({ file: 'scripts/install-harness.cjs', code: 'TS2307', specifier: './harness-runtime-identity' }),
+    Object.freeze({ file: 'scripts/install-harness.cjs', code: 'TS2307', specifier: './runtime-links' }),
+    Object.freeze({ file: 'vendor/dsh-deepseek-tools/client/client.js', code: 'TS2307', specifier: '@deepseek-ai/dsh-client-ui-primitives' }),
+    Object.freeze({ file: 'vendor/dsh-deepseek-tools/client/client.js', code: 'TS2307', specifier: 'react' }),
+    Object.freeze({ file: 'vendor/dsh-project/client/client.js', code: 'TS2307', specifier: 'react' }),
+    Object.freeze({ file: 'vendor/dsh-whale/lib/task-session-runner.js', code: 'TS2307', specifier: '@deepseek-ai/dsh-agent' }),
+  ]),
+});
+
+const UNRESOLVED_MODULE_RE = /^Cannot find module '([^']+)'/;
+
+/**
+ * @param {string} file
+ * @param {string} code
+ * @param {string} message
+ * @returns {boolean}
+ */
+export function isExemptHardCode(file, code, message) {
+  if (code !== 'TS2307') return false;
+  if (HARD_FAIL_EXEMPT.mobileWebQueryImports && file.startsWith('mobile/web/') && message.includes('?v=')) {
+    return true;
+  }
+  const hit = UNRESOLVED_MODULE_RE.exec(message);
+  if (!hit) return false;
+  const specifier = hit[1];
+  return HARD_FAIL_EXEMPT.unresolvedModules.some(
+    (entry) => entry.file === file && entry.code === code && entry.specifier === specifier,
+  );
+}
+
 /** @typedef {Map<string, Map<string, Map<string, number>>>} DiagCounts */
 
 function usage() {
-  console.error('用法：node scripts/typecheck.mjs [--update-baseline] [--project <tsconfig>] [--baseline <json>]');
+  console.error('用法：node scripts/typecheck.mjs [--update-baseline] [--metrics] [--project <tsconfig>] [--baseline <json>]');
   process.exit(2);
 }
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  const opts = { update: false, projects: /** @type {string[] | null} */ (null), baseline: DEFAULT_BASELINE };
+  const opts = { update: false, metrics: false, projects: /** @type {string[] | null} */ (null), baseline: DEFAULT_BASELINE };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--update-baseline') opts.update = true;
+    else if (arg === '--metrics') opts.metrics = true;
     else if (arg === '--project') (opts.projects ||= []).push(resolve(argv[++i]));
     else if (arg === '--baseline') opts.baseline = resolve(argv[++i]);
     else usage();
@@ -307,6 +358,90 @@ export function diffCounts(current, baseline) {
   return { newer, fewer };
 }
 
+/** @param {string} code */
+function classifyCodeBucket(code) {
+  if (A_CLASS_CODES.has(code)) return 'A';
+  if (B_CLASS_CODES.has(code)) return 'B';
+  if (C_CLASS_CODES.has(code)) return 'C';
+  if (D_CLASS_CODES.has(code)) return 'D';
+  return 'E';
+}
+
+/**
+ * @param {DiagCounts} primary
+ * @param {DiagCounts | undefined} secondary
+ * @param {'ratchet' | 'zero'} mode
+ * @returns {string[]}
+ */
+function findPolicyViolations(primary, secondary, mode) {
+  /** @type {string[]} */
+  const violations = [];
+  for (const [file, byCode] of primary) {
+    for (const [code, byMessage] of byCode) {
+      if (!HARD_FAIL_CODES.has(code)) continue;
+      for (const [message, count] of byMessage) {
+        if (count <= 0 || isExemptHardCode(file, code, message)) continue;
+        const other = secondary?.get(file)?.get(code)?.get(message) || 0;
+        if (mode === 'zero') violations.push(`${file} ${code} x${count} ${message}`);
+        else if (count > other) violations.push(`${file} ${code} x${other}->${count} ${message}`);
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * Evaluate high-risk diagnostic policy in ratchet or zero-tolerance mode.
+ * @param {DiagCounts} currentCounts
+ * @param {DiagCounts} baselineCounts
+ * @param {'ratchet' | 'zero'} [mode]
+ */
+export function evaluateHardCodePolicy(currentCounts, baselineCounts, mode = 'ratchet') {
+  const violations = findPolicyViolations(currentCounts, baselineCounts, mode);
+  if (mode === 'zero' && baselineCounts) {
+    for (const [file, byCode] of baselineCounts) {
+      for (const [code, byMessage] of byCode) {
+        if (!HARD_FAIL_CODES.has(code)) continue;
+        for (const [message, base] of byMessage) {
+          if (base <= 0 || isExemptHardCode(file, code, message)) continue;
+          const current = currentCounts.get(file)?.get(code)?.get(message) || 0;
+          if (current === 0) violations.push(`${file} ${code} baseline=${base} ${message}`);
+        }
+      }
+    }
+  }
+  return { ok: violations.length === 0, mode, violations };
+}
+
+/**
+ * Summarize baseline diagnostics into 5 severity tiers and top-level directories.
+ * @param {DiagCounts} counts
+ */
+export function summarizeMetrics(counts) {
+  const { total, byDir } = countEntries(counts);
+  const buckets = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  let hardFailNonExempt = 0;
+  for (const [file, byCode] of counts) {
+    for (const [code, byMessage] of byCode) {
+      const bucket = classifyCodeBucket(code);
+      const isHard = HARD_FAIL_CODES.has(code);
+      for (const [message, count] of byMessage) {
+        buckets[bucket] += count;
+        if (isHard && !isExemptHardCode(file, code, message)) {
+          hardFailNonExempt += count;
+        }
+      }
+    }
+  }
+  return {
+    total,
+    files: counts.size,
+    hardFailNonExempt,
+    buckets,
+    byDir: Object.fromEntries([...byDir.entries()].sort()),
+  };
+}
+
 /**
  * @param {string} title
  * @param {string[]} entries
@@ -354,6 +489,13 @@ function mergeCounts(dst, src) {
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.metrics) {
+    const baseline = existsSync(opts.baseline)
+      ? objectToCounts(JSON.parse(readFileSync(opts.baseline, 'utf8')))
+      : new Map();
+    console.log(JSON.stringify(summarizeMetrics(baseline), null, 2));
+    return;
+  }
   const projects = opts.projects ?? DEFAULT_PROJECTS;
   /** @type {DiagCounts} */
   const counts = new Map();
@@ -384,19 +526,28 @@ function main() {
     process.exit(1);
   }
 
+  const baseline = existsSync(opts.baseline)
+    ? objectToCounts(JSON.parse(readFileSync(opts.baseline, 'utf8')))
+    : new Map();
+  const hardPolicy = evaluateHardCodePolicy(counts, baseline, 'ratchet');
+
   if (opts.update) {
+    if (!hardPolicy.ok) {
+      printList('禁止新增或膨胀高危错误码，拒绝更新基线', hardPolicy.violations);
+      process.exit(1);
+    }
     atomicWriteFileSync(opts.baseline, JSON.stringify(countsToObject(counts), null, 2) + '\n');
     console.log('已更新基线 ' + opts.baseline + '（' + total + ' 条诊断）。');
     return;
   }
 
-  const baseline = existsSync(opts.baseline)
-    ? objectToCounts(JSON.parse(readFileSync(opts.baseline, 'utf8')))
-    : new Map();
   const { newer, fewer } = diffCounts(counts, baseline);
   if (newer.length === 0 && fewer.length === 0) {
     console.log('与基线一致。');
     return;
+  }
+  if (!hardPolicy.ok) {
+    printList('新增/上升高危错误码（HARD_FAIL_CODES）', hardPolicy.violations);
   }
   if (newer.length > 0) {
     printList('基线外的新诊断', newer);

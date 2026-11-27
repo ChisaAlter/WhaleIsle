@@ -179,6 +179,7 @@ function BotChatWorkerRows({
     canStop: boolean,
     x: number,
     y: number,
+    contextTriggerEl: HTMLElement | null,
   ) => void;
 }) {
   const { locale, tr } = useBotsLocale();
@@ -250,7 +251,7 @@ function BotChatWorkerRows({
             onContextMenu={hasMenu ? (e) => {
               e.preventDefault();
               e.stopPropagation();
-              onOpenWorkerContextMenu(worker, menuKey, label, isRowActive, canStop, e.clientX, e.clientY);
+              onOpenWorkerContextMenu(worker, menuKey, label, isRowActive, canStop, e.clientX, e.clientY, e.currentTarget);
             } : undefined}
             title={worker.statusText || label}
           >
@@ -335,6 +336,7 @@ type RowMenuState =
       x: number;
       y: number;
       triggerEl: HTMLElement | null;
+      contextTriggerEl: HTMLElement | null;
     }
   | {
       kind: 'worker';
@@ -346,6 +348,7 @@ type RowMenuState =
       x: number;
       y: number;
       triggerEl: HTMLElement | null;
+      contextTriggerEl: HTMLElement | null;
     };
 
 export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatListProps) {
@@ -365,6 +368,7 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
     open: Boolean(menuState),
     popoverRef: menuRef,
     triggerEl: menuState?.triggerEl ?? null,
+    contextTriggerEl: menuState?.contextTriggerEl ?? null,
     onClose: () => setMenuState(null),
   });
 
@@ -468,10 +472,11 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
     x: number,
     y: number,
     triggerEl: HTMLElement | null = null,
+    contextTriggerEl: HTMLElement | null = null,
   ) => {
     const key = chatRowKey(chat);
     const pos = clampMenuPos(x, y);
-    setMenuState({ kind: 'chat', key, chat, isActive, ...pos, triggerEl });
+    setMenuState({ kind: 'chat', key, chat, isActive, ...pos, triggerEl, contextTriggerEl });
   };
 
   const openWorkerMenuAt = (
@@ -483,9 +488,10 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
     x: number,
     y: number,
     triggerEl: HTMLElement | null = null,
+    contextTriggerEl: HTMLElement | null = null,
   ) => {
     const pos = clampMenuPos(x, y);
-    setMenuState({ kind: 'worker', key, worker, label, isActive, canStop, ...pos, triggerEl });
+    setMenuState({ kind: 'worker', key, worker, label, isActive, canStop, ...pos, triggerEl, contextTriggerEl });
   };
 
   if (!hasVisibleHomeWorkers && subChats.length === 0) {
@@ -516,8 +522,8 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
               openWorkerMenuAt(worker, key, label, isActive, canStop, rect.left, rect.bottom + 4, triggerEl);
             }
           }}
-          onOpenWorkerContextMenu={(worker, key, label, isActive, canStop, x, y) => {
-            openWorkerMenuAt(worker, key, label, isActive, canStop, x, y);
+          onOpenWorkerContextMenu={(worker, key, label, isActive, canStop, x, y, contextTriggerEl) => {
+            openWorkerMenuAt(worker, key, label, isActive, canStop, x, y, null, contextTriggerEl);
           }}
         />
       )}
@@ -558,7 +564,7 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                openChatMenuAt(chat, isActive, e.clientX, e.clientY);
+                openChatMenuAt(chat, isActive, e.clientX, e.clientY, null, e.currentTarget);
               }}
             >
               <span className="dsh-bots-subrow-icon">
@@ -634,8 +640,8 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
                     openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, rect.left, rect.bottom + 4, triggerEl);
                   }
                 }}
-                onOpenWorkerContextMenu={(worker, key, wLabel, wIsActive, canStop, x, y) => {
-                  openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, x, y);
+                onOpenWorkerContextMenu={(worker, key, wLabel, wIsActive, canStop, x, y, contextTriggerEl) => {
+                  openWorkerMenuAt(worker, key, wLabel, wIsActive, canStop, x, y, null, contextTriggerEl);
                 }}
               />
             </BotDisclosure>

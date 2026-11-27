@@ -1,11 +1,10 @@
 {
   "schemaVersion": 1,
   "win32-x64": {
-    "totalBytes": 1440614380,
+    "totalBytes": 1286731737,
     "maxUnclassifiedBytes": 8388608,
     "maxDuplicateBytes": 24277889,
     "pendingSlimmingForbidden": [
-      "office-kit-wasm",
       "mobile-whale-ui-dup",
       "mobile-head-dup",
       "renderer-openui"
@@ -15,7 +14,7 @@
         "maxBytes": 327285713
       },
       "office-kit-wasm": {
-        "maxBytes": 153882344
+        "maxBytes": 0
       },
       "office-kit-native": {
         "maxBytes": 204679320

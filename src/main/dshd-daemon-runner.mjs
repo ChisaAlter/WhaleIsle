@@ -109,32 +109,103 @@ process.on('unhandledRejection', (err) => {
 
 // stdin is the cross-platform graceful-stop channel (Windows has no trappable
 // SIGTERM); its close means the parent is gone and this host must not linger.
-const MAX_STDIN_BUFFER_CHARS = 64 * 1024;
+const MAX_CONTROL_LINE_CHARS = 64 * 1024;
 let stdinBuffer = '';
+let discardingOversizedLine = false;
+/** @type {Array<{ deviceId: string, requestId: string | null }>} */
+const pendingRevocations = [];
+
+/** @param {string} line */
+function parseRevokeCommand(line) {
+  const parts = line.slice('revoke-device '.length).trim().split(/\s+/);
+  const deviceId = parts[0] || '';
+  const requestId = parts[1] || null;
+  return deviceId ? { deviceId, requestId } : null;
+}
+
+/** @param {{ deviceId: string, requestId: string | null }} cmd */
+async function executeRevocation({ deviceId, requestId }) {
+  try {
+    const disconnected = typeof daemon?.disconnectDevice === 'function'
+      ? await Promise.resolve(daemon.disconnectDevice(deviceId))
+      : 0;
+    emit({
+      msg: 'dshd_daemon_device_revoked',
+      ...(requestId ? { requestId } : {}),
+      deviceId,
+      disconnected: Number(disconnected) || 0,
+    });
+  } catch (err) {
+    emit({
+      msg: 'dshd_daemon_revoke_error',
+      ...(requestId ? { requestId } : {}),
+      deviceId,
+      error: errorText(err),
+    });
+  }
+}
+
+async function drainPendingRevocations() {
+  while (pendingRevocations.length > 0) {
+    const batch = pendingRevocations.splice(0, pendingRevocations.length);
+    await Promise.all(batch.map((cmd) => executeRevocation(cmd)));
+  }
+}
+
+/** @param {unknown} err */
+function failPendingRevocations(err) {
+  const error = errorText(err);
+  for (const cmd of pendingRevocations.splice(0, pendingRevocations.length)) {
+    emit({
+      msg: 'dshd_daemon_revoke_error',
+      ...(cmd.requestId ? { requestId: cmd.requestId } : {}),
+      deviceId: cmd.deviceId,
+      error,
+    });
+  }
+}
+
+/** @param {string} rawLine */
+function handleStdinLine(rawLine) {
+  const line = rawLine.trim();
+  if (!line) return;
+  if (line.startsWith('revoke-device ')) {
+    const cmd = parseRevokeCommand(line);
+    if (!cmd) return;
+    if (daemon && typeof daemon.disconnectDevice === 'function') {
+      void executeRevocation(cmd);
+    } else {
+      pendingRevocations.push(cmd);
+    }
+    return;
+  }
+  const kind = applyDaemonStdinLine(line);
+  if (kind === 'stop') {
+    void shutdown('stop');
+  }
+}
+
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
-  stdinBuffer += chunk;
-  if (stdinBuffer.length > MAX_STDIN_BUFFER_CHARS) {
-    stdinBuffer = stdinBuffer.slice(-MAX_STDIN_BUFFER_CHARS);
+  let incoming = chunk;
+  if (discardingOversizedLine) {
+    const nl = incoming.indexOf('\n');
+    if (nl === -1) return;
+    discardingOversizedLine = false;
+    incoming = incoming.slice(nl + 1);
   }
+  stdinBuffer += incoming;
   let newline = stdinBuffer.indexOf('\n');
   while (newline !== -1) {
-    const line = stdinBuffer.slice(0, newline).trim();
+    const line = stdinBuffer.slice(0, newline);
     stdinBuffer = stdinBuffer.slice(newline + 1);
-    if (line.startsWith('revoke-device ')) {
-      const deviceId = line.slice('revoke-device '.length).trim();
-      if (deviceId && daemon && typeof daemon.disconnectDevice === 'function') {
-        void Promise.resolve(daemon.disconnectDevice(deviceId)).catch((err) => {
-          emit({ msg: 'dshd_daemon_revoke_error', deviceId, error: errorText(err) });
-        });
-      }
-    } else {
-      const kind = applyDaemonStdinLine(line);
-      if (kind === 'stop') {
-        void shutdown('stop');
-      }
-    }
+    handleStdinLine(line);
     newline = stdinBuffer.indexOf('\n');
+  }
+  if (stdinBuffer.length > MAX_CONTROL_LINE_CHARS) {
+    stdinBuffer = '';
+    discardingOversizedLine = true;
+    emit({ msg: 'dshd_daemon_control_line_rejected', reason: 'too-long' });
   }
 });
 process.stdin.on('end', () => { void shutdown('stdin-closed'); });
@@ -158,7 +229,9 @@ async function start() {
   );
   // Full daemon — createChisaCodeDaemon, not a hello-only stub.
   daemon = await api.createChisaCodeDaemon(launch.daemonConfig, logger);
+  await drainPendingRevocations();
   await daemon.start();
+  await drainPendingRevocations();
   emit({ msg: 'dshd_daemon_ready', listen: launch.daemonConfig.listen || '' });
 }
 
@@ -167,6 +240,7 @@ startSettled = startAttempt.catch(() => { /* The original startAttempt is awaite
 try {
   await startAttempt;
 } catch (err) {
+  failPendingRevocations(err);
   if (!stopping) {
     emit({ msg: 'dshd_daemon_start_failed', error: errorText(err) });
     process.exit(1);
