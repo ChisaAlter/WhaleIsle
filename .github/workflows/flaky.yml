@@ -24,10 +24,13 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: ${{ matrix.os == 'windows-latest' }}
+          is-release: 'false'
+          harness-changed: 'true'
       - run: npm ci
       - run: node node_modules/electron/install.js
       - name: Build the shipped Harness profile

@@ -1,0 +1,128 @@
+name: Setup Whale build environment and caches
+description: Configure Node, npm/pnpm/Electron/Harness/Office/Playwright caches, and stable PR commit hashes
+inputs:
+  cache-electron:
+    description: Restore and save Electron binary cache
+    required: false
+    default: 'true'
+  cache-harness:
+    description: Restore and save pnpm store and deepseek-harness stage caches
+    required: false
+    default: 'true'
+  cache-office:
+    description: Restore and save build/office-runtime-cache
+    required: false
+    default: 'false'
+  cache-playwright:
+    description: Restore and save Playwright Chromium cache
+    required: false
+    default: 'false'
+  is-release:
+    description: True for release or supplement builds; disables restoration of dsh-stages
+    required: false
+    default: 'false'
+  harness-changed:
+    description: True when vendor/deepseek-harness or its build triggers changed
+    required: false
+    default: 'true'
+outputs:
+  pw-cache-hit:
+    description: Whether Playwright Chromium cache hit
+    value: ${{ steps.pw_cache.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          vendor/chisacode-remote/package-lock.json
+          vendor/dsh-im/package-lock.json
+          vendor/dsh-remote/package-lock.json
+          vendor/dsh-usage-panel/package-lock.json
+    - name: Configure cache environment and PR build scope
+      shell: bash
+      env:
+        INPUT_CACHE_ELECTRON: ${{ inputs.cache-electron }}
+        INPUT_CACHE_HARNESS: ${{ inputs.cache-harness }}
+        INPUT_CACHE_PLAYWRIGHT: ${{ inputs.cache-playwright }}
+        INPUT_IS_RELEASE: ${{ inputs.is-release }}
+        INPUT_HARNESS_CHANGED: ${{ inputs.harness-changed }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const envFile = process.env.GITHUB_ENV;
+          const tempBase = path.resolve(process.env.RUNNER_TEMP, "..");
+          const lines = [];
+          if (process.env.INPUT_CACHE_HARNESS === "true") {
+            const storeDir = path.join(tempBase, "pnpm-store");
+            lines.push(`PNPM_STORE_DIR=${storeDir}`, `npm_config_store_dir=${storeDir}`);
+          }
+          if (process.env.INPUT_CACHE_ELECTRON === "true") {
+            lines.push(`ELECTRON_CACHE=${path.join(tempBase, "electron-cache")}`);
+          }
+          if (process.env.INPUT_CACHE_PLAYWRIGHT === "true") {
+            lines.push(`PLAYWRIGHT_BROWSERS_PATH=${path.join(tempBase, "ms-playwright")}`);
+          }
+          const isPr = process.env.EVENT_NAME === "pull_request";
+          const isRelease = process.env.INPUT_IS_RELEASE === "true";
+          const harnessChanged = process.env.INPUT_HARNESS_CHANGED === "true";
+          if (!harnessChanged && !isRelease) {
+            lines.push("WHALE_HARNESS_BUILD_SCOPE=artifacts");
+          }
+          if (isPr && !harnessChanged && !isRelease) {
+            const pin = JSON.parse(fs.readFileSync("vendor/harness-upstream.json", "utf8"));
+            if (!/^[0-9a-f]{7,40}$/i.test(String(pin.sha || ""))) {
+              throw new Error(`Invalid upstream sha in vendor/harness-upstream.json: ${pin.sha}`);
+            }
+            lines.push(`DSH_CLIENT_COMMIT_HASH=${pin.sha.slice(0, 7).toLowerCase()}`);
+          }
+          if (lines.length > 0) fs.appendFileSync(envFile, lines.join("\n") + "\n");
+        '
+    - name: Cache pnpm store
+      if: inputs.cache-harness == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ runner.temp }}/../pnpm-store
+        key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/deepseek-harness/pnpm-lock.yaml', 'src/whale-ui/pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-
+    - name: Cache deepseek-harness stage artifacts
+      if: inputs.cache-harness == 'true' && inputs.is-release != 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: |
+          vendor/deepseek-harness/.dsh-build
+          vendor/deepseek-harness/native/system/packages
+          vendor/deepseek-harness/packages/*/*/lib
+          vendor/deepseek-harness/vendor/*/lib
+          vendor/deepseek-harness/apps/cli/lib
+          vendor/deepseek-harness/apps/desktop/lib
+          vendor/deepseek-harness/apps/desktop-host/lib
+          vendor/deepseek-harness/apps/web/dist
+        key: dsh-stages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/harness-upstream.json', 'vendor/deepseek-harness/pnpm-lock.yaml', 'vendor/deepseek-harness/package.json', 'vendor/deepseek-harness/tsconfig*.json', 'vendor/deepseek-harness/tsdown.config.ts') }}-${{ hashFiles('vendor/deepseek-harness/packages/**/src/**', 'vendor/deepseek-harness/apps/**/src/**', 'vendor/deepseek-harness/native/system/**', 'vendor/deepseek-harness/scripts/**') }}
+        restore-keys: |
+          dsh-stages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/harness-upstream.json', 'vendor/deepseek-harness/pnpm-lock.yaml', 'vendor/deepseek-harness/package.json', 'vendor/deepseek-harness/tsconfig*.json', 'vendor/deepseek-harness/tsdown.config.ts') }}-
+    - name: Cache Office runtime archives
+      if: inputs.cache-office == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: build/office-runtime-cache
+        key: office-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/deepseek-harness/scripts/primary-runtime/lock.json', 'scripts/prepare-office-runtime.mjs') }}
+    - name: Cache Electron binary
+      if: inputs.cache-electron == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ runner.temp }}/../electron-cache
+        key: electron-bin-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+    - name: Cache Playwright Chromium
+      id: pw_cache
+      if: inputs.cache-playwright == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ runner.temp }}/../ms-playwright
+        key: pw-chromium-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/deepseek-harness/pnpm-lock.yaml') }}

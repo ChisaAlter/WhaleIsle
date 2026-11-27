@@ -43,10 +43,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'false'
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - name: Vendor provenance and artifact consistency
@@ -69,14 +69,22 @@ jobs:
       LEFTHOOK: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - id: setup_whale
+        uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'false'
+          cache-harness: 'true'
+          cache-playwright: 'true'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - name: Build the shipped Harness profile
         run: npm run setup:harness
+      - name: Install Playwright Chromium system deps
+        if: steps.setup_whale.outputs.pw-cache-hit == 'true'
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install-deps chromium
       - name: Install the Chromium build apps/web's Playwright pins
+        if: steps.setup_whale.outputs.pw-cache-hit != 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install --with-deps chromium
       - name: Big Fish workbench, panels and task cards
         run: node scripts/run-whale-big-fish-qa.mjs
@@ -103,10 +111,13 @@ jobs:
       WHALE_REQUIRE_TEST_PREREQS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'true'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - name: Lint
         run: npm run lint
@@ -195,10 +206,13 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'false'
+          is-release: 'true'
+          harness-changed: 'true'
       - run: node scripts/check-mac-icon.js
       - run: npm ci
       - run: node node_modules/electron/install.js
@@ -237,10 +251,13 @@ jobs:
       WHALE_REQUIRE_TEST_PREREQS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'false'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - run: node node_modules/electron/install.js
       - name: Build the shipped Harness profile
@@ -293,10 +310,13 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'false'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - run: node node_modules/electron/install.js
       - name: Build the shipped Harness profile
