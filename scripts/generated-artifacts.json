@@ -138,13 +138,13 @@
     },
     "src/renderer/pet-live2d/ort": {
       "kind": "artifacts",
-      "origin": "onnxruntime-web@1.22.0 vendored dist: ort.all.min.js loader plus the WASM/JSEP backend pair",
+      "origin": "onnxruntime-web@1.22.0 vendored dist: ort.all.min.js loader + JSEP backend; non-JSEP pair omitted (unreferenced by loader or runtime)",
       "rebuildCommand": "copy the dist files out of the onnxruntime-web 1.22.0 npm package",
       "artifacts": {
         "paths": [
           "src/renderer/pet-live2d/ort"
         ],
-        "artifactHash": "7834dc2085c9b1b030d2ee10a3a990871b585e9eaec0400f02fb67794f283170"
+        "artifactHash": "dffdaaebdbd279e7a558d3863d49d7a066fd2f61b1c5915df1b907c49ea9ef3e"
       }
     },
     "assets/icon.png": {
