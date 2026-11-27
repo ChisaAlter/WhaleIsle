@@ -107,17 +107,14 @@ function preserveUserDataPath(app, directoryName, argv = process.argv) {
 
 module.exports = {
   APP_ID,
-  LAUNCHER_APP_ID,
   PRODUCT_NAME,
   LAUNCHER_NAME,
-  LEGACY_PRODUCT_NAME,
   LEGACY_PRODUCT_NAMES,
   LEGACY_LAUNCHER_NAMES,
   LEGACY_DESKTOP_USER_DATA,
   LEGACY_LAUNCHER_USER_DATA,
   productNames,
   nsisUninstallRegistryId,
-  matchesProductNameBoundary,
   matchesProductEntry,
   preserveUserDataPath,
 };
