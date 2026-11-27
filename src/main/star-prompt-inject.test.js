@@ -452,8 +452,8 @@ test('renders zh and en copy across visible, starring, error, browser fallback, 
   assert.ok(card);
   assert.equal(card.getAttribute('role'), 'region');
   assert.equal(card.getAttribute('aria-modal'), null);
-  assert.ok(card.textContent.includes('支持鲸屿项目'));
-  assert.ok(card.textContent.includes('喜欢鲸屿的话，欢迎点个 Star 支持一下。'));
+  assert.ok(card.textContent.includes('支持 WhaleIsle 项目'));
+  assert.ok(card.textContent.includes('喜欢 WhaleIsle 的话，欢迎点个 Star 支持一下。'));
 
   let primary = card.querySelector('.dshd-sp-primary');
   assert.equal(primary.textContent, '一键点 Star');
@@ -503,8 +503,8 @@ test('renders zh and en copy across visible, starring, error, browser fallback, 
   assert.deepEqual(env.actionCalls.at(-1), { type: 'open-browser' });
 
   env.pushView({ visible: true, phase: 'error', mode: 'browser', locale: 'en', errorCode: 'request-failed' });
-  assert.ok(card.textContent.includes('Star Whale Isle'));
-  assert.ok(card.textContent.includes('Enjoying Whale Isle? Give it a Star on GitHub.'));
+  assert.ok(card.textContent.includes('Star WhaleIsle'));
+  assert.ok(card.textContent.includes('Enjoying WhaleIsle? Give it a Star on GitHub.'));
   assert.equal(card.querySelector('.dshd-sp-error').textContent, 'Request failed. Open GitHub to star.');
   assert.equal(card.querySelector('.dshd-sp-primary').textContent, 'Open GitHub to Star');
   const enGhosts = card.querySelectorAll('.dshd-sp-ghost');
@@ -585,7 +585,7 @@ test('late getStarPromptState resolution does not overwrite newer onStarPromptCh
   env.pushView({ visible: true, phase: 'visible', mode: 'direct', locale: 'en', errorCode: '' });
   let card = env.document.getElementById('dshd-star-prompt-card');
   assert.ok(card);
-  assert.ok(card.textContent.includes('Star Whale Isle'));
+  assert.ok(card.textContent.includes('Star WhaleIsle'));
 
   resolveInitial({ visible: false, phase: 'hidden', mode: 'direct', locale: 'zh', errorCode: '' });
   await env.flushMicrotasks();
@@ -593,5 +593,5 @@ test('late getStarPromptState resolution does not overwrite newer onStarPromptCh
   card = env.document.getElementById('dshd-star-prompt-card');
   assert.ok(card);
   assert.equal(card.getAttribute('data-state'), 'open');
-  assert.ok(card.textContent.includes('Star Whale Isle'));
+  assert.ok(card.textContent.includes('Star WhaleIsle'));
 });
