@@ -33,3 +33,11 @@ CI 资产名称、自动分发、CNB 镜像与失败重试的操作流程见[发
 - 资产与更新元数据由 `scripts/check-release-assets.mjs` 核对。
 - 发布说明由 `.github/release-notes.md` 与 `.github/release-notes.en.md` 维护，正文保留主要用户变化和必要版本边界；GitHub 首屏展示中文，英文放入折叠区。
 - `SHA512SUMS.txt` 是桌面更新器的实际输入，发布时必须包含同批资产的 SHA512。
+
+## 体积核账与预算卡控（FP-00）
+
+- 核账脚本 `scripts/measure-package-footprint.mjs`（零第三方运行期依赖）以只读方式遍历打包输出四层：`base:`（`resources/` 之外 Electron 基座）、`asar:`（仅统计非 `unpacked: true` 的逻辑叶子，防止 `asarUnpack` 双计，并校验磁盘 `app.asar.unpacked/` 无缺失）、`asar-unpacked:`、`tar:`（流式读取 `resources/vendor/deepseek-harness.tar` 512 B ustar/pax/GNU `L` 文件头）、`res:`（`resources/` 下其余真实文件），对 ≥ 256 KiB 文件计算 SHA-256 跨层查重。
+- 规则清单由 `scripts/package-footprint-components.json` 按顺序首个命中归类（未命中落入 `unclassified`）；目标预算阈值见 `scripts/package-footprint-budgets.json`，Windows 基线保存在 `scripts/package-footprint-baseline.win32-x64.json`。
+- 常用命令：
+  - 本机核账：`node scripts/measure-package-footprint.mjs --input dist/win-unpacked --target win32-x64 --baseline scripts/package-footprint-baseline.win32-x64.json --budgets scripts/package-footprint-budgets.json --out tmp/footprint.json --markdown tmp/footprint.md`
+  - 更新基线与收紧预算（ratchet）：瘦身 PR 合并后须在同一 PR 内通过 `--record-baseline` 更新对应基线，并同步下调 `scripts/package-footprint-budgets.json` 中对应组件的 `maxBytes`（一般为改后实测 +1%）与移除 `pendingSlimmingForbidden` 宽限项。
