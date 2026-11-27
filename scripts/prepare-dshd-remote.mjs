@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -398,18 +399,17 @@ function packWorkspacePackage(pkg, runtimeNodeModulesDir) {
 
 /**
  * Assemble and verify the trimmed desktop-runtime inside a same-volume staging
- * directory before atomically promoting it to `destinationRoot`. Any failure
- * leaves `destinationRoot` untouched and cleans up all staging intermediates.
+ * directory before promoting it to `destinationRoot`. If promotion and
+ * restoration both fail, leave the verified runtime at its backup path.
  * @param {string} destinationRoot
  * @param {(targetRoot: string) => Promise<void> | void} buildAndVerify
  */
 export async function stageAndPromoteRuntime(destinationRoot, buildAndVerify) {
   const parent = path.dirname(destinationRoot);
   const name = path.basename(destinationRoot);
-  const stagingRoot = path.join(parent, `${name}.staging-${process.pid}`);
-  const backupRoot = path.join(parent, `${name}.old-${process.pid}`);
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-  fs.rmSync(backupRoot, { recursive: true, force: true });
+  const attempt = randomUUID();
+  const stagingRoot = path.join(parent, `${name}.staging-${attempt}`);
+  const backupRoot = path.join(parent, `${name}.old-${attempt}`);
   fs.mkdirSync(stagingRoot, { recursive: true });
   try {
     await buildAndVerify(stagingRoot);
@@ -420,8 +420,15 @@ export async function stageAndPromoteRuntime(destinationRoot, buildAndVerify) {
     try {
       fs.renameSync(stagingRoot, destinationRoot);
     } catch (error) {
-      if (hadExisting && fs.existsSync(backupRoot) && !fs.existsSync(destinationRoot)) {
+      if (!hadExisting) throw error;
+      try {
+        if (fs.existsSync(destinationRoot)) {
+          throw new Error(`Cannot restore over an occupied runtime path: ${destinationRoot}`);
+        }
         fs.renameSync(backupRoot, destinationRoot);
+      } catch (restoreError) {
+        throw new AggregateError([error, restoreError],
+          `Remote runtime promotion and rollback failed. Previous runtime retained at: ${backupRoot}`);
       }
       throw error;
     }
@@ -430,7 +437,6 @@ export async function stageAndPromoteRuntime(destinationRoot, buildAndVerify) {
     }
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
-    fs.rmSync(backupRoot, { recursive: true, force: true });
   }
 }
 
