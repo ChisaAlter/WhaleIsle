@@ -94,16 +94,26 @@ export function harnessInstallReason(harnessDir = harness) {
  * check rather than a tautology.
  */
 function expectedOfficialEnvironment(harnessDir = harness, rootDir = root) {
-  const commit = spawnSync('git', ['rev-parse', '--short=7', 'HEAD'], {
-    cwd: rootDir,
-    encoding: 'utf8',
-    shell: false,
-  });
+  const explicit = process.env.DSH_CLIENT_COMMIT_HASH;
+  let commitHash = '';
+  if (explicit !== undefined && explicit !== '') {
+    if (!/^[0-9a-f]{7,40}$/i.test(explicit)) {
+      throw new Error(`DSH_CLIENT_COMMIT_HASH must be a Git commit hash; got ${JSON.stringify(explicit)}`);
+    }
+    commitHash = explicit.slice(0, 7).toLowerCase();
+  } else {
+    const commit = spawnSync('git', ['rev-parse', '--short=7', 'HEAD'], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      shell: false,
+    });
+    commitHash = commit.status === 0 ? commit.stdout.trim() : '';
+  }
   const version = JSON.parse(fs.readFileSync(path.join(harnessDir, 'package.json'), 'utf8')).version;
   return {
     DSH_CLIENT_BUILD_PROFILE: 'official',
     DSH_CLIENT_TITLE: 'Whale Isle',
-    DSH_CLIENT_COMMIT_HASH: commit.status === 0 ? commit.stdout.trim() : '',
+    DSH_CLIENT_COMMIT_HASH: commitHash,
     DSH_CLIENT_VERSION: version,
   };
 }
