@@ -98,7 +98,7 @@ test('manifest keeps the packaging contract after-pack depends on', () => {
     );
   }
   assert.equal(build.publish?.[0]?.owner, 'ChisaAlter');
-  assert.equal(build.publish?.[0]?.repo, 'Deepseek-Harness-Desktop');
+  assert.equal(build.publish?.[0]?.repo, 'WhaleIsle');
 });
 
 test('rounded-window motion bridge is a production dependency unpacked in both packages', () => {

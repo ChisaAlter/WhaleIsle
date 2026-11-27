@@ -98,25 +98,31 @@ function pruneRuntimeFiles(root, target = {}, includeDependencies = true) {
   return removed;
 }
 
+const PACKAGE_EXCLUDED_TOP_DIRS = new Map([
+  ['@mixmark-io/domino', new Set(['test', '.yarn'])],
+  ['zod', new Set(['src'])],
+  ['@deepseek-ai/dsh-web-frontend', new Set(['public'])],
+  ['@xmanrui/dsh-im', new Set(['assets', 'src', 'plugin-src', 'scripts', 'test', 'tests', '__tests__', '.tmp'])],
+  ['dsh-usage-panel', new Set(['src', 'tests', 'tests-dist', '__tests__', 'docs', 'assets', 'scripts', '.tmp'])],
+  ['dsh-remote', new Set(['plugin-src', 'tests'])],
+  ['ssh2', new Set(['test'])],
+]);
+
 /** Official desktop omissions: build metadata and explicitly identified non-target native files. */
 function runtimeFileExclusion(packageName, relative, platform = process.platform, arch = process.arch) {
   const parts = relative.split(/[\\/]/);
   const file = parts.at(-1);
   if (parts.some(part => ['.bin', '.pnpm', '.modules.yaml', '.pnpm-workspace-state-v1.json'].includes(part))) return true;
   if (/\.(?:[cm]?[jt]s|css)\.map$/.test(file) || /\.d\.[cm]?ts$/.test(file) || /\.tsbuildinfo$/.test(file)) return true;
+  if (PACKAGE_EXCLUDED_TOP_DIRS.get(packageName)?.has(parts[0])) return true;
   if (packageName === 'node-pty' && parts[0] === 'prebuilds') {
     return parts.length > 1 && (parts[1] !== `${platform}-${arch}` || file.endsWith('.pdb'));
   }
   // ConPTY's active DLL/exe live next to conpty.node in prebuilds, not in this build-input copy.
   if (packageName === 'node-pty' && parts[0] === 'third_party' && /\.(?:exe|dll)$/i.test(file)) return true;
-  if (packageName === '@mixmark-io/domino' && (['test', '.yarn'].includes(parts[0]) || file === 'yarn.lock')) return true;
-  if (packageName === 'zod' && parts[0] === 'src') return true;
-  if (packageName === '@deepseek-ai/dsh-web-frontend' && parts[0] === 'public') return true;
-  if (packageName === '@xmanrui/dsh-im') {
-    if (['assets', 'src', 'plugin-src', 'scripts', 'test', 'tests', '__tests__', '.tmp'].includes(parts[0])) return true;
-    if (parts.length === 1 && (/\.test\.mjs$/.test(file) || file === '.tmp-lock-validation.log')) return true;
-  }
-  if (packageName === 'dsh-usage-panel' && ['src', 'tests', '__tests__', 'docs', 'assets', 'scripts', '.tmp'].includes(parts[0])) return true;
+  if (packageName === '@mixmark-io/domino' && file === 'yarn.lock') return true;
+  if (packageName === '@xmanrui/dsh-im' && parts.length === 1 && (/\.test\.mjs$/.test(file) || file === '.tmp-lock-validation.log')) return true;
+  if (packageName === 'dsh-remote' && /\.test\.[cm]?[jt]sx?$/.test(file)) return true;
   const reflink = /^@reflink\/reflink-(.+)$/.exec(packageName || '');
   if (reflink && ['win32', 'darwin'].includes(platform)) {
     const current = `${platform}-${arch}${platform === 'win32' ? '-msvc' : ''}`;

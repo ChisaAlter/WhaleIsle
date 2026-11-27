@@ -2105,9 +2105,6 @@
         "Parameter 'segment' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 3
       },
-      "TS7016": {
-        "Could not find a declaration file for module 'js-yaml'. '<node_modules>/js-yaml/dist/js-yaml.mjs' implicitly has an 'any' type.": 1
-      },
       "TS7034": {
         "Variable 'blockmapCandidates' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'matches' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,

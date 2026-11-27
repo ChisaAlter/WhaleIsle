@@ -1,7 +1,5 @@
-name: Release macOS single-file diagnosis
+name: Release macOS supplement build
 on:
-  push:
-    branches: [codex/release-macos-diagnostic-463b3455]
   workflow_dispatch:
     inputs:
       source_tag:
@@ -11,30 +9,7 @@ on:
 permissions:
   contents: read
 jobs:
-  diagnose:
-    if: github.event_name == 'push'
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [normal, jitless]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 463b3455d05806cd725f835c9648fed63a54b5a2
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: 24.22.3
-      - name: Observe single-file result with TAP details
-        shell: bash
-        env:
-          MODE: ${{ matrix.mode }}
-        run: |
-          flags=()
-          if [[ "$MODE" == "jitless" ]]; then flags+=(--jitless); fi
-          node "${flags[@]}" --test --test-reporter=tap src/renderer/pet-live2d.test.js
   packaged-chrome:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 120
     env:

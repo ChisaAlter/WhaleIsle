@@ -105,12 +105,18 @@
       "!src/renderer/pet-live2d/rig/master-v1.png",
       "!src/renderer/pet-live2d/rig/shell-*.png",
       "mobile/web/**/*",
+      "!mobile/web/package.json",
+      "!mobile/web/**/*.fixture.html",
       "!mobile/web/**/*.test.js",
       "!mobile/web/**/*.map",
       "!node_modules/node-pty/third_party/**/*.{exe,dll}",
       "!node_modules/node-pty/prebuilds/**/*.pdb",
       "!node_modules/node-pty/prebuilds/!(${platform}-${arch}){,/**/*}",
-      "assets/**/*",
+      "assets/icon.ico",
+      "assets/icon.png",
+      "assets/icon.svg",
+      "assets/whale-head.png",
+      "assets/pet-head.png",
       "package.json"
     ],
     "asarUnpack": [
@@ -140,8 +146,15 @@
         "to": "vendor",
         "filter": [
           "dsh-usage-panel/**",
+          "!dsh-usage-panel/src/**",
+          "!dsh-usage-panel/tests/**",
+          "!dsh-usage-panel/tests-dist/**",
+          "!dsh-usage-panel/docs/**",
+          "!dsh-usage-panel/scripts/**",
+          "!dsh-usage-panel/.tmp/**",
           "dsh-im/**",
           "dsh-project/**",
+          "!dsh-project/tests/**",
           "dsh-task-control/**",
           "dsh-platform-session/**",
           "dsh-whale/**",
@@ -150,6 +163,8 @@
           "!dsh-whale/**/*.test.*",
           "!dsh-whale/tests/**",
           "dsh-remote/**",
+          "!dsh-remote/plugin-src/**",
+          "!dsh-remote/**/*.test.*",
           "dsh-shared/**",
           "dsh-pad/**",
           "dsh-deepseek-tools/**",
@@ -201,7 +216,7 @@
       {
         "provider": "github",
         "owner": "ChisaAlter",
-        "repo": "Deepseek-Harness-Desktop"
+        "repo": "WhaleIsle"
       }
     ],
     "win": {

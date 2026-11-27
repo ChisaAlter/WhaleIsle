@@ -210,8 +210,8 @@
   !define MUI_WELCOMEPAGE_TITLE_3LINES
   !define MUI_FINISHPAGE_TITLE_3LINES
   # Language-neutral link on the finish page (product home / releases).
-  !define MUI_FINISHPAGE_LINK "github.com/ChisaAlter/Deepseek-Harness-Desktop"
-  !define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/ChisaAlter/Deepseek-Harness-Desktop"
+  !define MUI_FINISHPAGE_LINK "github.com/ChisaAlter/WhaleIsle"
+  !define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/ChisaAlter/WhaleIsle"
   !insertmacro MUI_PAGE_WELCOME
 !macroend
 
