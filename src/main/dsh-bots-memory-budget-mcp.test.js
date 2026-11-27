@@ -607,6 +607,73 @@ test('mail-reconciler: atomic owedMail consumption, idempotency, concurrency gua
   const third = await reconciler.reconcileOwedMail();
   assert.equal(third.reconciledGroups, 0);
   assert.equal(wakes.length, 2);
+
+  // Terminal item guard: pre-delivery check skips done/canceled items, marks legacy owed events sent, and filters mixed groups
+  const canceledItem = h.itemsStore.add({
+    ownerBotId: bot.id,
+    chatId: bot.chatSessionId,
+    source: { kind: 'chat', sessionId: bot.chatSessionId },
+    title: 'Already canceled proposal',
+    status: 'planned',
+  }, { kind: 'bot', botId: bot.id, chatId: bot.chatSessionId });
+  const openItem = h.itemsStore.add({
+    ownerBotId: bot.id,
+    chatId: bot.chatSessionId,
+    source: { kind: 'chat', sessionId: bot.chatSessionId },
+    title: 'Still open item',
+    status: 'planned',
+  }, { kind: 'bot', botId: bot.id, chatId: bot.chatSessionId });
+
+  h.itemsStore.close(canceledItem.item.uid, { status: 'canceled', reason: 'Ignored' }, { kind: 'bot', botId: bot.id, chatId: bot.chatSessionId });
+  const forcedEv = h.itemsStore.ownerComment(canceledItem.item.uid, { text: 'Late comment', requestId: 'late-1' });
+  assert.equal(forcedEv.event.mail, null);
+  // Inject a legacy mail='owed' row for the closed item and check deliverGroup-level filtering via a synthetic store wrapper
+  const openEv = h.itemsStore.ownerComment(openItem.item.uid, { text: 'Keep working', requestId: 'open-1' });
+  const markedCalls = [];
+  const mixedWakes = [];
+  const syntheticItemsStore = {
+    get: (uid) => h.itemsStore.get(uid),
+    markMailSent: (ids) => {
+      markedCalls.push(ids);
+      return h.itemsStore.markMailSent(ids);
+    },
+    owedMail: (after) => (after > 0 ? [] : [
+      {
+        action: 901,
+        ownerBotId: bot.id,
+        chatId: bot.chatSessionId,
+        itemUids: [canceledItem.item.uid],
+        eventIds: [forcedEv.event.id],
+        events: [forcedEv.event],
+      },
+      {
+        action: 902,
+        ownerBotId: bot.id,
+        chatId: bot.chatSessionId,
+        itemUids: [canceledItem.item.uid, openItem.item.uid],
+        eventIds: [forcedEv.event.id, openEv.event.id],
+        events: [{ ...forcedEv.event, itemUid: canceledItem.item.uid }, { ...openEv.event, itemUid: openItem.item.uid }],
+      },
+    ]),
+  };
+  const filterReconciler = h.mods.mailMod.createMailReconciler({
+    itemsStore: syntheticItemsStore,
+    botsStore: h.botsStore,
+    sessionRuntime: {},
+    eventBus: h.eventBus,
+    wakeBot: async (payload) => {
+      mixedWakes.push(payload);
+      return { ok: true };
+    },
+  });
+  const filterRes = await filterReconciler.reconcileOwedMail();
+  assert.equal(filterRes.skippedGroups, 1);
+  assert.equal(filterRes.reconciledGroups, 1);
+  assert.equal(mixedWakes.length, 1);
+  assert.deepEqual(mixedWakes[0].group.itemUids, [openItem.item.uid]);
+  assert.deepEqual(mixedWakes[0].group.eventIds, [openEv.event.id]);
+  assert.ok(markedCalls.some((ids) => ids.includes(forcedEv.event.id)));
+  assert.equal(h.itemsStore.owedMail().length, 0);
 });
 
 test('service.js crew_adoptions & decisions TSV wrappers', async (t) => {

@@ -451,9 +451,16 @@ export function createItemQueries(db) {
   }
 
   function owedMail(afterAction = 0) {
-    const actions = db.prepare(
-      "SELECT DISTINCT action FROM bot_item_events WHERE mail = 'owed' AND action > ? ORDER BY action ASC LIMIT 50",
-    ).all(Number(afterAction) || 0).map((r) => r.action);
+    const actions = db.prepare(`
+      SELECT DISTINCT e.action
+      FROM bot_item_events e
+      JOIN bot_items i ON i.uid = e.item_uid
+      WHERE e.mail = 'owed'
+        AND e.action > ?
+        AND i.status NOT IN ('done', 'canceled')
+      ORDER BY e.action ASC
+      LIMIT 50
+    `).all(Number(afterAction) || 0).map((r) => r.action);
     if (actions.length === 0) return [];
     const rows = db.prepare(`
       SELECT e.*, i.owner_bot_id, i.chat_id
@@ -461,6 +468,7 @@ export function createItemQueries(db) {
       JOIN bot_items i ON i.uid = e.item_uid
       JOIN json_each(?) a ON a.value = e.action
       WHERE e.mail = 'owed'
+        AND i.status NOT IN ('done', 'canceled')
       ORDER BY e.action ASC, e.id ASC
     `).all(JSON.stringify(actions));
 

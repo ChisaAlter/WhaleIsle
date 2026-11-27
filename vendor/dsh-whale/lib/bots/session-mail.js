@@ -3,8 +3,87 @@
  * Routes owed item updates with priority:
  * `askedInConversation` -> item's associated chat -> Bot Home Chat fallback.
  */
+import { isClosedStatus } from './items-validation.js';
+import { buildInternalUserMessage, prunePendingItemMailFromInbox, resolveLiveAgent } from './session-work.js';
 
 const freshSignal = () => new AbortController().signal;
+
+/**
+ * Partition events in `group` by open vs closed items, marking closed-item events `'sent'`.
+ * @param {any[]} events
+ * @param {number[]} eventIds
+ * @param {string[]} itemUids
+ * @param {Set<string>} closedUidSet
+ * @param {any} store
+ */
+function partitionGroupEvents(events, eventIds, itemUids, closedUidSet, store) {
+  /** @type {any[]} */
+  const openEvents = [];
+  /** @type {number[]} */
+  const openEventIds = [];
+  /** @type {number[]} */
+  const closedEventIds = [];
+  const singleUid = itemUids.length === 1 ? itemUids[0] : null;
+  for (const ev of events) {
+    const evUid = ev?.itemUid ?? singleUid;
+    if (evUid && closedUidSet.has(evUid)) {
+      if (ev?.id !== undefined) closedEventIds.push(ev.id);
+    } else {
+      openEvents.push(ev);
+      if (ev?.id !== undefined) openEventIds.push(ev.id);
+    }
+  }
+  if (closedEventIds.length > 0) store?.markMailSent?.(closedEventIds);
+  const resolvedOpenIds = openEventIds.length > 0
+    ? openEventIds
+    : eventIds.filter((id) => !closedEventIds.includes(id));
+  return { openEvents, openEventIds: resolvedOpenIds };
+}
+
+/**
+ * Filter a mail group down to still-open items, immediately marking any closed-item
+ * events `'sent'` so terminal items never stay `'owed'` or get delivered.
+ * @param {any} group
+ * @param {any} store
+ */
+export function partitionGroupByOpenItems(group, store) {
+  const itemUids = Array.isArray(group?.itemUids) ? group.itemUids : [];
+  const events = Array.isArray(group?.events) ? group.events : [];
+  const eventIds = Array.isArray(group?.eventIds) ? group.eventIds : events.map((/** @type {any} */ e) => e.id);
+  /** @type {any[]} */
+  const openItems = [];
+  /** @type {string[]} */
+  const openItemUids = [];
+  /** @type {Set<string>} */
+  const closedUidSet = new Set();
+
+  for (const uid of itemUids) {
+    const item = store?.get?.(uid);
+    if (!item || isClosedStatus(item.status)) closedUidSet.add(uid);
+    else {
+      openItemUids.push(uid);
+      openItems.push(item);
+    }
+  }
+  if (closedUidSet.size === 0) return { ...group, itemUids, events, eventIds, items: openItems };
+  if (openItemUids.length === 0) {
+    store?.markMailSent?.(eventIds);
+    return null;
+  }
+  const { openEvents, openEventIds } = partitionGroupEvents(events, eventIds, itemUids, closedUidSet, store);
+  if (openEvents.length === 0 && openEventIds.length === 0) return null;
+  return { ...group, itemUids: openItemUids, items: openItems, events: openEvents, eventIds: openEventIds };
+}
+
+/** @param {any[]} items @param {string[]} itemUids */
+function buildMailSummary(items, itemUids) {
+  const first = Array.isArray(items) && items[0] ? items[0] : null;
+  if (first) {
+    const base = `#${first.number} ${first.title ?? ''}`.trim();
+    return items.length > 1 ? `${base} (+${items.length - 1})`.slice(0, 140) : base.slice(0, 140);
+  }
+  return String(itemUids?.[0] ?? 'Work Item update').slice(0, 140);
+}
 
 /** @param {any} ev @param {string} actor */
 function formatCommentEventLine(ev, actor) {
@@ -58,6 +137,7 @@ export function formatOwedMailPrompt(group, store) {
 /**
  * Create a serialized owed-mail drainer bound to a session runtime.
  * @param {{
+ *   ctx?: any,
  *   itemsStore: any,
  *   botsStore: any,
  *   controllerOf: () => any,
@@ -66,9 +146,9 @@ export function formatOwedMailPrompt(group, store) {
  * }} deps
  */
 export function createOwedMailDrainer(deps) {
-  const { itemsStore, botsStore, controllerOf, openHomeChat, buildControllerUnavailableRefusal } = deps;
+  const { ctx = null, itemsStore, botsStore, controllerOf, openHomeChat, buildControllerUnavailableRefusal } = deps;
   /** @type {Set<number>} */
-  const deliveredFirstEventIds = new Set();
+  const deliveredEventIds = new Set();
   /** @type {Promise<any> | null} */
   let activeDrain = null;
   let drainQueued = false;
@@ -98,54 +178,136 @@ export function createOwedMailDrainer(deps) {
     return { sessionId: home.sessionId, route: 'homeFallback' };
   }
 
-  /** @param {any} group @param {{ store: any, bStore: any, controller: any, canPrompt: boolean }} ctx */
-  async function deliverSingleGroup(group, { store, bStore, controller, canPrompt }) {
-    const firstEventId = group.eventIds?.[0];
-    if (firstEventId === undefined || firstEventId === null) {
-      return { status: 'skipped', marked: 0, detail: null };
+  /** @param {Map<string, any>} buckets @param {any} openGroup @param {any} bot @param {{ sessionId: string, route: string }} target */
+  function mergeGroupIntoBucket(buckets, openGroup, bot, target) {
+    const key = `${bot.id}\0${target.sessionId}\0${openGroup.itemUids.join(',')}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        action: Number(openGroup.action) || 0,
+        ownerBotId: bot.id,
+        chatId: openGroup.chatId,
+        sessionId: target.sessionId,
+        route: target.route,
+        itemUids: [...openGroup.itemUids],
+        items: [...(openGroup.items ?? [])],
+        events: [],
+        eventIds: [],
+        seenEventIds: new Set(),
+      };
+      buckets.set(key, bucket);
     }
-    const bot = bStore?.getBot?.(group.ownerBotId);
-    if (!bot || bot.paused) {
-      return { status: 'skipped', marked: 0, detail: null };
+    bucket.action = Math.max(bucket.action, Number(openGroup.action) || 0);
+    bucket.route = target.route;
+    for (const ev of openGroup.events ?? []) {
+      if (ev?.id === undefined || bucket.seenEventIds.has(ev.id) || deliveredEventIds.has(ev.id)) continue;
+      bucket.seenEventIds.add(ev.id);
+      bucket.events.push(ev);
+      bucket.eventIds.push(ev.id);
+    }
+  }
+
+  /** @param {any} store @param {any} bStore */
+  async function collectCoalescedBuckets(store, bStore) {
+    let afterAction = 0;
+    let skippedGroups = 0;
+    let deliveredEvents = 0;
+    /** @type {Map<string, any>} */
+    const buckets = new Map();
+
+    for (let guard = 0; guard < 100; guard += 1) {
+      const groups = store.owedMail(afterAction);
+      if (!Array.isArray(groups) || groups.length === 0) break;
+      let maxAction = afterAction;
+      for (const group of groups) {
+        const nextCursor = Number(group.action) || 0;
+        if (nextCursor > maxAction) maxAction = nextCursor;
+        const openGroup = partitionGroupByOpenItems(group, store);
+        if (!openGroup) {
+          skippedGroups += 1;
+          continue;
+        }
+        const bot = bStore?.getBot?.(openGroup.ownerBotId);
+        if (!bot || bot.paused) {
+          skippedGroups += 1;
+          continue;
+        }
+        if (openGroup.eventIds.length > 0 && openGroup.eventIds.every((/** @type {number} */ id) => deliveredEventIds.has(id))) {
+          deliveredEvents += store.markMailSent(openGroup.eventIds);
+          continue;
+        }
+        const target = await resolveMailTargetSession(openGroup, bot, bStore);
+        if (!target.sessionId) {
+          skippedGroups += 1;
+          continue;
+        }
+        mergeGroupIntoBucket(buckets, openGroup, bot, target);
+      }
+      if (maxAction <= afterAction || groups.length < 50) break;
+      afterAction = maxAction;
     }
 
-    if (deliveredFirstEventIds.has(firstEventId)) {
-      const marked = store.markMailSent(group.eventIds);
-      return { status: marked > 0 ? 'delivered' : 'skipped', marked, detail: null };
-    }
+    return { buckets: [...buckets.values()], skippedGroups, preMarkedEvents: deliveredEvents };
+  }
 
-    const { sessionId, route } = await resolveMailTargetSession(group, bot, bStore);
-    if (!sessionId) {
+  /** @param {any} bucket @param {{ store: any, controller: any, canPrompt: boolean, canTestTurn: boolean }} runtimeDeps */
+  async function deliverSingleBucket(bucket, { store, controller, canPrompt, canTestTurn }) {
+    const openBucket = partitionGroupByOpenItems(bucket, store);
+    if (!openBucket || openBucket.eventIds.length === 0) {
       return { status: 'skipped', marked: 0, detail: null };
     }
+    openBucket.eventIds.sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
+    openBucket.events.sort((/** @type {any} */ a, /** @type {any} */ b) => (a.id ?? 0) - (b.id ?? 0));
 
+    const firstEventId = openBucket.eventIds[0];
     const requestId = `bot-item-mail-${firstEventId}`;
-    const mailText = formatOwedMailPrompt(group, store);
+    const mailText = formatOwedMailPrompt(openBucket, store);
+    const summary = buildMailSummary(openBucket.items, openBucket.itemUids);
+
     try {
-      if (canPrompt) {
+      const liveAgent = await resolveLiveAgent(ctx, controller, bucket.sessionId);
+      if (liveAgent) {
+        prunePendingItemMailFromInbox(liveAgent, openBucket.items);
+        const mailSource = {
+          kind: 'dsh-bots:mail',
+          form: 'notice',
+          summary,
+          itemUids: openBucket.itemUids,
+          ...(openBucket.itemUids.length === 1 ? { itemUid: openBucket.itemUids[0] } : {}),
+          eventIds: openBucket.eventIds,
+          rpcId: requestId,
+        };
+        const msg = await buildInternalUserMessage(mailText, mailSource);
+        await Promise.resolve(liveAgent.followup(msg));
+      } else if (typeof controller?.resolveAgent === 'function') {
+        return { status: 'skipped', marked: 0, detail: null };
+      } else if (canPrompt) {
         await controller.prompt({
           requestId,
-          sessionId,
+          sessionId: bucket.sessionId,
           mode: 'queue',
           content: [{ type: 'text', text: mailText }],
         }, freshSignal());
+      } else if (canTestTurn) {
+        await controller.runTurnForTest(bucket.sessionId, mailText);
       } else {
-        await controller.runTurnForTest(sessionId, mailText);
+        return { status: 'skipped', marked: 0, detail: null };
       }
-      deliveredFirstEventIds.add(firstEventId);
-      const marked = store.markMailSent(group.eventIds);
+
+      for (const id of openBucket.eventIds) deliveredEventIds.add(id);
+      const marked = store.markMailSent(openBucket.eventIds);
       return {
         status: 'delivered',
         marked,
         detail: {
-          action: group.action,
+          action: bucket.action,
           firstEventId,
           requestId,
-          botId: bot.id,
-          sessionId,
-          route,
-          itemUids: group.itemUids,
-          eventIds: group.eventIds,
+          botId: bucket.ownerBotId,
+          sessionId: bucket.sessionId,
+          route: bucket.route,
+          itemUids: openBucket.itemUids,
+          eventIds: openBucket.eventIds,
         },
       };
     } catch {
@@ -153,33 +315,24 @@ export function createOwedMailDrainer(deps) {
     }
   }
 
-  /** @param {any} store @param {any} bStore @param {any} controller @param {boolean} canPrompt */
-  async function drainOwedMailGroups(store, bStore, controller, canPrompt) {
-    let afterAction = 0;
+  /** @param {any} store @param {any} bStore @param {any} controller @param {{ canPrompt: boolean, canTestTurn: boolean }} caps */
+  async function drainOwedMailGroups(store, bStore, controller, { canPrompt, canTestTurn }) {
+    const collected = await collectCoalescedBuckets(store, bStore);
     let deliveredGroups = 0;
-    let deliveredEvents = 0;
-    let skippedGroups = 0;
+    let deliveredEvents = collected.preMarkedEvents;
+    let skippedGroups = collected.skippedGroups;
     /** @type {any[]} */
     const details = [];
 
-    for (let guard = 0; guard < 100; guard += 1) {
-      const groups = store.owedMail(afterAction);
-      if (!Array.isArray(groups) || groups.length === 0) break;
-      let progressed = false;
-      for (const group of groups) {
-        const nextCursor = Number(group.action) || 0;
-        if (nextCursor > afterAction) afterAction = nextCursor;
-        const outcome = await deliverSingleGroup(group, { store, bStore, controller, canPrompt });
-        if (outcome.status === 'delivered') {
-          deliveredGroups += 1;
-          deliveredEvents += outcome.marked;
-          progressed = true;
-          if (outcome.detail) details.push(outcome.detail);
-        } else {
-          skippedGroups += 1;
-        }
+    for (const bucket of collected.buckets) {
+      const outcome = await deliverSingleBucket(bucket, { store, controller, canPrompt, canTestTurn });
+      if (outcome.status === 'delivered') {
+        deliveredGroups += 1;
+        deliveredEvents += outcome.marked;
+        if (outcome.detail) details.push(outcome.detail);
+      } else {
+        skippedGroups += 1;
       }
-      if (!progressed && groups.length < 50) break;
     }
 
     return { ok: true, deliveredGroups, deliveredEvents, skippedGroups, details };
@@ -193,9 +346,10 @@ export function createOwedMailDrainer(deps) {
       return { ok: true, deliveredGroups: 0, deliveredEvents: 0, skippedGroups: 0, details: /** @type {any[]} */ ([]) };
     }
     const controller = controllerOf();
+    const canResolveAgent = typeof controller?.resolveAgent === 'function' || Boolean(ctx?.get?.('agents'));
     const canPrompt = typeof controller?.prompt === 'function';
     const canTestTurn = typeof controller?.runTurnForTest === 'function';
-    if (!controller || (!canPrompt && !canTestTurn)) {
+    if ((!controller && !ctx?.get?.('agents')) || (!canResolveAgent && !canPrompt && !canTestTurn)) {
       return {
         ok: false,
         error: 'session-controller-unavailable',
@@ -206,7 +360,7 @@ export function createOwedMailDrainer(deps) {
         details: /** @type {any[]} */ ([]),
       };
     }
-    return drainOwedMailGroups(store, bStore, controller, canPrompt);
+    return drainOwedMailGroups(store, bStore, controller, { canPrompt, canTestTurn });
   }
 
   /** @param {{ itemsStore?: any, botsStore?: any }} [opts] */
@@ -241,7 +395,7 @@ export function createOwedMailDrainer(deps) {
   }
 
   function reset() {
-    deliveredFirstEventIds.clear();
+    deliveredEventIds.clear();
   }
 
   return { deliverOwedMail, reset };

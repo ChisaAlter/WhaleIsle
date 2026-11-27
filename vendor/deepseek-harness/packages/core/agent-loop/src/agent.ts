@@ -71,6 +71,7 @@ type Phase =
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 type StepOutcome = StepEndReason | 'max-tokens-recovered' | null
+type TurnDrainOutcome = 'continue' | 'drained' | 'blocked'
 
 /** Optional image-to-text service; the loop does not require the vision plugin. */
 interface VisionMessageRewriter {
@@ -298,16 +299,21 @@ export class ReactLoopAgent implements Agent {
   }
 
   private async kick(): Promise<void> {
+    let outcome: TurnDrainOutcome = 'continue'
     try {
-      while (await this.turn()) {}
+      do {
+        outcome = await this.turn()
+      } while (outcome === 'continue')
     } catch (_error) {
       // Reported failures and cancellation are contained at the driver boundary.
     } finally {
       /* v8 ignore next -- kick owns a running phase until this driver boundary */
       if (this.phase.kind === 'running') {
-        const { turn, wakeRequested } = this.phase
+        const { turn, wakeRequested, abort } = this.phase
         this.setPhase({ kind: 'idle', lastTurn: turn })
-        if (wakeRequested && this.inbox.hasPending) this.wakeDriver()
+        if ((wakeRequested || (outcome === 'drained' && !abort.signal.aborted)) && this.inbox.hasPending) {
+          this.wakeDriver()
+        }
       }
     }
   }
@@ -333,6 +339,7 @@ export class ReactLoopAgent implements Agent {
   }
 
   private async resumePendingInteractionDriver(plan: PendingInteractionResumePlan): Promise<void> {
+    let outcome: TurnDrainOutcome = 'continue'
     try {
       if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": recovery without driver reservation`)
       const signal = this.phase.abort.signal
@@ -380,15 +387,17 @@ export class ReactLoopAgent implements Agent {
         this.session.append('turn/end', { turn: plan.turn, reason })
         this.throwError(recoveryError)
       }
-      let continueDriver = await this.driveTurn(plan.turn, 'next-step', turnEnds)
-      while (continueDriver) continueDriver = await this.turn()
+      outcome = await this.driveTurn(plan.turn, 'next-step', turnEnds)
+      while (outcome === 'continue') outcome = await this.turn()
     } catch (_error) {
       // driveTurn and the ordinary error boundary have already reported it.
     } finally {
       if (this.phase.kind === 'running') {
-        const { turn, wakeRequested } = this.phase
+        const { turn, wakeRequested, abort } = this.phase
         this.setPhase({ kind: 'idle', lastTurn: turn })
-        if (wakeRequested && this.inbox.hasPending) this.wakeDriver()
+        if ((wakeRequested || (outcome === 'drained' && !abort.signal.aborted)) && this.inbox.hasPending) {
+          this.wakeDriver()
+        }
       }
     }
   }
@@ -430,7 +439,7 @@ export class ReactLoopAgent implements Agent {
   }
 
   /** Open one turn before claiming its first proposed step. */
-  private async turn(): Promise<boolean> {
+  private async turn(): Promise<TurnDrainOutcome> {
     if (this.phase.kind !== 'running') {
       this.throwError(new Error(`agent "${this.id}": turn without driver reservation`))
     }
@@ -452,7 +461,7 @@ export class ReactLoopAgent implements Agent {
     turn: number,
     initialTarget: InboxTarget,
     initialTurnEnds: TurnEndReason | null,
-  ): Promise<boolean> {
+  ): Promise<TurnDrainOutcome> {
     if (this.phase.kind !== 'running') {
       this.throwError(new Error(`agent "${this.id}": open turn without driver reservation`))
     }
@@ -479,7 +488,7 @@ export class ReactLoopAgent implements Agent {
         const decision = await this.preStep(target, { turn, step })
         if (decision.kind === 'reject') {
           turnEnds = { kind: 'blocked' }
-          return false
+          return 'blocked'
         }
         try {
           if (turnEnds && decision.messages.length === 0) break
@@ -487,7 +496,7 @@ export class ReactLoopAgent implements Agent {
           // still owns the initial turn boundary, but it spends no model call.
           if (phase.step === 0 && decision.messages.length === 0) {
             turnEnds = { kind: 'completed' }
-            return false
+            break
           }
           signal.throwIfAborted()
           this.session.append('step/start', { turn, step })
@@ -562,12 +571,12 @@ export class ReactLoopAgent implements Agent {
         this.throwError(error)
       }
     }
-    if (!this.inbox.hasPending) return false
+    if (!this.inbox.hasPending) return 'drained'
     phase.abort = new AbortController()
     // A fresh controller makes a latch set on the old one stale: the live driver claims the queue itself.
     phase.wakeRequested = false
     phase.step = 0
-    return true
+    return 'continue'
   }
 
   private async step(

@@ -35,6 +35,7 @@ export interface BotItemQuestionStepProps {
   questionKey: string;
   shape: AskQuestionShape;
   submitting?: boolean;
+  submitted?: boolean;
   compact?: boolean;
   /** Called when all decisions are answered or user clicks "send anyway". */
   onSubmit: (payload: AskSubmitPayload) => void | Promise<void>;
@@ -76,6 +77,7 @@ export function BotItemQuestionStep({
   questionKey,
   shape,
   submitting = false,
+  submitted = false,
   compact = false,
   onSubmit,
   onFillComment,
@@ -83,6 +85,7 @@ export function BotItemQuestionStep({
   const { locale } = useBotsLocale();
   const zh = locale === 'zh-CN';
   const total = shape.decisions.length;
+  const locked = submitting || submitted;
 
   const [step, setStep] = useState(0);
   const [heldPicks, setHeldPicks] = useState<Record<number, number[]>>({});
@@ -131,7 +134,7 @@ export function BotItemQuestionStep({
   };
 
   const handleSubmitHeld = (picksMap: Record<number, number[]>) => {
-    if (submitting) {
+    if (locked) {
       return;
     }
     const payload = buildCombinedPayload(shape, picksMap);
@@ -145,7 +148,7 @@ export function BotItemQuestionStep({
     event: MouseEvent<HTMLButtonElement>,
     optIdx: number,
   ) => {
-    if (!currentDecision || submitting) {
+    if (!currentDecision || locked) {
       return;
     }
     const opt = currentDecision.replies[optIdx];
@@ -187,7 +190,7 @@ export function BotItemQuestionStep({
   };
 
   const handleMultiConfirm = () => {
-    if (!currentDecision || currentPicks.length === 0 || submitting) {
+    if (!currentDecision || currentPicks.length === 0 || locked) {
       return;
     }
     const nextUnanswered = findNextUnanswered(heldPicks, safeStep);
@@ -206,6 +209,7 @@ export function BotItemQuestionStep({
     <div
       className={`dsh-bots-qstep ${compact ? 'dsh-bots-qstep-compact' : ''}`.trim()}
       data-submitting={submitting ? 'true' : 'false'}
+      data-submitted={submitted ? 'true' : 'false'}
     >
       {shape.body && (
         <div className="dsh-bots-qstep-body">{shape.body}</div>
@@ -222,7 +226,7 @@ export function BotItemQuestionStep({
                 type="button"
                 role="listitem"
                 className="dsh-bots-qstep-held-pill"
-                disabled={submitting}
+                disabled={locked}
                 title={zh ? '点击返回修改此题回答' : 'Click to edit this answer'}
                 onKeyDown={guardKeyRepeat}
                 onClick={() => setStep(qIdx)}
@@ -253,7 +257,7 @@ export function BotItemQuestionStep({
             <button
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon"
-              disabled={safeStep <= 0 || submitting}
+              disabled={safeStep <= 0 || locked}
               aria-label={zh ? '上一题' : 'Previous question'}
               onKeyDown={guardKeyRepeat}
               onClick={() => setStep((prev) => Math.max(0, prev - 1))}
@@ -266,7 +270,7 @@ export function BotItemQuestionStep({
             <button
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon"
-              disabled={safeStep >= total - 1 || submitting}
+              disabled={safeStep >= total - 1 || locked}
               aria-label={zh ? '下一题' : 'Next question'}
               onKeyDown={guardKeyRepeat}
               onClick={() => setStep((prev) => Math.min(total - 1, prev + 1))}
@@ -287,7 +291,7 @@ export function BotItemQuestionStep({
                 type="button"
                 className="dsh-bots-ask-option dsh-bots-qstep-option"
                 data-selected={selected ? 'true' : 'false'}
-                disabled={submitting}
+                disabled={locked}
                 title={onFillComment
                   ? (zh ? '点击选择；按住 Alt 或 Shift 点击可填入评论框继续编辑' : 'Click to select; Alt/Shift+Click to fill comment box')
                   : undefined}
@@ -328,7 +332,7 @@ export function BotItemQuestionStep({
           <button
             type="button"
             className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
-            disabled={currentPicks.length === 0 || submitting}
+            disabled={currentPicks.length === 0 || locked}
             onKeyDown={guardKeyRepeat}
             onClick={handleMultiConfirm}
           >
@@ -345,7 +349,7 @@ export function BotItemQuestionStep({
           <button
             type="button"
             className="dsh-bots-qstep-send-early"
-            disabled={submitting}
+            disabled={locked}
             onKeyDown={guardKeyRepeat}
             onClick={() => handleSubmitHeld(heldPicks)}
           >
@@ -355,7 +359,20 @@ export function BotItemQuestionStep({
           </button>
         )}
 
-        {onFillComment && currentDecision.replies.length > 0 && !compact && (
+        {submitted && (
+          <span className="dsh-bots-badge dsh-bots-badge-accent" role="status">
+            <IconCheck size={10} />
+            <span>{zh ? '已回复，等待继续推进' : 'Replied'}</span>
+          </span>
+        )}
+
+        {!submitted && submitting && (
+          <span className="dsh-bots-qstep-hint" role="status">
+            {zh ? '正在发送回复…' : 'Sending reply…'}
+          </span>
+        )}
+
+        {onFillComment && currentDecision.replies.length > 0 && !compact && !locked && (
           <span className="dsh-bots-qstep-hint">
             {zh ? 'Alt / Shift + 点击选项可填入评论框再编辑' : 'Alt/Shift+Click to edit in comment box'}
           </span>

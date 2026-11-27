@@ -124,6 +124,21 @@ function removeBotKeyFromMetaJson(filePath, botId) {
   }
 }
 
+/** @param {any} deps @param {any} sessionRuntime @param {any} saved */
+function triggerUnpauseOwedMail(deps, sessionRuntime, saved) {
+  let wakePromise;
+  if (typeof deps.triggerOwedMail === 'function') {
+    wakePromise = deps.triggerOwedMail('unpause', saved);
+  } else if (deps.hasCustomWakeBot) {
+    wakePromise = deps.mailReconciler?.reconcileOwedMail?.();
+  } else {
+    wakePromise = sessionRuntime.triggerOwedMail?.() ?? sessionRuntime.sendOwedMail?.();
+  }
+  void Promise.resolve(wakePromise).catch(() => {
+    /* Best-effort owed mail trigger on unpause. */
+  });
+}
+
 /**
  * Create the core BotsService.
  * @param {any} deps
@@ -296,6 +311,11 @@ export function createBotsService(deps) {
     });
   }
 
+  /**
+   * @param {string} botId
+   * @param {Record<string, any>} [patch]
+   * @param {{ skipModelApply?: boolean; skipUnpauseMail?: boolean }} [options]
+   */
   async function updateBot(botId, patch = {}, options = {}) {
     return serialize(async () => {
       const existing = requireBot(botId);
@@ -325,7 +345,9 @@ export function createBotsService(deps) {
       }
       if (existing.paused && saved.paused === false) {
         eventBus.emit({ botIds: [saved.id], kinds: ['status', 'items'] });
-        void sessionRuntime.sendOwedMail?.().catch(() => null);
+        if (!options?.skipUnpauseMail) {
+          triggerUnpauseOwedMail(deps, sessionRuntime, saved);
+        }
       }
       if (getGlobalSettings().petBotId === saved.id || patch.imDefault !== undefined) {
         deps.onPetBotChanged?.(saved);

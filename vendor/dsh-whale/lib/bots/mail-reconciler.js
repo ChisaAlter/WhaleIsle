@@ -6,6 +6,8 @@
  * only after delivery succeeds so restarts or concurrent triggers never double-wake.
  */
 
+import { partitionGroupByOpenItems } from './session-mail.js';
+
 /** @param {any} ev */
 function summarizeEvent(ev) {
   const kind = String(ev?.kind ?? 'update');
@@ -79,42 +81,53 @@ export function createMailReconciler(deps) {
 
   /** @param {any} group */
   async function deliverGroup(group) {
-    const bot = botsStore?.getBot?.(group.ownerBotId) ?? null;
+    const openGroup = partitionGroupByOpenItems(group, itemsStore);
+    if (!openGroup) {
+      return { status: 'skipped', reason: 'item_closed', eventIds: [] };
+    }
+    const bot = botsStore?.getBot?.(openGroup.ownerBotId) ?? null;
     if (botsStore && !bot) {
-      return { status: 'skipped', reason: 'bot_not_found' };
+      return { status: 'skipped', reason: 'bot_not_found', eventIds: [] };
     }
     if (bot?.paused) {
-      return { status: 'skipped', reason: 'bot_paused' };
+      return { status: 'skipped', reason: 'bot_paused', eventIds: [] };
     }
 
-    const prompt = formatOwedMailPrompt(group, itemsStore);
+    const prompt = formatOwedMailPrompt(openGroup, itemsStore);
     if (typeof wakeBot === 'function') {
       const res = await wakeBot({
-        botId: group.ownerBotId,
-        chatId: group.chatId,
-        group,
+        botId: openGroup.ownerBotId,
+        chatId: openGroup.chatId,
+        group: openGroup,
         prompt,
       });
       if (res && res.ok === false) {
         return { status: 'failed', error: res.error || 'wake_failed' };
       }
-      return { status: 'delivered' };
+      return { status: 'delivered', eventIds: openGroup.eventIds };
     }
 
-    const sessionId = await resolveTargetSessionId(group);
+    const sessionId = await resolveTargetSessionId(openGroup);
     if (!sessionId || typeof sessionRuntime?.runSingleTurn !== 'function') {
       return { status: 'failed', error: 'session_runtime_unavailable' };
     }
     const res = await sessionRuntime.runSingleTurn(sessionId, prompt, {
-      botId: group.ownerBotId,
+      botId: openGroup.ownerBotId,
       isBackground: true,
       sourceKind: 'dsh-bots:mail',
-      source: { kind: 'dsh-bots:mail', action: group.action },
+      source: {
+        kind: 'dsh-bots:mail',
+        form: 'notice',
+        action: openGroup.action,
+        itemUids: openGroup.itemUids,
+        ...(openGroup.itemUids.length === 1 ? { itemUid: openGroup.itemUids[0] } : {}),
+        eventIds: openGroup.eventIds,
+      },
     });
     if (res && res.ok === false) {
       return { status: 'failed', error: res.error || 'turn_failed' };
     }
-    return { status: 'delivered' };
+    return { status: 'delivered', eventIds: openGroup.eventIds };
   }
 
   async function runReconcile({ afterAction = 0 } = {}) {
@@ -148,7 +161,7 @@ export function createMailReconciler(deps) {
             errors.push({ action: group.action, botId: group.ownerBotId, error: outcome.error });
             continue;
           }
-          const marked = itemsStore.markMailSent(group.eventIds);
+          const marked = itemsStore.markMailSent(outcome.eventIds ?? group.eventIds);
           markedEvents += marked;
           reconciledGroups += 1;
           eventBus?.emit({ botIds: [group.ownerBotId], kinds: ['items', 'chats'] });
@@ -179,6 +192,10 @@ export function createMailReconciler(deps) {
       inflight = null;
     });
     return inflight;
+  }
+
+  if (typeof wakeBot === 'function' && typeof sessionRuntime?.registerCustomMailReconciler === 'function') {
+    sessionRuntime.registerCustomMailReconciler(() => reconcileOwedMail());
   }
 
   return {

@@ -13275,6 +13275,47 @@ function isBotItemStale(item, staleDays = BOT_ITEM_DEFAULT_STALE_DAYS, now = Dat
   return false;
 }
 
+// vendor/dsh-whale/src/client/components/bot-quick-ask.ts
+function fnv1aHex(input) {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+function resolveItemQuestionEventId(item, fallbackEvent) {
+  const candidate = item?.question?.eventId ?? item?.questionEventId ?? item?.question?.id ?? fallbackEvent?.eventId ?? fallbackEvent?.id;
+  return candidate === null || candidate === void 0 ? void 0 : candidate;
+}
+function askLockKey(uid, questionEventId) {
+  return `${uid}:${questionEventId ?? "none"}`;
+}
+function buildQuickAskChoiceKey(decisions, text) {
+  if (Array.isArray(decisions) && decisions.length > 0) {
+    const encoded = decisions.map((dec, idx) => `${idx}:${[...dec.picks].sort((a, b) => a - b).join(",")}`).join("|");
+    if (encoded) {
+      return encoded;
+    }
+  }
+  return `t:${fnv1aHex(text.trim())}`;
+}
+function buildQuickAskRequestId(uid, questionEventId, decisions, text) {
+  const qPart = questionEventId !== void 0 && questionEventId !== null ? String(questionEventId) : "none";
+  const choiceKey = buildQuickAskChoiceKey(decisions, text);
+  const full = `ask:${uid}:${qPart}:${choiceKey}`;
+  if (full.length <= 128) {
+    return full;
+  }
+  return `ask:${uid}:${qPart}:${fnv1aHex(choiceKey)}`.slice(0, 128);
+}
+function buildOwnerAnswerPayload(questionEventId, decisions) {
+  return {
+    ...decisions ? { decisions: decisions.map((d) => ({ picks: [...d.picks] })) } : {},
+    ...questionEventId !== void 0 && questionEventId !== null ? { questionEventId, answers: questionEventId } : {}
+  };
+}
+
 // vendor/dsh-whale/src/client/components/BotActivityUpcoming.tsx
 var import_react18 = require("react");
 var import_jsx_runtime17 = require("react/jsx-runtime");
@@ -14079,6 +14120,7 @@ function BotItemQuestionStep({
   questionKey,
   shape,
   submitting = false,
+  submitted = false,
   compact = false,
   onSubmit,
   onFillComment
@@ -14086,6 +14128,7 @@ function BotItemQuestionStep({
   const { locale } = useBotsLocale();
   const zh = locale === "zh-CN";
   const total = shape.decisions.length;
+  const locked = submitting || submitted;
   const [step, setStep] = (0, import_react19.useState)(0);
   const [heldPicks, setHeldPicks] = (0, import_react19.useState)({});
   (0, import_react19.useEffect)(() => {
@@ -14124,7 +14167,7 @@ function BotItemQuestionStep({
     return null;
   };
   const handleSubmitHeld = (picksMap) => {
-    if (submitting) {
+    if (locked) {
       return;
     }
     const payload = buildCombinedPayload(shape, picksMap);
@@ -14134,7 +14177,7 @@ function BotItemQuestionStep({
     void onSubmit(payload);
   };
   const handleOptionClick = (event, optIdx) => {
-    if (!currentDecision || submitting) {
+    if (!currentDecision || locked) {
       return;
     }
     const opt = currentDecision.replies[optIdx];
@@ -14165,7 +14208,7 @@ function BotItemQuestionStep({
     }
   };
   const handleMultiConfirm = () => {
-    if (!currentDecision || currentPicks.length === 0 || submitting) {
+    if (!currentDecision || currentPicks.length === 0 || locked) {
       return;
     }
     const nextUnanswered = findNextUnanswered(heldPicks, safeStep);
@@ -14183,6 +14226,7 @@ function BotItemQuestionStep({
     {
       className: `dsh-bots-qstep ${compact ? "dsh-bots-qstep-compact" : ""}`.trim(),
       "data-submitting": submitting ? "true" : "false",
+      "data-submitted": submitted ? "true" : "false",
       children: [
         shape.body && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "dsh-bots-qstep-body", children: shape.body }),
         heldOtherIndices.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "dsh-bots-qstep-held-list", role: "list", "aria-label": zh ? "\u5DF2\u6682\u5B58\u7684\u56DE\u7B54" : "Held answers", children: heldOtherIndices.map((qIdx) => {
@@ -14194,7 +14238,7 @@ function BotItemQuestionStep({
               type: "button",
               role: "listitem",
               className: "dsh-bots-qstep-held-pill",
-              disabled: submitting,
+              disabled: locked,
               title: zh ? "\u70B9\u51FB\u8FD4\u56DE\u4FEE\u6539\u6B64\u9898\u56DE\u7B54" : "Click to edit this answer",
               onKeyDown: guardKeyRepeat,
               onClick: () => setStep(qIdx),
@@ -14222,7 +14266,7 @@ function BotItemQuestionStep({
               {
                 type: "button",
                 className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon",
-                disabled: safeStep <= 0 || submitting,
+                disabled: safeStep <= 0 || locked,
                 "aria-label": zh ? "\u4E0A\u4E00\u9898" : "Previous question",
                 onKeyDown: guardKeyRepeat,
                 onClick: () => setStep((prev) => Math.max(0, prev - 1)),
@@ -14239,7 +14283,7 @@ function BotItemQuestionStep({
               {
                 type: "button",
                 className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon",
-                disabled: safeStep >= total - 1 || submitting,
+                disabled: safeStep >= total - 1 || locked,
                 "aria-label": zh ? "\u4E0B\u4E00\u9898" : "Next question",
                 onKeyDown: guardKeyRepeat,
                 onClick: () => setStep((prev) => Math.min(total - 1, prev + 1)),
@@ -14256,7 +14300,7 @@ function BotItemQuestionStep({
               type: "button",
               className: "dsh-bots-ask-option dsh-bots-qstep-option",
               "data-selected": selected ? "true" : "false",
-              disabled: submitting,
+              disabled: locked,
               title: onFillComment ? zh ? "\u70B9\u51FB\u9009\u62E9\uFF1B\u6309\u4F4F Alt \u6216 Shift \u70B9\u51FB\u53EF\u586B\u5165\u8BC4\u8BBA\u6846\u7EE7\u7EED\u7F16\u8F91" : "Click to select; Alt/Shift+Click to fill comment box" : void 0,
               onKeyDown: guardKeyRepeat,
               onClick: (e) => handleOptionClick(e, optIdx),
@@ -14283,7 +14327,7 @@ function BotItemQuestionStep({
             {
               type: "button",
               className: "dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary",
-              disabled: currentPicks.length === 0 || submitting,
+              disabled: currentPicks.length === 0 || locked,
               onKeyDown: guardKeyRepeat,
               onClick: handleMultiConfirm,
               children: [
@@ -14297,13 +14341,18 @@ function BotItemQuestionStep({
             {
               type: "button",
               className: "dsh-bots-qstep-send-early",
-              disabled: submitting,
+              disabled: locked,
               onKeyDown: guardKeyRepeat,
               onClick: () => handleSubmitHeld(heldPicks),
               children: zh ? `\u5DF2\u6709 ${answeredIndices.length} \u9879\u56DE\u7B54\u672A\u53D1\u9001\uFF0C\u7ACB\u5373\u53D1\u9001` : `${answeredIndices.length} answer${answeredIndices.length > 1 ? "s" : ""} not sent yet \u2014 send anyway`
             }
           ),
-          onFillComment && currentDecision.replies.length > 0 && !compact && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "dsh-bots-qstep-hint", children: zh ? "Alt / Shift + \u70B9\u51FB\u9009\u9879\u53EF\u586B\u5165\u8BC4\u8BBA\u6846\u518D\u7F16\u8F91" : "Alt/Shift+Click to edit in comment box" })
+          submitted && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { className: "dsh-bots-badge dsh-bots-badge-accent", role: "status", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(IconCheck, { size: 10 }),
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: zh ? "\u5DF2\u56DE\u590D\uFF0C\u7B49\u5F85\u7EE7\u7EED\u63A8\u8FDB" : "Replied" })
+          ] }),
+          !submitted && submitting && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "dsh-bots-qstep-hint", role: "status", children: zh ? "\u6B63\u5728\u53D1\u9001\u56DE\u590D\u2026" : "Sending reply\u2026" }),
+          onFillComment && currentDecision.replies.length > 0 && !compact && !locked && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "dsh-bots-qstep-hint", children: zh ? "Alt / Shift + \u70B9\u51FB\u9009\u9879\u53EF\u586B\u5165\u8BC4\u8BBA\u6846\u518D\u7F16\u8F91" : "Alt/Shift+Click to edit in comment box" })
         ] })
       ]
     }
@@ -14483,6 +14532,10 @@ function BotItemDetailView({
   const [dragActive, setDragActive] = (0, import_react20.useState)(false);
   const [pendingComments, setPendingComments] = (0, import_react20.useState)([]);
   const [submitting, setSubmitting] = (0, import_react20.useState)(false);
+  const [answeredAskKeys, setAnsweredAskKeys] = (0, import_react20.useState)({});
+  const inFlightSubmitRef = (0, import_react20.useRef)(false);
+  const inFlightAskRef = (0, import_react20.useRef)(/* @__PURE__ */ new Set());
+  const answeredAskRef = (0, import_react20.useRef)(/* @__PURE__ */ new Set());
   const [snoozeOpen, setSnoozeOpen] = (0, import_react20.useState)(false);
   const [customSnooze, setCustomSnooze] = (0, import_react20.useState)("");
   const [cancelDialogOpen, setCancelDialogOpen] = (0, import_react20.useState)(false);
@@ -14580,7 +14633,8 @@ function BotItemDetailView({
     () => askData ? botItemQuestionShape(askData) : { body: "", decisions: [] },
     [askData]
   );
-  const questionEventId = item?.question?.eventId ?? latestAskEvent?.eventId ?? latestAskEvent?.id;
+  const questionEventId = resolveItemQuestionEventId(item, latestAskEvent);
+  const askKey = askLockKey(itemUid, questionEventId);
   const questionKey = `${itemUid}:${questionEventId ?? "none"}`;
   const hasOpenQuestion = item?.status === "needs_you" && Boolean(
     askShape.decisions.length > 0 || item.question?.text || askShape.body || latestAskEvent
@@ -14835,27 +14889,48 @@ function BotItemDetailView({
     }
   };
   const dispatchCommentEntry = async (entry) => {
+    const entryAskKey = entry.decisions ? askLockKey(itemUid, entry.questionEventId) : null;
+    if (entryAskKey && inFlightAskRef.current.has(entryAskKey)) {
+      return;
+    }
+    if (entryAskKey) {
+      inFlightAskRef.current.add(entryAskKey);
+    }
+    inFlightSubmitRef.current = true;
     setSubmitting(true);
     try {
+      const answerPayload = entry.plain ? {} : buildOwnerAnswerPayload(entry.questionEventId, entry.decisions);
       await callBotRpc(RPC_METHODS2.ITEMS_OWNER_COMMENT, {
         botId,
         uid: itemUid,
         text: entry.text,
         requestId: entry.requestId,
-        ...entry.decisions ? { decisions: entry.decisions } : {},
+        ...answerPayload,
         ...entry.plain ? { plain: true } : {},
-        ...!entry.plain && entry.questionEventId !== void 0 ? { questionEventId: entry.questionEventId } : {},
         ...entry.images && entry.images.length > 0 ? { images: entry.images } : {},
         ...entry.files && entry.files.length > 0 ? { files: entry.files } : {}
       });
+      if (entryAskKey) {
+        answeredAskRef.current.add(entryAskKey);
+        setAnsweredAskKeys((prev) => ({ ...prev, [entryAskKey]: true }));
+      }
       setPendingComments((prev) => prev.filter((p) => p.requestId !== entry.requestId));
       await load();
       onMutated();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      if (entryAskKey && /item_changed|question has changed|no longer open/i.test(errMsg)) {
+        answeredAskRef.current.add(entryAskKey);
+        setAnsweredAskKeys((prev) => ({ ...prev, [entryAskKey]: true }));
+        void load();
+      }
       setPendingComments((prev) => prev.map((p) => p.requestId === entry.requestId ? { ...p, status: "failed", error: errMsg } : p));
       botsStore.pushToast({ message: errMsg, tone: "error" });
     } finally {
+      if (entryAskKey) {
+        inFlightAskRef.current.delete(entryAskKey);
+      }
+      inFlightSubmitRef.current = false;
       setSubmitting(false);
     }
   };
@@ -14863,6 +14938,9 @@ function BotItemDetailView({
     const rawBody = (textOverride ?? comment).trim();
     const hasFiles = !textOverride && attachments.length > 0;
     if (!rawBody && !hasFiles) {
+      return;
+    }
+    if (inFlightSubmitRef.current) {
       return;
     }
     const images = !textOverride ? attachments.filter((a) => a.kind === "image").map((a) => ({
@@ -14880,13 +14958,21 @@ function BotItemDetailView({
       ...a.textContent !== void 0 ? { text: a.textContent } : {}
     })) : [];
     const isPlain = !options.forceReply && hasOpenQuestion && !replyingActive;
+    const resolvedQid = !isPlain ? questionEventId : void 0;
+    if (options.decisions) {
+      const targetAskKey = askLockKey(itemUid, resolvedQid);
+      if (inFlightAskRef.current.has(targetAskKey) || answeredAskRef.current.has(targetAskKey)) {
+        return;
+      }
+    }
+    const requestId = options.decisions && images.length === 0 && files.length === 0 ? buildQuickAskRequestId(itemUid, resolvedQid, options.decisions, rawBody) : makeRequestId();
     const entry = {
-      requestId: makeRequestId(),
+      requestId,
       text: rawBody || (zh ? `[\u9644\u5E26 ${attachments.length} \u4E2A\u9644\u4EF6]` : `[${attachments.length} attachment(s)]`),
       createdAt: Date.now(),
       status: "sending",
       ...options.decisions ? { decisions: options.decisions } : {},
-      ...!isPlain && questionEventId !== void 0 ? { questionEventId } : {},
+      ...resolvedQid !== void 0 ? { questionEventId: resolvedQid } : {},
       ...isPlain ? { plain: true } : {},
       ...images.length > 0 ? { images } : {},
       ...files.length > 0 ? { files } : {}
@@ -14904,6 +14990,9 @@ function BotItemDetailView({
     void dispatchCommentEntry({ ...entry, status: "sending", error: void 0 });
   };
   const handleStepperSubmit = (payload) => {
+    if (inFlightAskRef.current.has(askKey) || answeredAskRef.current.has(askKey)) {
+      return;
+    }
     const extra = comment.trim();
     const combined = [payload.text, extra].filter(Boolean).join("\n");
     if (extra) {
@@ -15239,6 +15328,7 @@ ${text}` : text);
             questionKey,
             shape: askShape,
             submitting,
+            submitted: Boolean(answeredAskKeys[askKey]),
             onSubmit: handleStepperSubmit,
             onFillComment: handleFillComment
           }
@@ -15577,7 +15667,10 @@ function BotActivityTab({ bot, filterOpen }) {
   const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = (0, import_react21.useState)(false);
   const [bulkSnoozeMenuOpen, setBulkSnoozeMenuOpen] = (0, import_react21.useState)(false);
   const [bulkCustomSnooze, setBulkCustomSnooze] = (0, import_react21.useState)("");
-  const [submittingAskUid, setSubmittingAskUid] = (0, import_react21.useState)(null);
+  const [submittingAskKeys, setSubmittingAskKeys] = (0, import_react21.useState)({});
+  const [answeredAskKeys, setAnsweredAskKeys] = (0, import_react21.useState)({});
+  const inFlightAskRef = (0, import_react21.useRef)(/* @__PURE__ */ new Set());
+  const answeredAskRef = (0, import_react21.useRef)(/* @__PURE__ */ new Set());
   const reloadAll = (0, import_react21.useCallback)(async () => {
     const [itemsRes, autoRes, accessRes, upNextRes, budgetRes] = await Promise.allSettled([
       callBotRpc(RPC_METHODS2.ITEMS_OWNER_LIST, { botId: bot.id, limit: 100 }),
@@ -15716,24 +15809,40 @@ function BotActivityTab({ bot, filterOpen }) {
     }
   };
   const submitQuickAsk = async (item, payload) => {
-    if (!payload.text || submittingAskUid) {
+    const questionEventId = resolveItemQuestionEventId(item);
+    const askKey = askLockKey(item.uid, questionEventId);
+    if (!payload.text || inFlightAskRef.current.has(askKey) || answeredAskRef.current.has(askKey)) {
       return;
     }
-    setSubmittingAskUid(item.uid);
+    inFlightAskRef.current.add(askKey);
+    setSubmittingAskKeys((prev) => ({ ...prev, [askKey]: true }));
     try {
       await callBotRpc(RPC_METHODS2.ITEMS_OWNER_COMMENT, {
         botId: bot.id,
         uid: item.uid,
         text: payload.text,
-        decisions: payload.decisions,
-        ...item.question?.eventId !== void 0 ? { questionEventId: item.question.eventId } : {},
-        requestId: `ask-${Date.now().toString(36)}`
+        ...buildOwnerAnswerPayload(questionEventId, payload.decisions),
+        requestId: buildQuickAskRequestId(item.uid, questionEventId, payload.decisions, payload.text)
       });
-      void reloadAll();
+      answeredAskRef.current.add(askKey);
+      setAnsweredAskKeys((prev) => ({ ...prev, [askKey]: true }));
+      await reloadAll();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/item_changed|question has changed|no longer open/i.test(msg)) {
+        answeredAskRef.current.add(askKey);
+        setAnsweredAskKeys((prev) => ({ ...prev, [askKey]: true }));
+        void reloadAll();
+      }
+      botsStore.pushToast({ message: msg, tone: "error" });
     } finally {
-      setSubmittingAskUid(null);
+      inFlightAskRef.current.delete(askKey);
+      setSubmittingAskKeys((prev) => {
+        if (!prev[askKey]) return prev;
+        const next = { ...prev };
+        delete next[askKey];
+        return next;
+      });
     }
   };
   const handleInlineFillComment = (itemUid, text) => {
@@ -15968,17 +16077,22 @@ function BotActivityTab({ bot, filterOpen }) {
                 `ev-${idx}`
               );
             }) }),
-            shape && shape.decisions.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
-              BotItemQuestionStep,
-              {
-                questionKey: `inline:${item.uid}:${item.question?.eventId ?? "0"}`,
-                shape,
-                compact: true,
-                submitting: submittingAskUid === item.uid,
-                onSubmit: (payload) => void submitQuickAsk(item, payload),
-                onFillComment: (text) => handleInlineFillComment(item.uid, text)
-              }
-            ) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "dsh-bots-muted", children: item.question?.text || item.summary || (zh ? "\u7B49\u5F85\u4F60\u7684\u786E\u8BA4\u6216\u56DE\u590D" : "Waiting for your input") })
+            shape && shape.decisions.length > 0 ? (() => {
+              const qEventId = resolveItemQuestionEventId(item);
+              const askKey = askLockKey(item.uid, qEventId);
+              return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
+                BotItemQuestionStep,
+                {
+                  questionKey: `inline:${item.uid}:${qEventId ?? "0"}`,
+                  shape,
+                  compact: true,
+                  submitting: Boolean(submittingAskKeys[askKey]),
+                  submitted: Boolean(answeredAskKeys[askKey]),
+                  onSubmit: (payload) => void submitQuickAsk(item, payload),
+                  onFillComment: (text) => handleInlineFillComment(item.uid, text)
+                }
+              );
+            })() : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "dsh-bots-muted", children: item.question?.text || item.summary || (zh ? "\u7B49\u5F85\u4F60\u7684\u786E\u8BA4\u6216\u56DE\u590D" : "Waiting for your input") })
           ] }, `ny-${item.uid}`);
         })
       ] })
@@ -16284,6 +16398,42 @@ function BotActivityTab({ bot, filterOpen }) {
 // vendor/dsh-whale/src/client/components/BotChatsTab.tsx
 var import_react22 = require("react");
 var import_react_dom9 = require("react-dom");
+
+// vendor/dsh-whale/src/shared/bot-quiet-result.js
+var BOT_QUIET_MARKER = "NO_REPLY";
+var QUIET_ENDING = new RegExp(`(?:^|\\s)[\`*_]*${BOT_QUIET_MARKER}[\`*_.!]*\\s*$`);
+var TRAILING_BACKTICK_MARKER = new RegExp(`\`+${BOT_QUIET_MARKER}\`+[.!]*\\s*$`);
+var HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
+function addressedBotWords(message) {
+  if (typeof message !== "string") {
+    return null;
+  }
+  let current = message.trimEnd();
+  while (QUIET_ENDING.test(current)) {
+    const match = QUIET_ENDING.exec(current);
+    if (!match) break;
+    const matchText = match[0];
+    if (TRAILING_BACKTICK_MARKER.test(matchText.trim())) {
+      const leadingWsLen = matchText.length - matchText.trimStart().length;
+      const beforeToken = current.slice(0, match.index + leadingWsLen);
+      const lastNewline = beforeToken.lastIndexOf("\n");
+      const sameLineBefore = beforeToken.slice(lastNewline + 1);
+      if (HAS_WORD_CHAR.test(sameLineBefore)) {
+        break;
+      }
+    }
+    const next = current.slice(0, match.index).trimEnd();
+    if (next === current) break;
+    current = next;
+  }
+  const trimmed = current.trim();
+  if (!trimmed || !HAS_WORD_CHAR.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+// vendor/dsh-whale/src/client/components/BotChatsTab.tsx
 var import_jsx_runtime22 = require("react/jsx-runtime");
 var INITIAL_CHATS_SHOWN = 8;
 var INITIAL_WORKERS_CAP = CHAT_TREE_CAPS.runningShown + CHAT_TREE_CAPS.finishedShown;
@@ -16521,7 +16671,8 @@ function BotChatsTab({ bot }) {
     }
     return allLocalChats.filter((chat) => {
       const title = (chat.title || (chat.origin === "home" ? "Home Chat" : "")).toLowerCase();
-      const preview = (chat.lastMessageText || chat.statusText || "").toLowerCase();
+      const lastMsg = chat.lastMessageText ? addressedBotWords(chat.lastMessageText) ?? "" : "";
+      const preview = (lastMsg || chat.statusText || "").toLowerCase();
       return title.includes(q) || preview.includes(q);
     });
   }, [allLocalChats, isSearching, remoteChats, trimmedQuery]);
@@ -16839,7 +16990,8 @@ function BotChatsTab({ bot }) {
               ] }),
               /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "dsh-bots-row", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("span", { className: "dsh-bots-muted dsh-bots-ellipsis", children: (() => {
-                  const sub = chat.statusText || chat.lastMessageText || (chat.closed ? zh ? "\u5DF2\u5F52\u6863\u5386\u53F2" : "Closed" : "");
+                  const lastMsg = chat.lastMessageText ? addressedBotWords(chat.lastMessageText) ?? "" : "";
+                  const sub = chat.statusText || lastMsg || (chat.closed ? zh ? "\u5DF2\u5F52\u6863\u5386\u53F2" : "Closed" : "");
                   return isSearching ? highlightMatch(sub, trimmedQuery) : sub;
                 })() }),
                 /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { style: { display: "inline-flex", gap: 4, flexShrink: 0 }, children: [
@@ -21762,8 +21914,9 @@ function BotGroupSidebarCard({
     [botsById, group.members]
   );
   const subtitle = (0, import_react33.useMemo)(() => {
-    if (group.lastMessageText) {
-      return group.lastMessageAuthor ? `${group.lastMessageAuthor}: ${group.lastMessageText}` : group.lastMessageText;
+    const cleaned = group.lastMessageText ? addressedBotWords(group.lastMessageText) ?? "" : "";
+    if (cleaned) {
+      return group.lastMessageAuthor ? `${group.lastMessageAuthor}: ${cleaned}` : cleaned;
     }
     return memberBots.map((bot) => bot.name).join(", ");
   }, [group.lastMessageAuthor, group.lastMessageText, memberBots]);

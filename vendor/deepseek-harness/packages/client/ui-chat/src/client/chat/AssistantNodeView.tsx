@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatFileMentions, ChatNodeViewProps, PresentationInjected, TurnTailOwnerProps } from '../contract/slots.ts'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
+import { isBotOwnerSession, stripBotQuietBlocks } from './bot-quiet.ts'
 import type { AssistantOpenUi, OpenUiInjected } from './openui.ts'
 import type { createWhaleUiStore } from './whale-ui-store.ts'
 
@@ -20,7 +21,7 @@ type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<A
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
   node, groupPart, useDisclosure, useGroupAction, useTurnData, turnProcess, openFile, loadImage, fileMentions,
-  usePresentation, renderSlot, t, sessionId, useContextMenu, resolveFilePath,
+  usePresentation, renderSlot, t, sessionId, useSessions, useContextMenu, resolveFilePath,
   useOpenUiTheme, useOpenUiLocale, sendOpenUiAction, readOpenUiState, saveOpenUiState, actions,
 }: AssistantNodeViewProps) {
   const { getTriggerProps } = useContextMenu()
@@ -28,6 +29,11 @@ export const AssistantNodeView = memo(function AssistantNodeView({
     kind: 'file', value: { sessionId, path: resolveFilePath(path) },
   })), [getTriggerProps, sessionId, resolveFilePath])
   const data = node.data
+  const botSession = useSessions(state => isBotOwnerSession(state.byId[sessionId]?.presentation?.owner))
+  const displayBlocks = useMemo(
+    () => (botSession ? stripBotQuietBlocks(data.blocks, data.status === 'running') : data.blocks),
+    [botSession, data.blocks, data.status],
+  )
   const theme = useOpenUiTheme(value => value)
   const locale = useOpenUiLocale(value => value)
   const seq = data.finalNode?.seq ?? node.anchorSeq
@@ -65,7 +71,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
   return (
     <AssistantMarkdown
-      blocks={data.blocks}
+      blocks={displayBlocks}
       groupPart={groupPart}
       useDisclosure={useDisclosure}
       streaming={data.status === 'running'}

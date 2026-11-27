@@ -3005,6 +3005,7 @@ describe('ChatView', () => {
 
   it.each([
     { reason: { kind: 'aborted', reason: { kind: 'user' } }, label: '已停止' },
+    { reason: { kind: 'blocked' }, label: '已拦截' },
     { reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'failed' } }, label: '处理失败' },
   ] as const)('preserves the Project turn $reason.kind label', ({ reason, label }) => {
     const h = makeHarness({

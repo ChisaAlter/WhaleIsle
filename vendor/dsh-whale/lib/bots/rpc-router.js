@@ -332,22 +332,24 @@ function scheduleOwedMailReconcile(runtime, trigger) {
     });
 }
 
+/** @param {any} runtime @param {string} reason */
+function triggerOwedMail(runtime, reason) {
+  if (runtime.hasCustomWakeBot) {
+    scheduleOwedMailReconcile(runtime, reason);
+  } else {
+    void runtime.sessionRuntime?.sendOwedMail?.().catch(() => {
+      /* Best-effort owed mail send. */
+    });
+  }
+}
+
 /**
  * @param {any} runtime
  * @param {any} ownerActor
  * @returns {Record<string, (p: any) => any>}
  */
 function buildItemRpcHandlers(runtime, ownerActor) {
-  const { itemsStore, botsStore, eventBus, sessionRuntime } = runtime;
-
-  /** @param {string} reason */
-  const triggerOwedMail = (reason) => {
-    if (runtime.hasCustomWakeBot) {
-      scheduleOwedMailReconcile(runtime, reason);
-    } else {
-      void sessionRuntime?.sendOwedMail?.().catch(() => null);
-    }
-  };
+  const { itemsStore, botsStore, eventBus } = runtime;
 
   /** @param {any} p */
   const ownerShow = (p) => {
@@ -368,7 +370,7 @@ function buildItemRpcHandlers(runtime, ownerActor) {
     const affected = [...new Set(res.updated.map((/** @type {any} */ i) => i.ownerBotId))];
     if (affected.length) {
       eventBus.emit({ botIds: affected, kinds: ['items'] });
-      triggerOwedMail('ownerStatus');
+      triggerOwedMail(runtime, 'ownerStatus');
     }
     return res;
   };
@@ -390,12 +392,12 @@ function buildItemRpcHandlers(runtime, ownerActor) {
       images: p?.images,
       files: p?.files,
       requestId: p?.requestId,
-      questionEventId: p?.questionEventId,
+      questionEventId: p?.questionEventId ?? p?.answers,
       plain: p?.plain === true,
       askedInConversation: p?.askedInConversation,
     }, ownerActor);
     eventBus.emit({ botIds: [res.item.ownerBotId], kinds: ['items'] });
-    triggerOwedMail('ownerComment');
+    triggerOwedMail(runtime, 'ownerComment');
     return res;
   };
 
@@ -581,7 +583,15 @@ export function buildRpcDispatchTable(runtime) {
 
     // Bot lifecycle
     'bots.create': (p) => botsService.createBot(p),
-    'bots.update': (p) => botsService.updateBot(p?.botId ?? p?.id, p?.patch ?? p),
+    'bots.update': async (p) => {
+      const targetId = p?.botId ?? p?.id;
+      const wasPaused = Boolean(runtime.botsStore?.getBot?.(targetId)?.paused);
+      const updated = await botsService.updateBot(targetId, p?.patch ?? p, { skipUnpauseMail: true });
+      if (wasPaused && updated?.paused === false) {
+        triggerOwedMail(runtime, 'unpause');
+      }
+      return updated;
+    },
     'bots.delete': (p) => botsService.deleteBot(p?.botId ?? p?.id, { deleteFolder: p?.deleteFolder === true }),
     'bots.kickoff.retry': (p) => sessionRuntime.retryKickoff(p?.botId ?? p?.id),
     'bots.takeOver': (p) => sessionRuntime.takeOverWorkspace(p?.botId ?? p?.id, p),

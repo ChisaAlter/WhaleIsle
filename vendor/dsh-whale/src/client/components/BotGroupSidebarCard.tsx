@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { addressedBotWords } from '../../shared/bot-quiet-result.js';
 import {
   botsStore,
   formatRelativeTime,
@@ -136,10 +137,11 @@ export function BotGroupSidebarCard({
   );
 
   const subtitle = useMemo(() => {
-    if (group.lastMessageText) {
+    const cleaned = group.lastMessageText ? (addressedBotWords(group.lastMessageText) ?? '') : '';
+    if (cleaned) {
       return group.lastMessageAuthor
-        ? `${group.lastMessageAuthor}: ${group.lastMessageText}`
-        : group.lastMessageText;
+        ? `${group.lastMessageAuthor}: ${cleaned}`
+        : cleaned;
     }
     return memberBots.map((bot) => bot.name).join(', ');
   }, [group.lastMessageAuthor, group.lastMessageText, memberBots]);
