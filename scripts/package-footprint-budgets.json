@@ -1,12 +1,11 @@
 {
   "schemaVersion": 1,
   "win32-x64": {
-    "totalBytes": 1461312233,
+    "totalBytes": 1440614380,
     "maxUnclassifiedBytes": 8388608,
     "maxDuplicateBytes": 24277889,
     "pendingSlimmingForbidden": [
       "office-kit-wasm",
-      "pet-ort-nonjsep",
       "mobile-whale-ui-dup",
       "mobile-head-dup",
       "renderer-openui"
@@ -40,13 +39,13 @@
         "maxBytes": 48667961
       },
       "pet-ort-nonjsep": {
-        "maxBytes": 12279756
+        "maxBytes": 0
       },
       "pet-ort": {
-        "maxBytes": 23762186
+        "maxBytes": 22940747
       },
       "pet-anime4k": {
-        "maxBytes": 10507135
+        "maxBytes": 300000
       },
       "pet-model": {
         "maxBytes": 7681208
