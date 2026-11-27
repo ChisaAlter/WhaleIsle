@@ -615,7 +615,7 @@ export function buildRpcDispatchTable(runtime) {
     'bots.chats': (p) => sessionRuntime.listChats(p?.botId ?? p?.id, p),
     'bots.chats.own': (p) => sessionRuntime.listChats(p?.botId ?? p?.id, { includeClosed: false }),
     'bots.chats.search': (p) => sessionRuntime.searchChats(p),
-    'bots.chats.seen': (p) => sessionRuntime.markSeen(p?.sessionId ?? p?.chatId),
+    'bots.chats.seen': (p) => sessionRuntime.markSeen(p?.sessionId ?? p?.chatId, p?.botId ?? p?.id),
     'bots.chats.unseen': (p) => sessionRuntime.markUnseen(p?.sessionId ?? p?.chatId),
     'bots.chatTree': (p) => sessionRuntime.buildChatTree(p?.botId ?? p?.id),
     'bots.activity': (p) => sessionRuntime.buildActivity(p?.botId ?? p?.id),
