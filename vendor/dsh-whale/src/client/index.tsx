@@ -7,6 +7,7 @@ import './styles/bots-enhancements.css';
 import './styles/bots-group-enhancements.css';
 
 import { useEffect, type ComponentType, type ReactNode } from 'react';
+import { resolveActiveBotSelection } from '../shared/bot-sidebar-logic.js';
 import { LOCALES, normalizeLocale } from '../shared/locales.js';
 import { BotsModalHost } from './components/BotConfirmDialogs';
 import {
@@ -163,7 +164,13 @@ interface HarnessClientContext {
   locale?: LocaleServiceLike;
   sessions?: SessionsServiceLike;
   uiWorkspace?: { openSession?: (sessionId: string) => Promise<void> | void };
-  layout?: { selectPanel?: (panelId: string | null) => void };
+  layout?: {
+    selectPanel?: (panelId: string | null) => void;
+    panelInfo?: {
+      getSnapshot?: () => { activePanelId?: string | null };
+      subscribe?: (listener: () => void) => () => void;
+    };
+  };
   settingsNavigation?: {
     open?: (section?: string) => Promise<void> | void;
     close?: () => void;
@@ -223,18 +230,14 @@ function readMainSessionId(sessions: SessionsServiceLike | undefined): string | 
   return null;
 }
 
-function findBotForSession(sessionId: string): BotRecord | null {
-  const state = botsStore.getState();
-  for (const bot of state.bots) {
-    if (bot.chatSessionId === sessionId || bot.homeSessionId === sessionId) {
-      return bot;
-    }
-    const tree = state.chatsByBot[bot.id];
-    if (tree?.chats.some((chat) => chat.sessionId === sessionId || chat.chatId === sessionId)) {
-      return bot;
-    }
+function readActivePanelId(layout: HarnessClientContext['layout']): string | null {
+  try {
+    const raw = layout?.panelInfo?.getSnapshot?.()?.activePanelId;
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
+  } catch (err) {
+    console.warn('[dsh-whale] Failed to inspect active main panel', err);
+    return null;
   }
-  return null;
 }
 
 function registerSlotWhenDeclared(
@@ -665,20 +668,65 @@ export function apply(ctx: HarnessClientContext): void {
   }, 'dsh-whale: botsStore lifecycle');
 
   ctx.effect(() => {
-    const syncMainSession = () => {
+    let prevState = botsStore.getState();
+    let lastMainSessionId: string | null | undefined;
+    let lastPanelId: string | null | undefined;
+
+    const syncMainSelection = (force = false) => {
+      const currentState = botsStore.getState();
       const sid = readMainSessionId(sessions);
-      if (!sid) {
+      const panelId = readActivePanelId(ctx.layout);
+      const dataChanged =
+        currentState.loaded !== prevState.loaded
+        || currentState.bots !== prevState.bots
+        || currentState.chatsByBot !== prevState.chatsByBot;
+      prevState = currentState;
+
+      if (!force && sid === lastMainSessionId && panelId === lastPanelId && !dataChanged) {
         return;
       }
-      const matched = findBotForSession(sid);
+      lastMainSessionId = sid;
+      lastPanelId = panelId;
+
+      // Avoid overwriting optimistic selection before a mock/unhydrated host publishes a mainView session.
+      if (!force && dataChanged && sid === null && panelId === null) {
+        return;
+      }
+
+      const next = resolveActiveBotSelection({
+        activePanelId: panelId,
+        mainSessionId: sid,
+        bots: currentState.bots,
+        chatsByBot: currentState.chatsByBot,
+        prevActiveGroupId: currentState.activeGroupId,
+        prevActiveBotId: currentState.activeBotId,
+        settingsRouteBotId: currentState.settingsRoute?.host === 'page' ? currentState.settingsRoute.botId : null,
+      }) as {
+        botId: string | null;
+        groupId: string | null;
+        sessionId: string | null;
+        closePageSettings: boolean;
+      };
+
+      if (next.closePageSettings && currentState.settingsRoute?.host === 'page') {
+        botsStore.closeBotSettings();
+      }
       botsStore.setActiveSelection({
-        sessionId: sid,
-        ...(matched ? { botId: matched.id, groupId: null } : {}),
+        botId: next.botId,
+        groupId: next.groupId,
+        sessionId: next.sessionId,
       });
     };
-    syncMainSession();
-    const unsub = sessions?.list?.subscribe?.(syncMainSession);
-    return () => { unsub?.(); };
+
+    syncMainSelection(true);
+    const unsubSessions = sessions?.list?.subscribe?.(() => syncMainSelection(true));
+    const unsubPanel = ctx.layout?.panelInfo?.subscribe?.(() => syncMainSelection(true));
+    const unsubStore = botsStore.subscribe(() => syncMainSelection(false));
+    return () => {
+      unsubSessions?.();
+      unsubPanel?.();
+      unsubStore();
+    };
   }, 'dsh-whale: active session sync');
 
   // Sidebar Bots section above Workspaces; `html[data-sidebar-projects-first="true"]`

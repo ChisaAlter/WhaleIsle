@@ -433,6 +433,9 @@ class BotsStore {
     if (knownSession) this.host.openSession?.(knownSession, { botId });
     try {
       const res = await callBotRpc<{ sessionId?: string }>(RPC_METHODS.CHAT_OPEN, { botId });
+      if (this.state.activeBotId !== botId) {
+        return;
+      }
       const sid = res?.sessionId ?? knownSession;
       if (sid) {
         this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: sid });
@@ -553,12 +556,24 @@ class BotsStore {
   }
 
   setActiveSelection(sel: { botId?: string | null; groupId?: string | null; sessionId?: string | null }): void {
-    this.setState((prev) => ({
-      ...prev,
-      activeBotId: sel.botId !== undefined ? sel.botId : prev.activeBotId,
-      activeGroupId: sel.groupId !== undefined ? sel.groupId : prev.activeGroupId,
-      activeSessionId: sel.sessionId !== undefined ? sel.sessionId : prev.activeSessionId,
-    }));
+    this.setState((prev) => {
+      const nextBotId = sel.botId !== undefined ? sel.botId : prev.activeBotId;
+      const nextGroupId = sel.groupId !== undefined ? sel.groupId : prev.activeGroupId;
+      const nextSessionId = sel.sessionId !== undefined ? sel.sessionId : prev.activeSessionId;
+      if (
+        nextBotId === prev.activeBotId
+        && nextGroupId === prev.activeGroupId
+        && nextSessionId === prev.activeSessionId
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        activeBotId: nextBotId,
+        activeGroupId: nextGroupId,
+        activeSessionId: nextSessionId,
+      };
+    });
   }
 
   setRightPanelTab(tab: BotRightPanelTab, botId?: string): void {

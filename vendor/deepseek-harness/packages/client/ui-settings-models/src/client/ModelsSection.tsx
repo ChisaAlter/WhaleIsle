@@ -35,6 +35,7 @@ import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import { localizeProviderError } from './provider-error.ts'
+import { protocolLabel } from './protocol-label.ts'
 import { VISION_FALLBACK_NS, VisionModelPicker, type VisionPickerApi } from './VisionModelPicker.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -120,9 +121,71 @@ interface CatalogDraft {
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
   'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'onAuthorizationChange'
+  | 'hideTitle' | 'initialCustomizedOpen'
 > {
   target: EditorTarget
   row: ProviderRow
+}
+
+/**
+ * Build concise scannable metadata tokens for one configured provider card.
+ * @param row - directory-joined row state.
+ * @param target - derived editor target for defaults.
+ * @param namespace - owning settings namespace snapshot.
+ * @param schema - schema path helper.
+ * @param t - localized copy accessor.
+ * @returns ordered metadata labels (protocol, host, model count, key posture).
+ */
+function providerRowSummary(
+  row: ProviderRow,
+  target: EditorTarget,
+  namespace: SettingsNamespaceView,
+  schema: SettingsSchemaOperations,
+  t: (key: keyof typeof en) => string,
+): string[] {
+  const parts: string[] = []
+  const profile = schema.getPath(namespace.value, target.settingsPath)
+  const record = typeof profile === 'object' && profile !== null && !Array.isArray(profile)
+    ? profile as Record<string, unknown>
+    : undefined
+  const api = typeof record?.['api'] === 'string' && record['api'].length > 0
+    ? record['api']
+    : undefined
+  if (api !== undefined) {
+    parts.push(protocolLabel(t, api))
+  }
+  const rawBaseUrl = typeof record?.['baseURL'] === 'string' && record['baseURL'].length > 0
+    ? record['baseURL']
+    : target.defaultBaseURL
+  if (rawBaseUrl !== undefined) {
+    let host = rawBaseUrl
+    try {
+      const parsed = new URL(rawBaseUrl)
+      if (parsed.host.length > 0) host = parsed.host
+    } catch {
+      // Keep non-URL overrides verbatim so unusual endpoints stay visible.
+    }
+    parts.push(host)
+  } else if (row.entry.declared === true && row.entry.error === undefined) {
+    parts.push(t('summaryMissingBaseUrl'))
+  }
+  const customModels = Array.isArray(record?.['models']) ? record['models'] : undefined
+  const modelCount = customModels !== undefined && customModels.length > 0
+    ? customModels.length
+    : row.entry.provider === 'deepseek-account' && row.accountModels !== undefined && row.accountModels.length > 0
+      ? row.accountModels.length
+      : undefined
+  if (modelCount !== undefined) {
+    parts.push(t('summaryModelCount').replace('{count}', () => String(modelCount)))
+  } else if (row.entry.declared !== true) {
+    parts.push(t('summaryDefaultCatalog'))
+  }
+  if (row.credential?.configured === true) {
+    parts.push(t(row.credential.source === 'env' ? 'summaryEnvAuth' : 'summaryApiKeyAuth'))
+  } else if (row.apiKeyEnv !== undefined && row.credential?.configured === false) {
+    parts.push(t('summaryNoKey'))
+  }
+  return parts
 }
 
 /** Render an editor for either the setup posture or an expanded provider row. */
@@ -447,11 +510,65 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     ? undefined
     : state.rows.find(row => row.entry.provider === draft.target.provider)
 
+  const usableCount = configured.filter(providerUsable).length
+  const issueCount = configured.filter(row => row.entry.error !== undefined).length
+  const canOpenAdd = !addOpen && (catalogOffered || customOffered)
+
   return (
     <div className={styles['section']}>
-      <div className={styles['sectionHeader']}>
-        <h2 className={styles['title']}>{t('title')}</h2>
-        <p className={styles['intro']}>{t('intro')}</p>
+      <div className={styles['sectionHeaderBar']}>
+        <div className={styles['sectionHeader']}>
+          <div className={styles['titleRow']}>
+            <h2 className={styles['title']}>{t('title')}</h2>
+            {configured.length > 0
+              ? (
+                <div className={styles['headerSummary']}>
+                  <span className={styles['summaryPill']}>
+                    {t('providersCount').replace('{count}', () => String(configured.length))}
+                  </span>
+                  {usableCount > 0
+                    ? (
+                      <span className={`${styles['summaryPill']} ${styles['summaryPillReady']}`}>
+                        {t('providersReadyCount').replace('{count}', () => String(usableCount))}
+                      </span>
+                    )
+                    : null}
+                  {issueCount > 0
+                    ? (
+                      <span className={`${styles['summaryPill']} ${styles['summaryPillIssue']}`}>
+                        {t('providersIssueCount').replace('{count}', () => String(issueCount))}
+                      </span>
+                    )
+                    : null}
+                </div>
+              )
+              : null}
+          </div>
+          <p className={styles['intro']}>{t('intro')}</p>
+        </div>
+        {canOpenAdd
+          ? (
+            <div className={styles['headerActions']}>
+              <Button size="sm" shape="pill" variant="outline"
+                icon={<IconPlusOutlineRegular size={16} />}
+                className={styles['addButton']}
+                disabled={!state.writable || state.status !== 'ready' || (!catalogEnabled && !customEnabled)}
+                onClick={() => {
+                  if (controller.store.getSnapshot().status !== 'ready') return
+                  const first = addable[0]
+                  const initial: AddMode = catalogEnabled ? 'catalog' : 'custom'
+                  setSavedTarget(undefined)
+                  setEditing(first === undefined ? undefined : targetOf(first.row))
+                  setAddMode(initial)
+                  setVisited(new Set([initial]))
+                  setAddOpen(true)
+                }}
+              >
+                {t('add')}
+              </Button>
+            </div>
+          )
+          : null}
       </div>
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
       {savedIdentity === undefined
@@ -461,147 +578,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
             {providerCopy(t('savedProvider'), savedIdentity)}
           </p>
         )}
-      <ul className={styles['rows']}>
-        {configured.map((row) => {
-          const target = targetOf(row)
-          const namespace = state.namespaces.get(target.settingsNs)
-          /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
-          if (namespace === undefined) return null
-          const error = row.entry.error === undefined
-            ? null
-            : <p role="alert" className={styles['error']}>{localizeProviderError(row.entry.error, t)}</p>
-          if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
-            // First-run posture: the provider exists but has no key — the
-            // setup card IS its presence on the page, until the user closes it.
-            return (
-              <li key={row.entry.provider} className={styles['setupCard']}>
-                {error}
-                {renderProviderEditor({
-                  target,
-                  row,
-                  namespace,
-                  schema,
-                  operations,
-                  t,
-                  readOnly: !state.writable,
-                  onAuthorizationChange: () => controller.load(),
-                  onClose: (changed) => { closeSetup(changed, target) },
-                })}
-                {renderSlot(
-                  'settings.models.provider-card',
-                  { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
-                  { entryKey: row.entry.settingsNs },
-                )}
-              </li>
-            )
-          }
-          const open = !addOpen && editing?.provider === row.entry.provider
-          const credentialConfigured = row.credential?.configured === true
-          const credentialMissing = !credentialConfigured
-            && row.apiKeyEnv !== undefined
-            && row.credential?.configured === false
-          return (
-            <li key={row.entry.provider} className={styles['rowCard']}>
-              <div className={styles['rowHead']}>
-                <span className={styles['rowIdentity']}>
-                  <span className={styles['rowName']}>{row.entry.displayName}</span>
-                  {/* Only the adapter can tell a hand-declared route from a
-                      shipped one it also has a stored profile for, so the tag
-                      follows its answer and stays off when it gives none. */}
-                  {row.entry.declared === true
-                    ? <span className={styles['rowTag']}>{t('customTag')}</span>
-                    : null}
-                  {/* An empty saved catalog stays editable without claiming sign-in. */}
-                  {(row.entry.provider === 'deepseek-account' && row.accountAvailable === true)
-                    || (row.apiKeyEnv === undefined && row.oauthCredential?.configured === true)
-                    ? (
-                      <span className={styles['accountStatus']}>
-                        <span className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`} aria-hidden="true" />
-                        {t('accountSignedIn')}
-                      </span>
-                    )
-                    : null}
-                  {credentialConfigured
-                    ? (
-                      <span
-                        className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`}
-                        role="img"
-                        aria-label={t('credentialConfigured')}
-                        title={t('credentialConfigured')}
-                      />
-                    )
-                    : credentialMissing
-                      ? (
-                        <span
-                          className={`${styles['credentialDot']} ${styles['credentialDotMissing']}`}
-                          role="img"
-                          aria-label={t('credentialMissing')}
-                          title={t('credentialMissing')}
-                        />
-                      )
-                      : null}
-                </span>
-                <span className={styles['rowActions']}>
-                  <Button size="sm" shape="pill" variant="outline"
-                    aria-label={providerCopy(t('editProvider'), target)}
-                    disabled={!open && state.status !== 'ready'}
-                    onClick={() => {
-                      if (!open && controller.store.getSnapshot().status !== 'ready') return
-                      setSavedTarget(undefined)
-                      // One card at a time: the add card closes with whatever
-                      // it held, since closing either card would otherwise
-                      // discard the other's draft.
-                      setAddOpen(false)
-                      setEditing(open ? undefined : target)
-                    }}
-                  >
-                    {t('edit')}
-                  </Button>
-                  {row.removable
-                    ? (
-                      <Button size="sm" shape="pill"
-                        className={styles['dangerButton']}
-                        aria-label={providerCopy(t('removeProvider'), target)}
-                        disabled={!state.writable || state.status !== 'ready'}
-                        onClick={() => {
-                          if (controller.store.getSnapshot().status !== 'ready') return
-                          setSavedTarget(undefined)
-                          setDeleteFailure(undefined)
-                          setDeleteTarget(target)
-                        }}
-                      >
-                        {t('remove')}
-                      </Button>
-                    )
-                    : null}
-                </span>
-              </div>
-              {error}
-              {renderSlot(
-                'settings.models.provider-card',
-                { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
-                { entryKey: row.entry.settingsNs },
-              )}
-              {open
-                ? renderProviderEditor({
-                  target,
-                  row,
-                  namespace,
-                  schema,
-                  operations,
-                  t,
-                  readOnly: !state.writable,
-                  onAuthorizationChange: () => controller.load(),
-                  onClose: (changed) => { closeEditor(changed, target) },
-                })
-                : null}
-            </li>
-          )
-        })}
-      </ul>
-      <div className={styles['addBlock']}>
-        {addOpen
-          ? (
+      {addOpen
+        ? (
+          <div className={styles['addBlock']}>
             <div className={styles['addCard']}>
               <div className={styles['addModes']}>
                 {bothOffered
@@ -725,33 +704,163 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 )
                 : null}
             </div>
-          )
-          : catalogOffered || customOffered
-            ? (
-              // One entry for both ways to gain a provider; the card behind it
-              // splits them. Full width, so it lines up with the rows above.
-              <div className={styles['addActions']}>
-                <Button shape="pill" variant="outline"
-                  icon={<IconPlusOutlineRegular size={16} />}
-                  className={styles['addButton']}
-                  disabled={!state.writable || state.status !== 'ready' || (!catalogEnabled && !customEnabled)}
-                  onClick={() => {
-                    if (controller.store.getSnapshot().status !== 'ready') return
-                    const first = addable[0]
-                    const initial: AddMode = catalogEnabled ? 'catalog' : 'custom'
-                    setSavedTarget(undefined)
-                    setEditing(first === undefined ? undefined : targetOf(first.row))
-                    setAddMode(initial)
-                    setVisited(new Set([initial]))
-                    setAddOpen(true)
-                  }}
-                >
-                  {t('add')}
-                </Button>
+          </div>
+        )
+        : null}
+      <ul className={styles['rows']}>
+        {configured.map((row) => {
+          const target = targetOf(row)
+          const namespace = state.namespaces.get(target.settingsNs)
+          /* v8 ignore next -- the join marks a row configured only when its namespace resolved */
+          if (namespace === undefined) return null
+          const error = row.entry.error === undefined
+            ? null
+            : (
+              <div className={styles['rowErrorBanner']}>
+                <p role="alert" className={styles['error']}>{localizeProviderError(row.entry.error, t)}</p>
               </div>
             )
-            : null}
-      </div>
+          if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
+            // First-run posture: the provider exists but has no key — the
+            // setup card IS its presence on the page, until the user closes it.
+            return (
+              <li key={row.entry.provider} className={styles['setupCard']}>
+                {error}
+                {renderProviderEditor({
+                  target,
+                  row,
+                  namespace,
+                  schema,
+                  operations,
+                  t,
+                  readOnly: !state.writable,
+                  onAuthorizationChange: () => controller.load(),
+                  onClose: (changed) => { closeSetup(changed, target) },
+                })}
+                {renderSlot(
+                  'settings.models.provider-card',
+                  { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
+                  { entryKey: row.entry.settingsNs },
+                )}
+              </li>
+            )
+          }
+          const open = !addOpen && editing?.provider === row.entry.provider
+          const credentialConfigured = row.credential?.configured === true
+          const credentialMissing = !credentialConfigured
+            && row.apiKeyEnv !== undefined
+            && row.credential?.configured === false
+          const summaryParts = providerRowSummary(row, target, namespace, schema, t)
+          return (
+            <li key={row.entry.provider} className={styles['rowCard']}>
+              <div className={styles['rowHead']}>
+                <div className={styles['rowTitleBlock']}>
+                  <span className={styles['rowIdentity']}>
+                    <span className={styles['rowName']}>{row.entry.displayName}</span>
+                    {/* Only the adapter can tell a hand-declared route from a
+                        shipped one it also has a stored profile for, so the tag
+                        follows its answer and stays off when it gives none. */}
+                    {row.entry.declared === true
+                      ? <span className={styles['rowTag']}>{t('customTag')}</span>
+                      : null}
+                    {/* An empty saved catalog stays editable without claiming sign-in. */}
+                    {(row.entry.provider === 'deepseek-account' && row.accountAvailable === true)
+                      || (row.apiKeyEnv === undefined && row.oauthCredential?.configured === true)
+                      ? (
+                        <span className={styles['accountStatus']}>
+                          <span className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`} aria-hidden="true" />
+                          {t('accountSignedIn')}
+                        </span>
+                      )
+                      : null}
+                    {credentialConfigured
+                      ? (
+                        <span
+                          className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`}
+                          role="img"
+                          aria-label={t('credentialConfigured')}
+                          title={t('credentialConfigured')}
+                        />
+                      )
+                      : credentialMissing
+                        ? (
+                          <span
+                            className={`${styles['credentialDot']} ${styles['credentialDotMissing']}`}
+                            role="img"
+                            aria-label={t('credentialMissing')}
+                            title={t('credentialMissing')}
+                          />
+                        )
+                        : null}
+                  </span>
+                  {summaryParts.length > 0
+                    ? (
+                      <span className={styles['rowMeta']}>
+                        {summaryParts.join(' · ')}
+                      </span>
+                    )
+                    : null}
+                </div>
+                <span className={styles['rowActions']}>
+                  <Button size="sm" shape="pill" variant="outline"
+                    aria-label={providerCopy(t('editProvider'), target)}
+                    disabled={!open && state.status !== 'ready'}
+                    onClick={() => {
+                      if (!open && controller.store.getSnapshot().status !== 'ready') return
+                      setSavedTarget(undefined)
+                      // One card at a time: the add card closes with whatever
+                      // it held, since closing either card would otherwise
+                      // discard the other's draft.
+                      setAddOpen(false)
+                      setEditing(open ? undefined : target)
+                    }}
+                  >
+                    {t('edit')}
+                  </Button>
+                  {row.removable
+                    ? (
+                      <Button size="sm" shape="pill"
+                        className={styles['dangerButton']}
+                        aria-label={providerCopy(t('removeProvider'), target)}
+                        disabled={!state.writable || state.status !== 'ready'}
+                        onClick={() => {
+                          if (controller.store.getSnapshot().status !== 'ready') return
+                          setSavedTarget(undefined)
+                          setDeleteFailure(undefined)
+                          setDeleteTarget(target)
+                        }}
+                      >
+                        {t('remove')}
+                      </Button>
+                    )
+                    : null}
+                </span>
+              </div>
+              {error}
+              {renderSlot(
+                'settings.models.provider-card',
+                { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
+                { entryKey: row.entry.settingsNs },
+              )}
+              {open
+                ? renderProviderEditor({
+                  target,
+                  row,
+                  namespace,
+                  schema,
+                  operations,
+                  t,
+                  readOnly: !state.writable,
+                  hideTitle: true,
+                  initialCustomizedOpen: row.entry.error !== undefined,
+                  onAuthorizationChange: () => controller.load(),
+                  onClose: (changed) => { closeEditor(changed, target) },
+                })
+                : null}
+            </li>
+          )
+        })}
+      </ul>
       {visionApi === undefined
         ? null
         : (

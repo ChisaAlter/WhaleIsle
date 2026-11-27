@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Checkbox, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Checkbox, Input, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { ModelsKey } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -266,7 +266,8 @@ export function RetryPolicyEditor(props: RetryPolicyEditorProps): ReactNode {
     return (
       <label key={id} className={className}>
         <span className={styles['modelFieldLabel']}>{label(path[path.length - 1] as string)}</span>
-        <input
+        <Input
+          variant="form"
           className={styles['input']}
           type="text"
           inputMode={node.meta.step === 1 ? 'numeric' : 'decimal'}
@@ -332,7 +333,8 @@ export function RetryPolicyEditor(props: RetryPolicyEditorProps): ReactNode {
           })}
         </div>
         <div className={styles['retryCodeAdd']}>
-          <input
+          <Input
+            variant="form"
             className={styles['input']}
             type="text"
             value={texts[id] ?? ''}
@@ -351,14 +353,14 @@ export function RetryPolicyEditor(props: RetryPolicyEditorProps): ReactNode {
               add()
             }}
           />
-          <button
-            type="button"
-            className={styles['secondaryButton']}
+          <Button
+            size="sm"
+            variant="outline"
             disabled={disabled || draftCode.length === 0}
             onClick={add}
           >
             {t('retryCodeAdd')}
-          </button>
+          </Button>
         </div>
       </fieldset>
     )

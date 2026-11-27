@@ -651,15 +651,15 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
         h(LeadingComp, { sessionId: 'ordinary-session-1' }),
         h(ActionsComp, { sessionId: 'ordinary-session-1' }),
       ),
-      h('section', { id: 'paused-frame' },
-        h(FrameComp, {
-          useSessions: (sel) => sel({ byId: { 'sess-paused-home': { id: 'sess-paused-home', retainedBy: { mainView: 1 } } } }),
-        }, h('span', { className: 'inner-hero' }, 'PausedBody')),
-      ),
       h('section', { id: 'normal-frame' },
         h(FrameComp, {
           useSessions: (sel) => sel({ byId: { 'ordinary-session-1': { id: 'ordinary-session-1', retainedBy: { mainView: 1 } } } }),
         }, h('span', { className: 'inner-hero' }, 'NormalBody')),
+      ),
+      h('section', { id: 'paused-frame' },
+        h(FrameComp, {
+          useSessions: (sel) => sel({ byId: { 'sess-paused-home': { id: 'sess-paused-home', retainedBy: { mainView: 1 } } } }),
+        }, h('span', { className: 'inner-hero' }, 'PausedBody')),
       ),
       h('section', { id: 'global-settings' }, h(SettingsComp, {})),
       h(OverlayComp, {}),
@@ -2039,4 +2039,197 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
   assert.equal(lookCallsAfter.length, prevLookCount + 1);
   assert.equal(lookCallsAfter.at(-1).params.background, true);
   assert.ok(getToasts().some((toast) => toast.tone === 'error' && /巡视跳过：超出预算限制/.test(toast.text)));
+});
+
+domTest('sidebar active highlight clears when switching to ordinary session, blank new session, or non-bot global panel', async (t) => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
+    url: 'http://localhost:3124/',
+    pretendToBeVisual: true,
+  });
+
+  const savedGlobals = {
+    window: Object.getOwnPropertyDescriptor(globalThis, 'window'),
+    document: Object.getOwnPropertyDescriptor(globalThis, 'document'),
+    HTMLElement: Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement'),
+    Node: Object.getOwnPropertyDescriptor(globalThis, 'Node'),
+    CustomEvent: Object.getOwnPropertyDescriptor(globalThis, 'CustomEvent'),
+    Event: Object.getOwnPropertyDescriptor(globalThis, 'Event'),
+  };
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    CustomEvent: dom.window.CustomEvent,
+    Event: dom.window.Event,
+  });
+
+  const eventSources = [];
+  const rpcCalls = [];
+  const FakeEventSource = createFakeEventSourceClass(eventSources);
+  const fixtures = defaultBotFixtures();
+  const fetchImpl = makeRpcFetch((method) => {
+    if (method === 'bots.list') return fixtures;
+    if (method === 'bots.items.owner.list') return { items: [], counts: { planned: 0, working: 0, needs_you: 0, done: 0, canceled: 0 }, total: 0 };
+    return { ok: true };
+  }, rpcCalls);
+
+  let loadedSpec = null;
+  dom.window.__ModuleLoader__ = { load(entry) { loadedSpec = entry; } };
+  dom.window.EventSource = FakeEventSource;
+  dom.window.fetch = fetchImpl;
+
+  vm.runInNewContext(
+    fs.readFileSync(CLIENT_FILE, 'utf8'),
+    {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      EventSource: FakeEventSource,
+      fetch: fetchImpl,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      AbortController,
+      URL,
+      URLSearchParams,
+      CustomEvent: dom.window.CustomEvent,
+      console,
+    },
+    { filename: CLIENT_FILE },
+  );
+
+  const pluginExports = loadedSpec.factory((id) => {
+    if (id === 'react') return React;
+    if (id === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (id === 'react-dom') return ReactDOM;
+    if (id === 'react-dom/client') return { createRoot };
+    return {};
+  });
+
+  let sessionsState = { byId: { 'sess-whale-home': { id: 'sess-whale-home', retainedBy: { mainView: 1 } } } };
+  const sessionListeners = new Set();
+  let panelState = { activePanelId: null };
+  const panelListeners = new Set();
+  const disposers = [];
+  const declared = new Set(ALL_SLOT_SPECS);
+  const registrations = [];
+  const ctx = {
+    locale: { register: () => () => {}, getLocale: () => ({ active: 'zh-CN' }), subscribe: () => () => {} },
+    layout: {
+      selectPanel: (id) => {
+        panelState = { activePanelId: id };
+        for (const l of panelListeners) l();
+      },
+      panelInfo: {
+        getSnapshot: () => panelState,
+        subscribe: (l) => {
+          panelListeners.add(l);
+          return () => panelListeners.delete(l);
+        },
+      },
+    },
+    settingsNavigation: { open: () => {}, close: () => {} },
+    sessions: {
+      list: {
+        getSnapshot: () => sessionsState,
+        subscribe: (l) => {
+          sessionListeners.add(l);
+          return () => sessionListeners.delete(l);
+        },
+      },
+    },
+    uiWorkspace: {
+      openSession: async (id) => {
+        sessionsState = { byId: { [id]: { id, retainedBy: { mainView: 1 } } } };
+        for (const l of sessionListeners) l();
+      },
+    },
+    slots: {
+      spec: (n) => (declared.has(n) ? {} : undefined),
+      subscribe: () => () => {},
+      inject: (_n, fn) => fn(),
+      register: (decl, component) => {
+        registrations.push({ decl, component });
+        return () => {};
+      },
+    },
+    inject: (_d, cb) => {
+      cb(ctx);
+      return () => {};
+    },
+    effect: (fn) => {
+      const d = fn();
+      if (typeof d === 'function') disposers.push(d);
+      return () => d?.();
+    },
+  };
+
+  pluginExports.apply(ctx);
+  const SidebarComp = registrations.find((r) => r.decl.name === 'sidebar.sections.before')?.component;
+  const root = createRoot(dom.window.document.querySelector('main'));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    for (const d of disposers.splice(0).reverse()) d?.();
+    for (const es of eventSources) if (!es.closed) es.close();
+    dom.window.close();
+    for (const [k, desc] of Object.entries(savedGlobals)) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await new Promise((resolve) => setImmediate(resolve)); });
+    }
+  };
+
+  await act(async () => { root.render(h(SidebarComp, { wide: true })); });
+  await flush();
+
+  const whaleCard = () => [...dom.window.document.querySelectorAll('.dsh-bots-card-wrap')]
+    .find((el) => el.querySelector('.dsh-bots-card-name')?.textContent === '鲸鱼娘')
+    ?.querySelector('.dsh-bots-card');
+
+  assert.equal(whaleCard().getAttribute('data-active'), 'true', 'bot active when mainView holds bot home session');
+
+  // Switch to an ordinary workspace session: active highlight must clear immediately.
+  await act(async () => {
+    sessionsState = { byId: { 'workspace-sess-1': { id: 'workspace-sess-1', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'false', 'ordinary workspace session clears bot active highlight');
+  assert.equal(whaleCard().getAttribute('data-has-active-child'), 'false');
+
+  // Switch to bot worker session: parent card keeps data-has-active-child="true".
+  await act(async () => {
+    sessionsState = { byId: { 'sess-w-side-1': { id: 'sess-w-side-1', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-has-active-child'), 'true');
+
+  // Switch to blank / no main session (new session): active highlights must clear.
+  await act(async () => {
+    sessionsState = { byId: {} };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'false');
+  assert.equal(whaleCard().getAttribute('data-has-active-child'), 'false');
+
+  // Select bot again, then open non-bot global panel: active highlight clears.
+  await act(async () => {
+    sessionsState = { byId: { 'sess-whale-home': { id: 'sess-whale-home', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'true');
+
+  await act(async () => { ctx.layout.selectPanel('skills'); });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'false', 'non-bot panel clears bot active highlight');
 });

@@ -2097,8 +2097,8 @@ describe('ModelsSection', () => {
     await screen.findByLabelText(en.provider)
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(2)
 
-    // The setup card is the first one on the page, above the add block.
-    fireEvent.click(screen.getAllByText(en.cancel)[0] as HTMLElement)
+    // The setup card sits below the add card now, so its Cancel button is second.
+    fireEvent.click(screen.getAllByText(en.cancel)[1] as HTMLElement)
     // The add card kept its draft�
     expect(screen.getByLabelText(en.provider)).toBeTruthy()
     // �and DeepSeek collapsed to an ordinary row carrying the missing-key dot.
@@ -2946,4 +2946,65 @@ it('renders localized catalog error copy on broken provider rows', async () => {
   const alert = screen.getByRole('alert')
   expect(alert.textContent).toBe(localizeProviderError(raw, t))
   expect(alert.textContent).not.toContain('llm-pi-ai:')
+})
+
+it('shows header summary counts without status role and collapsed row metadata summary', async () => {
+  const scripted = scriptedFace()
+  scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+    {
+      provider: 'openai',
+      displayName: 'OpenAI',
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'openai'],
+    },
+    {
+      provider: 'deepseek-official',
+      displayName: 'DeepSeek',
+      settingsNs: 'llm-deepseek',
+      settingsPath: [],
+      error: 'llm-deepseek: missing endpoint',
+    },
+  ]))
+  await mountFace(scripted)
+
+  expect(screen.getByText('2 configured')).toBeTruthy()
+  expect(screen.getByText('1 ready')).toBeTruthy()
+  expect(screen.getByText('1 need attention')).toBeTruthy()
+  expect(screen.queryByRole('status')).toBeNull()
+
+  const openAiCard = screen.getAllByRole('listitem').find(item => item.textContent?.includes('OpenAI')) as HTMLElement
+  expect(openAiCard).toBeTruthy()
+  expect(openAiCard.textContent).toContain('proxy')
+  expect(openAiCard.textContent).toContain(en.summaryDefaultCatalog)
+  expect(openAiCard.textContent).toContain(en.summaryApiKeyAuth)
+})
+
+it('hides duplicate row title on edit and opens customized settings immediately when row has an error', async () => {
+  const scripted = scriptedFace()
+  scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+    {
+      provider: 'openai',
+      displayName: 'Healthy Route',
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'openai'],
+    },
+    {
+      provider: 'deepseek-official',
+      displayName: 'Broken Route',
+      settingsNs: 'llm-deepseek',
+      settingsPath: [],
+      error: 'llm-deepseek: missing endpoint',
+    },
+  ]))
+  await mountFace(scripted)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Healthy Route (openai)' }))
+  const healthyCard = screen.getAllByRole('listitem').find(item => item.textContent?.includes('Healthy Route')) as HTMLElement
+  expect(within(healthyCard).getAllByText('Healthy Route')).toHaveLength(1)
+  expect((healthyCard.querySelector('details') as HTMLDetailsElement | null)?.open).toBe(false)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Broken Route (deepseek-official)' }))
+  const brokenCard = screen.getAllByRole('listitem').find(item => item.textContent?.includes('Broken Route')) as HTMLElement
+  expect(within(brokenCard).getAllByText('Broken Route')).toHaveLength(1)
+  expect((brokenCard.querySelector('details') as HTMLDetailsElement | null)?.open).toBe(true)
 })
