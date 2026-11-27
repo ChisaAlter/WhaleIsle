@@ -2317,3 +2317,173 @@ test('Avatar background color supports transparent and custom upload color updat
     assert.equal(finalJson.avatarColor, 'transparent');
   });
 });
+
+test('Sidebar chat dotState: failed and interrupted degrade to idle once seen and restore on unseen', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+
+  await withTempDir('sidebar-dotstate-seen', async ({ root, onClose }) => {
+    const mock = createMockHarness();
+    const runtime = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome: root,
+      enableSchedulers: false,
+      getController: () => mock.controller,
+    });
+    onClose(() => runtime.close());
+    await runtime.recoveryPromise;
+
+    const call = (method, params = {}) => runtime.http.invokeRpc(method, params);
+    const viewBot = async (id) => (await call('bots.list')).bots.find((b) => b.id === id);
+
+    const created = await call('bots.create', { name: 'Claude Duts', skipKickoff: true });
+    const botId = created.bot.id;
+    const homeSid = created.sessionId;
+
+    const realNow = Date.now;
+    const frozenMs = realNow() + 10_000;
+    Date.now = () => frozenMs;
+    try {
+      mock.ctx.emit('session/event', { id: homeSid }, {
+        type: 'turn/end',
+        data: { reason: { kind: 'error', message: 'Upstream 502' } },
+      });
+      const failedBot = await viewBot(botId);
+      assert.equal(failedBot.dotState, 'failed', 'error turn/end surfaces failed dotState while unread');
+      assert.equal(failedBot.unread, true, 'error turn/end marks chat unread');
+
+      await call('bots.chats.seen', { sessionId: homeSid });
+      const seenSameMs = await viewBot(botId);
+      assert.equal(seenSameMs.dotState, 'idle', 'same-millisecond bots.chats.seen degrades failed dotState to idle');
+      assert.equal(seenSameMs.unread, false, 'same-millisecond bots.chats.seen clears unread');
+    } finally {
+      Date.now = realNow;
+    }
+
+    await call('bots.chats.unseen', { sessionId: homeSid });
+    const unseenAgain = await viewBot(botId);
+    assert.equal(unseenAgain.dotState, 'failed', 'bots.chats.unseen restores unread failed dotState');
+    assert.equal(unseenAgain.unread, true, 'bots.chats.unseen restores unread flag');
+
+    const side = await call('bots.session.start', { botId, title: 'Side check' });
+    mock.ctx.emit('session/event', { id: side.sessionId }, {
+      type: 'turn/end',
+      data: { reason: { kind: 'aborted' } },
+    });
+    assert.equal((await viewBot(botId)).dotState, 'failed', 'bot rolls up failed before bot-wide seen');
+
+    await call('bots.chats.seen', { botId });
+    const seenByBotId = await viewBot(botId);
+    assert.equal(seenByBotId.dotState, 'idle', 'bot-only bots.chats.seen clears failed and interrupted chats to idle');
+    assert.equal(seenByBotId.unread, false, 'bot-only bots.chats.seen marks all open chats seen');
+
+    mock.ctx.emit('session/event', { id: homeSid }, { type: 'turn/start', data: {} });
+    await call('bots.chats.seen', { sessionId: homeSid });
+    assert.equal((await viewBot(botId)).dotState, 'working', 'active working state stays unaffected by seenAt');
+
+    mock.ctx.emit('session/event', { id: homeSid }, {
+      type: 'turn/end',
+      data: { reason: { kind: 'error', message: 'Second error with active worker' } },
+    });
+    const workerChat = await runtime.sessionRuntime.startSideChat(botId, {
+      title: 'Linked Worker',
+      kind: 'worker',
+      origin: 'work',
+      dispatchId: 'disp-seen-worker',
+      taskId: 'task-seen-worker',
+    });
+    const linkedWork = runtime.workStore.startWork({
+      botId,
+      source: 'app',
+      externalId: homeSid,
+      taskId: 'task-seen-worker',
+      dispatchId: 'disp-seen-worker',
+    });
+    mock.ctx.emit('session/event', { id: workerChat.sessionId }, {
+      type: 'turn/end',
+      data: { reason: { kind: 'error', message: 'Worker turn error while work open' } },
+    });
+    await call('bots.chats.seen', { sessionId: workerChat.sessionId });
+    const workerRowAfterSeen = runtime.sessionRuntime.listChats(botId, { includeClosed: false })
+      .find((c) => c.sessionId === workerChat.sessionId);
+    assert.equal(workerRowAfterSeen.dotState, 'working', 'open linkedWork keeps dotState working after failed turn is seen');
+    runtime.workStore.closeWork(linkedWork.id, { reason: 'owner_reset', now: Date.now() });
+    await call('bots.chats.seen', { botId });
+    assert.equal((await viewBot(botId)).dotState, 'idle', 'closing linkedWork and marking bot seen settles dotState to idle');
+  });
+});
+
+test('Sidebar upNextCount: tracks unseen open suggestions and broadcasts bot refresh on seen/unseen', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+
+  await withTempDir('sidebar-upnext-seen', async ({ root, onClose }) => {
+    const mock = createMockHarness();
+    const runtime = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome: root,
+      enableSchedulers: false,
+      getController: () => mock.controller,
+    });
+    onClose(() => runtime.close());
+    await runtime.recoveryPromise;
+
+    const events = [];
+    const unsub = runtime.eventBus.subscribe((ev) => events.push(ev));
+    onClose(unsub);
+
+    const call = (method, params = {}) => runtime.http.invokeRpc(method, params);
+    const viewBot = async (id) => (await call('bots.list')).bots.find((b) => b.id === id);
+
+    const created = await call('bots.create', { name: 'Claude Duts', skipKickoff: true });
+    const botId = created.bot.id;
+
+    const sug1 = (await call('bots.suggest', {
+      botId,
+      title: 'Inspect CI flake',
+      why: 'Failed twice today',
+      ask: 'Investigate CI flake logs',
+    })).suggestion;
+    await call('bots.suggest', {
+      botId,
+      title: 'Prune stale branches',
+      why: '12 merged branches remain',
+      ask: 'List stale branches safe to delete',
+    });
+    assert.equal((await viewBot(botId)).upNextCount, 2, 'two unread suggestions yield upNextCount === 2');
+
+    events.length = 0;
+    await call('bots.upNext.seen', { botId, suggestionId: sug1.id });
+    runtime.eventBus.flushNow();
+    assert.equal((await viewBot(botId)).upNextCount, 1, 'single suggestion seen decrements upNextCount to 1');
+    assert.ok(
+      events.some((ev) => ev.kinds?.includes('lookAround') && ev.kinds?.includes('bot')),
+      'bots.upNext.seen emits both lookAround and bot kinds for sidebar refresh',
+    );
+
+    const suggestFutureMs = Date.now() + 20_000;
+    runtime.lookAroundService.addSuggestion(botId, {
+      title: 'Check release notes',
+      why: 'Tag cut tomorrow',
+      ask: 'Draft release notes',
+    }, { now: suggestFutureMs });
+    await call('bots.suggestions.dismiss', { botId, suggestionId: sug1.id });
+    assert.equal((await viewBot(botId)).upNextCount, 2, 'two open unread suggestions remain before bot-wide seen');
+    assert.equal(runtime.lookAroundService.countOpenUpNext(botId), 2, 'countOpenUpNext stays 2');
+
+    await call('bots.upNext.seen', { botId });
+    assert.equal((await viewBot(botId)).upNextCount, 0, 'bot-wide bots.upNext.seen clears upNextCount to 0 even across clock skew');
+    assert.equal(runtime.lookAroundService.countOpenUpNext(botId), 2, 'countOpenUpNext still reports total open suggestions');
+    assert.equal(runtime.lookAroundService.countUnseenUpNext(botId), 0, 'countUnseenUpNext reports 0 after bot-wide seen');
+    const upNextState = await call('bots.upNext.list', { botId });
+    assert.equal(upNextState.openSuggestions.length, 2, 'openSuggestions remain preserved in bots.upNext.list after seen');
+
+    events.length = 0;
+    await call('bots.upNext.unseen', { botId });
+    runtime.eventBus.flushNow();
+    assert.equal((await viewBot(botId)).upNextCount, 2, 'bots.upNext.unseen restores upNextCount to 2');
+    assert.ok(
+      events.some((ev) => ev.kinds?.includes('lookAround') && ev.kinds?.includes('bot')),
+      'bots.upNext.unseen emits both lookAround and bot kinds',
+    );
+  });
+});
+
