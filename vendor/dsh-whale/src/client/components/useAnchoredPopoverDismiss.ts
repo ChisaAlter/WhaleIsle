@@ -10,6 +10,8 @@ export interface AnchoredPopoverDismissOptions {
   popoverRef: RefObject<HTMLElement | null>;
   triggerRef?: RefObject<HTMLElement | null>;
   triggerEl?: HTMLElement | null;
+  contextTriggerRef?: RefObject<HTMLElement | null>;
+  contextTriggerEl?: HTMLElement | null;
   onClose: () => void;
   closeOnScroll?: boolean;
 }
@@ -23,6 +25,8 @@ export function useAnchoredPopoverDismiss({
   popoverRef,
   triggerRef,
   triggerEl,
+  contextTriggerRef,
+  contextTriggerEl,
   onClose,
   closeOnScroll = false,
 }: AnchoredPopoverDismissOptions): void {
@@ -34,7 +38,7 @@ export function useAnchoredPopoverDismiss({
       return undefined;
     }
 
-    const isInside = (target: EventTarget | null): boolean => {
+    const isInside = (target: EventTarget | null, button?: number): boolean => {
       if (!isDomNode(target)) {
         return false;
       }
@@ -44,6 +48,12 @@ export function useAnchoredPopoverDismiss({
       const trigger = triggerEl ?? triggerRef?.current ?? null;
       if (trigger?.contains(target)) {
         return true;
+      }
+      if (button === 2) {
+        const contextTrigger = contextTriggerEl ?? contextTriggerRef?.current ?? null;
+        if (contextTrigger?.contains(target)) {
+          return true;
+        }
       }
       return false;
     };
@@ -60,7 +70,7 @@ export function useAnchoredPopoverDismiss({
     };
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (isInside(event.target)) {
+      if (isInside(event.target, event.button)) {
         return;
       }
       suppressMouseDown = true;
@@ -78,7 +88,7 @@ export function useAnchoredPopoverDismiss({
         clearSuppressTimer();
         return;
       }
-      if (isInside(event.target)) {
+      if (isInside(event.target, event.button)) {
         return;
       }
       onCloseRef.current();
@@ -118,5 +128,5 @@ export function useAnchoredPopoverDismiss({
         window.removeEventListener('scroll', handleScroll, true);
       }
     };
-  }, [open, popoverRef, triggerRef, triggerEl, closeOnScroll]);
+  }, [open, popoverRef, triggerRef, triggerEl, contextTriggerRef, contextTriggerEl, closeOnScroll]);
 }
