@@ -50,12 +50,13 @@ export interface AvatarPickerValue {
   avatar: string;
   avatarColor: string;
   uploadedImage?: CroppedAvatarImage | null;
+  explicitColor?: boolean;
 }
 
 export interface AvatarPickerProps {
   value: AvatarPickerValue;
   onChange: (next: AvatarPickerValue) => void;
-  onUploadCommit?: (image: CroppedAvatarImage) => Promise<void> | void;
+  onUploadCommit?: (image: CroppedAvatarImage) => Promise<string | void> | string | void;
   botId?: string | null;
   hasExplicitColor?: boolean;
   showUpload?: boolean;
@@ -200,6 +201,22 @@ function MascotWebpTile({ mascotId, color }: { mascotId: string; color: string }
 
 type MascotGroup = 'whale' | 'all';
 
+interface PersistedUploadState {
+  avatar: string;
+  dataUrl: string | null;
+}
+
+interface UploadUndoState {
+  value: AvatarPickerValue;
+  persistedUpload: PersistedUploadState | null;
+  localUpload: CroppedAvatarImage | null;
+}
+
+function isCommittedUploadAvatar(avatar: string | null | undefined): avatar is string {
+  const parsed = parseBotAvatar(avatar);
+  return parsed?.kind === 'upload' && Boolean(parsed.version) && parsed.version !== 'pending';
+}
+
 function isWhaleMascotId(id: string | null | undefined): boolean {
   return Boolean(id && (WHALE_BOT_MASCOT_IDS as readonly string[]).includes(id));
 }
@@ -245,16 +262,27 @@ export function AvatarPicker({
   ));
   const [error, setError] = useState<string | null>(null);
   const [draggingFile, setDraggingFile] = useState(false);
-  const [undoSnapshot, setUndoSnapshot] = useState<AvatarPickerValue | null>(null);
-  const [persistedUpload, setPersistedUpload] = useState<{ avatar: string; dataUrl: string } | null>(null);
+  const [undoSnapshot, setUndoSnapshot] = useState<UploadUndoState | null>(null);
+  const [persistedUpload, setPersistedUpload] = useState<PersistedUploadState | null>(() => (
+    isCommittedUploadAvatar(value.avatar)
+      ? { avatar: value.avatar, dataUrl: value.uploadedImage?.dataUrl ?? null }
+      : null
+  ));
   const [localUpload, setLocalUpload] = useState<CroppedAvatarImage | null>(null);
   const [pendingUpload, setPendingUpload] = useState(false);
+  const [committingUpload, setCommittingUpload] = useState(false);
 
   const normalizedColor = normalizeBotAvatarColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
   const isTransparent = isTransparentBotAvatarColor(normalizedColor);
-  const hasExplicitColorRef = useRef(Boolean(hasExplicitColor));
+  const hasExplicitColorRef = useRef(Boolean(hasExplicitColor || value.explicitColor));
   const lastHexColorRef = useRef(normalizeHexColor(normalizedColor) ?? DEFAULT_BOT_AVATAR_COLOR);
   const [customHexText, setCustomHexText] = useState(isTransparent ? '' : normalizedColor);
+
+  useEffect(() => {
+    if (hasExplicitColor || value.explicitColor) {
+      hasExplicitColorRef.current = true;
+    }
+  }, [hasExplicitColor, value.explicitColor]);
 
   useEffect(() => {
     const hex = normalizeHexColor(normalizedColor);
@@ -265,28 +293,40 @@ export function AvatarPicker({
   }, [isTransparent, normalizedColor]);
 
   useEffect(() => {
-    if (parsedKind === 'upload' && parsedVersion && parsedVersion !== 'pending') {
-      setPendingUpload(false);
+    if (committingUpload || !isCommittedUploadAvatar(value.avatar)) {
+      return;
     }
-  }, [parsedKind, parsedVersion]);
+    setPendingUpload(false);
+    setPersistedUpload((prev) => {
+      const nextDataUrl = localUpload?.dataUrl
+        ?? value.uploadedImage?.dataUrl
+        ?? (prev?.avatar === value.avatar ? prev.dataUrl : null);
+      if (prev?.avatar === value.avatar && prev.dataUrl === nextDataUrl) {
+        return prev;
+      }
+      return { avatar: value.avatar, dataUrl: nextDataUrl };
+    });
+  }, [committingUpload, localUpload?.dataUrl, value.avatar, value.uploadedImage?.dataUrl]);
 
   useEffect(() => {
-    if (!botId || parsedKind !== 'upload' || !parsedVersion || parsedVersion === 'pending') {
+    const targetAvatar = persistedUpload?.avatar;
+    if (!botId || !targetAvatar || persistedUpload?.dataUrl || localUpload?.dataUrl) {
       return undefined;
     }
-    if (persistedUpload?.avatar === value.avatar) {
+    const targetParsed = parseBotAvatar(targetAvatar);
+    if (targetParsed?.kind !== 'upload' || !targetParsed.version || targetParsed.version === 'pending') {
       return undefined;
     }
     let cancelled = false;
-    void readUploadedAvatarDataUrl(botId, parsedVersion).then((dataUrl) => {
+    void readUploadedAvatarDataUrl(botId, targetParsed.version).then((dataUrl) => {
       if (!cancelled && dataUrl) {
-        setPersistedUpload({ avatar: value.avatar, dataUrl });
+        setPersistedUpload((prev) => (prev?.avatar === targetAvatar ? { avatar: targetAvatar, dataUrl } : prev));
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [botId, parsedKind, parsedVersion, persistedUpload?.avatar, value.avatar]);
+  }, [botId, localUpload?.dataUrl, persistedUpload?.avatar, persistedUpload?.dataUrl]);
 
   useEffect(() => () => {
     if (undoTimerRef.current !== null) {
@@ -296,7 +336,7 @@ export function AvatarPicker({
 
   const effectiveUploadedImage = value.uploadedImage ?? localUpload;
   const effectiveUploadDataUrl = value.uploadedImage?.dataUrl ?? localUpload?.dataUrl ?? persistedUpload?.dataUrl ?? null;
-  const committedUploadAvatar = parsedKind === 'upload' && parsedVersion && parsedVersion !== 'pending'
+  const committedUploadAvatar = !committingUpload && isCommittedUploadAvatar(value.avatar)
     ? value.avatar
     : persistedUpload?.avatar;
   const effectiveUploadAvatar = value.uploadedImage?.dataUrl
@@ -344,9 +384,28 @@ export function AvatarPicker({
         avatar: mascotAvatar(firstId),
         avatarColor: hasExplicitColorRef.current ? normalizedColor : (recommendedMascotColor(firstId) ?? normalizedColor),
         uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current,
       });
     }
   };
+
+  const commitUploadedAvatar = useCallback(async (image: CroppedAvatarImage): Promise<string | null> => {
+    if (!onUploadCommit) {
+      return null;
+    }
+    setCommittingUpload(true);
+    try {
+      const committedAvatar = await onUploadCommit(image);
+      if (isCommittedUploadAvatar(committedAvatar)) {
+        setPersistedUpload({ avatar: committedAvatar, dataUrl: image.dataUrl });
+        setPendingUpload(false);
+        return committedAvatar;
+      }
+      return null;
+    } finally {
+      setCommittingUpload(false);
+    }
+  }, [onUploadCommit]);
 
   const selectIndex = useCallback((nextIdx: number) => {
     const wrapped = ((nextIdx % slides.length) + slides.length) % slides.length;
@@ -354,14 +413,31 @@ export function AvatarPicker({
     if (!target) {
       return;
     }
-    setPendingUpload(false);
     if (target.kind === 'upload') {
+      const targetAvatar = target.uploadAvatar ?? 'upload:pending';
+      if (targetAvatar === 'upload:pending' && localUpload && onUploadCommit) {
+        setPendingUpload(true);
+        onChange({
+          avatar: 'upload:pending',
+          avatarColor: normalizedColor,
+          uploadedImage: localUpload,
+          explicitColor: hasExplicitColorRef.current,
+        });
+        void commitUploadedAvatar(localUpload).catch((err) => {
+          setPendingUpload(false);
+          setError(err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
+      setPendingUpload(false);
       onChange({
-        avatar: target.uploadAvatar ?? 'upload:pending',
+        avatar: targetAvatar,
         avatarColor: normalizedColor,
         uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current,
       });
     } else if (target.mascotId) {
+      setPendingUpload(false);
       const nextColor = hasExplicitColorRef.current
         ? normalizedColor
         : (recommendedMascotColor(target.mascotId) ?? normalizedColor);
@@ -369,25 +445,32 @@ export function AvatarPicker({
         avatar: mascotAvatar(target.mascotId),
         avatarColor: nextColor,
         uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current,
       });
     }
-  }, [effectiveUploadedImage, normalizedColor, onChange, slides]);
+  }, [commitUploadedAvatar, effectiveUploadedImage, localUpload, normalizedColor, onChange, onUploadCommit, slides]);
 
   const processFile = useCallback(async (file: File) => {
     setError(null);
-    const snapshot = { ...value };
+    const snapshot: UploadUndoState = {
+      value: { ...value },
+      persistedUpload,
+      localUpload,
+    };
     try {
       const cropped = await cropImageFileToPng512(file);
       const nextColor = hasExplicitColorRef.current ? normalizedColor : cropped.edgeColor;
       setLocalUpload(cropped);
+      setPersistedUpload(null);
       setPendingUpload(true);
       onChange({
         avatar: 'upload:pending',
         avatarColor: nextColor,
         uploadedImage: cropped,
+        explicitColor: hasExplicitColorRef.current,
       });
       if (onUploadCommit) {
-        await onUploadCommit(cropped);
+        await commitUploadedAvatar(cropped);
       }
       setUndoSnapshot(snapshot);
       if (undoTimerRef.current !== null) {
@@ -398,10 +481,12 @@ export function AvatarPicker({
         undoTimerRef.current = null;
       }, 8000);
     } catch (err) {
+      setLocalUpload(snapshot.localUpload);
+      setPersistedUpload(snapshot.persistedUpload);
       setPendingUpload(false);
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [normalizedColor, onChange, onUploadCommit, value]);
+  }, [commitUploadedAvatar, localUpload, normalizedColor, onChange, onUploadCommit, persistedUpload, value]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowLeft') {
@@ -414,10 +499,14 @@ export function AvatarPicker({
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!showUpload) {
+      return;
+    }
     event.preventDefault();
+    event.stopPropagation();
     setDraggingFile(false);
     const file = event.dataTransfer.files?.[0];
-    if (file && showUpload) {
+    if (file) {
       void processFile(file);
     }
   };
@@ -455,6 +544,7 @@ export function AvatarPicker({
       avatar: pendingUpload ? 'upload:pending' : value.avatar,
       avatarColor: valid,
       uploadedImage: effectiveUploadedImage,
+      explicitColor: true,
     });
   };
 
@@ -471,10 +561,16 @@ export function AvatarPicker({
       onDragOver={(e) => {
         if (showUpload) {
           e.preventDefault();
+          e.stopPropagation();
           setDraggingFile(true);
         }
       }}
-      onDragLeave={() => setDraggingFile(false)}
+      onDragLeave={(e) => {
+        if (showUpload) {
+          e.stopPropagation();
+        }
+        setDraggingFile(false);
+      }}
       onDrop={handleDrop}
       tabIndex={0}
     >
@@ -669,8 +765,9 @@ export function AvatarPicker({
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
             onClick={() => {
               setPendingUpload(false);
-              setLocalUpload(null);
-              onChange(undoSnapshot);
+              setLocalUpload(undoSnapshot.localUpload);
+              setPersistedUpload(undoSnapshot.persistedUpload);
+              onChange(undoSnapshot.value);
               setUndoSnapshot(null);
             }}
           >

@@ -308,7 +308,8 @@ function createDomHarness(t, options = {}) {
       clearInterval: dom.window.clearInterval.bind(dom.window),
       queueMicrotask,
       AbortController,
-      URL,
+      Image: options.Image ?? dom.window.Image,
+      URL: options.URL ?? URL,
       URLSearchParams,
       console,
     },
@@ -1081,4 +1082,317 @@ domTest('AvatarPicker keeps background swatches visible for custom uploaded avat
   assert.equal(customFixtures.bots[0].avatarColor, 'transparent');
   assert.equal(headerTile.getAttribute('data-transparent'), 'true');
   assert.equal(headerTile.style.backgroundColor, 'transparent');
+});
+
+function createMockImageEnv(options = {}) {
+  let fillRgba = options.rgba ?? [0, 0, 0, 0];
+  let cropCount = 0;
+  const mockDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  class FakeImage {
+    constructor() {
+      this.naturalWidth = 512;
+      this.naturalHeight = 512;
+      this.onload = null;
+      this.onerror = null;
+    }
+    set src(_value) {
+      queueMicrotask(() => {
+        if (typeof this.onload === 'function') this.onload();
+      });
+    }
+  }
+
+  class FakeURL extends URL {
+    static createObjectURL() {
+      return 'blob:mock-avatar-png';
+    }
+    static revokeObjectURL() {}
+  }
+
+  const installCanvas = (dom) => {
+    dom.window.HTMLCanvasElement.prototype.getContext = function getContext(kind) {
+      if (kind !== '2d') return null;
+      return {
+        drawImage: () => {
+          cropCount += 1;
+        },
+        getImageData: (_x, _y, w, h) => {
+          const data = new Uint8ClampedArray(w * h * 4);
+          for (let i = 0; i < data.length; i += 4) {
+            data[i] = fillRgba[0];
+            data[i + 1] = fillRgba[1];
+            data[i + 2] = fillRgba[2];
+            data[i + 3] = fillRgba[3];
+          }
+          return { data };
+        },
+      };
+    };
+    dom.window.HTMLCanvasElement.prototype.toDataURL = () => mockDataUrl;
+  };
+
+  const makePngFile = () => ({ name: 'avatar.png', type: 'image/png', size: 1024 });
+
+  const dispatchDrag = async (dom, act, flush, target, type, file) => {
+    await act(async () => {
+      const ev = new dom.window.Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'dataTransfer', {
+        value: { files: file ? [file] : [] },
+      });
+      target.dispatchEvent(ev);
+    });
+    await flush();
+  };
+
+  return {
+    FakeImage,
+    FakeURL,
+    installCanvas,
+    makePngFile,
+    dispatchDrag,
+    setRgba: (rgba) => { fillRgba = rgba; },
+    getCropCount: () => cropCount,
+  };
+}
+
+domTest('AvatarPicker drag/drop stops bubbling to NewBotDialog and clicking already-selected swatch locks explicit color', async (t) => {
+  const mockImg = createMockImageEnv({ rgba: [0, 0, 0, 0] });
+  const { dom, doc, root, act, h, flush, pressAndClick, slotComp } = createDomHarness(t, {
+    Image: mockImg.FakeImage,
+    URL: mockImg.FakeURL,
+  });
+  mockImg.installCanvas(dom);
+
+  const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
+  const OverlayComp = slotComp((d) => d.name === 'shell.overlay' && d.id === 'dsh-bots.modals');
+
+  await act(async () => {
+    root.render(h('div', null, h(SidebarComp, { wide: true }), h(OverlayComp, {})));
+  });
+  await flush();
+
+  // Open NewBotDialog -> open AvatarPickerPopover.
+  const createBtn = [...doc.querySelectorAll('.dsh-bots-header-actions > button.dsh-bots-icon-btn')][2];
+  await pressAndClick(createBtn);
+  const startFromScratchBtn = doc.querySelector('[data-dsh-bots-popover="create"] button');
+  await pressAndClick(startFromScratchBtn);
+
+  const modal = doc.querySelector('.dsh-bots-modal');
+  const modalAvatarBtn = doc.querySelector('.dsh-bots-modal button[aria-haspopup="dialog"]');
+  assert.ok(modal && modalAvatarBtn);
+  await pressAndClick(modalAvatarBtn);
+
+  const pickerEl = doc.querySelector('[data-dsh-bots-popover="avatar-picker"] .dsh-bots-picker');
+  assert.ok(pickerEl, 'AvatarPicker must render inside popover');
+
+  // Explicitly click the ALREADY-SELECTED swatch to lock color without changing its value.
+  const initiallySelected = pickerEl.querySelector('[data-swatch][data-selected="true"]');
+  assert.ok(initiallySelected, 'an initial swatch must be selected');
+  const lockedColor = initiallySelected.getAttribute('data-swatch');
+  assert.ok(lockedColor && lockedColor !== 'transparent');
+  await pressAndClick(initiallySelected);
+
+  // Dragging over AvatarPicker must NOT bubble to NewBotDialog (no double dashed border).
+  const pngFile = mockImg.makePngFile();
+  await mockImg.dispatchDrag(dom, act, flush, pickerEl, 'dragover', pngFile);
+  assert.equal(pickerEl.getAttribute('data-drag-file'), 'true', 'AvatarPicker must enter drag state');
+  assert.equal(modal.getAttribute('data-drag-file'), 'false', 'NewBotDialog must not enter drag state on popover dragover');
+
+  // Dropping a transparent PNG on AvatarPicker must crop strictly once and preserve the locked color.
+  await mockImg.dispatchDrag(dom, act, flush, pickerEl, 'drop', pngFile);
+  assert.equal(mockImg.getCropCount(), 1, 'drop on AvatarPicker must invoke cropImageFileToPng512 strictly once');
+  assert.equal(pickerEl.getAttribute('data-drag-file'), 'false');
+  assert.equal(modal.getAttribute('data-drag-file'), 'false');
+  assert.equal(pickerEl.querySelector('.dsh-bots-picker-caption')?.textContent, '自定义头像');
+  assert.equal(
+    pickerEl.querySelector(`[data-swatch="${lockedColor}"]`)?.getAttribute('data-selected'),
+    'true',
+    'explicitly clicking already-selected swatch must lock color against transparent PNG drop',
+  );
+
+  // Close popover and drop another transparent PNG directly onto NewBotDialog -> host colorEditedRef stays locked.
+  await pressAndClick(modalAvatarBtn);
+  assert.equal(doc.querySelector('[data-dsh-bots-popover="avatar-picker"]'), null);
+  await mockImg.dispatchDrag(dom, act, flush, modal, 'drop', pngFile);
+  assert.equal(mockImg.getCropCount(), 2, 'direct drop on NewBotDialog must crop once');
+
+  await pressAndClick(modalAvatarBtn);
+  const reopenedPicker = doc.querySelector('[data-dsh-bots-popover="avatar-picker"] .dsh-bots-picker');
+  assert.ok(reopenedPicker);
+  assert.equal(
+    reopenedPicker.querySelector(`[data-swatch="${lockedColor}"]`)?.getAttribute('data-selected'),
+    'true',
+    'NewBotDialog must keep explicitly clicked color locked across popover close/reopen and direct drop',
+  );
+});
+
+domTest('BotImportDialog preserves hasExplicitColor across AvatarPickerPopover close/reopen, carousel navigation, and upload', async (t) => {
+  const mockImg = createMockImageEnv({ rgba: [17, 34, 51, 255] });
+  const { dom, doc, root, act, h, flush, pressAndClick, slotComp } = createDomHarness(t, {
+    Image: mockImg.FakeImage,
+    URL: mockImg.FakeURL,
+    rpcOverride: (method) => {
+      if (method === 'bots.import.sources') {
+        return {
+          sources: [
+            {
+              id: 'src-no-color',
+              name: '无默认色导入队友',
+              source: 'orca',
+              path: 'C:/Users/demo/.orca/bots/nocolor',
+              avatar: 'mascot:W1',
+              avatarColor: null,
+              imported: false,
+            },
+          ],
+        };
+      }
+      return undefined;
+    },
+  });
+  mockImg.installCanvas(dom);
+
+  const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
+  const OverlayComp = slotComp((d) => d.name === 'shell.overlay' && d.id === 'dsh-bots.modals');
+
+  await act(async () => {
+    root.render(h('div', null, h(SidebarComp, { wide: true }), h(OverlayComp, {})));
+  });
+  await flush();
+
+  const createBtn = [...doc.querySelectorAll('.dsh-bots-header-actions > button.dsh-bots-icon-btn')][2];
+  await pressAndClick(createBtn);
+  const createItems = [...doc.querySelectorAll('[data-dsh-bots-popover="create"] button')];
+  await pressAndClick(createItems[3]);
+
+  const importAvatarBtn = doc.querySelector('.dsh-bots-modal button[aria-haspopup="dialog"]');
+  assert.ok(importAvatarBtn);
+  await pressAndClick(importAvatarBtn);
+
+  // Pick transparent, close popover, then reopen popover.
+  const transparentSwatch = doc.querySelector('[data-dsh-bots-popover="avatar-picker"] [data-swatch="transparent"]');
+  assert.ok(transparentSwatch);
+  await pressAndClick(transparentSwatch);
+  assert.equal(transparentSwatch.getAttribute('data-selected'), 'true');
+
+  await pressAndClick(importAvatarBtn);
+  assert.equal(doc.querySelector('[data-dsh-bots-popover="avatar-picker"]'), null);
+  await pressAndClick(importAvatarBtn);
+
+  const reopenedPicker = doc.querySelector('[data-dsh-bots-popover="avatar-picker"] .dsh-bots-picker');
+  assert.ok(reopenedPicker);
+
+  // Switch mascot slide (W1 -> W2) and drop an opaque PNG -> explicit transparent color must not be overwritten.
+  const nextBtn = reopenedPicker.querySelector('.dsh-bots-carousel-nav[data-dir="next"]');
+  assert.ok(nextBtn);
+  await pressAndClick(nextBtn);
+  assert.equal(
+    reopenedPicker.querySelector('[data-swatch="transparent"]')?.getAttribute('data-selected'),
+    'true',
+    'carousel switch after reopening BotImportDialog AvatarPicker must preserve explicit transparent color',
+  );
+
+  await mockImg.dispatchDrag(dom, act, flush, reopenedPicker, 'drop', mockImg.makePngFile());
+  assert.equal(reopenedPicker.querySelector('.dsh-bots-picker-caption')?.textContent, '自定义头像');
+  assert.equal(
+    reopenedPicker.querySelector('[data-swatch="transparent"]')?.getAttribute('data-selected'),
+    'true',
+    'dropping an opaque PNG after reopening BotImportDialog AvatarPicker must preserve explicit transparent color',
+  );
+});
+
+domTest('Existing bot keeps newly uploaded custom avatar selectable when browsing carousel before bots.avatar.read resolves', async (t) => {
+  const mockImg = createMockImageEnv({ rgba: [0, 0, 0, 0] });
+  const customFixtures = defaultFixtures();
+  customFixtures.bots[0] = {
+    ...customFixtures.bots[0],
+    avatar: 'mascot:W1',
+    avatarColor: '#b3dbf4',
+  };
+
+  let uploadReturnMode = 'withAvatar';
+  let readResolvers = [];
+  const { dom, doc, root, act, h, rpcCalls, flush, pressAndClick, slotComp } = createDomHarness(t, {
+    fixtures: customFixtures,
+    Image: mockImg.FakeImage,
+    URL: mockImg.FakeURL,
+    rpcOverride: (method, params, fixtures) => {
+      if (method === 'bots.avatar.upload') {
+        const nextAvatar = uploadReturnMode === 'withAvatar' ? 'upload:newsha999' : 'upload:newsha888';
+        fixtures.bots[0].avatar = nextAvatar;
+        return uploadReturnMode === 'withAvatar'
+          ? { botId: params.botId, avatar: nextAvatar, sha256: 'newsha999' }
+          : { ok: true };
+      }
+      if (method === 'bots.avatar.read') {
+        return new Promise((resolve) => {
+          readResolvers.push(resolve);
+        });
+      }
+      if (method === 'bots.update') {
+        const target = fixtures.bots.find((b) => b.id === params.botId);
+        if (target) {
+          if (params.avatar !== undefined) target.avatar = params.avatar;
+          if (params.avatarColor !== undefined) target.avatarColor = params.avatarColor;
+          return { bot: { ...target } };
+        }
+      }
+      return undefined;
+    },
+  });
+  mockImg.installCanvas(dom);
+
+  const RightPanelComp = slotComp((d) => d.name === 'sidebar.right.pane.tab');
+  await act(async () => {
+    root.render(h('section', { id: 'right-panel-host' }, h(RightPanelComp, { botId: 'bot-whale' })));
+  });
+  await flush();
+
+  const headerAvatarBtn = doc.querySelector('#right-panel-host .dsh-bots-panel-avatar-trigger');
+  assert.ok(headerAvatarBtn);
+  await pressAndClick(headerAvatarBtn);
+
+  const pickerEl = doc.querySelector('[data-dsh-bots-popover="avatar-picker"] .dsh-bots-picker');
+  assert.ok(pickerEl);
+
+  // 1. Upload via drop (returning { avatar: 'upload:newsha999' }), while bots.avatar.read never resolves yet.
+  await mockImg.dispatchDrag(dom, act, flush, pickerEl, 'drop', mockImg.makePngFile());
+  assert.equal(customFixtures.bots[0].avatar, 'upload:newsha999');
+  assert.equal(pickerEl.querySelector('.dsh-bots-picker-caption')?.textContent, '自定义头像');
+
+  // Switch carousel to W1, then immediately switch back to slide 0 (custom upload).
+  const nextBtn = pickerEl.querySelector('.dsh-bots-carousel-nav[data-dir="next"]');
+  const prevBtn = pickerEl.querySelector('.dsh-bots-carousel-nav[data-dir="prev"]');
+  assert.ok(nextBtn && prevBtn);
+
+  await pressAndClick(nextBtn);
+  assert.equal(customFixtures.bots[0].avatar, 'mascot:W1');
+  assert.equal(pickerEl.querySelector('.dsh-bots-picker-caption')?.textContent, '鲸鱼娘');
+
+  await pressAndClick(prevBtn);
+  assert.equal(pickerEl.querySelector('.dsh-bots-picker-caption')?.textContent, '自定义头像');
+  assert.equal(customFixtures.bots[0].avatar, 'upload:newsha999', 'switching back to slide 0 must persist real upload avatar instead of being dropped as upload:pending');
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.update' && c.params?.botId === 'bot-whale' && c.params?.avatar === 'upload:newsha999'),
+    'bots.update must receive committed upload:newsha999 avatar',
+  );
+  assert.ok(
+    pickerEl.querySelector('img[alt="Custom avatar"]')?.getAttribute('src')?.startsWith('data:image/png;base64,'),
+    'slide 0 must retain local preview data URL',
+  );
+
+  // 2. Also verify void/non-avatar upload response path (relying solely on refreshed bot.avatar).
+  uploadReturnMode = 'voidReturn';
+  await mockImg.dispatchDrag(dom, act, flush, pickerEl, 'drop', mockImg.makePngFile());
+  assert.equal(customFixtures.bots[0].avatar, 'upload:newsha888');
+  await pressAndClick(nextBtn);
+  assert.equal(customFixtures.bots[0].avatar, 'mascot:W1');
+  await pressAndClick(prevBtn);
+  assert.equal(customFixtures.bots[0].avatar, 'upload:newsha888', 'switching back to slide 0 must also work when upload RPC omits avatar field');
+
+  // Settle any deferred read promises cleanly before teardown.
+  for (const resolve of readResolvers) {
+    resolve({ botId: 'bot-whale', dataUrl: null, sha256: null });
+  }
 });

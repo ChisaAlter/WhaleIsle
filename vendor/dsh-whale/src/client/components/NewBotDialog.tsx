@@ -150,6 +150,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         avatar: nextAvatar,
         avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
         uploadedImage: null,
+        explicitColor: Boolean(initialColor),
       });
       setSelectedSkills([...(template.skills ?? [])]);
       setWatches(template.watches ?? '');
@@ -164,6 +165,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         avatar: nextAvatar,
         avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
         uploadedImage: null,
+        explicitColor: Boolean(initialColor),
       });
       setSelectedSkills([]);
       setWatches(tw.watches ?? '');
@@ -177,6 +179,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         avatar: nextAvatar,
         avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
         uploadedImage: null,
+        explicitColor: Boolean(initialColor),
       });
       setSelectedSkills([]);
       setWatches('');
@@ -257,6 +260,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         avatar: 'upload:pending',
         avatarColor: colorEditedRef.current ? prev.avatarColor : cropped.edgeColor,
         uploadedImage: cropped,
+        explicitColor: colorEditedRef.current,
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -264,6 +268,9 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   }, []);
 
   const handleAvatarPickerChange = useCallback((next: AvatarPickerValue) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
     setAvatarVal((prev) => {
       if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
         colorEditedRef.current = true;

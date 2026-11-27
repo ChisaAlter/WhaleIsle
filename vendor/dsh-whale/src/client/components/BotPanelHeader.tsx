@@ -209,13 +209,14 @@ export function BotPanelHeader({
     });
   };
 
-  const handleUploadCommit = async (image: CroppedAvatarImage) => {
-    await callBotRpc(RPC_METHODS.AVATAR_UPLOAD, {
+  const handleUploadCommit = async (image: CroppedAvatarImage): Promise<string | undefined> => {
+    const res = await callBotRpc<{ avatar?: string }>(RPC_METHODS.AVATAR_UPLOAD, {
       botId: bot.id,
       base64Png: image.base64Png,
     });
     invalidateUploadedAvatarCache(bot.id);
     await botsStore.refresh();
+    return typeof res?.avatar === 'string' && res.avatar.startsWith('upload:') ? res.avatar : undefined;
   };
 
   const handleCopyPath = async () => {
