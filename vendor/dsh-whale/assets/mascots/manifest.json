@@ -81,9 +81,9 @@
       "webp": "W2.webp",
       "rim": "W2-rim.webp",
       "sizes": {
-        "svg": 26373,
-        "webp": 11692,
-        "rim": 7818
+        "svg": 36641,
+        "webp": 19334,
+        "rim": 7878
       },
       "pickable": true,
       "retired": false
@@ -93,9 +93,9 @@
       "webp": "W3.webp",
       "rim": "W3-rim.webp",
       "sizes": {
-        "svg": 29117,
-        "webp": 14008,
-        "rim": 7558
+        "svg": 30169,
+        "webp": 15818,
+        "rim": 6538
       },
       "pickable": true,
       "retired": false
@@ -105,9 +105,9 @@
       "webp": "W4.webp",
       "rim": "W4-rim.webp",
       "sizes": {
-        "svg": 23709,
-        "webp": 10170,
-        "rim": 7342
+        "svg": 33777,
+        "webp": 18350,
+        "rim": 6714
       },
       "pickable": true,
       "retired": false
@@ -117,9 +117,9 @@
       "webp": "W5.webp",
       "rim": "W5-rim.webp",
       "sizes": {
-        "svg": 24573,
-        "webp": 10828,
-        "rim": 7330
+        "svg": 29377,
+        "webp": 15790,
+        "rim": 5972
       },
       "pickable": true,
       "retired": false
@@ -129,9 +129,9 @@
       "webp": "W6.webp",
       "rim": "W6-rim.webp",
       "sizes": {
-        "svg": 26085,
-        "webp": 11724,
-        "rim": 7570
+        "svg": 30953,
+        "webp": 16652,
+        "rim": 6292
       },
       "pickable": true,
       "retired": false
@@ -141,9 +141,9 @@
       "webp": "W7.webp",
       "rim": "W7-rim.webp",
       "sizes": {
-        "svg": 24197,
-        "webp": 10282,
-        "rim": 7596
+        "svg": 38333,
+        "webp": 20706,
+        "rim": 7776
       },
       "pickable": true,
       "retired": false
@@ -153,9 +153,9 @@
       "webp": "W8.webp",
       "rim": "W8-rim.webp",
       "sizes": {
-        "svg": 33385,
-        "webp": 15506,
-        "rim": 9264
+        "svg": 31957,
+        "webp": 17180,
+        "rim": 6518
       },
       "pickable": true,
       "retired": false
