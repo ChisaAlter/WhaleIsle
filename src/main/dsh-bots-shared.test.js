@@ -514,6 +514,89 @@ test('bot-sidebar-logic: search, 5-avatar preview, 11-tier row line, sort/filter
   assert.equal(ownedWithoutChatId.chats.length, 1);
   assert.equal(ownedWithoutChatId.chats[0].running.length, 1);
   assert.equal(ownedWithoutChatId.chats[0].running[0].id, 'wg1');
+
+  // findBotBySessionId & resolveActiveBotSelection: active highlight clears on ordinary/blank/panel views
+  const botsForSel = [
+    { id: 'bot-a', chatSessionId: 'sess-a-home', homeSessionId: 'sess-a-home' },
+    { id: 'bot-b', homeSessionId: 'sess-b-home' },
+  ];
+  const treesForSel = {
+    'bot-a': {
+      chats: [
+        { sessionId: 'sess-a-home', origin: 'home', running: [{ sessionId: 'sess-a-worker-1' }] },
+        { sessionId: 'sess-a-side', chatId: 'sess-a-side', origin: 'side', finished: [{ sessionId: 'sess-a-worker-2' }] },
+      ],
+    },
+  };
+  assert.equal(shared.findBotBySessionId(botsForSel, treesForSel, 'sess-a-home')?.id, 'bot-a');
+  assert.equal(shared.findBotBySessionId(botsForSel, treesForSel, 'sess-a-side')?.id, 'bot-a');
+  assert.equal(shared.findBotBySessionId(botsForSel, treesForSel, 'sess-a-worker-1')?.id, 'bot-a');
+  assert.equal(shared.findBotBySessionId(botsForSel, treesForSel, 'sess-a-worker-2')?.id, 'bot-a');
+  assert.equal(shared.findBotBySessionId(botsForSel, treesForSel, 'ordinary-workspace-1'), null);
+
+  assert.deepEqual(
+    shared.resolveActiveBotSelection({
+      activePanelId: null,
+      mainSessionId: 'ordinary-workspace-1',
+      bots: botsForSel,
+      chatsByBot: treesForSel,
+      prevActiveBotId: 'bot-a',
+      prevActiveGroupId: 'grp-1',
+    }),
+    { botId: null, groupId: null, sessionId: 'ordinary-workspace-1', closePageSettings: false },
+  );
+  assert.deepEqual(
+    shared.resolveActiveBotSelection({
+      activePanelId: null,
+      mainSessionId: null,
+      bots: botsForSel,
+      chatsByBot: treesForSel,
+      prevActiveBotId: 'bot-a',
+    }),
+    { botId: null, groupId: null, sessionId: null, closePageSettings: false },
+  );
+  assert.deepEqual(
+    shared.resolveActiveBotSelection({
+      activePanelId: 'skills',
+      mainSessionId: 'sess-a-home',
+      bots: botsForSel,
+      chatsByBot: treesForSel,
+      prevActiveBotId: 'bot-a',
+    }),
+    { botId: null, groupId: null, sessionId: null, closePageSettings: true },
+  );
+  assert.deepEqual(
+    shared.resolveActiveBotSelection({
+      activePanelId: 'dsh-bots:group',
+      mainSessionId: 'sess-a-home',
+      bots: botsForSel,
+      chatsByBot: treesForSel,
+      prevActiveGroupId: 'grp-1',
+      prevActiveBotId: 'bot-a',
+    }),
+    { botId: null, groupId: 'grp-1', sessionId: null, closePageSettings: false },
+  );
+  assert.deepEqual(
+    shared.resolveActiveBotSelection({
+      activePanelId: 'dsh-bots:settings',
+      mainSessionId: 'ordinary-workspace-1',
+      bots: botsForSel,
+      chatsByBot: treesForSel,
+      settingsRouteBotId: 'bot-b',
+      prevActiveBotId: 'bot-a',
+    }),
+    { botId: 'bot-b', groupId: null, sessionId: 'ordinary-workspace-1', closePageSettings: false },
+  );
+  assert.deepEqual(
+    shared.resolveActiveBotSelection({
+      activePanelId: null,
+      mainSessionId: 'sess-a-worker-1',
+      bots: botsForSel,
+      chatsByBot: treesForSel,
+      prevActiveBotId: null,
+    }),
+    { botId: 'bot-a', groupId: null, sessionId: 'sess-a-worker-1', closePageSettings: false },
+  );
 });
 
 test('bot-items: statuses, Ask validation, Snooze presets, and Stale calculation', () => {

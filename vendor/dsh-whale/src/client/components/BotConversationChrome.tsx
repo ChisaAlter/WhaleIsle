@@ -335,7 +335,8 @@ export function BotConversationFrame({
     if (mainSessionId) {
       botsStore.setActiveSelection({
         sessionId: mainSessionId,
-        ...(bot ? { botId: bot.id, groupId: null } : {}),
+        botId: bot ? bot.id : null,
+        groupId: null,
       });
     }
   }, [mainSessionId, bot]);

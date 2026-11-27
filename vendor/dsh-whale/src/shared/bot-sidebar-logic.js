@@ -547,3 +547,116 @@ export function computeSidebarBotsMaxHeight(botsHeight, projectsListHeight) {
   }
   return Math.max(SIDEBAR_BOTS_MIN_HEIGHT, botsHeight + projectsListHeight - SIDEBAR_PROJECTS_MIN_LIST_HEIGHT);
 }
+
+/**
+ * Check whether any worker in a chat row's running or finished lists owns `sessionId`.
+ * @param {{ running?: Array<{ sessionId?: unknown }>, finished?: Array<{ sessionId?: unknown }> }} chat
+ * @param {string} sessionId
+ * @returns {boolean}
+ */
+function chatWorkersOwnSession(chat, sessionId) {
+  const lists = [chat?.running, chat?.finished];
+  for (const list of lists) {
+    if (!Array.isArray(list)) {
+      continue;
+    }
+    if (list.some((worker) => worker?.sessionId === sessionId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Find the bot that owns a conversation session (home, side, automation, or worker).
+ * @param {Array<{ id: string, chatSessionId?: string | null, homeSessionId?: string | null }>} bots
+ * @param {Record<string, { chats?: Array<{ sessionId?: string | null, chatId?: string | null, running?: Array<{ sessionId?: string | null }>, finished?: Array<{ sessionId?: string | null }> }> } | undefined> | null | undefined} chatsByBot
+ * @param {string | null | undefined} sessionId
+ * @returns {{ id: string, chatSessionId?: string | null, homeSessionId?: string | null } | null}
+ */
+export function findBotBySessionId(bots, chatsByBot, sessionId) {
+  const sid = typeof sessionId === 'string' ? sessionId.trim() : '';
+  if (!sid || !Array.isArray(bots)) {
+    return null;
+  }
+  for (const bot of bots) {
+    if (!bot || typeof bot.id !== 'string') {
+      continue;
+    }
+    if (bot.chatSessionId === sid || bot.homeSessionId === sid) {
+      return bot;
+    }
+    const tree = chatsByBot?.[bot.id];
+    const chats = Array.isArray(tree?.chats) ? tree.chats : [];
+    for (const chat of chats) {
+      if (chat?.sessionId === sid || chat?.chatId === sid || chatWorkersOwnSession(chat, sid)) {
+        return bot;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Derive authoritative sidebar selection (`botId`, `groupId`, `sessionId`) from layout panel + main session.
+ * Switching to a non-bot session, blank session, or non-bot global panel explicitly clears `botId`/`groupId`.
+ * @param {{
+ *   activePanelId?: string | null,
+ *   mainSessionId?: string | null,
+ *   bots?: Array<{ id: string, chatSessionId?: string | null, homeSessionId?: string | null }>,
+ *   chatsByBot?: Record<string, { chats?: Array<{ sessionId?: string | null, chatId?: string | null, running?: Array<{ sessionId?: string | null }>, finished?: Array<{ sessionId?: string | null }> }> } | undefined>,
+ *   prevActiveGroupId?: string | null,
+ *   prevActiveBotId?: string | null,
+ *   settingsRouteBotId?: string | null,
+ * }} input
+ * @returns {{ botId: string | null, groupId: string | null, sessionId: string | null, closePageSettings: boolean }}
+ */
+export function resolveActiveBotSelection(input) {
+  const panelId = typeof input?.activePanelId === 'string' && input.activePanelId.trim().length > 0
+    ? input.activePanelId.trim()
+    : null;
+  const mainSessionId = typeof input?.mainSessionId === 'string' && input.mainSessionId.trim().length > 0
+    ? input.mainSessionId.trim()
+    : null;
+
+  if (panelId === 'dsh-bots:group') {
+    return {
+      botId: null,
+      groupId: input?.prevActiveGroupId ?? null,
+      sessionId: null,
+      closePageSettings: false,
+    };
+  }
+  if (panelId === 'dsh-bots:settings') {
+    return {
+      botId: input?.settingsRouteBotId ?? input?.prevActiveBotId ?? null,
+      groupId: null,
+      sessionId: mainSessionId,
+      closePageSettings: false,
+    };
+  }
+  if (panelId !== null) {
+    return {
+      botId: null,
+      groupId: null,
+      sessionId: null,
+      closePageSettings: true,
+    };
+  }
+
+  if (!mainSessionId) {
+    return {
+      botId: null,
+      groupId: null,
+      sessionId: null,
+      closePageSettings: false,
+    };
+  }
+  const matched = findBotBySessionId(input?.bots ?? [], input?.chatsByBot, mainSessionId);
+  return {
+    botId: matched ? matched.id : null,
+    groupId: null,
+    sessionId: mainSessionId,
+    closePageSettings: false,
+  };
+}

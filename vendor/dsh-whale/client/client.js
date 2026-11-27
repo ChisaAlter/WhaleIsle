@@ -103,505 +103,6 @@ var __style4;
 // vendor/dsh-whale/src/client/index.tsx
 var import_react38 = require("react");
 
-// vendor/dsh-whale/src/shared/locales.js
-var SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"]);
-var EN_US = Object.freeze({
-  // Sidebar section header & empty state
-  "bots.section.title": "Whale Bots",
-  "bots.section.emptyCardTitle": "Your Whale teammates",
-  "bots.section.emptyCardSubtitle": "Resident teammates, look-around & group collab",
-  "bots.section.emptyTemplates": "Templates",
-  "bots.section.templates": "Templates",
-  "bots.section.newBot": "New bot",
-  "bots.section.new": "New bot or group",
-  "bots.section.startFromScratch": "Start from scratch",
-  "bots.section.browseTemplates": "Browse templates",
-  "bots.section.importFromLink": "Import from link\u2026",
-  "bots.section.importFromApp": "Import from another app\u2026",
-  "bots.section.newGroup": "New group",
-  "bots.section.expand": "Expand Whale Bots",
-  "bots.section.collapse": "Collapse Whale Bots",
-  "bots.section.expandAll": "Expand all teammates",
-  "bots.section.collapseAll": "Collapse all teammates",
-  "bots.section.summary": "{{action}}, {{total}} teammates, {{attention}} need you, {{unread}} unread, {{working}} working",
-  "bots.section.showMore_one": "Show {{count}} more teammate",
-  "bots.section.showMore_other": "Show {{count}} more teammates",
-  // Runtime badge
-  "bots.runtime.local": "WhaleIsle Core",
-  // Options & filters
-  "bots.options.title": "Teammate options",
-  "bots.options.activeFilters_one": "Teammate options ({{count}} filter active)",
-  "bots.options.activeFilters_other": "Teammate options ({{count}} filters active)",
-  "bots.options.sortBy": "Sort by",
-  "bots.options.sortManual": "Manual",
-  "bots.options.sortSmart": "Agent Activity",
-  "bots.options.sortRecent": "Recent",
-  "bots.options.sortName": "Name",
-  "bots.options.sortManualDescription": "Drag teammates to arrange them. New teammates go on top.",
-  "bots.options.sortSmartDescription": "Teammates that need you, then most recent activity.",
-  "bots.options.filters": "Filters",
-  "bots.options.hidePaused": "Hide paused teammates",
-  "bots.options.hideSleepingWorkers": "Hide sleeping workers",
-  "bots.options.allHidden": "All teammates are paused and hidden.",
-  // Inline search
-  "bots.search.open": "Search teammates",
-  "bots.search.label": "Search teammates",
-  "bots.search.clear": "Clear search",
-  "bots.search.noMatches": "No matches",
-  "bots.search.pausedMatches_one": "{{count}} paused match",
-  "bots.search.pausedMatches_other": "{{count}} paused matches",
-  "bots.search.showPaused": "Show paused teammates",
-  "bots.search.show": "Show",
-  "bots.search.matchCount_one": "{{count}} match",
-  "bots.search.matchCount_other": "{{count}} matches",
-  // Row status & context menu
-  "bots.row.paused": "Paused",
-  "bots.row.disconnected": "Disconnected",
-  "bots.row.hostDisconnected": "{{host}} disconnected",
-  "bots.row.reading": "Reading your message",
-  "bots.row.replying": "Replying",
-  "bots.row.replyingIn": "Replying in {{place}}",
-  "bots.row.replyingOn": "Replying on {{place}}",
-  "bots.row.idle": "Idle",
-  "bots.row.waitingFor": "Waiting for {{label}}",
-  "bots.row.waitingForUntil": "Waiting for {{label}} \xB7 until {{time}}",
-  "bots.row.waitingCount": "Waiting on {{count}} events",
-  "bots.row.runsOn": "Runs on {{host}}",
-  "bots.row.rename": "Rename",
-  "bots.row.settings": "Teammate settings\u2026",
-  "bots.row.pause": "Pause teammate",
-  "bots.row.resume": "Resume teammate",
-  "bots.row.copyPath": "Copy Path",
-  "bots.row.markRead": "Mark Read",
-  "bots.row.markUnread": "Mark Unread",
-  "bots.row.delete": "Remove teammate",
-  "bots.row.deleteTitle": "Remove {{name}}?",
-  "bots.row.deleteDescription": "Its folder, with its soul and memory, stays at {{path}}.",
-  "bots.row.deleteConfirm": "Remove teammate",
-  // Chats & workers
-  "bots.chats.home": "Home Chat",
-  "bots.chats.homeTooltip": "Home: the teammate's main chat. Its memory, automations and requests from others come together here.",
-  "bots.chats.title": "Chats",
-  "bots.chats.newChat": "New chat",
-  "bots.chats.newHomeChat": "New Home Chat",
-  "bots.chats.kindSide": "Side chat",
-  "bots.chats.kindAutomation": "Automation",
-  "bots.chats.workers": "Workers",
-  "bots.chats.waitingCount": "{{count}} waiting",
-  "bots.chats.runningCount": "{{count}} running",
-  "bots.chats.searchPlaceholder": "Search chats and workers",
-  "bots.chats.showMoreWorkers": "Show {{count}} more workers",
-  "bots.chats.collapseWorkers": "Collapse",
-  "bots.chats.fromClosedChat": "From a closed chat",
-  "bots.chats.handedOver": "Handed over",
-  "bots.newHomeChat.title": "Start a new Home Chat?",
-  "bots.newHomeChat.description": "Its soul and memory stay; this conversation moves to history.",
-  "bots.newHomeChat.dontAskAgain": "Don't ask again",
-  "bots.newHomeChat.confirm": "New Home Chat",
-  // Center pane & first screen
-  "bots.paused.banner": "Paused. Nothing runs for you until you turn it back on.",
-  "bots.paused.resumeAction": "Resume",
-  "bots.usageLimit.hit": "Usage limit reached",
-  "bots.firstScreen.gettingSetUp": "Getting set up",
-  "bots.firstScreen.stepCreate": "Create teammate",
-  "bots.firstScreen.stepStart": "Start {{agent}}",
-  "bots.firstScreen.stepFirstMessage": "First message",
-  "bots.firstScreen.retry": "Retry",
-  "bots.quiet.nothingToReport": "Nothing to report",
-  // Panel tabs, header, needs you, items & snooze
-  "bots.panel.tabTitle": "Whale",
-  "bots.panel.guideTitle": "Whale panel",
-  "bots.panel.guideDescription": "Home, connectors, chats and files",
-  "bots.panel.needYou_one": "{{count}} needs you",
-  "bots.panel.needYou_other": "{{count}} need you",
-  "bots.panel.working_one": "{{count}} working",
-  "bots.panel.working_other": "{{count}} working",
-  "bots.panel.working": "{{count}} working",
-  "bots.panel.idle": "Idle",
-  "bots.panel.more": "More",
-  "bots.panel.settings.title": "Settings",
-  "bots.items.tab": "Home",
-  "bots.activity.tab": "Activity",
-  "bots.connectors.tab": "Connectors",
-  "bots.files.tab": "Files",
-  "bots.items.needsYou": "Needs you",
-  "bots.items.status.planned": "Planned",
-  "bots.items.status.working": "In progress",
-  "bots.items.status.needs_you": "Needs you",
-  "bots.items.status.done": "Done",
-  "bots.items.status.canceled": "Canceled",
-  "bots.items.stale": "Stale",
-  "bots.items.snoozed": "Snoozed",
-  "bots.items.snooze.later": "Later today",
-  "bots.items.snooze.inHours": "In {{count}} hours",
-  "bots.items.snooze.tomorrow": "Tomorrow",
-  "bots.items.snooze.monday": "Monday",
-  "bots.items.snooze.week": "In a week",
-  "bots.items.doneMeans": "Done means",
-  "bots.items.links": "Links",
-  "bots.items.empty": "No items yet.",
-  "bots.items.recommended": "Recommended",
-  // Upcoming & Up Next (Look around)
-  "bots.upcoming.title": "Upcoming",
-  "bots.upNext.title": "Up next",
-  "bots.upNext.lookNow": "Look now",
-  "bots.upNext.start": "Start",
-  "bots.upNext.dismiss": "Dismiss",
-  // New bot dialog & avatar picker
-  "bots.new.title": "New Whale Bot",
-  "bots.new.name": "Name",
-  "bots.new.namePlaceholder": "Name your teammate",
-  "bots.new.purposeLabel": "Identity",
-  "bots.new.purposePlaceholder": "Describe its role, focus and daily work",
-  "bots.new.picture": "Avatar",
-  "bots.new.pictureColor": "Background color",
-  "bots.new.pictureColorCustom": "Custom color",
-  "bots.new.colorTransparent": "Transparent",
-  "bots.new.colorSky": "Sky",
-  "bots.new.colorWhite": "White",
-  "bots.new.colorLavender": "Lavender",
-  "bots.new.colorPink": "Pink",
-  "bots.new.colorPeach": "Peach",
-  "bots.new.colorButter": "Butter",
-  "bots.new.colorSage": "Sage",
-  "bots.new.colorMint": "Mint",
-  "bots.new.colorSlate": "Slate",
-  "bots.new.colorGraphite": "Graphite",
-  "bots.new.colorInk": "Ink",
-  "bots.new.fromTemplate": "Templates",
-  "bots.new.watches": "Watches",
-  "bots.new.does": "Does",
-  "bots.new.reports": "Reports",
-  "bots.new.cancel": "Cancel",
-  "bots.new.creating": "Creating\u2026",
-  "bots.new.create": "Create",
-  // Templates dialog
-  "bots.templates.title": "Whale Bot templates",
-  "bots.templates.browse": "Browse templates",
-  "bots.templates.search": "Search templates",
-  "bots.templates.allCategories": "All",
-  "bots.templates.category.coding": "Coding",
-  "bots.templates.category.releases": "Releases",
-  "bots.templates.category.support": "Support",
-  "bots.templates.category.planning": "Planning",
-  "bots.templates.category.ops": "Ops",
-  "bots.templates.category.personal": "Personal",
-  "bots.templates.comesWith": "Comes with",
-  "bots.templates.useTemplate": "Use template\u2026",
-  "bots.templates.firstChat": "What it does first",
-  // Groups
-  "bots.groups.newGroup": "New group",
-  "bots.groups.manageMembers": "Manage members\u2026",
-  "bots.groups.delete": "Delete group\u2026",
-  "bots.groups.allBots": "All teammates",
-  "bots.groups.onlyWhenMentioned": "Only when mentioned",
-  "bots.groups.correctMention": "Correct mention",
-  "bots.groups.unavailableBot": "Unavailable teammate",
-  "bots.groups.allBotsCount": "All teammates \xB7 {{count}}",
-  "bots.groups.mentionedCount": "{{count}} mentioned",
-  "bots.groups.suggestTwo": "{{a}} & {{b}}",
-  "bots.groups.suggestThree": "{{a}}, {{b}} & {{c}}",
-  "bots.groups.suggestMore": "{{a}}, {{b}} & {{count}} more",
-  // Bot settings & global settings
-  "settings.bots.enable": "Enable Whale Bots",
-  "settings.bots.askNewHomeChat": "Ask before a new Home Chat",
-  "settings.bots.soul": "Soul",
-  "settings.bots.soulRead": "Read",
-  "settings.bots.soulEdit": "Edit",
-  "settings.bots.soulDoubleClickHint": "Double-click to edit",
-  "settings.bots.soulEmpty": "No instructions yet. Double-click or choose Edit to write them.",
-  "settings.bots.soulConflict": "SOUL.md changed on disk.",
-  "settings.bots.memory": "Memory",
-  "settings.bots.memoryFacts": "Facts",
-  "settings.bots.memoryHistory": "History",
-  "settings.bots.memoryUndo": "Undo",
-  "settings.bots.addMemoryPlaceholder": "Remember something new\u2026",
-  "settings.bots.memoryEmpty": "No facts saved yet.",
-  "settings.bots.lookAround.title": "Look around",
-  "settings.bots.lookAround.looking": "Looking\u2026",
-  "settings.bots.tidyUp.title": "Tidy up",
-  "settings.bots.tidyUp.now": "Tidy now",
-  "settings.bots.tidyUp.tidied": "Tidied memory \xB7 {{count}} changes",
-  "settings.bots.tools.title": "Tools",
-  "settings.bots.tools.add": "Add tool",
-  "settings.bots.skills.title": "Skills",
-  "settings.bots.whoCanAsk.title": "Who can ask",
-  "settings.bots.notifications.title": "Notifications",
-  "settings.bots.notifications.needsPermission": "Needs permission",
-  "settings.bots.notifications.taskComplete": "Task complete",
-  "settings.bots.notifications.couldNotFinish": "Could not finish",
-  "settings.bots.saving": "Saving\u2026",
-  "settings.bots.unsaved": "Unsaved",
-  "settings.bots.saved": "Saved"
-});
-var ZH_CN = Object.freeze({
-  // Sidebar section header & empty state
-  "bots.section.title": "\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.section.emptyCardTitle": "\u4F60\u7684\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.section.emptyCardSubtitle": "\u5E38\u9A7B\u534F\u4F5C\u3001\u81EA\u4E3B\u5DE1\u89C6\u4E0E\u591A\u9C7C\u8054\u52A8",
-  "bots.section.emptyTemplates": "\u6A21\u677F\u5E93",
-  "bots.section.templates": "\u6A21\u677F\u5E93",
-  "bots.section.newBot": "\u65B0\u5EFA\u961F\u53CB",
-  "bots.section.new": "\u65B0\u5EFA\u5927\u80A5\u9C7C\u961F\u53CB\u6216\u9C7C\u7FA4",
-  "bots.section.startFromScratch": "\u4ECE\u96F6\u521B\u5EFA",
-  "bots.section.browseTemplates": "\u6D4F\u89C8\u6A21\u677F\u5E93",
-  "bots.section.importFromLink": "\u4ECE\u94FE\u63A5\u5BFC\u5165\u2026",
-  "bots.section.importFromApp": "\u4ECE\u5176\u4ED6\u5E94\u7528\u5BFC\u5165\u2026",
-  "bots.section.newGroup": "\u65B0\u5EFA\u9C7C\u7FA4\u534F\u4F5C",
-  "bots.section.expand": "\u5C55\u5F00\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.section.collapse": "\u6298\u53E0\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.section.expandAll": "\u5C55\u5F00\u5168\u90E8\u961F\u53CB",
-  "bots.section.collapseAll": "\u6298\u53E0\u5168\u90E8\u961F\u53CB",
-  "bots.section.summary": "{{action}}\uFF0C\u5171 {{total}} \u4F4D\u961F\u53CB\uFF0C{{attention}} \u9879\u5F85\u4F60\u5904\u7406\uFF0C{{unread}} \u6761\u672A\u8BFB\uFF0C{{working}} \u4F4D\u5DE5\u4F5C\u4E2D",
-  "bots.section.showMore_one": "\u518D\u663E\u793A {{count}} \u4F4D\u961F\u53CB",
-  "bots.section.showMore_other": "\u518D\u663E\u793A {{count}} \u4F4D\u961F\u53CB",
-  // Runtime badge
-  "bots.runtime.local": "\u9CB8\u5C7F\u5185\u6838",
-  // Options & filters
-  "bots.options.title": "\u961F\u53CB\u663E\u793A\u9009\u9879",
-  "bots.options.activeFilters_one": "\u961F\u53CB\u663E\u793A\u9009\u9879\uFF08\u5DF2\u542F\u7528 {{count}} \u9879\u7B5B\u9009\uFF09",
-  "bots.options.activeFilters_other": "\u961F\u53CB\u663E\u793A\u9009\u9879\uFF08\u5DF2\u542F\u7528 {{count}} \u9879\u7B5B\u9009\uFF09",
-  "bots.options.sortBy": "\u6392\u5E8F\u65B9\u5F0F",
-  "bots.options.sortManual": "\u624B\u52A8",
-  "bots.options.sortSmart": "\u667A\u80FD\u6D3B\u8DC3\u5EA6",
-  "bots.options.sortRecent": "\u6700\u8FD1\u6D3B\u8DC3",
-  "bots.options.sortName": "\u540D\u79F0",
-  "bots.options.sortManualDescription": "\u62D6\u52A8\u961F\u53CB\u8C03\u6574\u987A\u5E8F\uFF0C\u65B0\u5EFA\u961F\u53CB\u9ED8\u8BA4\u7F6E\u9876\u3002",
-  "bots.options.sortSmartDescription": "\u4F18\u5148\u5C55\u793A\u9700\u8981\u4F60\u5904\u7406\u7684\u961F\u53CB\uFF0C\u5176\u6B21\u6309\u6700\u8FD1\u6D3B\u8DC3\u6392\u5E8F\u3002",
-  "bots.options.filters": "\u7B5B\u9009\u6761\u4EF6",
-  "bots.options.hidePaused": "\u9690\u85CF\u5DF2\u6682\u505C\u7684\u961F\u53CB",
-  "bots.options.hideSleepingWorkers": "\u9690\u85CF\u4F11\u7720\u7684\u6267\u884C\u8005",
-  "bots.options.allHidden": "\u6240\u6709\u961F\u53CB\u5747\u5DF2\u6682\u505C\u5E76\u9690\u85CF\u3002",
-  // Inline search
-  "bots.search.open": "\u641C\u7D22\u961F\u53CB",
-  "bots.search.label": "\u641C\u7D22\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.search.clear": "\u6E05\u9664\u641C\u7D22",
-  "bots.search.noMatches": "\u6CA1\u6709\u5339\u914D\u9879",
-  "bots.search.pausedMatches_one": "{{count}} \u4F4D\u5DF2\u6682\u505C\u7684\u5339\u914D\u961F\u53CB",
-  "bots.search.pausedMatches_other": "{{count}} \u4F4D\u5DF2\u6682\u505C\u7684\u5339\u914D\u961F\u53CB",
-  "bots.search.showPaused": "\u663E\u793A\u5DF2\u6682\u505C\u7684\u961F\u53CB",
-  "bots.search.show": "\u663E\u793A",
-  "bots.search.matchCount_one": "{{count}} \u4E2A\u5339\u914D\u9879",
-  "bots.search.matchCount_other": "{{count}} \u4E2A\u5339\u914D\u9879",
-  // Row status & context menu
-  "bots.row.paused": "\u5DF2\u6682\u505C",
-  "bots.row.disconnected": "\u5DF2\u65AD\u5F00\u8FDE\u63A5",
-  "bots.row.hostDisconnected": "{{host}} \u5DF2\u65AD\u5F00\u8FDE\u63A5",
-  "bots.row.reading": "\u6B63\u5728\u9605\u8BFB\u4F60\u7684\u6D88\u606F",
-  "bots.row.replying": "\u6B63\u5728\u56DE\u590D",
-  "bots.row.replyingIn": "\u6B63\u5728 {{place}} \u4E2D\u56DE\u590D",
-  "bots.row.replyingOn": "\u6B63\u5728 {{place}} \u4E0A\u56DE\u590D",
-  "bots.row.idle": "\u7A7A\u95F2",
-  "bots.row.waitingFor": "\u6B63\u5728\u7B49\u5F85 {{label}}",
-  "bots.row.waitingForUntil": "\u6B63\u5728\u7B49\u5F85 {{label}} \xB7 \u76F4\u5230 {{time}}",
-  "bots.row.waitingCount": "\u7B49\u5F85\u4E2D\u7684\u4E8B\u4EF6\uFF1A{{count}}",
-  "bots.row.runsOn": "\u8FD0\u884C\u4E8E {{host}}",
-  "bots.row.rename": "\u91CD\u547D\u540D",
-  "bots.row.settings": "\u961F\u53CB\u8BBE\u7F6E\u2026",
-  "bots.row.pause": "\u6682\u505C\u961F\u53CB",
-  "bots.row.resume": "\u6062\u590D\u961F\u53CB",
-  "bots.row.copyPath": "\u590D\u5236\u8DEF\u5F84",
-  "bots.row.markRead": "\u6807\u8BB0\u4E3A\u5DF2\u8BFB",
-  "bots.row.markUnread": "\u6807\u8BB0\u4E3A\u672A\u8BFB",
-  "bots.row.delete": "\u79FB\u9664\u961F\u53CB",
-  "bots.row.deleteTitle": "\u8981\u79FB\u9664 {{name}} \u5417\uFF1F",
-  "bots.row.deleteDescription": "\u5176\u76EE\u5F55\uFF08\u542B\u7075\u9B42\u8BBE\u5B9A\u4E0E\u8BB0\u5FC6\u6587\u4EF6\uFF09\u4F1A\u4FDD\u7559\u5728 {{path}}\u3002",
-  "bots.row.deleteConfirm": "\u79FB\u9664\u961F\u53CB",
-  // Chats & workers
-  "bots.chats.home": "\u4E3B\u5BF9\u8BDD",
-  "bots.chats.homeTooltip": "\u4E3B\u5BF9\u8BDD\uFF1A\u961F\u53CB\u7684\u6838\u5FC3\u4F1A\u8BDD\u3002\u5B83\u7684\u8BB0\u5FC6\u3001\u81EA\u52A8\u5316\u4EFB\u52A1\u548C\u534F\u4F5C\u8BF7\u6C42\u90FD\u4F1A\u6C47\u96C6\u4E8E\u6B64\u3002",
-  "bots.chats.title": "\u5BF9\u8BDD",
-  "bots.chats.newChat": "\u65B0\u5EFA\u652F\u7EBF\u5BF9\u8BDD",
-  "bots.chats.newHomeChat": "\u65B0\u5EFA\u4E3B\u5BF9\u8BDD",
-  "bots.chats.kindSide": "\u652F\u7EBF\u5BF9\u8BDD",
-  "bots.chats.kindAutomation": "\u81EA\u52A8\u5316",
-  "bots.chats.workers": "\u6267\u884C\u8005",
-  "bots.chats.waitingCount": "{{count}} \u4E2A\u7B49\u5F85\u4E2D",
-  "bots.chats.runningCount": "{{count}} \u4E2A\u8FD0\u884C\u4E2D",
-  "bots.chats.searchPlaceholder": "\u641C\u7D22\u5BF9\u8BDD\u548C\u6267\u884C\u8005",
-  "bots.chats.showMoreWorkers": "\u518D\u663E\u793A {{count}} \u4E2A\u6267\u884C\u8005",
-  "bots.chats.collapseWorkers": "\u6536\u8D77",
-  "bots.chats.fromClosedChat": "\u6765\u81EA\u5DF2\u7ED3\u675F\u7684\u5BF9\u8BDD",
-  "bots.chats.handedOver": "\u5DF2\u4EA4\u63A5",
-  "bots.newHomeChat.title": "\u8981\u5F00\u542F\u65B0\u7684\u4E3B\u5BF9\u8BDD\u5417\uFF1F",
-  "bots.newHomeChat.description": "\u4F1A\u4FDD\u7559\u5176\u7075\u9B42\u8BBE\u5B9A\u4E0E\u957F\u671F\u8BB0\u5FC6\uFF0C\u5F53\u524D\u5BF9\u8BDD\u4F1A\u5F52\u6863\u81F3\u5386\u53F2\u8BB0\u5F55\u3002",
-  "bots.newHomeChat.dontAskAgain": "\u4E0D\u518D\u8BE2\u95EE",
-  "bots.newHomeChat.confirm": "\u65B0\u5EFA\u4E3B\u5BF9\u8BDD",
-  // Center pane & first screen
-  "bots.paused.banner": "\u5DF2\u6682\u505C\u3002\u6062\u590D\u542F\u7528\u524D\uFF0C\u8BE5\u961F\u53CB\u4E0D\u4F1A\u6267\u884C\u4EFB\u4F55\u4EFB\u52A1\u3002",
-  "bots.paused.resumeAction": "\u6062\u590D",
-  "bots.usageLimit.hit": "\u5DF2\u8FBE\u7528\u91CF\u4E0A\u9650",
-  "bots.firstScreen.gettingSetUp": "\u6B63\u5728\u521D\u59CB\u5316\u961F\u53CB",
-  "bots.firstScreen.stepCreate": "\u521B\u5EFA\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.firstScreen.stepStart": "\u542F\u52A8 {{agent}}",
-  "bots.firstScreen.stepFirstMessage": "\u9996\u6761\u62DB\u547C",
-  "bots.firstScreen.retry": "\u91CD\u8BD5",
-  "bots.quiet.nothingToReport": "\u6682\u65E0\u9700\u8981\u6C47\u62A5\u7684\u5185\u5BB9",
-  // Panel tabs, header, needs you, items & snooze
-  "bots.panel.tabTitle": "\u5927\u80A5\u9C7C",
-  "bots.panel.guideTitle": "\u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0",
-  "bots.panel.guideDescription": "\u6982\u89C8\u3001\u8FDE\u63A5\u5668\u3001\u5BF9\u8BDD\u4E0E\u6587\u4EF6",
-  "bots.panel.needYou_one": "{{count}} \u9879\u9700\u8981\u4F60\u5904\u7406",
-  "bots.panel.needYou_other": "{{count}} \u9879\u9700\u8981\u4F60\u5904\u7406",
-  "bots.panel.working_one": "{{count}} \u9879\u5904\u7406\u4E2D",
-  "bots.panel.working_other": "{{count}} \u9879\u5DE5\u4F5C\u8FDB\u884C\u4E2D",
-  "bots.panel.working": "{{count}} \u9879\u5DE5\u4F5C\u8FDB\u884C\u4E2D",
-  "bots.panel.idle": "\u7A7A\u95F2",
-  "bots.panel.more": "\u66F4\u591A",
-  "bots.panel.settings.title": "\u8BBE\u7F6E",
-  "bots.items.tab": "\u6982\u89C8",
-  "bots.activity.tab": "\u6D3B\u52A8",
-  "bots.connectors.tab": "\u8FDE\u63A5\u5668",
-  "bots.files.tab": "\u6587\u4EF6",
-  "bots.items.needsYou": "\u9700\u8981\u4F60\u5904\u7406",
-  "bots.items.status.planned": "\u5DF2\u8BA1\u5212",
-  "bots.items.status.working": "\u8FDB\u884C\u4E2D",
-  "bots.items.status.needs_you": "\u9700\u8981\u4F60\u5904\u7406",
-  "bots.items.status.done": "\u5B8C\u6210",
-  "bots.items.status.canceled": "\u5DF2\u53D6\u6D88",
-  "bots.items.stale": "\u957F\u671F\u65E0\u6D3B\u52A8",
-  "bots.items.snoozed": "\u5DF2\u5EF6\u540E\u63D0\u9192",
-  "bots.items.snooze.later": "\u4ECA\u5929\u665A\u4E9B\u65F6\u5019",
-  "bots.items.snooze.inHours": "{{count}} \u5C0F\u65F6\u540E",
-  "bots.items.snooze.tomorrow": "\u660E\u5929",
-  "bots.items.snooze.monday": "\u661F\u671F\u4E00",
-  "bots.items.snooze.week": "\u4E00\u5468\u540E",
-  "bots.items.doneMeans": "\u9A8C\u6536\u6807\u51C6",
-  "bots.items.links": "\u5173\u8054\u94FE\u63A5",
-  "bots.items.empty": "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u6761\u76EE\u3002",
-  "bots.items.recommended": "\u63A8\u8350",
-  // Upcoming & Up Next (Look around)
-  "bots.upcoming.title": "\u5373\u5C06\u8FD0\u884C",
-  "bots.upNext.title": "\u5DE1\u89C6\u5EFA\u8BAE",
-  "bots.upNext.lookNow": "\u7ACB\u5373\u5DE1\u89C6",
-  "bots.upNext.start": "\u5F00\u59CB\u6267\u884C",
-  "bots.upNext.dismiss": "\u5FFD\u7565",
-  // New bot dialog & avatar picker
-  "bots.new.title": "\u65B0\u5EFA\u5927\u80A5\u9C7C\u961F\u53CB",
-  "bots.new.name": "\u540D\u79F0",
-  "bots.new.namePlaceholder": "\u7ED9\u4F60\u7684\u5927\u80A5\u9C7C\u8D77\u4E2A\u540D\u5B57",
-  "bots.new.purposeLabel": "\u89D2\u8272\u4E0E\u804C\u8D23",
-  "bots.new.purposePlaceholder": "\u63CF\u8FF0\u5B83\u7684\u89D2\u8272\u3001\u4E13\u957F\u548C\u65E5\u5E38\u804C\u8D23",
-  "bots.new.picture": "\u5934\u50CF",
-  "bots.new.pictureColor": "\u80CC\u666F\u989C\u8272",
-  "bots.new.pictureColorCustom": "\u81EA\u5B9A\u4E49\u989C\u8272",
-  "bots.new.colorTransparent": "\u900F\u660E",
-  "bots.new.colorSky": "\u5929\u84DD",
-  "bots.new.colorWhite": "\u767D\u8272",
-  "bots.new.colorLavender": "\u85B0\u8863\u8349\u7D2B",
-  "bots.new.colorPink": "\u7C89\u8272",
-  "bots.new.colorPeach": "\u871C\u6843\u8272",
-  "bots.new.colorButter": "\u5976\u6CB9\u9EC4",
-  "bots.new.colorSage": "\u9F20\u5C3E\u8349\u7EFF",
-  "bots.new.colorMint": "\u8584\u8377\u7EFF",
-  "bots.new.colorSlate": "\u77F3\u677F\u7070",
-  "bots.new.colorGraphite": "\u77F3\u58A8\u8272",
-  "bots.new.colorInk": "\u58A8\u9ED1",
-  "bots.new.fromTemplate": "\u6A21\u677F\u5E93",
-  "bots.new.watches": "\u5173\u6CE8\u5185\u5BB9",
-  "bots.new.does": "\u6267\u884C\u5DE5\u4F5C",
-  "bots.new.reports": "\u6C47\u62A5\u5185\u5BB9",
-  "bots.new.cancel": "\u53D6\u6D88",
-  "bots.new.creating": "\u521B\u5EFA\u4E2D\u2026",
-  "bots.new.create": "\u521B\u5EFA",
-  // Templates dialog
-  "bots.templates.title": "\u5927\u80A5\u9C7C\u6A21\u677F\u5E93",
-  "bots.templates.browse": "\u6D4F\u89C8\u6A21\u677F\u5E93",
-  "bots.templates.search": "\u641C\u7D22\u6A21\u677F",
-  "bots.templates.allCategories": "\u5168\u90E8",
-  "bots.templates.category.coding": "\u7F16\u7A0B",
-  "bots.templates.category.releases": "\u53D1\u5E03",
-  "bots.templates.category.support": "\u652F\u6301",
-  "bots.templates.category.planning": "\u89C4\u5212",
-  "bots.templates.category.ops": "\u8FD0\u7EF4",
-  "bots.templates.category.personal": "\u4E2A\u4EBA",
-  "bots.templates.comesWith": "\u9884\u7F6E\u80FD\u529B",
-  "bots.templates.useTemplate": "\u4F7F\u7528\u6B64\u6A21\u677F\u2026",
-  "bots.templates.firstChat": "\u9996\u6B21\u5BF9\u8BDD\u4F1A\u505A\u4EC0\u4E48",
-  // Groups
-  "bots.groups.newGroup": "\u65B0\u5EFA\u9C7C\u7FA4\u534F\u4F5C",
-  "bots.groups.manageMembers": "\u7BA1\u7406\u9C7C\u7FA4\u6210\u5458\u2026",
-  "bots.groups.delete": "\u89E3\u6563\u9C7C\u7FA4\u2026",
-  "bots.groups.allBots": "\u5168\u4F53\u961F\u53CB",
-  "bots.groups.onlyWhenMentioned": "\u4EC5\u5728\u88AB @ \u63D0\u53CA\u65F6\u56DE\u590D",
-  "bots.groups.correctMention": "\u66F4\u6B63\u63D0\u53CA",
-  "bots.groups.unavailableBot": "\u6682\u4E0D\u53EF\u7528\u7684\u961F\u53CB",
-  "bots.groups.allBotsCount": "\u5168\u4F53\u961F\u53CB \xB7 {{count}}",
-  "bots.groups.mentionedCount": "\u5DF2\u63D0\u53CA {{count}} \u4F4D",
-  "bots.groups.suggestTwo": "{{a}} & {{b}}",
-  "bots.groups.suggestThree": "{{a}}\u3001{{b}} & {{c}}",
-  "bots.groups.suggestMore": "{{a}}\u3001{{b}} \u53CA\u5176\u4ED6 {{count}} \u4F4D",
-  // Bot settings & global settings
-  "settings.bots.enable": "\u542F\u7528\u5927\u80A5\u9C7C\u961F\u53CB",
-  "settings.bots.askNewHomeChat": "\u65B0\u5EFA\u4E3B\u5BF9\u8BDD\u524D\u8BE2\u95EE",
-  "settings.bots.soul": "\u7075\u9B42",
-  "settings.bots.soulRead": "\u9605\u8BFB",
-  "settings.bots.soulEdit": "\u7F16\u8F91",
-  "settings.bots.soulDoubleClickHint": "\u53CC\u51FB\u7F16\u8F91",
-  "settings.bots.soulEmpty": "\u5C1A\u672A\u6DFB\u52A0\u6307\u4EE4\u3002\u53CC\u51FB\u6216\u70B9\u51FB\u300C\u7F16\u8F91\u300D\u5373\u53EF\u7F16\u5199\u3002",
-  "settings.bots.soulConflict": "\u78C1\u76D8\u4E0A\u7684 SOUL.md \u5DF2\u88AB\u4FEE\u6539\u3002",
-  "settings.bots.memory": "\u8BB0\u5FC6",
-  "settings.bots.memoryFacts": "\u4E8B\u5B9E",
-  "settings.bots.memoryHistory": "\u5386\u53F2",
-  "settings.bots.memoryUndo": "\u64A4\u9500",
-  "settings.bots.addMemoryPlaceholder": "\u8BB0\u4F4F\u65B0\u5185\u5BB9\u2026",
-  "settings.bots.memoryEmpty": "\u5C1A\u672A\u4FDD\u5B58\u4EFB\u4F55\u4E8B\u5B9E\u3002",
-  "settings.bots.lookAround.title": "\u5DE1\u89C6",
-  "settings.bots.lookAround.looking": "\u5DE1\u89C6\u4E2D\u2026",
-  "settings.bots.tidyUp.title": "\u8BB0\u5FC6\u7EF4\u62A4",
-  "settings.bots.tidyUp.now": "\u7ACB\u5373\u6574\u7406",
-  "settings.bots.tidyUp.tidied": "\u5DF2\u6574\u7406\u8BB0\u5FC6 \xB7 {{count}} \u9879\u53D8\u66F4",
-  "settings.bots.tools.title": "\u5DE5\u5177",
-  "settings.bots.tools.add": "\u6DFB\u52A0\u5DE5\u5177",
-  "settings.bots.skills.title": "\u6280\u80FD",
-  "settings.bots.whoCanAsk.title": "\u8C01\u53EF\u4EE5\u63D0\u95EE",
-  "settings.bots.notifications.title": "\u901A\u77E5",
-  "settings.bots.notifications.needsPermission": "\u9700\u8981\u6743\u9650",
-  "settings.bots.notifications.taskComplete": "\u4EFB\u52A1\u5B8C\u6210",
-  "settings.bots.notifications.couldNotFinish": "\u672A\u80FD\u5B8C\u6210",
-  "settings.bots.saving": "\u4FDD\u5B58\u4E2D\u2026",
-  "settings.bots.unsaved": "\u672A\u4FDD\u5B58",
-  "settings.bots.saved": "\u5DF2\u4FDD\u5B58"
-});
-var LOCALES = Object.freeze({
-  "zh-CN": ZH_CN,
-  "en-US": EN_US
-});
-function normalizeLocale(locale) {
-  if (typeof locale !== "string" || !locale.trim()) {
-    return "zh-CN";
-  }
-  const lower = locale.trim().toLowerCase();
-  return lower.startsWith("zh") ? "zh-CN" : "en-US";
-}
-function lookupTemplate(dict, key, params) {
-  if (params && typeof params.count === "number") {
-    const suffix = params.count === 1 ? "_one" : "_other";
-    if (Object.prototype.hasOwnProperty.call(dict, `${key}${suffix}`)) {
-      return dict[`${key}${suffix}`];
-    }
-  }
-  return Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : null;
-}
-function createTranslator(locale = "zh-CN") {
-  const normalized = normalizeLocale(locale);
-  return (key, fallbackOrParams, maybeParams) => {
-    const hasFallback = typeof fallbackOrParams === "string";
-    const params = hasFallback ? maybeParams ?? {} : fallbackOrParams ?? {};
-    const primary = LOCALES[normalized] ?? ZH_CN;
-    const found = lookupTemplate(primary, key, params) ?? lookupTemplate(EN_US, key, params);
-    const template = found ?? (hasFallback ? fallbackOrParams : key);
-    return template.replace(/\{\{(\w+)\}\}/g, (_match, name2) => params[name2] === void 0 || params[name2] === null ? "" : String(params[name2]));
-  };
-}
-
-// vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
-var import_react13 = require("react");
-var import_react_dom8 = require("react-dom");
-
-// vendor/dsh-whale/src/client/store/bots-store.ts
-var import_react = require("react");
-
 // vendor/dsh-whale/src/shared/bot-groups.js
 var BOT_GROUP_LIMITS = Object.freeze({
   minCreateMembers: 2,
@@ -1376,6 +877,582 @@ function normalizeSidebarBotsHeight(value) {
   }
   return Math.min(SIDEBAR_BOTS_MAX_STORED_HEIGHT, Math.max(SIDEBAR_BOTS_MIN_HEIGHT, Math.round(value)));
 }
+function chatWorkersOwnSession(chat, sessionId) {
+  const lists = [chat?.running, chat?.finished];
+  for (const list of lists) {
+    if (!Array.isArray(list)) {
+      continue;
+    }
+    if (list.some((worker) => worker?.sessionId === sessionId)) {
+      return true;
+    }
+  }
+  return false;
+}
+function findBotBySessionId(bots, chatsByBot, sessionId) {
+  const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!sid || !Array.isArray(bots)) {
+    return null;
+  }
+  for (const bot of bots) {
+    if (!bot || typeof bot.id !== "string") {
+      continue;
+    }
+    if (bot.chatSessionId === sid || bot.homeSessionId === sid) {
+      return bot;
+    }
+    const tree = chatsByBot?.[bot.id];
+    const chats = Array.isArray(tree?.chats) ? tree.chats : [];
+    for (const chat of chats) {
+      if (chat?.sessionId === sid || chat?.chatId === sid || chatWorkersOwnSession(chat, sid)) {
+        return bot;
+      }
+    }
+  }
+  return null;
+}
+function resolveActiveBotSelection(input) {
+  const panelId = typeof input?.activePanelId === "string" && input.activePanelId.trim().length > 0 ? input.activePanelId.trim() : null;
+  const mainSessionId = typeof input?.mainSessionId === "string" && input.mainSessionId.trim().length > 0 ? input.mainSessionId.trim() : null;
+  if (panelId === "dsh-bots:group") {
+    return {
+      botId: null,
+      groupId: input?.prevActiveGroupId ?? null,
+      sessionId: null,
+      closePageSettings: false
+    };
+  }
+  if (panelId === "dsh-bots:settings") {
+    return {
+      botId: input?.settingsRouteBotId ?? input?.prevActiveBotId ?? null,
+      groupId: null,
+      sessionId: mainSessionId,
+      closePageSettings: false
+    };
+  }
+  if (panelId !== null) {
+    return {
+      botId: null,
+      groupId: null,
+      sessionId: null,
+      closePageSettings: true
+    };
+  }
+  if (!mainSessionId) {
+    return {
+      botId: null,
+      groupId: null,
+      sessionId: null,
+      closePageSettings: false
+    };
+  }
+  const matched = findBotBySessionId(input?.bots ?? [], input?.chatsByBot, mainSessionId);
+  return {
+    botId: matched ? matched.id : null,
+    groupId: null,
+    sessionId: mainSessionId,
+    closePageSettings: false
+  };
+}
+
+// vendor/dsh-whale/src/shared/locales.js
+var SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"]);
+var EN_US = Object.freeze({
+  // Sidebar section header & empty state
+  "bots.section.title": "Whale Bots",
+  "bots.section.emptyCardTitle": "Your Whale teammates",
+  "bots.section.emptyCardSubtitle": "Resident teammates, look-around & group collab",
+  "bots.section.emptyTemplates": "Templates",
+  "bots.section.templates": "Templates",
+  "bots.section.newBot": "New bot",
+  "bots.section.new": "New bot or group",
+  "bots.section.startFromScratch": "Start from scratch",
+  "bots.section.browseTemplates": "Browse templates",
+  "bots.section.importFromLink": "Import from link\u2026",
+  "bots.section.importFromApp": "Import from another app\u2026",
+  "bots.section.newGroup": "New group",
+  "bots.section.expand": "Expand Whale Bots",
+  "bots.section.collapse": "Collapse Whale Bots",
+  "bots.section.expandAll": "Expand all teammates",
+  "bots.section.collapseAll": "Collapse all teammates",
+  "bots.section.summary": "{{action}}, {{total}} teammates, {{attention}} need you, {{unread}} unread, {{working}} working",
+  "bots.section.showMore_one": "Show {{count}} more teammate",
+  "bots.section.showMore_other": "Show {{count}} more teammates",
+  // Runtime badge
+  "bots.runtime.local": "WhaleIsle Core",
+  // Options & filters
+  "bots.options.title": "Teammate options",
+  "bots.options.activeFilters_one": "Teammate options ({{count}} filter active)",
+  "bots.options.activeFilters_other": "Teammate options ({{count}} filters active)",
+  "bots.options.sortBy": "Sort by",
+  "bots.options.sortManual": "Manual",
+  "bots.options.sortSmart": "Agent Activity",
+  "bots.options.sortRecent": "Recent",
+  "bots.options.sortName": "Name",
+  "bots.options.sortManualDescription": "Drag teammates to arrange them. New teammates go on top.",
+  "bots.options.sortSmartDescription": "Teammates that need you, then most recent activity.",
+  "bots.options.filters": "Filters",
+  "bots.options.hidePaused": "Hide paused teammates",
+  "bots.options.hideSleepingWorkers": "Hide sleeping workers",
+  "bots.options.allHidden": "All teammates are paused and hidden.",
+  // Inline search
+  "bots.search.open": "Search teammates",
+  "bots.search.label": "Search teammates",
+  "bots.search.clear": "Clear search",
+  "bots.search.noMatches": "No matches",
+  "bots.search.pausedMatches_one": "{{count}} paused match",
+  "bots.search.pausedMatches_other": "{{count}} paused matches",
+  "bots.search.showPaused": "Show paused teammates",
+  "bots.search.show": "Show",
+  "bots.search.matchCount_one": "{{count}} match",
+  "bots.search.matchCount_other": "{{count}} matches",
+  // Row status & context menu
+  "bots.row.paused": "Paused",
+  "bots.row.disconnected": "Disconnected",
+  "bots.row.hostDisconnected": "{{host}} disconnected",
+  "bots.row.reading": "Reading your message",
+  "bots.row.replying": "Replying",
+  "bots.row.replyingIn": "Replying in {{place}}",
+  "bots.row.replyingOn": "Replying on {{place}}",
+  "bots.row.idle": "Idle",
+  "bots.row.waitingFor": "Waiting for {{label}}",
+  "bots.row.waitingForUntil": "Waiting for {{label}} \xB7 until {{time}}",
+  "bots.row.waitingCount": "Waiting on {{count}} events",
+  "bots.row.runsOn": "Runs on {{host}}",
+  "bots.row.rename": "Rename",
+  "bots.row.settings": "Teammate settings\u2026",
+  "bots.row.pause": "Pause teammate",
+  "bots.row.resume": "Resume teammate",
+  "bots.row.copyPath": "Copy Path",
+  "bots.row.markRead": "Mark Read",
+  "bots.row.markUnread": "Mark Unread",
+  "bots.row.delete": "Remove teammate",
+  "bots.row.deleteTitle": "Remove {{name}}?",
+  "bots.row.deleteDescription": "Its folder, with its soul and memory, stays at {{path}}.",
+  "bots.row.deleteConfirm": "Remove teammate",
+  // Chats & workers
+  "bots.chats.home": "Home Chat",
+  "bots.chats.homeTooltip": "Home: the teammate's main chat. Its memory, automations and requests from others come together here.",
+  "bots.chats.title": "Chats",
+  "bots.chats.newChat": "New chat",
+  "bots.chats.newHomeChat": "New Home Chat",
+  "bots.chats.kindSide": "Side chat",
+  "bots.chats.kindAutomation": "Automation",
+  "bots.chats.workers": "Workers",
+  "bots.chats.waitingCount": "{{count}} waiting",
+  "bots.chats.runningCount": "{{count}} running",
+  "bots.chats.searchPlaceholder": "Search chats and workers",
+  "bots.chats.showMoreWorkers": "Show {{count}} more workers",
+  "bots.chats.collapseWorkers": "Collapse",
+  "bots.chats.fromClosedChat": "From a closed chat",
+  "bots.chats.handedOver": "Handed over",
+  "bots.newHomeChat.title": "Start a new Home Chat?",
+  "bots.newHomeChat.description": "Its soul and memory stay; this conversation moves to history.",
+  "bots.newHomeChat.dontAskAgain": "Don't ask again",
+  "bots.newHomeChat.confirm": "New Home Chat",
+  // Center pane & first screen
+  "bots.paused.banner": "Paused. Nothing runs for you until you turn it back on.",
+  "bots.paused.resumeAction": "Resume",
+  "bots.usageLimit.hit": "Usage limit reached",
+  "bots.firstScreen.gettingSetUp": "Getting set up",
+  "bots.firstScreen.stepCreate": "Create teammate",
+  "bots.firstScreen.stepStart": "Start {{agent}}",
+  "bots.firstScreen.stepFirstMessage": "First message",
+  "bots.firstScreen.retry": "Retry",
+  "bots.quiet.nothingToReport": "Nothing to report",
+  // Panel tabs, header, needs you, items & snooze
+  "bots.panel.tabTitle": "Whale",
+  "bots.panel.guideTitle": "Whale panel",
+  "bots.panel.guideDescription": "Home, connectors, chats and files",
+  "bots.panel.needYou_one": "{{count}} needs you",
+  "bots.panel.needYou_other": "{{count}} need you",
+  "bots.panel.working_one": "{{count}} working",
+  "bots.panel.working_other": "{{count}} working",
+  "bots.panel.working": "{{count}} working",
+  "bots.panel.idle": "Idle",
+  "bots.panel.more": "More",
+  "bots.panel.settings.title": "Settings",
+  "bots.items.tab": "Home",
+  "bots.activity.tab": "Activity",
+  "bots.connectors.tab": "Connectors",
+  "bots.files.tab": "Files",
+  "bots.items.needsYou": "Needs you",
+  "bots.items.status.planned": "Planned",
+  "bots.items.status.working": "In progress",
+  "bots.items.status.needs_you": "Needs you",
+  "bots.items.status.done": "Done",
+  "bots.items.status.canceled": "Canceled",
+  "bots.items.stale": "Stale",
+  "bots.items.snoozed": "Snoozed",
+  "bots.items.snooze.later": "Later today",
+  "bots.items.snooze.inHours": "In {{count}} hours",
+  "bots.items.snooze.tomorrow": "Tomorrow",
+  "bots.items.snooze.monday": "Monday",
+  "bots.items.snooze.week": "In a week",
+  "bots.items.doneMeans": "Done means",
+  "bots.items.links": "Links",
+  "bots.items.empty": "No items yet.",
+  "bots.items.recommended": "Recommended",
+  // Upcoming & Up Next (Look around)
+  "bots.upcoming.title": "Upcoming",
+  "bots.upNext.title": "Up next",
+  "bots.upNext.lookNow": "Look now",
+  "bots.upNext.start": "Start",
+  "bots.upNext.dismiss": "Dismiss",
+  // New bot dialog & avatar picker
+  "bots.new.title": "New Whale Bot",
+  "bots.new.name": "Name",
+  "bots.new.namePlaceholder": "Name your teammate",
+  "bots.new.purposeLabel": "Identity",
+  "bots.new.purposePlaceholder": "Describe its role, focus and daily work",
+  "bots.new.picture": "Avatar",
+  "bots.new.pictureColor": "Background color",
+  "bots.new.pictureColorCustom": "Custom color",
+  "bots.new.colorTransparent": "Transparent",
+  "bots.new.colorSky": "Sky",
+  "bots.new.colorWhite": "White",
+  "bots.new.colorLavender": "Lavender",
+  "bots.new.colorPink": "Pink",
+  "bots.new.colorPeach": "Peach",
+  "bots.new.colorButter": "Butter",
+  "bots.new.colorSage": "Sage",
+  "bots.new.colorMint": "Mint",
+  "bots.new.colorSlate": "Slate",
+  "bots.new.colorGraphite": "Graphite",
+  "bots.new.colorInk": "Ink",
+  "bots.new.fromTemplate": "Templates",
+  "bots.new.watches": "Watches",
+  "bots.new.does": "Does",
+  "bots.new.reports": "Reports",
+  "bots.new.cancel": "Cancel",
+  "bots.new.creating": "Creating\u2026",
+  "bots.new.create": "Create",
+  // Templates dialog
+  "bots.templates.title": "Whale Bot templates",
+  "bots.templates.browse": "Browse templates",
+  "bots.templates.search": "Search templates",
+  "bots.templates.allCategories": "All",
+  "bots.templates.category.coding": "Coding",
+  "bots.templates.category.releases": "Releases",
+  "bots.templates.category.support": "Support",
+  "bots.templates.category.planning": "Planning",
+  "bots.templates.category.ops": "Ops",
+  "bots.templates.category.personal": "Personal",
+  "bots.templates.comesWith": "Comes with",
+  "bots.templates.useTemplate": "Use template\u2026",
+  "bots.templates.firstChat": "What it does first",
+  // Groups
+  "bots.groups.newGroup": "New group",
+  "bots.groups.manageMembers": "Manage members\u2026",
+  "bots.groups.delete": "Delete group\u2026",
+  "bots.groups.allBots": "All teammates",
+  "bots.groups.onlyWhenMentioned": "Only when mentioned",
+  "bots.groups.correctMention": "Correct mention",
+  "bots.groups.unavailableBot": "Unavailable teammate",
+  "bots.groups.allBotsCount": "All teammates \xB7 {{count}}",
+  "bots.groups.mentionedCount": "{{count}} mentioned",
+  "bots.groups.suggestTwo": "{{a}} & {{b}}",
+  "bots.groups.suggestThree": "{{a}}, {{b}} & {{c}}",
+  "bots.groups.suggestMore": "{{a}}, {{b}} & {{count}} more",
+  // Bot settings & global settings
+  "settings.bots.enable": "Enable Whale Bots",
+  "settings.bots.askNewHomeChat": "Ask before a new Home Chat",
+  "settings.bots.soul": "Soul",
+  "settings.bots.soulRead": "Read",
+  "settings.bots.soulEdit": "Edit",
+  "settings.bots.soulDoubleClickHint": "Double-click to edit",
+  "settings.bots.soulEmpty": "No instructions yet. Double-click or choose Edit to write them.",
+  "settings.bots.soulConflict": "SOUL.md changed on disk.",
+  "settings.bots.memory": "Memory",
+  "settings.bots.memoryFacts": "Facts",
+  "settings.bots.memoryHistory": "History",
+  "settings.bots.memoryUndo": "Undo",
+  "settings.bots.addMemoryPlaceholder": "Remember something new\u2026",
+  "settings.bots.memoryEmpty": "No facts saved yet.",
+  "settings.bots.lookAround.title": "Look around",
+  "settings.bots.lookAround.looking": "Looking\u2026",
+  "settings.bots.tidyUp.title": "Tidy up",
+  "settings.bots.tidyUp.now": "Tidy now",
+  "settings.bots.tidyUp.tidied": "Tidied memory \xB7 {{count}} changes",
+  "settings.bots.tools.title": "Tools",
+  "settings.bots.tools.add": "Add tool",
+  "settings.bots.skills.title": "Skills",
+  "settings.bots.whoCanAsk.title": "Who can ask",
+  "settings.bots.notifications.title": "Notifications",
+  "settings.bots.notifications.needsPermission": "Needs permission",
+  "settings.bots.notifications.taskComplete": "Task complete",
+  "settings.bots.notifications.couldNotFinish": "Could not finish",
+  "settings.bots.saving": "Saving\u2026",
+  "settings.bots.unsaved": "Unsaved",
+  "settings.bots.saved": "Saved"
+});
+var ZH_CN = Object.freeze({
+  // Sidebar section header & empty state
+  "bots.section.title": "\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.section.emptyCardTitle": "\u4F60\u7684\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.section.emptyCardSubtitle": "\u5E38\u9A7B\u534F\u4F5C\u3001\u81EA\u4E3B\u5DE1\u89C6\u4E0E\u591A\u9C7C\u8054\u52A8",
+  "bots.section.emptyTemplates": "\u6A21\u677F\u5E93",
+  "bots.section.templates": "\u6A21\u677F\u5E93",
+  "bots.section.newBot": "\u65B0\u5EFA\u961F\u53CB",
+  "bots.section.new": "\u65B0\u5EFA\u5927\u80A5\u9C7C\u961F\u53CB\u6216\u9C7C\u7FA4",
+  "bots.section.startFromScratch": "\u4ECE\u96F6\u521B\u5EFA",
+  "bots.section.browseTemplates": "\u6D4F\u89C8\u6A21\u677F\u5E93",
+  "bots.section.importFromLink": "\u4ECE\u94FE\u63A5\u5BFC\u5165\u2026",
+  "bots.section.importFromApp": "\u4ECE\u5176\u4ED6\u5E94\u7528\u5BFC\u5165\u2026",
+  "bots.section.newGroup": "\u65B0\u5EFA\u9C7C\u7FA4\u534F\u4F5C",
+  "bots.section.expand": "\u5C55\u5F00\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.section.collapse": "\u6298\u53E0\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.section.expandAll": "\u5C55\u5F00\u5168\u90E8\u961F\u53CB",
+  "bots.section.collapseAll": "\u6298\u53E0\u5168\u90E8\u961F\u53CB",
+  "bots.section.summary": "{{action}}\uFF0C\u5171 {{total}} \u4F4D\u961F\u53CB\uFF0C{{attention}} \u9879\u5F85\u4F60\u5904\u7406\uFF0C{{unread}} \u6761\u672A\u8BFB\uFF0C{{working}} \u4F4D\u5DE5\u4F5C\u4E2D",
+  "bots.section.showMore_one": "\u518D\u663E\u793A {{count}} \u4F4D\u961F\u53CB",
+  "bots.section.showMore_other": "\u518D\u663E\u793A {{count}} \u4F4D\u961F\u53CB",
+  // Runtime badge
+  "bots.runtime.local": "\u9CB8\u5C7F\u5185\u6838",
+  // Options & filters
+  "bots.options.title": "\u961F\u53CB\u663E\u793A\u9009\u9879",
+  "bots.options.activeFilters_one": "\u961F\u53CB\u663E\u793A\u9009\u9879\uFF08\u5DF2\u542F\u7528 {{count}} \u9879\u7B5B\u9009\uFF09",
+  "bots.options.activeFilters_other": "\u961F\u53CB\u663E\u793A\u9009\u9879\uFF08\u5DF2\u542F\u7528 {{count}} \u9879\u7B5B\u9009\uFF09",
+  "bots.options.sortBy": "\u6392\u5E8F\u65B9\u5F0F",
+  "bots.options.sortManual": "\u624B\u52A8",
+  "bots.options.sortSmart": "\u667A\u80FD\u6D3B\u8DC3\u5EA6",
+  "bots.options.sortRecent": "\u6700\u8FD1\u6D3B\u8DC3",
+  "bots.options.sortName": "\u540D\u79F0",
+  "bots.options.sortManualDescription": "\u62D6\u52A8\u961F\u53CB\u8C03\u6574\u987A\u5E8F\uFF0C\u65B0\u5EFA\u961F\u53CB\u9ED8\u8BA4\u7F6E\u9876\u3002",
+  "bots.options.sortSmartDescription": "\u4F18\u5148\u5C55\u793A\u9700\u8981\u4F60\u5904\u7406\u7684\u961F\u53CB\uFF0C\u5176\u6B21\u6309\u6700\u8FD1\u6D3B\u8DC3\u6392\u5E8F\u3002",
+  "bots.options.filters": "\u7B5B\u9009\u6761\u4EF6",
+  "bots.options.hidePaused": "\u9690\u85CF\u5DF2\u6682\u505C\u7684\u961F\u53CB",
+  "bots.options.hideSleepingWorkers": "\u9690\u85CF\u4F11\u7720\u7684\u6267\u884C\u8005",
+  "bots.options.allHidden": "\u6240\u6709\u961F\u53CB\u5747\u5DF2\u6682\u505C\u5E76\u9690\u85CF\u3002",
+  // Inline search
+  "bots.search.open": "\u641C\u7D22\u961F\u53CB",
+  "bots.search.label": "\u641C\u7D22\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.search.clear": "\u6E05\u9664\u641C\u7D22",
+  "bots.search.noMatches": "\u6CA1\u6709\u5339\u914D\u9879",
+  "bots.search.pausedMatches_one": "{{count}} \u4F4D\u5DF2\u6682\u505C\u7684\u5339\u914D\u961F\u53CB",
+  "bots.search.pausedMatches_other": "{{count}} \u4F4D\u5DF2\u6682\u505C\u7684\u5339\u914D\u961F\u53CB",
+  "bots.search.showPaused": "\u663E\u793A\u5DF2\u6682\u505C\u7684\u961F\u53CB",
+  "bots.search.show": "\u663E\u793A",
+  "bots.search.matchCount_one": "{{count}} \u4E2A\u5339\u914D\u9879",
+  "bots.search.matchCount_other": "{{count}} \u4E2A\u5339\u914D\u9879",
+  // Row status & context menu
+  "bots.row.paused": "\u5DF2\u6682\u505C",
+  "bots.row.disconnected": "\u5DF2\u65AD\u5F00\u8FDE\u63A5",
+  "bots.row.hostDisconnected": "{{host}} \u5DF2\u65AD\u5F00\u8FDE\u63A5",
+  "bots.row.reading": "\u6B63\u5728\u9605\u8BFB\u4F60\u7684\u6D88\u606F",
+  "bots.row.replying": "\u6B63\u5728\u56DE\u590D",
+  "bots.row.replyingIn": "\u6B63\u5728 {{place}} \u4E2D\u56DE\u590D",
+  "bots.row.replyingOn": "\u6B63\u5728 {{place}} \u4E0A\u56DE\u590D",
+  "bots.row.idle": "\u7A7A\u95F2",
+  "bots.row.waitingFor": "\u6B63\u5728\u7B49\u5F85 {{label}}",
+  "bots.row.waitingForUntil": "\u6B63\u5728\u7B49\u5F85 {{label}} \xB7 \u76F4\u5230 {{time}}",
+  "bots.row.waitingCount": "\u7B49\u5F85\u4E2D\u7684\u4E8B\u4EF6\uFF1A{{count}}",
+  "bots.row.runsOn": "\u8FD0\u884C\u4E8E {{host}}",
+  "bots.row.rename": "\u91CD\u547D\u540D",
+  "bots.row.settings": "\u961F\u53CB\u8BBE\u7F6E\u2026",
+  "bots.row.pause": "\u6682\u505C\u961F\u53CB",
+  "bots.row.resume": "\u6062\u590D\u961F\u53CB",
+  "bots.row.copyPath": "\u590D\u5236\u8DEF\u5F84",
+  "bots.row.markRead": "\u6807\u8BB0\u4E3A\u5DF2\u8BFB",
+  "bots.row.markUnread": "\u6807\u8BB0\u4E3A\u672A\u8BFB",
+  "bots.row.delete": "\u79FB\u9664\u961F\u53CB",
+  "bots.row.deleteTitle": "\u8981\u79FB\u9664 {{name}} \u5417\uFF1F",
+  "bots.row.deleteDescription": "\u5176\u76EE\u5F55\uFF08\u542B\u7075\u9B42\u8BBE\u5B9A\u4E0E\u8BB0\u5FC6\u6587\u4EF6\uFF09\u4F1A\u4FDD\u7559\u5728 {{path}}\u3002",
+  "bots.row.deleteConfirm": "\u79FB\u9664\u961F\u53CB",
+  // Chats & workers
+  "bots.chats.home": "\u4E3B\u5BF9\u8BDD",
+  "bots.chats.homeTooltip": "\u4E3B\u5BF9\u8BDD\uFF1A\u961F\u53CB\u7684\u6838\u5FC3\u4F1A\u8BDD\u3002\u5B83\u7684\u8BB0\u5FC6\u3001\u81EA\u52A8\u5316\u4EFB\u52A1\u548C\u534F\u4F5C\u8BF7\u6C42\u90FD\u4F1A\u6C47\u96C6\u4E8E\u6B64\u3002",
+  "bots.chats.title": "\u5BF9\u8BDD",
+  "bots.chats.newChat": "\u65B0\u5EFA\u652F\u7EBF\u5BF9\u8BDD",
+  "bots.chats.newHomeChat": "\u65B0\u5EFA\u4E3B\u5BF9\u8BDD",
+  "bots.chats.kindSide": "\u652F\u7EBF\u5BF9\u8BDD",
+  "bots.chats.kindAutomation": "\u81EA\u52A8\u5316",
+  "bots.chats.workers": "\u6267\u884C\u8005",
+  "bots.chats.waitingCount": "{{count}} \u4E2A\u7B49\u5F85\u4E2D",
+  "bots.chats.runningCount": "{{count}} \u4E2A\u8FD0\u884C\u4E2D",
+  "bots.chats.searchPlaceholder": "\u641C\u7D22\u5BF9\u8BDD\u548C\u6267\u884C\u8005",
+  "bots.chats.showMoreWorkers": "\u518D\u663E\u793A {{count}} \u4E2A\u6267\u884C\u8005",
+  "bots.chats.collapseWorkers": "\u6536\u8D77",
+  "bots.chats.fromClosedChat": "\u6765\u81EA\u5DF2\u7ED3\u675F\u7684\u5BF9\u8BDD",
+  "bots.chats.handedOver": "\u5DF2\u4EA4\u63A5",
+  "bots.newHomeChat.title": "\u8981\u5F00\u542F\u65B0\u7684\u4E3B\u5BF9\u8BDD\u5417\uFF1F",
+  "bots.newHomeChat.description": "\u4F1A\u4FDD\u7559\u5176\u7075\u9B42\u8BBE\u5B9A\u4E0E\u957F\u671F\u8BB0\u5FC6\uFF0C\u5F53\u524D\u5BF9\u8BDD\u4F1A\u5F52\u6863\u81F3\u5386\u53F2\u8BB0\u5F55\u3002",
+  "bots.newHomeChat.dontAskAgain": "\u4E0D\u518D\u8BE2\u95EE",
+  "bots.newHomeChat.confirm": "\u65B0\u5EFA\u4E3B\u5BF9\u8BDD",
+  // Center pane & first screen
+  "bots.paused.banner": "\u5DF2\u6682\u505C\u3002\u6062\u590D\u542F\u7528\u524D\uFF0C\u8BE5\u961F\u53CB\u4E0D\u4F1A\u6267\u884C\u4EFB\u4F55\u4EFB\u52A1\u3002",
+  "bots.paused.resumeAction": "\u6062\u590D",
+  "bots.usageLimit.hit": "\u5DF2\u8FBE\u7528\u91CF\u4E0A\u9650",
+  "bots.firstScreen.gettingSetUp": "\u6B63\u5728\u521D\u59CB\u5316\u961F\u53CB",
+  "bots.firstScreen.stepCreate": "\u521B\u5EFA\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.firstScreen.stepStart": "\u542F\u52A8 {{agent}}",
+  "bots.firstScreen.stepFirstMessage": "\u9996\u6761\u62DB\u547C",
+  "bots.firstScreen.retry": "\u91CD\u8BD5",
+  "bots.quiet.nothingToReport": "\u6682\u65E0\u9700\u8981\u6C47\u62A5\u7684\u5185\u5BB9",
+  // Panel tabs, header, needs you, items & snooze
+  "bots.panel.tabTitle": "\u5927\u80A5\u9C7C",
+  "bots.panel.guideTitle": "\u5927\u80A5\u9C7C\u5DE5\u4F5C\u53F0",
+  "bots.panel.guideDescription": "\u6982\u89C8\u3001\u8FDE\u63A5\u5668\u3001\u5BF9\u8BDD\u4E0E\u6587\u4EF6",
+  "bots.panel.needYou_one": "{{count}} \u9879\u9700\u8981\u4F60\u5904\u7406",
+  "bots.panel.needYou_other": "{{count}} \u9879\u9700\u8981\u4F60\u5904\u7406",
+  "bots.panel.working_one": "{{count}} \u9879\u5904\u7406\u4E2D",
+  "bots.panel.working_other": "{{count}} \u9879\u5DE5\u4F5C\u8FDB\u884C\u4E2D",
+  "bots.panel.working": "{{count}} \u9879\u5DE5\u4F5C\u8FDB\u884C\u4E2D",
+  "bots.panel.idle": "\u7A7A\u95F2",
+  "bots.panel.more": "\u66F4\u591A",
+  "bots.panel.settings.title": "\u8BBE\u7F6E",
+  "bots.items.tab": "\u6982\u89C8",
+  "bots.activity.tab": "\u6D3B\u52A8",
+  "bots.connectors.tab": "\u8FDE\u63A5\u5668",
+  "bots.files.tab": "\u6587\u4EF6",
+  "bots.items.needsYou": "\u9700\u8981\u4F60\u5904\u7406",
+  "bots.items.status.planned": "\u5DF2\u8BA1\u5212",
+  "bots.items.status.working": "\u8FDB\u884C\u4E2D",
+  "bots.items.status.needs_you": "\u9700\u8981\u4F60\u5904\u7406",
+  "bots.items.status.done": "\u5B8C\u6210",
+  "bots.items.status.canceled": "\u5DF2\u53D6\u6D88",
+  "bots.items.stale": "\u957F\u671F\u65E0\u6D3B\u52A8",
+  "bots.items.snoozed": "\u5DF2\u5EF6\u540E\u63D0\u9192",
+  "bots.items.snooze.later": "\u4ECA\u5929\u665A\u4E9B\u65F6\u5019",
+  "bots.items.snooze.inHours": "{{count}} \u5C0F\u65F6\u540E",
+  "bots.items.snooze.tomorrow": "\u660E\u5929",
+  "bots.items.snooze.monday": "\u661F\u671F\u4E00",
+  "bots.items.snooze.week": "\u4E00\u5468\u540E",
+  "bots.items.doneMeans": "\u9A8C\u6536\u6807\u51C6",
+  "bots.items.links": "\u5173\u8054\u94FE\u63A5",
+  "bots.items.empty": "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u6761\u76EE\u3002",
+  "bots.items.recommended": "\u63A8\u8350",
+  // Upcoming & Up Next (Look around)
+  "bots.upcoming.title": "\u5373\u5C06\u8FD0\u884C",
+  "bots.upNext.title": "\u5DE1\u89C6\u5EFA\u8BAE",
+  "bots.upNext.lookNow": "\u7ACB\u5373\u5DE1\u89C6",
+  "bots.upNext.start": "\u5F00\u59CB\u6267\u884C",
+  "bots.upNext.dismiss": "\u5FFD\u7565",
+  // New bot dialog & avatar picker
+  "bots.new.title": "\u65B0\u5EFA\u5927\u80A5\u9C7C\u961F\u53CB",
+  "bots.new.name": "\u540D\u79F0",
+  "bots.new.namePlaceholder": "\u7ED9\u4F60\u7684\u5927\u80A5\u9C7C\u8D77\u4E2A\u540D\u5B57",
+  "bots.new.purposeLabel": "\u89D2\u8272\u4E0E\u804C\u8D23",
+  "bots.new.purposePlaceholder": "\u63CF\u8FF0\u5B83\u7684\u89D2\u8272\u3001\u4E13\u957F\u548C\u65E5\u5E38\u804C\u8D23",
+  "bots.new.picture": "\u5934\u50CF",
+  "bots.new.pictureColor": "\u80CC\u666F\u989C\u8272",
+  "bots.new.pictureColorCustom": "\u81EA\u5B9A\u4E49\u989C\u8272",
+  "bots.new.colorTransparent": "\u900F\u660E",
+  "bots.new.colorSky": "\u5929\u84DD",
+  "bots.new.colorWhite": "\u767D\u8272",
+  "bots.new.colorLavender": "\u85B0\u8863\u8349\u7D2B",
+  "bots.new.colorPink": "\u7C89\u8272",
+  "bots.new.colorPeach": "\u871C\u6843\u8272",
+  "bots.new.colorButter": "\u5976\u6CB9\u9EC4",
+  "bots.new.colorSage": "\u9F20\u5C3E\u8349\u7EFF",
+  "bots.new.colorMint": "\u8584\u8377\u7EFF",
+  "bots.new.colorSlate": "\u77F3\u677F\u7070",
+  "bots.new.colorGraphite": "\u77F3\u58A8\u8272",
+  "bots.new.colorInk": "\u58A8\u9ED1",
+  "bots.new.fromTemplate": "\u6A21\u677F\u5E93",
+  "bots.new.watches": "\u5173\u6CE8\u5185\u5BB9",
+  "bots.new.does": "\u6267\u884C\u5DE5\u4F5C",
+  "bots.new.reports": "\u6C47\u62A5\u5185\u5BB9",
+  "bots.new.cancel": "\u53D6\u6D88",
+  "bots.new.creating": "\u521B\u5EFA\u4E2D\u2026",
+  "bots.new.create": "\u521B\u5EFA",
+  // Templates dialog
+  "bots.templates.title": "\u5927\u80A5\u9C7C\u6A21\u677F\u5E93",
+  "bots.templates.browse": "\u6D4F\u89C8\u6A21\u677F\u5E93",
+  "bots.templates.search": "\u641C\u7D22\u6A21\u677F",
+  "bots.templates.allCategories": "\u5168\u90E8",
+  "bots.templates.category.coding": "\u7F16\u7A0B",
+  "bots.templates.category.releases": "\u53D1\u5E03",
+  "bots.templates.category.support": "\u652F\u6301",
+  "bots.templates.category.planning": "\u89C4\u5212",
+  "bots.templates.category.ops": "\u8FD0\u7EF4",
+  "bots.templates.category.personal": "\u4E2A\u4EBA",
+  "bots.templates.comesWith": "\u9884\u7F6E\u80FD\u529B",
+  "bots.templates.useTemplate": "\u4F7F\u7528\u6B64\u6A21\u677F\u2026",
+  "bots.templates.firstChat": "\u9996\u6B21\u5BF9\u8BDD\u4F1A\u505A\u4EC0\u4E48",
+  // Groups
+  "bots.groups.newGroup": "\u65B0\u5EFA\u9C7C\u7FA4\u534F\u4F5C",
+  "bots.groups.manageMembers": "\u7BA1\u7406\u9C7C\u7FA4\u6210\u5458\u2026",
+  "bots.groups.delete": "\u89E3\u6563\u9C7C\u7FA4\u2026",
+  "bots.groups.allBots": "\u5168\u4F53\u961F\u53CB",
+  "bots.groups.onlyWhenMentioned": "\u4EC5\u5728\u88AB @ \u63D0\u53CA\u65F6\u56DE\u590D",
+  "bots.groups.correctMention": "\u66F4\u6B63\u63D0\u53CA",
+  "bots.groups.unavailableBot": "\u6682\u4E0D\u53EF\u7528\u7684\u961F\u53CB",
+  "bots.groups.allBotsCount": "\u5168\u4F53\u961F\u53CB \xB7 {{count}}",
+  "bots.groups.mentionedCount": "\u5DF2\u63D0\u53CA {{count}} \u4F4D",
+  "bots.groups.suggestTwo": "{{a}} & {{b}}",
+  "bots.groups.suggestThree": "{{a}}\u3001{{b}} & {{c}}",
+  "bots.groups.suggestMore": "{{a}}\u3001{{b}} \u53CA\u5176\u4ED6 {{count}} \u4F4D",
+  // Bot settings & global settings
+  "settings.bots.enable": "\u542F\u7528\u5927\u80A5\u9C7C\u961F\u53CB",
+  "settings.bots.askNewHomeChat": "\u65B0\u5EFA\u4E3B\u5BF9\u8BDD\u524D\u8BE2\u95EE",
+  "settings.bots.soul": "\u7075\u9B42",
+  "settings.bots.soulRead": "\u9605\u8BFB",
+  "settings.bots.soulEdit": "\u7F16\u8F91",
+  "settings.bots.soulDoubleClickHint": "\u53CC\u51FB\u7F16\u8F91",
+  "settings.bots.soulEmpty": "\u5C1A\u672A\u6DFB\u52A0\u6307\u4EE4\u3002\u53CC\u51FB\u6216\u70B9\u51FB\u300C\u7F16\u8F91\u300D\u5373\u53EF\u7F16\u5199\u3002",
+  "settings.bots.soulConflict": "\u78C1\u76D8\u4E0A\u7684 SOUL.md \u5DF2\u88AB\u4FEE\u6539\u3002",
+  "settings.bots.memory": "\u8BB0\u5FC6",
+  "settings.bots.memoryFacts": "\u4E8B\u5B9E",
+  "settings.bots.memoryHistory": "\u5386\u53F2",
+  "settings.bots.memoryUndo": "\u64A4\u9500",
+  "settings.bots.addMemoryPlaceholder": "\u8BB0\u4F4F\u65B0\u5185\u5BB9\u2026",
+  "settings.bots.memoryEmpty": "\u5C1A\u672A\u4FDD\u5B58\u4EFB\u4F55\u4E8B\u5B9E\u3002",
+  "settings.bots.lookAround.title": "\u5DE1\u89C6",
+  "settings.bots.lookAround.looking": "\u5DE1\u89C6\u4E2D\u2026",
+  "settings.bots.tidyUp.title": "\u8BB0\u5FC6\u7EF4\u62A4",
+  "settings.bots.tidyUp.now": "\u7ACB\u5373\u6574\u7406",
+  "settings.bots.tidyUp.tidied": "\u5DF2\u6574\u7406\u8BB0\u5FC6 \xB7 {{count}} \u9879\u53D8\u66F4",
+  "settings.bots.tools.title": "\u5DE5\u5177",
+  "settings.bots.tools.add": "\u6DFB\u52A0\u5DE5\u5177",
+  "settings.bots.skills.title": "\u6280\u80FD",
+  "settings.bots.whoCanAsk.title": "\u8C01\u53EF\u4EE5\u63D0\u95EE",
+  "settings.bots.notifications.title": "\u901A\u77E5",
+  "settings.bots.notifications.needsPermission": "\u9700\u8981\u6743\u9650",
+  "settings.bots.notifications.taskComplete": "\u4EFB\u52A1\u5B8C\u6210",
+  "settings.bots.notifications.couldNotFinish": "\u672A\u80FD\u5B8C\u6210",
+  "settings.bots.saving": "\u4FDD\u5B58\u4E2D\u2026",
+  "settings.bots.unsaved": "\u672A\u4FDD\u5B58",
+  "settings.bots.saved": "\u5DF2\u4FDD\u5B58"
+});
+var LOCALES = Object.freeze({
+  "zh-CN": ZH_CN,
+  "en-US": EN_US
+});
+function normalizeLocale(locale) {
+  if (typeof locale !== "string" || !locale.trim()) {
+    return "zh-CN";
+  }
+  const lower = locale.trim().toLowerCase();
+  return lower.startsWith("zh") ? "zh-CN" : "en-US";
+}
+function lookupTemplate(dict, key, params) {
+  if (params && typeof params.count === "number") {
+    const suffix = params.count === 1 ? "_one" : "_other";
+    if (Object.prototype.hasOwnProperty.call(dict, `${key}${suffix}`)) {
+      return dict[`${key}${suffix}`];
+    }
+  }
+  return Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : null;
+}
+function createTranslator(locale = "zh-CN") {
+  const normalized = normalizeLocale(locale);
+  return (key, fallbackOrParams, maybeParams) => {
+    const hasFallback = typeof fallbackOrParams === "string";
+    const params = hasFallback ? maybeParams ?? {} : fallbackOrParams ?? {};
+    const primary = LOCALES[normalized] ?? ZH_CN;
+    const found = lookupTemplate(primary, key, params) ?? lookupTemplate(EN_US, key, params);
+    const template = found ?? (hasFallback ? fallbackOrParams : key);
+    return template.replace(/\{\{(\w+)\}\}/g, (_match, name2) => params[name2] === void 0 || params[name2] === null ? "" : String(params[name2]));
+  };
+}
+
+// vendor/dsh-whale/src/client/components/BotConfirmDialogs.tsx
+var import_react13 = require("react");
+var import_react_dom8 = require("react-dom");
+
+// vendor/dsh-whale/src/client/store/bots-store.ts
+var import_react = require("react");
 
 // vendor/dsh-whale/src/shared/bot-avatar-color.js
 var DEFAULT_BOT_AVATAR_COLOR = "#b3dbf4";
@@ -2413,6 +2490,9 @@ var BotsStore = class {
     if (knownSession) this.host.openSession?.(knownSession, { botId });
     try {
       const res = await callBotRpc(RPC_METHODS2.CHAT_OPEN, { botId });
+      if (this.state.activeBotId !== botId) {
+        return;
+      }
       const sid = res?.sessionId ?? knownSession;
       if (sid) {
         this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: sid });
@@ -2519,12 +2599,20 @@ var BotsStore = class {
     this.setState({ chatFolds: next });
   }
   setActiveSelection(sel) {
-    this.setState((prev) => ({
-      ...prev,
-      activeBotId: sel.botId !== void 0 ? sel.botId : prev.activeBotId,
-      activeGroupId: sel.groupId !== void 0 ? sel.groupId : prev.activeGroupId,
-      activeSessionId: sel.sessionId !== void 0 ? sel.sessionId : prev.activeSessionId
-    }));
+    this.setState((prev) => {
+      const nextBotId = sel.botId !== void 0 ? sel.botId : prev.activeBotId;
+      const nextGroupId = sel.groupId !== void 0 ? sel.groupId : prev.activeGroupId;
+      const nextSessionId = sel.sessionId !== void 0 ? sel.sessionId : prev.activeSessionId;
+      if (nextBotId === prev.activeBotId && nextGroupId === prev.activeGroupId && nextSessionId === prev.activeSessionId) {
+        return prev;
+      }
+      return {
+        ...prev,
+        activeBotId: nextBotId,
+        activeGroupId: nextGroupId,
+        activeSessionId: nextSessionId
+      };
+    });
   }
   setRightPanelTab(tab, botId) {
     this.setState((prev) => ({
@@ -11517,7 +11605,8 @@ function BotConversationFrame({
     if (mainSessionId) {
       botsStore.setActiveSelection({
         sessionId: mainSessionId,
-        ...bot ? { botId: bot.id, groupId: null } : {}
+        botId: bot ? bot.id : null,
+        groupId: null
       });
     }
   }, [mainSessionId, bot]);
@@ -24422,18 +24511,14 @@ function readMainSessionId(sessions) {
   }
   return null;
 }
-function findBotForSession(sessionId) {
-  const state = botsStore.getState();
-  for (const bot of state.bots) {
-    if (bot.chatSessionId === sessionId || bot.homeSessionId === sessionId) {
-      return bot;
-    }
-    const tree = state.chatsByBot[bot.id];
-    if (tree?.chats.some((chat) => chat.sessionId === sessionId || chat.chatId === sessionId)) {
-      return bot;
-    }
+function readActivePanelId(layout) {
+  try {
+    const raw = layout?.panelInfo?.getSnapshot?.()?.activePanelId;
+    return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
+  } catch (err) {
+    console.warn("[dsh-whale] Failed to inspect active main panel", err);
+    return null;
   }
-  return null;
 }
 function registerSlotWhenDeclared(ctx, slotName, register, label) {
   ctx.effect(() => {
@@ -24802,21 +24887,49 @@ function apply(ctx) {
     };
   }, "dsh-whale: botsStore lifecycle");
   ctx.effect(() => {
-    const syncMainSession = () => {
+    let prevState = botsStore.getState();
+    let lastMainSessionId;
+    let lastPanelId;
+    const syncMainSelection = (force = false) => {
+      const currentState = botsStore.getState();
       const sid = readMainSessionId(sessions);
-      if (!sid) {
+      const panelId = readActivePanelId(ctx.layout);
+      const dataChanged = currentState.loaded !== prevState.loaded || currentState.bots !== prevState.bots || currentState.chatsByBot !== prevState.chatsByBot;
+      prevState = currentState;
+      if (!force && sid === lastMainSessionId && panelId === lastPanelId && !dataChanged) {
         return;
       }
-      const matched = findBotForSession(sid);
+      lastMainSessionId = sid;
+      lastPanelId = panelId;
+      if (!force && dataChanged && sid === null && panelId === null) {
+        return;
+      }
+      const next = resolveActiveBotSelection({
+        activePanelId: panelId,
+        mainSessionId: sid,
+        bots: currentState.bots,
+        chatsByBot: currentState.chatsByBot,
+        prevActiveGroupId: currentState.activeGroupId,
+        prevActiveBotId: currentState.activeBotId,
+        settingsRouteBotId: currentState.settingsRoute?.host === "page" ? currentState.settingsRoute.botId : null
+      });
+      if (next.closePageSettings && currentState.settingsRoute?.host === "page") {
+        botsStore.closeBotSettings();
+      }
       botsStore.setActiveSelection({
-        sessionId: sid,
-        ...matched ? { botId: matched.id, groupId: null } : {}
+        botId: next.botId,
+        groupId: next.groupId,
+        sessionId: next.sessionId
       });
     };
-    syncMainSession();
-    const unsub = sessions?.list?.subscribe?.(syncMainSession);
+    syncMainSelection(true);
+    const unsubSessions = sessions?.list?.subscribe?.(() => syncMainSelection(true));
+    const unsubPanel = ctx.layout?.panelInfo?.subscribe?.(() => syncMainSelection(true));
+    const unsubStore = botsStore.subscribe(() => syncMainSelection(false));
     return () => {
-      unsub?.();
+      unsubSessions?.();
+      unsubPanel?.();
+      unsubStore();
     };
   }, "dsh-whale: active session sync");
   registerSlotWhenDeclared(
