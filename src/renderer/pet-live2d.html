@@ -64,6 +64,11 @@
         line-height: 1;
       }
       #pet-chat .pc-x:hover, #pet-chat .pc-tool:hover { opacity: 1; }
+      #pet-chat .pc-x:focus-visible, #pet-chat .pc-tool:focus-visible, #pet-chat .pc-send:focus-visible {
+        outline: 2px solid var(--dsw-alias-state-business-primary);
+        outline-offset: 1px;
+        border-radius: 6px;
+      }
       /* Composer-style model seat; the menu is portaled outside this card. */
       #pet-chat .pc-models {
         display: flex;
@@ -250,8 +255,8 @@
       #pet-chat textarea:focus { border-color: var(--dsw-alias-state-business-primary); }
       #pet-chat .pc-send {
         flex: none;
-        width: 26px;
-        height: 26px;
+        width: 28px;
+        height: 28px;
         border: 0;
         border-radius: 50%;
         display: inline-flex;

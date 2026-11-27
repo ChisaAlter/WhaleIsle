@@ -183,6 +183,11 @@ function wireDialogue() {
 }
 wireDialogue();
 
+/** @param {any} entry */
+function bubbleWidthPad(entry) {
+  return entry.pinned ? 36 : 18;
+}
+
 function drawBubble(now) {
   if (!bubble) {
     bubbleCloseRect = null;
@@ -235,7 +240,7 @@ function drawBubble(now) {
     iw = Math.max(1, Math.round(sticker.naturalWidth * k));
     ih = Math.max(1, Math.round(sticker.naturalHeight * k));
   }
-  const bw = Math.ceil(Math.max(iw, ...lines.map((l) => ctx2d.measureText(l).width))) + 18;
+  const bw = Math.ceil(Math.max(iw, ...lines.map((l) => ctx2d.measureText(l).width))) + bubbleWidthPad(bubble);
   const bh = lines.length * 16 + 12 + (ih ? ih + 4 : 0);
   const bx = Math.min(Math.max(headX - bw / 2, host.x + 4), host.x + host.width - bw - 4);
   let by = bounds.y - 12 - bh - 8;

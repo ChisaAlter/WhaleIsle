@@ -62,10 +62,10 @@ function renderVersionLead(installed, current) {
 
 function bindVersionActions(root) {
   root.querySelectorAll('[data-install-tag]').forEach((button) => {
-    button.addEventListener('click', () => installTag(button.dataset.installTag, button.dataset.installKind));
+    button.addEventListener('click', () => installTag(button.dataset.installTag, button.dataset.installKind, button));
   });
   root.querySelectorAll('[data-delta-tag]').forEach((button) => {
-    button.addEventListener('click', () => installDelta(button.dataset.deltaTag));
+    button.addEventListener('click', () => installDelta(button.dataset.deltaTag, button));
   });
 }
 

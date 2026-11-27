@@ -44,8 +44,11 @@
       }
       return painted.slice(0, 7);
     }
-    const match = painted.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*([\d.]+)/i);
+    const match = painted.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/i);
     if (!match) {
+      return '';
+    }
+    if (match[4] !== undefined && Number(match[4].replace('%', '')) === 0) {
       return '';
     }
     const hex = (value) => Math.max(0, Math.min(255, Math.round(Number(value)))).toString(16).padStart(2, '0');
@@ -134,6 +137,10 @@
       #${CONTROLS_ID} button[data-act="close"]:hover {
         background: #e81123;
         color: #fff;
+      }
+      #${CONTROLS_ID} button:focus-visible {
+        outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-static-deepseek-500, #4176e6));
+        outline-offset: -2px;
       }
       /* The conversation-header corner expander (new seat in the rc.1 merge)
          duplicates the titlebar's own right-panel toggle. */
@@ -310,10 +317,16 @@
     placeControls(host);
     document.documentElement.style.setProperty('--dshd-wco-controls', `${windowControlsRight()}px`);
     document.documentElement.style.setProperty('--dshd-wco-caption', `${CAPTION_HEIGHT}px`);
+    const winAny = /** @type {any} */ (window);
     if (window.__dshShellMaximized) {
       document.documentElement.setAttribute('data-window-maximized', '');
     } else {
       document.documentElement.removeAttribute('data-window-maximized');
+    }
+    if (winAny.__dshShellFullscreen) {
+      document.documentElement.setAttribute('data-fullscreen', '');
+    } else {
+      document.documentElement.removeAttribute('data-fullscreen');
     }
     applyControlTheme(host, Boolean(window.__dshShellMaximized));
     const sample = { bg: opaqueBg(document.body) };
@@ -331,6 +344,13 @@
       timer = window.setTimeout(measure, 80);
     };
     window.addEventListener('resize', schedule);
+    const watchDpr = () => {
+      if (typeof window.matchMedia !== 'function') return;
+      const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      const onDpr = () => { schedule(); watchDpr(); };
+      mq.addEventListener?.('change', onDpr, { once: true });
+    };
+    watchDpr();
     // A page rebuild between navigations can drop the injected nodes; grow
     // them back instead of staying chromeless until the next re-assert.
     if (typeof MutationObserver === 'function') {
@@ -349,6 +369,7 @@
     if (window.shell && typeof window.shell.onWindowState === 'function') {
       window.shell.onWindowState((state) => {
         window.__dshShellMaximized = Boolean(state && state.maximized);
+        (/** @type {any} */ (window)).__dshShellFullscreen = Boolean(state && state.fullscreen);
         measure();
       });
     }
@@ -358,6 +379,7 @@
     if (window.shell && typeof window.shell.getWindowState === 'function') {
       Promise.resolve(window.shell.getWindowState()).then((state) => {
         window.__dshShellMaximized = Boolean(state && state.maximized);
+        (/** @type {any} */ (window)).__dshShellFullscreen = Boolean(state && state.fullscreen);
         measure();
       }).catch((error) => { console.warn('[src/main/harness-chrome-inject.js] background operation failed', error); });
     }

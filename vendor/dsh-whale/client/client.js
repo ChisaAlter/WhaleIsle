@@ -9799,6 +9799,7 @@ function NewBotDialog({ open, draft, onClose }) {
   const purposeRef = (0, import_react12.useRef)(null);
   const chipsBarRef = (0, import_react12.useRef)(null);
   const avatarBtnRef = (0, import_react12.useRef)(null);
+  const modalRef = (0, import_react12.useRef)(null);
   (0, import_react12.useEffect)(() => {
     if (!activeChipPopover) {
       return void 0;
@@ -10008,17 +10009,48 @@ function NewBotDialog({ open, draft, onClose }) {
       setSubmitting(false);
     }
   };
-  const handleKeyDown = (event) => {
-    if (event.key === "Escape") {
-      if (activeChipPopover) {
-        event.stopPropagation();
-        setActiveChipPopover(null);
+  (0, import_react12.useEffect)(() => {
+    if (!open) {
+      return void 0;
+    }
+    const handleDocKey = (event) => {
+      if (event.key === "Escape") {
+        if (submitting) {
+          event.preventDefault();
+          return;
+        }
+        if (activeChipPopover) {
+          event.stopPropagation();
+          setActiveChipPopover(null);
+          return;
+        }
+        if (!pickerAnchor) {
+          event.preventDefault();
+          onClose();
+        }
         return;
       }
-      if (!pickerAnchor) {
-        onClose();
+      if (event.key !== "Tab" || pickerAnchor || !modalRef.current) {
+        return;
       }
-    } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      const focusables = Array.from(
+        modalRef.current.querySelectorAll(
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hidden && !el.closest("[hidden], [inert]"));
+      if (focusables.length === 0) {
+        return;
+      }
+      const idx = focusables.indexOf(document.activeElement);
+      const next = idx < 0 ? event.shiftKey ? focusables.length - 1 : 0 : (idx + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length;
+      event.preventDefault();
+      focusables[next]?.focus();
+    };
+    document.addEventListener("keydown", handleDocKey);
+    return () => document.removeEventListener("keydown", handleDocKey);
+  }, [activeChipPopover, onClose, open, pickerAnchor, submitting]);
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void handleSubmit();
     }
@@ -10046,13 +10078,14 @@ function NewBotDialog({ open, draft, onClose }) {
       {
         className: "dsh-bots-backdrop",
         onMouseDown: (e) => {
-          if (e.target === e.currentTarget) {
+          if (!submitting && e.target === e.currentTarget) {
             onClose();
           }
         },
         children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
           "div",
           {
+            ref: modalRef,
             role: "dialog",
             "aria-modal": "true",
             "aria-label": tr("bots.new.title", "New bot"),
@@ -10079,8 +10112,11 @@ function NewBotDialog({ open, draft, onClose }) {
                 {
                   type: "button",
                   className: "dsh-bots-icon-btn",
-                  "aria-label": "Close",
-                  onClick: onClose,
+                  "aria-label": tr("bots.common.close", zh ? "\u5173\u95ED" : "Close"),
+                  disabled: submitting,
+                  onClick: () => {
+                    if (!submitting) onClose();
+                  },
                   style: { position: "absolute", top: 12, right: 12, background: "var(--dsw-alias-bg-layer-2)" },
                   children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(IconX, { size: 16 })
                 }
@@ -10157,7 +10193,10 @@ function NewBotDialog({ open, draft, onClose }) {
                     {
                       type: "button",
                       className: "dsh-bots-link-btn",
-                      onClick: () => botsStore.openModal({ kind: "import", initialTab: "apps" }),
+                      disabled: submitting,
+                      onClick: () => {
+                        if (!submitting) botsStore.openModal({ kind: "import", initialTab: "apps" });
+                      },
                       children: zh ? "\u5BFC\u5165" : "Import"
                     }
                   )
@@ -10372,7 +10411,10 @@ function NewBotDialog({ open, draft, onClose }) {
                     type: "button",
                     className: "dsh-bots-btn",
                     "data-variant": "ghost",
-                    onClick: () => botsStore.openModal({ kind: "templates" }),
+                    disabled: submitting,
+                    onClick: () => {
+                      if (!submitting) botsStore.openModal({ kind: "templates" });
+                    },
                     children: [
                       /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(IconSparkles, { size: 13 }),
                       /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { children: tr("bots.new.fromTemplate", "Templates") })
@@ -10380,7 +10422,9 @@ function NewBotDialog({ open, draft, onClose }) {
                   }
                 ),
                 /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { type: "button", className: "dsh-bots-btn", onClick: onClose, children: tr("bots.new.cancel", "Cancel") }),
+                  /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { type: "button", className: "dsh-bots-btn", disabled: submitting, onClick: () => {
+                    if (!submitting) onClose();
+                  }, children: tr("bots.new.cancel", "Cancel") }),
                   /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
                     "button",
                     {
@@ -22802,6 +22846,7 @@ function HighlightedSegments({ segments }) {
 function BotContextMenu({
   bot,
   position,
+  triggerRef,
   onClose,
   onStartRename
 }) {
@@ -22809,6 +22854,9 @@ function BotContextMenu({
   const menuRef = (0, import_react36.useRef)(null);
   (0, import_react36.useEffect)(() => {
     const handleDown = (event) => {
+      if (event.button === 2 && triggerRef?.current?.contains(event.target)) {
+        return;
+      }
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
       }
@@ -22824,12 +22872,12 @@ function BotContextMenu({
       document.removeEventListener("mousedown", handleDown);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [onClose]);
+  }, [onClose, triggerRef]);
   if (typeof document === "undefined") {
     return null;
   }
-  const left = Math.min(position.x, window.innerWidth - 210);
-  const top = Math.min(position.y, window.innerHeight - 280);
+  const left = Math.max(8, Math.min(position.x, window.innerWidth - 210));
+  const top = Math.max(8, Math.min(position.y, window.innerHeight - 280));
   return (0, import_react_dom13.createPortal)(
     /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)(
@@ -23246,6 +23294,7 @@ function BotSidebarCard({
           {
             bot,
             position: menuPos,
+            triggerRef: cardRef,
             onClose: () => setMenuPos(null),
             onStartRename: () => setRenaming(true)
           }

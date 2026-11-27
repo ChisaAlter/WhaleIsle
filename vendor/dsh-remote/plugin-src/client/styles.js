@@ -18,8 +18,8 @@ const CSS = `
 .dshr-error { color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 1.5; }
 .dshr-ok { color: var(--dsw-alias-state-success-primary); font-size: 12px; }
 .dshr-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dshr-mono { font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
-.dshr-mono input { font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+.dshr-mono { font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); }
+.dshr-mono input { font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); }
 .dshr-iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
 .dshr-iconBtn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dshr-iconBtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -28,7 +28,7 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) { .dshr-miniSpinner { animation: none; } }
 
 .dshr-machineList { display: flex; flex-direction: column; gap: 6px; }
-.dshr-machine { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.dshr-machine { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
 .dshr-machine[data-current="true"] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-interactive-bg-active); }
 .dshr-machineMeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .dshr-machineName { font-weight: 600; font-size: 13px; }
@@ -72,10 +72,10 @@ const CSS = `
 .dshr-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--dsw-alias-label-primary); }
 .dshr-editorHead { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); font-size: 12px; }
 .dshr-editorBody { flex: 1; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
-.dshr-editorText { flex: 1; width: 100%; box-sizing: border-box; border: none; outline: none; resize: none; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 1.55; font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
-.dshr-editorView { font-size: 13px; line-height: 1.55; font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+.dshr-editorText { flex: 1; width: 100%; box-sizing: border-box; border: none; outline: none; resize: none; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 1.55; font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+.dshr-editorView { font-size: 13px; line-height: 1.55; font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
 
-.dshr-audit { max-height: 220px; overflow-y: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px 10px; font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; }
+.dshr-audit { max-height: 220px; overflow-y: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px 10px; font-family: var(--ds-font-family-code, var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)); font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; }
 .dshr-emptyState { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 16px; text-align: center; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .dshr-warn { color: var(--dsw-alias-state-warn-primary); }
 `

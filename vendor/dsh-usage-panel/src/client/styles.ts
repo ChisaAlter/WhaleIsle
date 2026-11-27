@@ -160,7 +160,8 @@ export const CSS = [
   'button.dsw-ust-bill-commit{height:26px;margin-left:auto;flex-shrink:0;border:1px solid var(--dsw-static-deepseek-500);background:color-mix(in srgb, var(--dsw-static-deepseek-500) 12%, transparent);color:var(--dsw-alias-label-primary);border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;padding:3px 12px;cursor:pointer;font-weight:600}',
   '.dsw-ust-bill-commit:disabled{opacity:0.45;cursor:default}',
   '.dsw-ust-bill-commit-row{display:flex;justify-content:flex-end;margin-top:2px}',
-  '.dsw-ust-bill-prices{display:grid;grid-template-columns:56px repeat(3,minmax(120px,1fr));gap:10px;align-items:center;max-width:520px}',
+  '.dsw-ust-bill-prices{display:grid;grid-template-columns:56px repeat(3,minmax(0,1fr));gap:10px;align-items:center;max-width:520px}',
+  '@media (max-width:520px){.dsw-ust-bill-prices{grid-template-columns:1fr}}',
   '.dsw-ust-bill-prices.is-idle{padding-top:6px;border-top:1px dashed var(--dsw-alias-border-l2)}',
   '.dsw-ust-bill-period{font-size:12px;line-height:18px;font-weight:600;color:var(--dsw-alias-label-secondary)}',
   '.dsw-ust-bill-period.is-peak{color:var(--dsw-alias-state-error-primary)}',
@@ -192,6 +193,6 @@ export const CSS = [
   '.dsw-ust-bill-footer{display:flex;justify-content:flex-end;gap:8px}',
   '.dsw-ust-bill-cancel{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;padding:4px 12px;cursor:pointer}',
   '.dsw-ust-bill-cancel:disabled{opacity:0.5;cursor:default}',
-  'button.dsw-ust-bill-save{height:26px;border:none;background:var(--dsw-static-deepseek-500);color:var(--dsw-alias-label-on-color);border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;padding:4px 12px;cursor:pointer;font-weight:600}',
+  'button.dsw-ust-bill-save{height:26px;border:none;background:var(--dsw-alias-button-primary-fill, var(--dsw-static-deepseek-500));color:var(--dsw-alias-label-primary-foreground, var(--dsw-alias-label-on-color));border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;padding:4px 12px;cursor:pointer;font-weight:600}',
   '.dsw-ust-bill-save:disabled{opacity:0.5;cursor:default}',
 ].join('\n')

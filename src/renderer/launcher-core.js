@@ -148,6 +148,8 @@ function appConfirm({ title, body, confirmText = '确定', cancelText = '取消'
   cancelBtn.textContent = cancelText || '';
   cancelBtn.hidden = loading || cancelText === null;
   dialogLoading = loading;
+  const shell = document.querySelector('.shell');
+  if (shell && 'inert' in shell) shell.inert = true;
   mask.classList.toggle('is-loading', loading);
   mask.hidden = false;
   const previousFocus = document.activeElement;
@@ -157,6 +159,7 @@ function appConfirm({ title, body, confirmText = '确定', cancelText = '取消'
       confirmResolve = null;
       dialogLoading = false;
       mask.hidden = true;
+      if (shell && 'inert' in shell) shell.inert = false;
       if (previousFocus && typeof previousFocus.focus === 'function') {
         previousFocus.focus();
       }

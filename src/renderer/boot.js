@@ -220,6 +220,9 @@ function applyPluginBootCopy(payload) {
     setHint(payload.error || '运行时已就绪，但客户端插件未能完成装载。');
     showFailure(payload.error || '运行时已就绪，但客户端插件未能完成装载。');
     document.body.dataset.state = 'error';
+    if (actionsEl) actionsEl.hidden = false;
+    updateRetryButton(false, false);
+    if (openLauncherEl) openLauncherEl.hidden = false;
     return;
   }
   statusTextEl.textContent = payload.total > 0
@@ -284,10 +287,21 @@ function failureText(failure, snapshot) {
  */
 function updateRetryButton(runtimeFailure, recoveryBusy) {
   if (!retryEl) return;
+  if (retryEl.getAttribute('aria-busy') === 'true') {
+    retryEl.disabled = true;
+    return;
+  }
   retryEl.textContent = globalThis.BootRecovery?.retryActionLabel
     ? globalThis.BootRecovery.retryActionLabel(runtimeFailure)
     : (runtimeFailure ? '立即重启' : '重试');
   retryEl.disabled = recoveryBusy;
+}
+
+/** @param {HTMLElement | null} button @param {string} label */
+function setButtonLabelIfIdle(button, label) {
+  if (button && button.getAttribute('aria-busy') !== 'true') {
+    button.textContent = label;
+  }
 }
 
 function renderState(snapshot) {
@@ -325,14 +339,16 @@ function renderState(snapshot) {
 
   actionsEl.hidden = !canAct;
   updateRetryButton(runtimeFailure, recoveryBusy);
-  saveLogEl.textContent = globalThis.BootRecovery?.downloadLogLabel
-    ? globalThis.BootRecovery.downloadLogLabel()
-    : '下载日志';
+  setButtonLabelIfIdle(
+    saveLogEl,
+    globalThis.BootRecovery?.downloadLogLabel ? globalThis.BootRecovery.downloadLogLabel() : '下载日志',
+  );
   // Plugin-level recovery lives on the launcher Recovery Board; the boot
   // page only bridges there on a settled failure.
-  openLauncherEl.textContent = globalThis.BootRecovery?.openLauncherLabel
-    ? globalThis.BootRecovery.openLauncherLabel()
-    : '回启动器排查';
+  setButtonLabelIfIdle(
+    openLauncherEl,
+    globalThis.BootRecovery?.openLauncherLabel ? globalThis.BootRecovery.openLauncherLabel() : '回启动器排查',
+  );
   const recoveryStatus = snapshot?.recovery?.status;
   openLauncherEl.hidden = !(globalThis.BootRecovery?.showLauncherBridge
     ? globalThis.BootRecovery.showLauncherBridge(state, recoveryStatus)
@@ -401,8 +417,11 @@ function appendLog(line) {
 if (retryEl) {
   const retryButton = retryEl;
   retryButton.addEventListener('click', () => {
+    if (retryButton.getAttribute('aria-busy') === 'true') return;
     actionNotice = '';
     retryButton.disabled = true;
+    retryButton.setAttribute('aria-busy', 'true');
+    const restoreLabel = (/** @type {any} */ (window)).shellFeedback.buttonBusy(retryButton, '重启中…');
     cancelRestartEl.hidden = true;
     renderState({ state: 'starting', recovery: { status: 'inactive' } });
     invoke('restart')
@@ -412,7 +431,6 @@ if (retryEl) {
           return;
         }
         const message = snapshot && snapshot.error ? String(snapshot.error) : '重启请求被拒绝，请重试';
-        retryButton.disabled = false;
         renderState({
           state: 'error',
           error: message,
@@ -423,7 +441,6 @@ if (retryEl) {
         });
       })
       .catch((error) => {
-        retryButton.disabled = false;
         renderState({
           state: 'error',
           error: error.message || String(error),
@@ -432,6 +449,15 @@ if (retryEl) {
             message: error.message || String(error),
           },
         });
+      })
+      .finally(() => {
+        restoreLabel();
+        retryButton.removeAttribute('aria-busy');
+        const snap = /** @type {any} */ (latestSnapshot);
+        updateRetryButton(
+          snap?.state === 'error' && snap?.failure?.phase === 'runtime',
+          snap?.recovery?.status === 'restarting',
+        );
       });
   });
 }

@@ -82,8 +82,8 @@
         "artifacts": [
           "lib/client.js"
         ],
-        "sourceHash": "8998e2235619252a547b7a960042b71135e3c1b676934be48ad9165293b68bb4",
-        "artifactHash": "fd7a2ddb032f9a6e5d93224e5929e002d0c16cde8135627dbef014160e5dd50b"
+        "sourceHash": "01667e04ff026f6acfe75b91687a7fb382f635c8ac6cfccf994cab781aab4174",
+        "artifactHash": "4826314e3269196e76b4035309a657fc892dc1ec1fae4b00b8fca0318e96466a"
       },
       "recordCommands": [
         [
@@ -137,7 +137,7 @@
           "lib/host",
           "lib/shared"
         ],
-        "sourceHash": "5e3392334dbd5bef3b2a89743d81a8c86dcf06aa4b1b14ae155a5f7ab136b897",
+        "sourceHash": "8915490cdaa7976a1e09fcf2e909c50d50a6f2df35c8a6dbc26a40d2964aa46e",
         "artifactHash": "527a3733b2ff9cf91d9600070fb4afd1cad1b8e6c2d4ccb104b193b0dbe2b16f"
       }
     },

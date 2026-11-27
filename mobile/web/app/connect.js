@@ -54,6 +54,10 @@ let connectingServerId = '';
 
 let pendingConnect = null;
 
+let forgetConfirmId = '';
+/** @type {ReturnType<typeof setTimeout> | null} */
+let forgetConfirmTimer = null;
+
 export async function connectSaved(serverId) {
   return runInitialConnect(async (signal) => {
     const api = await loadChisaCodeApi();
@@ -142,10 +146,26 @@ export function renderSavedComputers() {
     const forget = document.createElement('button');
     forget.type = 'button';
     forget.className = 'saved-forget';
-    forget.textContent = '忘记';
+    const armed = forgetConfirmId === entry.serverId;
+    forget.textContent = armed ? '确认忘记' : '忘记';
     forget.disabled = connectBusy;
-    forget.setAttribute('aria-label', `忘记 ${entry.computerName}`);
+    forget.setAttribute('aria-label', armed ? `确认忘记 ${entry.computerName}` : `忘记 ${entry.computerName}`);
     forget.addEventListener('click', () => {
+      if (forgetConfirmId !== entry.serverId) {
+        forgetConfirmId = entry.serverId;
+        if (forgetConfirmTimer !== null) clearTimeout(forgetConfirmTimer);
+        forgetConfirmTimer = setTimeout(() => {
+          if (forgetConfirmId === entry.serverId) {
+            forgetConfirmId = '';
+            renderSavedComputers();
+          }
+        }, 4000);
+        renderSavedComputers();
+        return;
+      }
+      if (forgetConfirmTimer !== null) clearTimeout(forgetConfirmTimer);
+      forgetConfirmTimer = null;
+      forgetConfirmId = '';
       clearSecret(entry.serverId);
       renderSavedComputers();
     });
@@ -155,6 +175,9 @@ export function renderSavedComputers() {
 }
 
 export function forceLogout(message, { forget = true } = {}) {
+  if (forgetConfirmTimer !== null) clearTimeout(forgetConfirmTimer);
+  forgetConfirmTimer = null;
+  forgetConfirmId = '';
   const serverId = state.chisacode?.serverId;
   try {
     state.chisacode?.dispose?.();
@@ -476,8 +499,10 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
   if (hasOfferFragment(location.hash)) {
     window.history.replaceState(null, '', `${location.pathname}${location.search}`);
   }
-  deviceLine.replaceChildren();
-  deviceLine.append(document.createTextNode(`${reconnected ? '已重连' : '已配对'} ${paired.computerName}`));
+  deviceLine.replaceChildren(
+    h('span', { class: 'live', 'aria-hidden': 'true' }),
+    document.createTextNode(`${reconnected ? '已重连' : '已配对'} ${paired.computerName}`),
+  );
   showBanner(loadError);
   if (loadError) operationError(loadError, runReconnectResync);
   renderSessions();

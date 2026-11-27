@@ -2691,6 +2691,7 @@ ${DISPATCH_SHARED_CSS}
         if (!open || typeof window === 'undefined') return undefined
         const onPointerDown = (event) => {
           if (menuRef.current && typeof menuRef.current.contains === 'function' && menuRef.current.contains(event.target)) return
+          if (event.button === 2 && activeMenu && activeMenu.trigger && typeof activeMenu.trigger.contains === 'function' && activeMenu.trigger.contains(event.target)) return
           onClose()
         }
         const onKeyDown = (event) => {
@@ -2707,7 +2708,7 @@ ${DISPATCH_SHARED_CSS}
           window.removeEventListener('scroll', onScroll, true)
           window.removeEventListener('resize', onScroll)
         }
-      }, [open, onClose])
+      }, [open, onClose, activeMenu])
 
       if (!presence.mounted || !activeTask) return null
       const accepted = activeTask.status === 'resolved'
@@ -3222,7 +3223,7 @@ ${DISPATCH_SHARED_CSS}
                                 onContextMenu: (e) => {
                                   e.preventDefault()
                                   e.stopPropagation()
-                                  setMenu({ taskId: task.id, x: e.clientX || 0, y: e.clientY || 0 })
+                                  setMenu({ taskId: task.id, x: e.clientX || 0, y: e.clientY || 0, trigger: e.currentTarget })
                                 },
                               },
                               h('span', { className: 'pj-task-icon' }, h(ThreadGlyph, { status: task.status })),

@@ -257,6 +257,10 @@ function renderModelPickerSheet() {
 }
 
 export function openPicker(kind) {
+  if (state.pickerSheet === kind) {
+    closePicker();
+    return;
+  }
   if (!state.sessionId) {
     showBanner('先打开一个会话，再选择权限或模型。');
     return;

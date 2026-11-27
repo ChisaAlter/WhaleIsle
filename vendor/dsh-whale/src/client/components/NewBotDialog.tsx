@@ -107,6 +107,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   const purposeRef = useRef<HTMLTextAreaElement | null>(null);
   const chipsBarRef = useRef<HTMLDivElement | null>(null);
   const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!activeChipPopover) {
@@ -337,17 +338,51 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     }
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      if (activeChipPopover) {
-        event.stopPropagation();
-        setActiveChipPopover(null);
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const handleDocKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (submitting) {
+          event.preventDefault();
+          return;
+        }
+        if (activeChipPopover) {
+          event.stopPropagation();
+          setActiveChipPopover(null);
+          return;
+        }
+        if (!pickerAnchor) {
+          event.preventDefault();
+          onClose();
+        }
         return;
       }
-      if (!pickerAnchor) {
-        onClose();
+      if (event.key !== 'Tab' || pickerAnchor || !modalRef.current) {
+        return;
       }
-    } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      const focusables = Array.from(
+        modalRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hidden && !el.closest('[hidden], [inert]'));
+      if (focusables.length === 0) {
+        return;
+      }
+      const idx = focusables.indexOf(document.activeElement as HTMLElement);
+      const next = idx < 0
+        ? (event.shiftKey ? focusables.length - 1 : 0)
+        : (idx + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length;
+      event.preventDefault();
+      focusables[next]?.focus();
+    };
+    document.addEventListener('keydown', handleDocKey);
+    return () => document.removeEventListener('keydown', handleDocKey);
+  }, [activeChipPopover, onClose, open, pickerAnchor, submitting]);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void handleSubmit();
     }
@@ -386,12 +421,13 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     <div
       className="dsh-bots-backdrop"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) {
+        if (!submitting && e.target === e.currentTarget) {
           onClose();
         }
       }}
     >
       <div
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-label={tr('bots.new.title', 'New bot')}
@@ -414,8 +450,9 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
         <button
           type="button"
           className="dsh-bots-icon-btn"
-          aria-label="Close"
-          onClick={onClose}
+          aria-label={tr('bots.common.close', zh ? '关闭' : 'Close')}
+          disabled={submitting}
+          onClick={() => { if (!submitting) onClose(); }}
           style={{ position: 'absolute', top: 12, right: 12, background: 'var(--dsw-alias-bg-layer-2)' }}
         >
           <IconX size={16} />
@@ -494,7 +531,8 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
               <button
                 type="button"
                 className="dsh-bots-link-btn"
-                onClick={() => botsStore.openModal({ kind: 'import', initialTab: 'apps' })}
+                disabled={submitting}
+                onClick={() => { if (!submitting) botsStore.openModal({ kind: 'import', initialTab: 'apps' }); }}
               >
                 {zh ? '导入' : 'Import'}
               </button>
@@ -761,13 +799,14 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
             type="button"
             className="dsh-bots-btn"
             data-variant="ghost"
-            onClick={() => botsStore.openModal({ kind: 'templates' })}
+            disabled={submitting}
+            onClick={() => { if (!submitting) botsStore.openModal({ kind: 'templates' }); }}
           >
             <IconSparkles size={13} />
             <span>{tr('bots.new.fromTemplate', 'Templates')}</span>
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="dsh-bots-btn" onClick={onClose}>
+            <button type="button" className="dsh-bots-btn" disabled={submitting} onClick={() => { if (!submitting) onClose(); }}>
               {tr('bots.new.cancel', 'Cancel')}
             </button>
             <button

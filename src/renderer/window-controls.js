@@ -94,4 +94,9 @@ function syncWindowHairline() {
 }
 syncWindowHairline();
 window.addEventListener('resize', syncWindowHairline);
+(function watchWindowDpr() {
+  if (typeof window.matchMedia !== 'function') return;
+  const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  mq.addEventListener?.('change', () => { syncWindowHairline(); watchWindowDpr(); }, { once: true });
+})();
 document.querySelectorAll('.window-controls').forEach(mountWindowControls);

@@ -343,7 +343,7 @@ async function syncHarnessChrome(win, webContents = win.webContents) {
       } catch {
         const delay = CHROME_INJECT_RETRY_MS[attempt];
         if (delay === undefined) {
-          paintBackground(win, '#ffffff');
+          paintBackground(win, currentTheme().bg);
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -355,7 +355,7 @@ async function syncHarnessChrome(win, webContents = win.webContents) {
 }
 
 function prepareHarnessChrome(win) {
-  paintBackground(win, '#ffffff');
+  paintBackground(win, currentTheme().bg);
 }
 
 function applyAppTheme() {

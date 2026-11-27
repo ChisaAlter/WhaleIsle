@@ -163,6 +163,7 @@ export function RemoteSettingsSection({ t }) {
         </div>
         {formOpen || editing ? (
           <MachineForm
+            key={editing ? (editing.id || `import:${editing.host}:${editing.port || 22}:${editing.username || ''}`) : 'new'}
             t={t}
             machine={editing}
             onSaved={(result) => {
