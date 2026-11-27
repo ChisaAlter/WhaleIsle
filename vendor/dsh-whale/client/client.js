@@ -3881,6 +3881,10 @@ function MascotWebpTile({ mascotId, color }) {
     }
   );
 }
+function isCommittedUploadAvatar(avatar) {
+  const parsed = parseBotAvatar(avatar);
+  return parsed?.kind === "upload" && Boolean(parsed.version) && parsed.version !== "pending";
+}
 function isWhaleMascotId(id) {
   return Boolean(id && WHALE_BOT_MASCOT_IDS.includes(id));
 }
@@ -3921,14 +3925,20 @@ function AvatarPicker({
   const [error, setError] = (0, import_react5.useState)(null);
   const [draggingFile, setDraggingFile] = (0, import_react5.useState)(false);
   const [undoSnapshot, setUndoSnapshot] = (0, import_react5.useState)(null);
-  const [persistedUpload, setPersistedUpload] = (0, import_react5.useState)(null);
+  const [persistedUpload, setPersistedUpload] = (0, import_react5.useState)(() => isCommittedUploadAvatar(value.avatar) ? { avatar: value.avatar, dataUrl: value.uploadedImage?.dataUrl ?? null } : null);
   const [localUpload, setLocalUpload] = (0, import_react5.useState)(null);
   const [pendingUpload, setPendingUpload] = (0, import_react5.useState)(false);
+  const [committingUpload, setCommittingUpload] = (0, import_react5.useState)(false);
   const normalizedColor = normalizeBotAvatarColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
   const isTransparent = isTransparentBotAvatarColor(normalizedColor);
-  const hasExplicitColorRef = (0, import_react5.useRef)(Boolean(hasExplicitColor));
+  const hasExplicitColorRef = (0, import_react5.useRef)(Boolean(hasExplicitColor || value.explicitColor));
   const lastHexColorRef = (0, import_react5.useRef)(normalizeHexColor(normalizedColor) ?? DEFAULT_BOT_AVATAR_COLOR);
   const [customHexText, setCustomHexText] = (0, import_react5.useState)(isTransparent ? "" : normalizedColor);
+  (0, import_react5.useEffect)(() => {
+    if (hasExplicitColor || value.explicitColor) {
+      hasExplicitColorRef.current = true;
+    }
+  }, [hasExplicitColor, value.explicitColor]);
   (0, import_react5.useEffect)(() => {
     const hex = normalizeHexColor(normalizedColor);
     if (hex) {
@@ -3937,27 +3947,37 @@ function AvatarPicker({
     setCustomHexText(isTransparent ? "" : normalizedColor);
   }, [isTransparent, normalizedColor]);
   (0, import_react5.useEffect)(() => {
-    if (parsedKind === "upload" && parsedVersion && parsedVersion !== "pending") {
-      setPendingUpload(false);
+    if (committingUpload || !isCommittedUploadAvatar(value.avatar)) {
+      return;
     }
-  }, [parsedKind, parsedVersion]);
+    setPendingUpload(false);
+    setPersistedUpload((prev) => {
+      const nextDataUrl = localUpload?.dataUrl ?? value.uploadedImage?.dataUrl ?? (prev?.avatar === value.avatar ? prev.dataUrl : null);
+      if (prev?.avatar === value.avatar && prev.dataUrl === nextDataUrl) {
+        return prev;
+      }
+      return { avatar: value.avatar, dataUrl: nextDataUrl };
+    });
+  }, [committingUpload, localUpload?.dataUrl, value.avatar, value.uploadedImage?.dataUrl]);
   (0, import_react5.useEffect)(() => {
-    if (!botId || parsedKind !== "upload" || !parsedVersion || parsedVersion === "pending") {
+    const targetAvatar = persistedUpload?.avatar;
+    if (!botId || !targetAvatar || persistedUpload?.dataUrl || localUpload?.dataUrl) {
       return void 0;
     }
-    if (persistedUpload?.avatar === value.avatar) {
+    const targetParsed = parseBotAvatar(targetAvatar);
+    if (targetParsed?.kind !== "upload" || !targetParsed.version || targetParsed.version === "pending") {
       return void 0;
     }
     let cancelled = false;
-    void readUploadedAvatarDataUrl(botId, parsedVersion).then((dataUrl) => {
+    void readUploadedAvatarDataUrl(botId, targetParsed.version).then((dataUrl) => {
       if (!cancelled && dataUrl) {
-        setPersistedUpload({ avatar: value.avatar, dataUrl });
+        setPersistedUpload((prev) => prev?.avatar === targetAvatar ? { avatar: targetAvatar, dataUrl } : prev);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [botId, parsedKind, parsedVersion, persistedUpload?.avatar, value.avatar]);
+  }, [botId, localUpload?.dataUrl, persistedUpload?.avatar, persistedUpload?.dataUrl]);
   (0, import_react5.useEffect)(() => () => {
     if (undoTimerRef.current !== null) {
       window.clearTimeout(undoTimerRef.current);
@@ -3965,7 +3985,7 @@ function AvatarPicker({
   }, []);
   const effectiveUploadedImage = value.uploadedImage ?? localUpload;
   const effectiveUploadDataUrl = value.uploadedImage?.dataUrl ?? localUpload?.dataUrl ?? persistedUpload?.dataUrl ?? null;
-  const committedUploadAvatar = parsedKind === "upload" && parsedVersion && parsedVersion !== "pending" ? value.avatar : persistedUpload?.avatar;
+  const committedUploadAvatar = !committingUpload && isCommittedUploadAvatar(value.avatar) ? value.avatar : persistedUpload?.avatar;
   const effectiveUploadAvatar = value.uploadedImage?.dataUrl ? "upload:pending" : committedUploadAvatar ?? "upload:pending";
   const slides = (0, import_react5.useMemo)(() => {
     const ids = group === "whale" ? WHALE_BOT_MASCOT_IDS : PICKABLE_BOT_MASCOT_IDS;
@@ -4004,47 +4024,89 @@ function AvatarPicker({
       onChange({
         avatar: mascotAvatar(firstId),
         avatarColor: hasExplicitColorRef.current ? normalizedColor : recommendedMascotColor(firstId) ?? normalizedColor,
-        uploadedImage: effectiveUploadedImage
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current
       });
     }
   };
+  const commitUploadedAvatar = (0, import_react5.useCallback)(async (image) => {
+    if (!onUploadCommit) {
+      return null;
+    }
+    setCommittingUpload(true);
+    try {
+      const committedAvatar = await onUploadCommit(image);
+      if (isCommittedUploadAvatar(committedAvatar)) {
+        setPersistedUpload({ avatar: committedAvatar, dataUrl: image.dataUrl });
+        setPendingUpload(false);
+        return committedAvatar;
+      }
+      return null;
+    } finally {
+      setCommittingUpload(false);
+    }
+  }, [onUploadCommit]);
   const selectIndex = (0, import_react5.useCallback)((nextIdx) => {
     const wrapped = (nextIdx % slides.length + slides.length) % slides.length;
     const target = slides[wrapped];
     if (!target) {
       return;
     }
-    setPendingUpload(false);
     if (target.kind === "upload") {
+      const targetAvatar = target.uploadAvatar ?? "upload:pending";
+      if (targetAvatar === "upload:pending" && localUpload && onUploadCommit) {
+        setPendingUpload(true);
+        onChange({
+          avatar: "upload:pending",
+          avatarColor: normalizedColor,
+          uploadedImage: localUpload,
+          explicitColor: hasExplicitColorRef.current
+        });
+        void commitUploadedAvatar(localUpload).catch((err) => {
+          setPendingUpload(false);
+          setError(err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
+      setPendingUpload(false);
       onChange({
-        avatar: target.uploadAvatar ?? "upload:pending",
+        avatar: targetAvatar,
         avatarColor: normalizedColor,
-        uploadedImage: effectiveUploadedImage
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current
       });
     } else if (target.mascotId) {
+      setPendingUpload(false);
       const nextColor = hasExplicitColorRef.current ? normalizedColor : recommendedMascotColor(target.mascotId) ?? normalizedColor;
       onChange({
         avatar: mascotAvatar(target.mascotId),
         avatarColor: nextColor,
-        uploadedImage: effectiveUploadedImage
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current
       });
     }
-  }, [effectiveUploadedImage, normalizedColor, onChange, slides]);
+  }, [commitUploadedAvatar, effectiveUploadedImage, localUpload, normalizedColor, onChange, onUploadCommit, slides]);
   const processFile = (0, import_react5.useCallback)(async (file) => {
     setError(null);
-    const snapshot = { ...value };
+    const snapshot = {
+      value: { ...value },
+      persistedUpload,
+      localUpload
+    };
     try {
       const cropped = await cropImageFileToPng512(file);
       const nextColor = hasExplicitColorRef.current ? normalizedColor : cropped.edgeColor;
       setLocalUpload(cropped);
+      setPersistedUpload(null);
       setPendingUpload(true);
       onChange({
         avatar: "upload:pending",
         avatarColor: nextColor,
-        uploadedImage: cropped
+        uploadedImage: cropped,
+        explicitColor: hasExplicitColorRef.current
       });
       if (onUploadCommit) {
-        await onUploadCommit(cropped);
+        await commitUploadedAvatar(cropped);
       }
       setUndoSnapshot(snapshot);
       if (undoTimerRef.current !== null) {
@@ -4055,10 +4117,12 @@ function AvatarPicker({
         undoTimerRef.current = null;
       }, 8e3);
     } catch (err) {
+      setLocalUpload(snapshot.localUpload);
+      setPersistedUpload(snapshot.persistedUpload);
       setPendingUpload(false);
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [normalizedColor, onChange, onUploadCommit, value]);
+  }, [commitUploadedAvatar, localUpload, normalizedColor, onChange, onUploadCommit, persistedUpload, value]);
   const handleKeyDown = (event) => {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
@@ -4069,10 +4133,14 @@ function AvatarPicker({
     }
   };
   const handleDrop = (event) => {
+    if (!showUpload) {
+      return;
+    }
     event.preventDefault();
+    event.stopPropagation();
     setDraggingFile(false);
     const file = event.dataTransfer.files?.[0];
-    if (file && showUpload) {
+    if (file) {
       void processFile(file);
     }
   };
@@ -4107,7 +4175,8 @@ function AvatarPicker({
       ...value,
       avatar: pendingUpload ? "upload:pending" : value.avatar,
       avatarColor: valid,
-      uploadedImage: effectiveUploadedImage
+      uploadedImage: effectiveUploadedImage,
+      explicitColor: true
     });
   };
   const activeSlide = slides[activeIndex];
@@ -4123,10 +4192,16 @@ function AvatarPicker({
       onDragOver: (e) => {
         if (showUpload) {
           e.preventDefault();
+          e.stopPropagation();
           setDraggingFile(true);
         }
       },
-      onDragLeave: () => setDraggingFile(false),
+      onDragLeave: (e) => {
+        if (showUpload) {
+          e.stopPropagation();
+        }
+        setDraggingFile(false);
+      },
       onDrop: handleDrop,
       tabIndex: 0,
       children: [
@@ -4329,8 +4404,9 @@ function AvatarPicker({
               style: { display: "inline-flex", alignItems: "center", gap: 4 },
               onClick: () => {
                 setPendingUpload(false);
-                setLocalUpload(null);
-                onChange(undoSnapshot);
+                setLocalUpload(undoSnapshot.localUpload);
+                setPersistedUpload(undoSnapshot.persistedUpload);
+                onChange(undoSnapshot.value);
                 setUndoSnapshot(null);
               },
               children: [
@@ -6278,11 +6354,23 @@ function BotImportDialog({ open, onClose }) {
   }));
   const [pickerAnchor, setPickerAnchor] = (0, import_react8.useState)(null);
   const avatarBtnRef = (0, import_react8.useRef)(null);
+  const colorEditedRef = (0, import_react8.useRef)(false);
   const [importing, setImporting] = (0, import_react8.useState)(false);
   const [error, setError] = (0, import_react8.useState)(null);
   const [expandedFiles, setExpandedFiles] = (0, import_react8.useState)({});
   const [reviewedDigestBySource, setReviewedDigestBySource] = (0, import_react8.useState)({});
   const [changedAfterReview, setChangedAfterReview] = (0, import_react8.useState)(false);
+  const handleAvatarPickerChange = (0, import_react8.useCallback)((next) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
+    setAvatarVal((prev) => {
+      if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
+        colorEditedRef.current = true;
+      }
+      return next;
+    });
+  }, []);
   const loadSources = async () => {
     setLoading(true);
     setError(null);
@@ -6295,11 +6383,14 @@ function BotImportDialog({ open, onClose }) {
       if (first) {
         setSelectedId(first.id);
         if (!keep) {
+          const initialColor = normalizeBotAvatarColor(first.avatarColor);
+          colorEditedRef.current = Boolean(initialColor);
           setTargetName(first.name);
           setAvatarVal({
             avatar: first.avatar || randomMascotAvatar(),
-            avatarColor: normalizeBotAvatarColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-            uploadedImage: null
+            avatarColor: initialColor ?? DEFAULT_BOT_AVATAR_COLOR,
+            uploadedImage: null,
+            explicitColor: Boolean(initialColor)
           });
         }
       }
@@ -6398,13 +6489,16 @@ ${f.content}`)
     selected && targetName.trim() && !importing && !hasBlockers && (!needsExplicitReview || reviewSatisfied)
   );
   const handleSelectSource = (src) => {
+    const initialColor = normalizeBotAvatarColor(src.avatarColor);
+    colorEditedRef.current = Boolean(initialColor);
     setSelectedId(src.id);
     setTargetName(src.name);
     setExpandedFiles({});
     setAvatarVal({
       avatar: src.avatar || randomMascotAvatar(),
-      avatarColor: normalizeBotAvatarColor(src.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-      uploadedImage: null
+      avatarColor: initialColor ?? DEFAULT_BOT_AVATAR_COLOR,
+      uploadedImage: null,
+      explicitColor: Boolean(initialColor)
     });
   };
   const handleImport = async () => {
@@ -6677,8 +6771,9 @@ ${f.content}`)
               anchorRect: pickerAnchor,
               triggerRef: avatarBtnRef,
               onClose: () => setPickerAnchor(null),
+              hasExplicitColor: colorEditedRef.current,
               value: avatarVal,
-              onChange: setAvatarVal
+              onChange: handleAvatarPickerChange
             }
           )
         ] })
@@ -9996,7 +10091,8 @@ function NewBotDialog({ open, draft, onClose }) {
       setAvatarVal({
         avatar: nextAvatar,
         avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
-        uploadedImage: null
+        uploadedImage: null,
+        explicitColor: Boolean(initialColor)
       });
       setSelectedSkills([...template.skills ?? []]);
       setWatches(template.watches ?? "");
@@ -10010,7 +10106,8 @@ function NewBotDialog({ open, draft, onClose }) {
       setAvatarVal({
         avatar: nextAvatar,
         avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
-        uploadedImage: null
+        uploadedImage: null,
+        explicitColor: Boolean(initialColor)
       });
       setSelectedSkills([]);
       setWatches(tw.watches ?? "");
@@ -10023,7 +10120,8 @@ function NewBotDialog({ open, draft, onClose }) {
       setAvatarVal({
         avatar: nextAvatar,
         avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
-        uploadedImage: null
+        uploadedImage: null,
+        explicitColor: Boolean(initialColor)
       });
       setSelectedSkills([]);
       setWatches("");
@@ -10094,13 +10192,17 @@ function NewBotDialog({ open, draft, onClose }) {
       setAvatarVal((prev) => ({
         avatar: "upload:pending",
         avatarColor: colorEditedRef.current ? prev.avatarColor : cropped.edgeColor,
-        uploadedImage: cropped
+        uploadedImage: cropped,
+        explicitColor: colorEditedRef.current
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
   const handleAvatarPickerChange = (0, import_react12.useCallback)((next) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
     setAvatarVal((prev) => {
       if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
         colorEditedRef.current = true;
@@ -19108,12 +19210,13 @@ function BotPanelHeader({
     });
   };
   const handleUploadCommit = async (image) => {
-    await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, {
+    const res = await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, {
       botId: bot.id,
       base64Png: image.base64Png
     });
     invalidateUploadedAvatarCache(bot.id);
     await botsStore.refresh();
+    return typeof res?.avatar === "string" && res.avatar.startsWith("upload:") ? res.avatar : void 0;
   };
   const handleCopyPath = async () => {
     setMoreOpen(false);
@@ -21260,9 +21363,10 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
     }
   };
   const handleUploadCommit = async (image) => {
-    await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, { botId: bot.id, base64Png: image.base64Png });
+    const res = await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, { botId: bot.id, base64Png: image.base64Png });
     invalidateUploadedAvatarCache(bot.id);
     await botsStore.refresh();
+    return typeof res?.avatar === "string" && res.avatar.startsWith("upload:") ? res.avatar : void 0;
   };
   const breadcrumb = /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-settings-crumb", children: [
     /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
