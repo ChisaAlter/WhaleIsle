@@ -124,6 +124,9 @@ function loadIpc(options = {}) {
       handle(channel, listener) {
         handlers.set(channel, listener);
       },
+      on(channel, listener) {
+        handlers.set(channel, listener);
+      },
     },
     dialog: {
       showSaveDialog: options.showSaveDialog || (async () => ({ canceled: true })),

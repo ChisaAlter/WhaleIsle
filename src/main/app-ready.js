@@ -105,6 +105,40 @@ function installApprovalMonitor(state, dsh) {
 }
 
 /**
+ * @param {import('./app-shell-state').ShellState} state
+ * @param {import('./dsh').DshManager} dsh
+ * @param {{ shellOverlays?: any, updateCenterWindow?: any }} deps
+ */
+function installStarPrompt(state, dsh, { shellOverlays, updateCenterWindow }) {
+  const { createStarPromptController } = require('./star-prompt');
+  const controller = createStarPromptController({
+    loadConfig,
+    saveConfig,
+    getMainWindow,
+    isHarnessLoaded,
+    isOverlayBlocked: () => {
+      const mainWin = getMainWindow();
+      return Boolean(
+        state.closingOverlayActive
+        || (mainWin && shellOverlays?.input(mainWin)?.blocked)
+        || updateCenterWindow?.webContents,
+      );
+    },
+    getHarnessWebContents,
+    log: (/** @type {string} */ line) => dsh.log(line, 'app'),
+  });
+  state.starPrompt = controller;
+  onMainWindowChange((/** @type {any} */ win) => {
+    if (win) controller.attachMainWindow(win);
+    else controller.detachMainWindow();
+  });
+  const existingMainWin = getMainWindow();
+  if (existingMainWin) {
+    controller.attachMainWindow(existingMainWin);
+  }
+}
+
+/**
  * The `app.whenReady()` body extracted from index.js (#439 P3-4): legacy
  * shortcut migration, GPU/DSHD_HOME setup, pet and profile configuration, the
  * desktop install control channel, task-control peer, update center, IPC +
@@ -137,6 +171,7 @@ function installApprovalMonitor(state, dsh) {
  * @param {(options?: Record<string, any>) => Promise<any>} deps.runColdStartGate
  * @param {any} deps.updateCenterWindow
  * @param {any} deps.updateReadyAttention
+ * @param {any} [deps.shellOverlays]
  * @param {(request: Record<string, any>) => Promise<any>} deps.confirmModelAction
  * @param {(request: Record<string, any>) => Promise<{ ok: boolean }>} deps.showDesktopSecret
  * @param {() => Record<string, any>} deps.welcomeClientMetadata
@@ -166,6 +201,7 @@ async function runAppReady({
   runColdStartGate,
   updateCenterWindow,
   updateReadyAttention,
+  shellOverlays,
   confirmModelAction,
   showDesktopSecret,
   welcomeClientMetadata,
@@ -312,7 +348,10 @@ async function runAppReady({
             harness,
             startHarness: restartWithCleanup,
             log: (/** @type {string} */ line) => dsh.log(line, 'app'),
-            onConfigChanged: (/** @type {Record<string, any>} */ updated) => state.approvalMonitor?.syncConfig(updated),
+            onConfigChanged: (/** @type {Record<string, any>} */ updated) => {
+              state.approvalMonitor?.syncConfig(updated);
+              state.starPrompt?.syncConfig(updated);
+            },
           }));
           return { ok: true, config: publicConfig(next) };
         } catch (error) {
@@ -398,7 +437,11 @@ async function runAppReady({
     stopDesktopCleanup: cleanupDesktopResources,
     remote,
     getLive2dPet,
-    onConfigChanged: (/** @type {Record<string, any>} */ updated) => state.approvalMonitor?.syncConfig(updated),
+    getStarPrompt: () => state.starPrompt,
+    onConfigChanged: (/** @type {Record<string, any>} */ updated) => {
+      state.approvalMonitor?.syncConfig(updated);
+      state.starPrompt?.syncConfig(updated);
+    },
     onOpenLauncher: async (/** @type {Record<string, any>} */ options = {}) => {
       await openLauncher();
       // Boot-page bridge: land on the home tab so the Recovery Board is
@@ -461,6 +504,7 @@ async function runAppReady({
   }));
 
   installApprovalMonitor(state, dsh);
+  installStarPrompt(state, dsh, { shellOverlays, updateCenterWindow });
   watchSystemTheme();
   await yieldTurn();
 

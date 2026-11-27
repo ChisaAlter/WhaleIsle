@@ -74,6 +74,11 @@ const DEFAULTS = {
   // next start. A skip-user-plugins recovery start drops it too when the
   // recorded failure evidence names dsh-im.
   dshImEnabled: true,
+  starPrompt: {
+    starredAt: '',
+    dismissedForever: false,
+    snoozedUntil: '',
+  },
   pet: {
     enabled: true,
     xRatio: 0.82,
@@ -140,6 +145,24 @@ function normalizeLive2dPetStateInConfig(config) {
   return {
     ...config,
     live2dPet: normalizeLive2dPetState(config?.live2dPet),
+  };
+}
+
+/** @param {unknown} value */
+function normalizeStarPromptState(value) {
+  const source = isPlainObject(value) ? /** @type {Record<string, unknown>} */ (value) : {};
+  return {
+    starredAt: typeof source.starredAt === 'string' ? source.starredAt.trim() : '',
+    dismissedForever: source.dismissedForever === true,
+    snoozedUntil: typeof source.snoozedUntil === 'string' ? source.snoozedUntil.trim() : '',
+  };
+}
+
+/** @param {Record<string, any>} config */
+function normalizeStarPromptInConfig(config) {
+  return {
+    ...config,
+    starPrompt: normalizeStarPromptState(config?.starPrompt),
   };
 }
 
@@ -587,7 +610,9 @@ function readConfigLayers(fresh = false) {
     settingsCache = null;
     ({ stored, unreadable: configUnreadable } = readSettingsFile(file));
     settings = normalizeLauncherSettings(
-      normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...DEFAULTS, ...stored }))))),
+      normalizeStarPromptInConfig(
+        normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...DEFAULTS, ...stored }))))),
+      ),
     );
     if (!settings.workspace || isUnsafeWorkspace(settings.workspace)) {
       settings.workspace = defaultWorkspace();
@@ -654,7 +679,9 @@ function saveConfig(next) {
     throw new Error('凭据暂时无法读取（系统钥匙串不可用或文件被占用），未保存，原有凭据保持不变');
   }
   const merged = normalizeLauncherSettings(
-    normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...current, ...next }))))),
+    normalizeStarPromptInConfig(
+      normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...current, ...next }))))),
+    ),
   );
   if (merged.githubToken === '********') {
     merged.githubToken = current.githubToken;
@@ -689,6 +716,7 @@ function saveConfig(next) {
 function publicConfig(config) {
   return {
     ...config,
+    starPrompt: normalizeStarPromptState(config?.starPrompt),
     pet: normalizePetState(config?.pet),
     live2dPet: normalizeLive2dPetState(config?.live2dPet),
     apiKey: config.apiKey ? '********' : '',
