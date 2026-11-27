@@ -31,6 +31,20 @@ function isNetworkError(error) {
   return /超时|中断|timed? ?out|ECONN|ENOTFOUND|net::ERR_|fetch failed|socket/i.test(String(error?.message || ''));
 }
 
+function installMaintenanceBlocker(/** @type {string | undefined} */ userDataDir) {
+  try {
+    const importGuard = require('../import-guard');
+    if (importGuard.isMaintenanceHeld()) {
+      return Object.assign(new Error('当前正在执行维护操作，请完成后再安装更新'), { code: 'maintenance-in-progress' });
+    }
+    const { readImportJournal, journalIsBlocked } = require('../data-import');
+    if (userDataDir && journalIsBlocked(readImportJournal(userDataDir))) {
+      return Object.assign(new Error('数据导入恢复尚未完成，请先处理导入阻塞后再安装更新'), { code: 'import-recovery-blocked' });
+    }
+  } catch { /* Maintenance modules optional in isolated unit tests. */ }
+  return null;
+}
+
 function readJson(file, fsx = fs) {
   try { return JSON.parse(fsx.readFileSync(file, 'utf8')); } catch { return null; }
 }
@@ -447,6 +461,8 @@ function createUpdateCenter(deps) {
 
   async function installNow() {
     if (model.phase !== 'ready' || !saved.job?.ready) return snapshot();
+    const blocker = installMaintenanceBlocker(userDataDir);
+    if (blocker) return fail('install', blocker);
     const { file, expected, installerArgs } = saved.job.ready;
     set({ phase: 'verifying', error: null });
     try {
@@ -485,6 +501,7 @@ function createUpdateCenter(deps) {
         return fail('check', error, { route: error.route });
       }
       if (!resolved.release?.assetUrl) return fail('check', new Error(`版本 ${tag} 没有适用于本机的安装包`));
+      if (!resolved.release?.checksumUrl) return fail('check', new Error(`版本 ${tag} 缺少校验文件，无法安全安装`));
       const target = toTarget(resolved.release, resolved.route);
       if (!sameArtifact(saved.target, target)) discardJob();
       saved.target = target;

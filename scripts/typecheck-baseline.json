@@ -4930,6 +4930,8 @@
         "Parameter 'code' implicitly has an 'any' type.": 3,
         "Parameter 'command' implicitly has an 'any' type.": 4,
         "Parameter 'config' implicitly has an 'any' type.": 6,
+        "Parameter 'context' implicitly has an 'any' type.": 1,
+        "Parameter 'contextOverride' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
         "Parameter 'error' implicitly has an 'any' type.": 3,
         "Parameter 'gen' implicitly has an 'any' type.": 3,
@@ -4947,6 +4949,7 @@
         "Parameter 'raw' implicitly has an 'any' type.": 1,
         "Parameter 'readiness' implicitly has an 'any' type.": 2,
         "Parameter 'root' implicitly has an 'any' type.": 1,
+        "Parameter 'shell' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 3,
         "Parameter 'startPort' implicitly has an 'any' type.": 1,
         "Parameter 'startTime' implicitly has an 'any' type.": 2,
@@ -5724,7 +5727,7 @@
     },
     "src/main/marketplace-install.js": {
       "TS18046": {
-        "'error' is of type 'unknown'.": 9
+        "'error' is of type 'unknown'.": 7
       },
       "TS2339": {
         "Property 'deprecated' does not exist on type 'object'.": 2,
@@ -5760,21 +5763,20 @@
         "Parameter 'installedSpec' implicitly has an 'any' type.": 1,
         "Parameter 'key' implicitly has an 'any' type.": 1,
         "Parameter 'keys' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 2,
+        "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'nodeBin' implicitly has an 'any' type.": 1,
         "Parameter 'onProgress' implicitly has an 'any' type.": 1,
-        "Parameter 'options' implicitly has an 'any' type.": 5,
+        "Parameter 'options' implicitly has an 'any' type.": 4,
         "Parameter 'packageName' implicitly has an 'any' type.": 6,
         "Parameter 'pinned' implicitly has an 'any' type.": 1,
         "Parameter 'pkg' implicitly has an 'any' type.": 1,
         "Parameter 'plugin' implicitly has an 'any' type.": 1,
         "Parameter 'result' implicitly has an 'any' type.": 4,
         "Parameter 'row' implicitly has an 'any' type.": 3,
-        "Parameter 'snapshot' implicitly has an 'any' type.": 5,
+        "Parameter 'snapshot' implicitly has an 'any' type.": 3,
         "Parameter 'spec' implicitly has an 'any' type.": 8,
         "Parameter 'text' implicitly has an 'any' type.": 1,
-        "Parameter 'token' implicitly has an 'any' type.": 1,
-        "Parameter 'work' implicitly has an 'any' type.": 1
+        "Parameter 'token' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'hits' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
@@ -6299,7 +6301,7 @@
         "Property 'close' does not exist on type 'object'.": 1,
         "Property 'data' does not exist on type '{}'.": 1,
         "Property 'getContentSize' does not exist on type 'object'.": 2,
-        "Property 'isDestroyed' does not exist on type 'object'.": 6,
+        "Property 'isDestroyed' does not exist on type 'object'.": 5,
         "Property 'mimeType' does not exist on type '{}'.": 3,
         "Property 'scope' does not exist on type '{}'.": 1,
         "Property 'setAspectRatio' does not exist on type 'object'.": 2,
@@ -7808,9 +7810,6 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 10
       },
-      "TS7005": {
-        "Variable 'chunks' implicitly has an 'any[]' type.": 1
-      },
       "TS7006": {
         "Parameter 'authority' implicitly has an 'any' type.": 1,
         "Parameter 'authorityForRead' implicitly has an 'any' type.": 1,
@@ -7822,9 +7821,6 @@
         "Parameter 'relativePath' implicitly has an 'any' type.": 9,
         "Parameter 'target' implicitly has an 'any' type.": 1,
         "Parameter 'text' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'chunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ png: string; jpg: string; jpeg: string; gif: string; webp: string; svg: string; bmp: string; ico: string; avif: string; }'.": 1
@@ -10947,9 +10943,6 @@
       },
       "TS2349": {
         "This expression is not callable.": 2
-      },
-      "TS2488": {
-        "Type 'RegExpExecArray | null' must have a '[Symbol.iterator]()' method that returns an iterator.": 1
       },
       "TS7005": {
         "Variable 'rows' implicitly has an 'any[]' type.": 1

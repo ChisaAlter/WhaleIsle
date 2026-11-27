@@ -359,10 +359,17 @@ test('batch updates deduplicate successful writes and serialize against uninstal
   assert.equal(adds, 1);
 });
 
-test('batch stops after rollback failure and reports thrown CLI errors', async () => {
+test('batch stops after rollback failure and reports thrown CLI errors', async (t) => {
   writeDiskRegistry([{ ...githubRow('13071301808', NPM_SPEC, `https://github.com/13071301808/${NPM_SPEC}`, NPM_SPEC), npm: NPM_SPEC }]);
   writeProfileDep(NPM_SPEC, '1.0.0');
   writeVersionedBundlePlugin(NPM_SPEC, '1.0.0');
+  const realRename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (String(from).includes('.install-rollback-') || String(to).includes('.install-rollback-')) {
+      throw new Error('disk unavailable');
+    }
+    return realRename(from, to);
+  });
   const result = await updateMarketplacePlugins([NPM_ID, 'missing/second'], {
     fetchImpl: async () => ({ ok: true, json: async () => ({ version: '2.0.0' }) }),
     runPlugin: async () => { throw new Error('disk unavailable'); },
@@ -1233,7 +1240,7 @@ test('updateMarketplacePlugin restores the profile after a failed add', async ()
   assert.equal(manifest.dependencies[NPM_SPEC], '1.0.0');
   assert.equal(fs.readFileSync(path.join(profileDir(), 'pnpm-workspace.yaml'), 'utf8'), workspace);
   assert.equal(JSON.parse(fs.readFileSync(path.join(profileDir(), 'node_modules', NPM_SPEC, 'package.json'), 'utf8')).version, '1.0.0');
-  assert.deepEqual(calls, [['add', `${NPM_SPEC}@2.0.0`], ['install']]);
+  assert.deepEqual(calls, [['add', `${NPM_SPEC}@2.0.0`]]);
 });
 
 test('updateMarketplacePlugin rolls back a successful command that did not change the version', async () => {
@@ -1259,7 +1266,7 @@ test('updateMarketplacePlugin rolls back a successful command that did not chang
   assert.equal(result.ok, false);
   assert.equal(result.rolledBack, true);
   assert.match(result.error, /没有变化/);
-  assert.deepEqual(calls, [['add', `${NPM_SPEC}@2.0.0`], ['install']]);
+  assert.deepEqual(calls, [['add', `${NPM_SPEC}@2.0.0`]]);
 });
 
 test('updateMarketplacePlugin rolls back a github update whose manifest lacks a version', async () => {
@@ -1290,7 +1297,7 @@ test('updateMarketplacePlugin rolls back a github update whose manifest lacks a 
   assert.equal(result.ok, false);
   assert.equal(result.rolledBack, true);
   assert.match(result.error, /name 或 version/);
-  assert.deepEqual(calls, [['add', `${GITHUB_SPEC}#${latest}`], ['install']]);
+  assert.deepEqual(calls, [['add', `${GITHUB_SPEC}#${latest}`]]);
   const manifest = JSON.parse(fs.readFileSync(
     path.join(profileDir(), 'node_modules', '@virex/dsh-status-rotator', 'package.json'), 'utf8',
   ));

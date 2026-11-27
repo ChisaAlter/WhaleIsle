@@ -244,9 +244,7 @@ async function isSafeToKill(pid, runOrContext = execFile, maybeContext = {}) {
 
 async function killTree(pid, runOrContext = execFile, maybeContext = {}) {
   const { run, context } = resolveKillArgs(runOrContext, maybeContext, execFile);
-  if (!pid || !await isSafeToKill(pid, run, context)) {
-    return false;
-  }
+  if (!pid || isSelfPid(pid) || (!/** @type {any} */ (context)?.preverifiedGroup && !await isSafeToKill(pid, run, context))) return false;
   try {
     return await killProcessTree(pid, { run });
   } catch (error) {
@@ -944,6 +942,7 @@ class DshManager extends EventEmitter {
     Object.assign(env, officeRuntimeEnv());
     env.DSHD_WHALE_UI_ENABLED = '1';
     env.DSHD_WHALE_UI_HOST = require('./whale-ui-host').whaleUiHostFile();
+    env.DSHD_PARENT_PID = String(process.pid);
     delete env.DSHD_SCHEDULE_ENABLED;
     if (config.scheduleEnabled !== false && !(config.disabledPlugins || []).includes('@deepseek-ai/dsh-schedule')) env.DSHD_SCHEDULE_ENABLED = '1';
     return env;
@@ -1263,23 +1262,31 @@ class DshManager extends EventEmitter {
     }
   }
 
+  async _resolvePidFileTarget() {
+    const entry = this._readPidFile();
+    const pid = pidFilePid(entry);
+    if (!pid) return null;
+    if (entry?.startTime && processAlive(pid) && sameProcessStartTime(await this._processStartTime(pid), entry.startTime)) return { pid, context: pidFileShellContext(entry) };
+    if (processAlive(pid)) this.log(`跳过停止残留 pid ${pid}：进程启动时间无法确认一致`);
+    return null;
+  }
   async _doStop() {
     this.attached = false;
     const child = this.child;
-    const pid = child?.pid || pidFilePid(this._readPidFile());
+    const target = child?.pid ? { pid: child.pid, context: undefined } : await this._resolvePidFileTarget();
     try {
-      if (pid) {
+      if (target) {
         this.setState('stopping', { error: '' });
-        this.log(`停止 dsh（pid ${pid}）`);
+        this.log(`停止 dsh（pid ${target.pid}）`);
+        let stopContext = /** @type {any} */ (target.context);
         if (child && process.platform !== 'win32') {
-          try {
-            child.kill('SIGTERM');
-          } catch {
-            // Tree cleanup below still owns the stop result.
-          }
-          await this._sleep(800);
+          const safeBeforeTerm = await isSafeToKill(target.pid);
+          const exited = new Promise((r) => { child.once?.('exit', r); });
+          try { child.kill('SIGTERM'); } catch { /* Tree cleanup below owns the stop result. */ }
+          await Promise.race([exited, this._sleep(800)]);
+          if (safeBeforeTerm && !stopContext) stopContext = { preverifiedGroup: true };
         }
-        await this._stopOwnedProcess(pid);
+        await this._stopOwnedProcess(target.pid, stopContext);
       }
     } catch (error) {
       const message = error?.message || String(error);
@@ -1289,32 +1296,22 @@ class DshManager extends EventEmitter {
     }
     if (this.child === child) this.child = null;
     this._clearPidFile();
-    if (this.state !== 'idle') {
-      this.setState('idle', { error: '', failure: null });
-    }
+    if (this.state !== 'idle') this.setState('idle', { error: '', failure: null });
   }
+  async restart() { await this.stop(); await this._sleep(50); return this.start(); }
 
-  async restart() {
-    await this.stop();
-    await this._sleep(300);
-    return this.start();
-  }
-
-  // 依赖访问器（默认即生产实现，测试可注入）
   _loadConfig() { return this._deps.loadConfig(); }
   _ensurePackagedHarness(log, options) { return this._deps.ensurePackagedHarness(log, options); }
   _spawnHarness(command, args, options) { return this._deps.spawnHarness(command, args, options); }
   _isReachable(url, guard) { return this._deps.isReachable(url, guard); }
   _sleep(ms) { return this._deps.sleep(ms); }
   _readPidFile() { return this._deps.readPidFile(); }
-  /** @param {boolean} [shell] */
   _writePidFile(pid, port, startTime, shell) { return this._deps.writePidFile(pid, port, startTime, shell); }
   _processStartTime(pid) { return this._deps.processStartTime(pid); }
   _clearPidFile() { return this._deps.clearPidFile(); }
-  /** @param {import('./dsh-win-process').WindowsShellContext} [context] */
   _killTree(pid, context) { return this._deps.killTree(pid, context); }
-  async _stopOwnedProcess(pid) {
-    const stopped = await this._killTree(pid, managedShellStopContext(this._shellPids, pid));
+  async _stopOwnedProcess(pid, contextOverride) {
+    const stopped = await this._killTree(pid, contextOverride || managedShellStopContext(this._shellPids, pid));
     if (stopped === false && processAlive(pid)) {
       const error = new Error(`无法安全停止 dsh 进程（pid ${pid}），进程身份未通过检查`);
       error.code = 'DSH_STOP_FAILED';

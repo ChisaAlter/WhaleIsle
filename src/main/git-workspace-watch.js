@@ -39,6 +39,7 @@ function defaultStoragesDir() {
 function watchWorkspaceRegistrations(onChange, options = {}) {
   const storagesDir = options.storagesDir !== undefined ? options.storagesDir : defaultStoragesDir();
   const retryMs = options.retryMs ?? WATCH_RETRY_MS;
+  const pollMs = retryMs;
   const debounceMs = options.debounceMs ?? WATCH_DEBOUNCE_MS;
   let watcher = null;
   let retryTimer = null;
@@ -129,7 +130,7 @@ function watchWorkspaceRegistrations(onChange, options = {}) {
           polling = false;
         }
       })();
-    }, retryMs);
+    }, pollMs);
     pollTimer.unref();
   }
 

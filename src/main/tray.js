@@ -116,8 +116,22 @@ function invokeTrayAction(name) {
   return action();
 }
 
+function destroyTray() {
+  if (!tray) return;
+  try {
+    tray.destroy();
+  } catch {
+    // Tray already destroyed during app shutdown.
+  }
+  tray = null;
+  trayActions = null;
+  trayMenuParams = null;
+  pendingTrayBadge = undefined;
+}
+
 module.exports = {
   createTray,
+  destroyTray,
   getBaseTrayIcon,
   setTrayBadge,
   refreshTrayMenu,

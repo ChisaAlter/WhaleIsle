@@ -1,6 +1,7 @@
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { StringDecoder } = require('node:string_decoder');
 const { spawnTreeOptions, killProcessTree: stopTree } = require('../shared/process-tree');
 const { createCachedWorkspaceAuthority, isPathInside } = require('./workspace-authority');
 
@@ -71,6 +72,11 @@ function gitChildEnv() {
   env.SSH_ASKPASS = '';
   env.SSH_ASKPASS_REQUIRE = 'never';
   env.LC_ALL = 'C';
+  const cfgCount = Number.parseInt(String(env.GIT_CONFIG_COUNT || '0'), 10);
+  const idx = Number.isInteger(cfgCount) && cfgCount >= 0 ? cfgCount : 0;
+  env.GIT_CONFIG_COUNT = String(idx + 1);
+  env[`GIT_CONFIG_KEY_${idx}`] = 'core.quotepath';
+  env[`GIT_CONFIG_VALUE_${idx}`] = 'false';
   return env;
 }
 
@@ -122,10 +128,17 @@ function run(command, args, cwd, limits = {}) {
     let truncated = false;
     /** Decode once at a settle point so multibyte sequences split across
      *  chunk boundaries never produce replacement characters. */
-    const decode = () => ({
-      stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-      stderr: Buffer.concat(stderrChunks).toString('utf8'),
-    });
+    const decode = () => {
+      const decodeChunks = (/** @type {Buffer[]} */ chunks, /** @type {boolean} */ isTruncated) => {
+        const buf = Buffer.concat(chunks);
+        if (!isTruncated) return buf.toString('utf8');
+        return new StringDecoder('utf8').write(buf);
+      };
+      return {
+        stdout: decodeChunks(stdoutChunks, truncated),
+        stderr: decodeChunks(stderrChunks, truncated),
+      };
+    };
     const timer = setTimeout(() => {
       killProcessTree(child);
       finish({
@@ -155,8 +168,10 @@ function run(command, args, cwd, limits = {}) {
         const remain = Math.max(0, maxBytes - stdoutBytes);
         if (remain > 0) stdoutChunks.push(chunk.subarray(0, remain));
         stdoutBytes = maxBytes;
-        truncated = true;
-        killProcessTree(child);
+        if (!truncated) {
+          truncated = true;
+          killProcessTree(child);
+        }
         return;
       }
       stdoutBytes = next;
@@ -170,8 +185,10 @@ function run(command, args, cwd, limits = {}) {
         const remain = Math.max(0, maxBytes - stderrBytes);
         if (remain > 0) stderrChunks.push(chunk.subarray(0, remain));
         stderrBytes = maxBytes;
-        truncated = true;
-        killProcessTree(child);
+        if (!truncated) {
+          truncated = true;
+          killProcessTree(child);
+        }
         return;
       }
       stderrBytes = next;
@@ -336,6 +353,7 @@ module.exports = {
   RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES,
   withTruncationMarker,
   gitChildEnv,
+  probeGitExecutable,
   resetGitExecutableProbe,
   run,
   runGit,

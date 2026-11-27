@@ -21,10 +21,47 @@ const MAX_UNTRACKED_BYTES = 256 * 1024;
 const MAX_PATCH_BYTES = 8 * 1024 * 1024;
 const GIT_UNAVAILABLE = 'Git is unavailable. Install Git for Windows: run "winget install Git.Git" or download https://git-scm.com/download/win';
 
+const GIT_C_ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+
+/**
+ * Decode a Git C-quoted path body (inside surrounding double quotes), including
+ * UTF-8 octal byte escapes such as `\344\270\255`.
+ * @param {string} inner
+ * @returns {string}
+ */
+function decodeGitCQuotedBody(inner) {
+  /** @type {number[]} */
+  const bytes = [];
+  for (let i = 0; i < inner.length; i += 1) {
+    if (inner[i] === '\\' && i + 1 < inner.length) {
+      const oct = /^[0-7]{3}/.exec(inner.slice(i + 1, i + 4));
+      if (oct) {
+        bytes.push(Number.parseInt(oct[0], 8));
+        i += 3;
+        continue;
+      }
+      const next = inner[i + 1];
+      if (Object.prototype.hasOwnProperty.call(GIT_C_ESCAPES, next)) {
+        bytes.push(GIT_C_ESCAPES[/** @type {keyof typeof GIT_C_ESCAPES} */ (next)]);
+        i += 1;
+      } else {
+        const ch = String.fromCodePoint(/** @type {number} */ (inner.codePointAt(i + 1)));
+        for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+        i += ch.length;
+      }
+      continue;
+    }
+    const ch = String.fromCodePoint(/** @type {number} */ (inner.codePointAt(i)));
+    for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+    if (ch.length > 1) i += ch.length - 1;
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
 function unquoteGitPath(spec) {
   const trimmed = String(spec || '').split('\t')[0].trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
-    return trimmed.slice(1, -1).replace(/\\(.)/g, '$1');
+    return decodeGitCQuotedBody(trimmed.slice(1, -1));
   }
   return trimmed;
 }
@@ -42,22 +79,16 @@ function parseDiffGitArgs(rest) {
     if (i >= rest.length) break;
     if (rest[i] === '"') {
       let j = i + 1;
-      let out = '';
       while (j < rest.length) {
         if (rest[j] === '\\' && j + 1 < rest.length) {
-          out += rest[j + 1];
           j += 2;
           continue;
         }
-        if (rest[j] === '"') {
-          j += 1;
-          break;
-        }
-        out += rest[j];
+        if (rest[j] === '"') break;
         j += 1;
       }
-      tokens.push(out);
-      i = j;
+      tokens.push(decodeGitCQuotedBody(rest.slice(i + 1, j)));
+      i = j < rest.length ? j + 1 : j;
       continue;
     }
     const space = rest.indexOf(' ', i);
@@ -563,8 +594,10 @@ function runGitStdin(command, cwd, args, inputText) {
         const remain = Math.max(0, GIT_MAX_OUTPUT_BYTES - getBytes());
         if (remain > 0) chunks.push(chunk.subarray(0, remain));
         setBytes(GIT_MAX_OUTPUT_BYTES);
-        truncated = true;
-        killProcessTree(child);
+        if (!truncated) {
+          truncated = true;
+          killProcessTree(child);
+        }
         return;
       }
       setBytes(next);
@@ -650,6 +683,7 @@ async function gitUnstagePatch(cwd, patchText) {
 }
 
 module.exports = {
+  unquoteGitPath,
   parseUnifiedDiff,
   gitDiff,
   gitStagePatch,

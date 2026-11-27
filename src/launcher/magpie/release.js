@@ -171,7 +171,7 @@ async function collectCnbCandidates(apiBase, fetchImpl) {
         candidates.push({ release: r, version });
       }
     }
-    if (candidates.length > 0 || list.length === 0) break;
+    if (list.length === 0) break;
   }
   candidates.sort((a, b) => compareVersions(b.version, a.version));
   return candidates;

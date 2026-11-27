@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
 const { safeRemoveSync } = require('../../shared/fs-safe');
-const { killProcessTree, sameProcessStartTime, windowsProcessStartTime } = require('../../shared/process-tree');
+const { killProcessTree, sameProcessStartTime, readProcessStartTimeSync } = require('../../shared/process-tree');
 const { isPidAlive, killPid } = require('../components/lifecycle');
 const { compareVersions } = require('../components/registry');
 const {
@@ -339,7 +339,7 @@ function createMagpieService(deps = {}) {
   function isLockOwnerAlive(/** @type {any} */ owner) {
     if (!owner?.pid || !alive(owner.pid)) return false;
     if (owner.startTime) {
-      const currentStartTime = windowsProcessStartTime(owner.pid);
+      const currentStartTime = readProcessStartTimeSync(owner.pid);
       if (currentStartTime && !sameProcessStartTime(currentStartTime, owner.startTime)) {
         return false;
       }
@@ -377,7 +377,7 @@ function createMagpieService(deps = {}) {
       }
       fs.writeFileSync(lock, JSON.stringify({
         pid: process.pid,
-        startTime: windowsProcessStartTime(process.pid),
+        startTime: readProcessStartTimeSync(process.pid),
         createdAt: new Date().toISOString(),
       }), { flag: 'wx' });
       held = true;

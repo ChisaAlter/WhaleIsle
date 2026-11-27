@@ -695,8 +695,7 @@ function createPtyController(options = {}) {
       const session = sessions.get(id);
       if (!session) return;
       retireOutput(id);
-      await session.kill();
-      sessions.delete(id);
+      try { await session.kill(); } finally { sessions.delete(id); }
     },
 
     onEvent(listener) {
@@ -715,7 +714,7 @@ function createPtyController(options = {}) {
     /** Kill every live PTY (app quit, harness restart, renderer teardown). */
     killAll() {
       const cleanup = [];
-      for (const id of [...outputStates.keys()]) {
+      for (const id of new Set([...activeOutputIds, ...outputStates.keys(), ...sessions.keys()])) {
         retireOutput(id);
       }
       for (const session of sessions.values()) {

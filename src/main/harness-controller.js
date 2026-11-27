@@ -390,31 +390,28 @@ class HarnessController extends EventEmitter {
   }
 
   async runAutomaticRestart(attempt) {
-    if (this.shuttingDown || this.recovery.status !== 'scheduled' || this.recovery.attempt !== attempt) {
+    if (this.shuttingDown || this.recovery.status !== 'scheduled' || this.recovery.attempt !== attempt) return this.snapshot();
+    const refusal = /** @type {{ error?: string } | null} */ (this.recoveryAdmissionCheck?.());
+    const token = (refusal || importGuard.isMaintenanceHeld()) ? null : importGuard.acquireMaintenance('auto-recovery');
+    if (!token) {
+      this.setRecovery({ status: 'failed', attempt, nextRetryAt: null, reason: refusal?.error || 'maintenance-in-progress' });
       return this.snapshot();
     }
     const recoveryGeneration = this.recoveryGeneration;
     this.setRecovery({ status: 'restarting', nextRetryAt: null, reason: '' });
     try {
       await this.replaceOperation({ showBoot: false });
-      if (this.shuttingDown || recoveryGeneration !== this.recoveryGeneration) {
-        return this.snapshot();
-      }
+      if (this.shuttingDown || recoveryGeneration !== this.recoveryGeneration) return this.snapshot();
       this.startStableWindow(attempt);
       return this.snapshot();
     } catch (error) {
-      if (this.shuttingDown || recoveryGeneration !== this.recoveryGeneration) {
-        throw error;
-      }
+      if (this.shuttingDown || recoveryGeneration !== this.recoveryGeneration) throw error;
       await this.ensureBootVisible().catch(() => { /* The recovery state below reports the original failure even if the boot renderer is unavailable. */ });
-      this.recovery = {
-        ...this.recovery,
-        status: 'failed',
-        attempt,
-        nextRetryAt: null,
-      };
+      this.recovery = { ...this.recovery, status: 'failed', attempt, nextRetryAt: null };
       this.scheduleRecovery();
       throw error;
+    } finally {
+      importGuard.releaseMaintenance(token);
     }
   }
 
