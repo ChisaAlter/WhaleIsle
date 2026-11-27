@@ -97,16 +97,18 @@ runs:
       with:
         path: |
           vendor/deepseek-harness/.dsh-build
-          vendor/deepseek-harness/native/system/packages
+          vendor/deepseek-harness/native/system/packages/*/bin
+          vendor/deepseek-harness/native/system/packages/*/lib
           vendor/deepseek-harness/packages/*/*/lib
+          !vendor/deepseek-harness/packages/client/ui-codex-sidebar/lib
           vendor/deepseek-harness/vendor/*/lib
           vendor/deepseek-harness/apps/cli/lib
           vendor/deepseek-harness/apps/desktop/lib
           vendor/deepseek-harness/apps/desktop-host/lib
           vendor/deepseek-harness/apps/web/dist
-        key: dsh-stages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/harness-upstream.json', 'vendor/deepseek-harness/pnpm-lock.yaml', 'vendor/deepseek-harness/package.json', 'vendor/deepseek-harness/tsconfig*.json', 'vendor/deepseek-harness/tsdown.config.ts') }}-${{ hashFiles('vendor/deepseek-harness/packages/**/src/**', 'vendor/deepseek-harness/apps/**/src/**', 'vendor/deepseek-harness/native/system/**', 'vendor/deepseek-harness/scripts/**') }}
+        key: dsh-stages-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/harness-upstream.json', 'vendor/deepseek-harness/pnpm-lock.yaml', 'vendor/deepseek-harness/package.json', 'vendor/deepseek-harness/tsconfig*.json', 'vendor/deepseek-harness/tsdown.config.ts') }}-${{ hashFiles('vendor/deepseek-harness/packages/**/src/**', 'vendor/deepseek-harness/packages/client/ui-codex-sidebar/lib/**', 'vendor/deepseek-harness/apps/**/src/**', 'vendor/deepseek-harness/native/system/**', 'vendor/deepseek-harness/scripts/**') }}
         restore-keys: |
-          dsh-stages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/harness-upstream.json', 'vendor/deepseek-harness/pnpm-lock.yaml', 'vendor/deepseek-harness/package.json', 'vendor/deepseek-harness/tsconfig*.json', 'vendor/deepseek-harness/tsdown.config.ts') }}-
+          dsh-stages-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vendor/harness-upstream.json', 'vendor/deepseek-harness/pnpm-lock.yaml', 'vendor/deepseek-harness/package.json', 'vendor/deepseek-harness/tsconfig*.json', 'vendor/deepseek-harness/tsdown.config.ts') }}-
     - name: Cache Office runtime archives
       if: inputs.cache-office == 'true'
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830

@@ -13,7 +13,6 @@ WhaleIsle changes:
   `cordis.patch.yml` row is not applied separately because the web-app patch
   already inserts the row.
 
-The upstream README and MIT LICENSE are kept beside this notice. The generated
-`lib/client.js` and `lib/index.js` are copied verbatim except for the skin
-activation wrapper described above; `lib/types/` stubs satisfy the host bundle
-entry scan.
+The upstream README and MIT LICENSE are kept beside this notice. The adapted
+`lib/` is checked in and consumed as source by the Harness build; no local
+build generates it. The `lib/types/` stubs satisfy the host bundle entry scan.

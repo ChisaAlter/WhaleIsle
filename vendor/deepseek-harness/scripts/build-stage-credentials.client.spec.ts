@@ -108,6 +108,20 @@ describe('build stage credentials', () => {
       .resolves.toEqual(['host', 'client', 'web'])
   })
 
+  it('rebuilds downstream bundles when the checked-in Codex sidebar changes', async () => {
+    const root = repository()
+    const environment = { DSH_CLIENT_COMMIT_HASH: 'aaaaaaa' }
+    const sidebar = resolve(root, 'packages/client/ui-codex-sidebar/lib')
+    mkdirSync(sidebar, { recursive: true })
+    writeFileSync(join(sidebar, 'client.js'), 'export const wordmark = "Whale Isle"\n')
+    await recordAll(root, environment)
+    writeFileSync(join(sidebar, 'client.js'), 'export const wordmark = "WhaleIsle"\n')
+    await expect(stagesToRun(root, environment, readStageCredentials(root)))
+      .resolves.toEqual(['host', 'client', 'web'])
+    await recordAll(root, environment)
+    await expect(stagesToRun(root, environment, readStageCredentials(root))).resolves.toEqual([])
+  })
+
   it('owns vendored lib outputs without treating them as new source inputs', async () => {
     const root = repository()
     const environment = { DSH_CLIENT_COMMIT_HASH: 'aaaaaaa' }

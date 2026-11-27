@@ -2313,7 +2313,7 @@ test('concurrent status fetch keeps different remote and common-directory identi
   }
 });
 
-test('shared status fetch releases failures and preserves backoff and success TTL boundaries', async () => {
+test('status fetch shares failure backoff and success TTL across worktrees and directory aliases', async () => {
   const root = makeTempDir();
   const realNow = Date.now;
   let now = 1_000_000;
@@ -2332,10 +2332,7 @@ test('shared status fetch releases failures and preserves backoff and success TT
     try {
       const delays = [30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000];
       for (let index = 0; index < delays.length; index++) {
-        const results = index === 0
-          ? await Promise.all([fetchForStatus(alias), fetchForStatus(linked)])
-          : [await fetchForStatus(cwd)];
-        assert.deepEqual(results, results.map(() => ({ fetched: true, ok: false })));
+        assert.deepEqual(await fetchForStatus(index === 0 ? alias : cwd), { fetched: true, ok: false });
         assert.equal(gitSpawnLog.filter(line => line.startsWith('fetch ')).length, index + 1);
         if (index === 0) {
           const localStatus = await gitFetchForStatus(cwd, 'failed-fetch-owner');
@@ -2344,7 +2341,7 @@ test('shared status fetch releases failures and preserves backoff and success TT
           assert.equal(localStatus.workingTree.files.find(file => file.path === 'file.txt').insertions, 1);
         }
         now += delays[index] - 1;
-        assert.deepEqual(await fetchForStatus(cwd), { fetched: false, ok: false });
+        assert.deepEqual(await fetchForStatus(linked), { fetched: false, ok: false });
         now += 1;
       }
       git(cwd, ['remote', 'set-url', 'origin', bare]);
