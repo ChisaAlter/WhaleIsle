@@ -2,7 +2,7 @@
 
 import {
   DEFAULT_BOT_AVATAR_COLOR,
-  normalizeHexColor,
+  normalizeBotAvatarColor,
   tintMascotSvg,
 } from '../../shared/bot-avatar-color.js';
 import {
@@ -652,11 +652,11 @@ export async function getTintedMascotDataUrl(
   mascotId: string,
   color?: string | null,
 ): Promise<string | null> {
-  const hex = normalizeHexColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
-  if (hex === DEFAULT_BOT_AVATAR_COLOR) {
+  const resolved = normalizeBotAvatarColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
+  if (resolved === DEFAULT_BOT_AVATAR_COLOR) {
     return mascotAssetUrl(mascotId, 'svg');
   }
-  const key = `${mascotId}|${hex}`;
+  const key = `${mascotId}|${resolved}`;
   const cached = tintedDataUrlCache.get(key);
   if (cached) {
     return cached;
@@ -665,7 +665,7 @@ export async function getTintedMascotDataUrl(
   if (!svgText) {
     return null;
   }
-  const tinted = tintMascotSvg(svgText, hex);
+  const tinted = tintMascotSvg(svgText, resolved);
   const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(tinted)}`;
   if (tintedDataUrlCache.size >= MAX_TINTED_CACHE) {
     const oldest = tintedDataUrlCache.keys().next().value;

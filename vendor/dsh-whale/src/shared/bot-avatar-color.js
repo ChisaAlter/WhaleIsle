@@ -1,8 +1,10 @@
 // Mascot avatar tile colors, luminance detection, and SVG tinting with LRU cache.
 
 export const DEFAULT_BOT_AVATAR_COLOR = '#b3dbf4';
+export const TRANSPARENT_BOT_AVATAR_COLOR = 'transparent';
 
 export const BOT_AVATAR_COLORS = Object.freeze([
+  TRANSPARENT_BOT_AVATAR_COLOR,
   DEFAULT_BOT_AVATAR_COLOR,
   '#ffffff',
   '#c9b8e8',
@@ -17,6 +19,7 @@ export const BOT_AVATAR_COLORS = Object.freeze([
 ]);
 
 export const BOT_AVATAR_COLOR_NAMES = Object.freeze({
+  [TRANSPARENT_BOT_AVATAR_COLOR]: 'bots.new.colorTransparent',
   '#b3dbf4': 'bots.new.colorSky',
   '#ffffff': 'bots.new.colorWhite',
   '#c9b8e8': 'bots.new.colorLavender',
@@ -64,8 +67,24 @@ export function normalizeHexColor(value) {
   return null;
 }
 
+export function isTransparentBotAvatarColor(value) {
+  return typeof value === 'string' && value.trim().toLowerCase() === TRANSPARENT_BOT_AVATAR_COLOR;
+}
+
+/**
+ * Normalizes a bot avatar background color: `'transparent'` (case-insensitive)
+ * or a CSS hex color (`#rgb`, `#rrggbb`, or without leading `#`).
+ * Returns `null` if invalid.
+ */
+export function normalizeBotAvatarColor(value) {
+  if (isTransparentBotAvatarColor(value)) {
+    return TRANSPARENT_BOT_AVATAR_COLOR;
+  }
+  return normalizeHexColor(value);
+}
+
 export function isValidBotAvatarColor(value) {
-  return typeof value === 'string' && HEX_6_RE.test(value);
+  return value === TRANSPARENT_BOT_AVATAR_COLOR || (typeof value === 'string' && HEX_6_RE.test(value));
 }
 
 function linearizeChannel(hexPair) {
@@ -106,18 +125,20 @@ function hashSvgKey(svgText) {
   return `${svgText.length}:${(hash >>> 0).toString(36)}`;
 }
 
-function applyMascotTint(svgText, hexColor) {
-  const bgReplaced = svgText.replaceAll(AVATAR_BG_VAR, hexColor);
-  const rimValue = isDarkBotAvatarColor(hexColor) ? '1' : '0';
+function applyMascotTint(svgText, resolvedColor) {
+  const svgFill = resolvedColor === TRANSPARENT_BOT_AVATAR_COLOR ? 'none' : resolvedColor;
+  const bgReplaced = svgText.replaceAll(AVATAR_BG_VAR, svgFill);
+  const rimValue = isDarkBotAvatarColor(resolvedColor) ? '1' : '0';
   return bgReplaced.replaceAll(AVATAR_RIM_VAR, rimValue);
 }
 
 /**
  * Tints an Orca mascot SVG string by replacing `var(--avatar-bg,#b3dbf4)` and
- * `var(--avatar-rim,0)` with concrete values, backed by a 200-entry LRU cache.
+ * `var(--avatar-rim,0)` with concrete values (or `none` for `'transparent'`),
+ * backed by a 200-entry LRU cache.
  *
  * @param {string} svgText Raw mascot SVG source
- * @param {string | null | undefined} color Target hex color (defaults to `#b3dbf4`)
+ * @param {string | null | undefined} color Target hex color or `'transparent'` (defaults to `#b3dbf4`)
  * @param {{ asDataUri?: boolean, cacheKey?: string }} [options]
  * @returns {string}
  */
@@ -125,9 +146,9 @@ export function tintMascotSvg(svgText, color = DEFAULT_BOT_AVATAR_COLOR, options
   if (typeof svgText !== 'string') {
     return '';
   }
-  const hex = normalizeHexColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const resolved = normalizeBotAvatarColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
   const asDataUri = options.asDataUri === true;
-  const baseKey = options.cacheKey ? `${options.cacheKey}|${hex}` : `${hashSvgKey(svgText)}|${hex}`;
+  const baseKey = options.cacheKey ? `${options.cacheKey}|${resolved}` : `${hashSvgKey(svgText)}|${resolved}`;
   const fullKey = `${baseKey}|${asDataUri ? 'uri' : 'svg'}`;
 
   const hit = tintCache.get(fullKey);
@@ -137,7 +158,7 @@ export function tintMascotSvg(svgText, color = DEFAULT_BOT_AVATAR_COLOR, options
     return hit;
   }
 
-  const tinted = applyMascotTint(svgText, hex);
+  const tinted = applyMascotTint(svgText, resolved);
   const result = asDataUri ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(tinted)}` : tinted;
   tintCache.set(fullKey, result);
   if (tintCache.size > TINT_MASCOT_SVG_CACHE_LIMIT) {

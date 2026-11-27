@@ -2250,3 +2250,70 @@ test('agent/created resume prunes persisted closed-item & duplicate mail, and li
     assert.equal(homeAfterDelete.finished.length, 0, 'deleted worker chat must not leave a ghost task-xxxx row under Home Chat');
   });
 });
+
+test('Avatar background color supports transparent and custom upload color updates without auto overwrite', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+
+  await withTempDir('avatar-bg', async ({ root, onClose }) => {
+    const mock = createMockHarness();
+    const runtime = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome: root,
+      enableSchedulers: false,
+      getController: () => mock.controller,
+    });
+    onClose(() => runtime.close());
+    const call = (method, params) => runtime.http.invokeRpc(method, params);
+
+    // 1. Create bot with transparent background color -> normalized and persisted in DB, bot.json, list, and roster.
+    const created = await call('bots.create', {
+      name: '透底鲸鱼娘',
+      avatar: 'mascot:W4',
+      avatarColor: ' TRANSPARENT ',
+      skipKickoff: true,
+    });
+    assert.equal(created.bot.avatarColor, 'transparent');
+    const createdJson = JSON.parse(fs.readFileSync(path.join(created.bot.homePath, 'bot.json'), 'utf8'));
+    assert.equal(createdJson.avatarColor, 'transparent');
+
+    // 2. Upload custom PNG avatar -> preserves explicit transparent avatarColor without overwriting it.
+    const pngBase64 = makeSyntheticPng(512, 512).toString('base64');
+    const uploaded = await call('bots.avatar.upload', {
+      botId: created.bot.id,
+      base64Png: `data:image/png;base64,${pngBase64}`,
+    });
+    assert.match(uploaded.avatar, /^upload:[0-9a-f]{16}$/);
+    const afterUpload = (await call('bots.list')).bots.find((b) => b.id === created.bot.id);
+    assert.equal(afterUpload.avatar, uploaded.avatar);
+    assert.equal(afterUpload.avatarColor, 'transparent');
+
+    // 3. Explicit color update on custom uploaded avatar persists hex and switches back to transparent cleanly.
+    const pinkBot = await call('bots.update', {
+      botId: created.bot.id,
+      avatarColor: '#F4C4CF',
+    });
+    assert.equal(pinkBot.avatar, uploaded.avatar);
+    assert.equal(pinkBot.avatarColor, '#f4c4cf');
+
+    // Re-uploading a custom PNG does not clobber the explicit hex color.
+    const pngBase64Next = makeSyntheticPng(640, 640).toString('base64');
+    const uploadedNext = await call('bots.avatar.upload', {
+      botId: created.bot.id,
+      base64Png: `data:image/png;base64,${pngBase64Next}`,
+    });
+    const afterSecondUpload = (await call('bots.list')).bots.find((b) => b.id === created.bot.id);
+    assert.equal(afterSecondUpload.avatar, uploadedNext.avatar);
+    assert.equal(afterSecondUpload.avatarColor, '#f4c4cf');
+
+    // Switching back to transparent persists in roster and bot.json.
+    const transparentAgain = await call('bots.update', {
+      botId: created.bot.id,
+      avatarColor: 'transparent',
+    });
+    assert.equal(transparentAgain.avatarColor, 'transparent');
+    const rosterRow = (await call('bots.roster')).find((r) => r.id === created.bot.id);
+    assert.equal(rosterRow.avatarColor, 'transparent');
+    const finalJson = JSON.parse(fs.readFileSync(path.join(created.bot.homePath, 'bot.json'), 'utf8'));
+    assert.equal(finalJson.avatarColor, 'transparent');
+  });
+});

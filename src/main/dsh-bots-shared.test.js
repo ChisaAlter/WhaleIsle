@@ -120,17 +120,45 @@ test('bot-types: constants, folder slug Windows guard, name validation, normaliz
   assert.equal(shared.botChangeConcerns(notice, { botId: 'b2', kinds: ['items'] }), false);
 });
 
-test('bot-avatar & bot-avatar-color: W1-W8 whale mascots first, colors, luminance, SVG tinting LRU 200, upload validation', () => {
+test('bot-avatar & bot-avatar-color: W1-W8 whale mascots first, colors, transparent support, luminance, SVG tinting LRU 200, upload validation', () => {
   assert.deepEqual([...shared.WHALE_BOT_MASCOT_IDS], ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8']);
-  assert.equal(shared.WHALE_MASCOT_LABELS.W1, '鲸鱼娘');
-  assert.equal(shared.WHALE_MASCOT_LABELS.W2, '蓝色大肥鱼');
-  assert.equal(shared.WHALE_MASCOT_LABELS.W8, 'Q版鲸鱼娘');
+  assert.deepEqual(shared.WHALE_MASCOT_LABELS, {
+    W1: '鲸鱼娘',
+    W2: '极客鲸鱼娘',
+    W3: '星空鲸鱼娘',
+    W4: '樱粉鲸鱼娘',
+    W5: '学院鲸鱼娘',
+    W6: '睡衣鲸鱼娘',
+    W7: '赛博鲸鱼娘',
+    W8: '探险鲸鱼娘',
+  });
+  assert.deepEqual(shared.WHALE_MASCOT_LABELS_EN, {
+    W1: 'Whale Girl',
+    W2: 'Geek Whale',
+    W3: 'Starry Whale',
+    W4: 'Sakura Whale',
+    W5: 'Scholar Whale',
+    W6: 'Pajama Whale',
+    W7: 'Cyber Whale',
+    W8: 'Explorer Whale',
+  });
+  assert.equal(shared.WHALE_MASCOT_RECOMMENDED_COLORS.W1, '#b3dbf4');
+  assert.equal(shared.WHALE_MASCOT_RECOMMENDED_COLORS.W2, '#b5e3d8');
+  assert.equal(shared.WHALE_MASCOT_RECOMMENDED_COLORS.W4, '#f4c4cf');
+  assert.equal(shared.recommendedMascotColor('mascot:W8'), '#f6e3a1');
+  assert.equal(shared.recommendedMascotColor('mascot:A1'), null);
+  assert.equal(Object.keys(shared.WHALE_MASCOT_DESCRIPTIONS).length, 8);
   assert.deepEqual([...shared.EMPTY_CARD_MASCOT_IDS], ['W1', 'W2', 'W4']);
   assert.equal(shared.BOT_MASCOT_IDS.length, 28);
   assert.deepEqual(shared.BOT_MASCOT_IDS.slice(0, 8), [...shared.WHALE_BOT_MASCOT_IDS]);
   assert.equal(shared.PICKABLE_BOT_MASCOT_IDS.length, 27);
   assert.deepEqual(shared.PICKABLE_BOT_MASCOT_IDS.slice(0, 8), [...shared.WHALE_BOT_MASCOT_IDS]);
-  assert.equal(shared.BOT_AVATAR_COLORS.length, 11);
+  assert.equal(shared.TRANSPARENT_BOT_AVATAR_COLOR, 'transparent');
+  assert.equal(shared.BOT_AVATAR_COLORS.length, 12);
+  assert.equal(shared.BOT_AVATAR_COLORS[0], 'transparent');
+  assert.equal(shared.BOT_AVATAR_COLOR_NAMES.transparent, 'bots.new.colorTransparent');
+  assert.equal(shared.t('zh-CN', 'bots.new.colorTransparent'), '透明');
+  assert.equal(shared.t('en-US', 'bots.new.colorTransparent'), 'Transparent');
   assert.equal(shared.DEFAULT_BOT_AVATAR_COLOR, '#b3dbf4');
 
   // Default random selection prefers W1-W8 Whale mascots
@@ -150,17 +178,41 @@ test('bot-avatar & bot-avatar-color: W1-W8 whale mascots first, colors, luminanc
 
   assert.equal(shared.normalizeHexColor('#ABC'), '#aabbcc');
   assert.equal(shared.normalizeHexColor(' 1F2126 '), '#1f2126');
+  assert.equal(shared.normalizeHexColor('transparent'), null);
   assert.equal(shared.normalizeHexColor('not-a-color'), null);
+  assert.equal(shared.isTransparentBotAvatarColor('transparent'), true);
+  assert.equal(shared.isTransparentBotAvatarColor(' Transparent '), true);
+  assert.equal(shared.isTransparentBotAvatarColor('#b3dbf4'), false);
+  assert.equal(shared.normalizeBotAvatarColor(' TRANSPARENT '), 'transparent');
+  assert.equal(shared.normalizeBotAvatarColor('#ABC'), '#aabbcc');
+  assert.equal(shared.normalizeBotAvatarColor('not-a-color'), null);
+  assert.equal(shared.isValidBotAvatarColor('transparent'), true);
+  assert.equal(shared.isValidBotAvatarColor('#b3dbf4'), true);
+  assert.equal(shared.isValidBotAvatarColor('invalid'), false);
+  assert.equal(shared.relativeLuminance('transparent'), null);
+  assert.equal(shared.isDarkBotAvatarColor('transparent'), false);
   assert.equal(shared.isDarkBotAvatarColor('#1f2126'), true);
   assert.equal(shared.isDarkBotAvatarColor('#3a3f4b'), true);
   assert.equal(shared.isDarkBotAvatarColor('#b3dbf4'), false);
   assert.equal(shared.isDarkBotAvatarColor('#ffffff'), false);
+
+  const transparentRec = shared.normalizeBotRecord({
+    id: 'b-trans',
+    name: 'Transparent Bot',
+    avatar: 'mascot:W1',
+    avatarColor: ' Transparent ',
+  }, 2000);
+  assert.equal(transparentRec.avatarColor, 'transparent');
 
   const m1Svg = fs.readFileSync(path.join(MASCOTS_DIR, 'M1.svg'), 'utf8');
   shared.clearTintMascotSvgCache();
   const darkSvg = shared.tintMascotSvg(m1Svg, '#1f2126', { cacheKey: 'M1' });
   assert.ok(darkSvg.includes('#1f2126'));
   assert.ok(darkSvg.includes('opacity:1'));
+  const transparentSvg = shared.tintMascotSvg(m1Svg, 'transparent', { cacheKey: 'M1' });
+  assert.ok(transparentSvg.includes('fill:none'));
+  assert.ok(transparentSvg.includes('opacity:0'));
+  assert.ok(!transparentSvg.includes('var(--avatar-bg,#b3dbf4)'));
   const lightUri = shared.tintMascotSvg(m1Svg, '#f4c4cf', { cacheKey: 'M1', asDataUri: true });
   assert.ok(lightUri.startsWith('data:image/svg+xml;charset=utf-8,'));
   assert.ok(decodeURIComponent(lightUri).includes('opacity:0'));

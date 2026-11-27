@@ -4,10 +4,13 @@
 
 import {
   DEFAULT_BOT_AVATAR_COLOR,
+  TRANSPARENT_BOT_AVATAR_COLOR,
   BOT_AVATAR_COLORS,
   BOT_AVATAR_COLOR_NAMES,
   TINT_MASCOT_SVG_CACHE_LIMIT,
   normalizeHexColor,
+  isTransparentBotAvatarColor,
+  normalizeBotAvatarColor,
   isValidBotAvatarColor,
   relativeLuminance,
   isDarkBotAvatarColor,
@@ -18,10 +21,13 @@ import {
 
 export {
   DEFAULT_BOT_AVATAR_COLOR,
+  TRANSPARENT_BOT_AVATAR_COLOR,
   BOT_AVATAR_COLORS,
   BOT_AVATAR_COLOR_NAMES,
   TINT_MASCOT_SVG_CACHE_LIMIT,
   normalizeHexColor,
+  isTransparentBotAvatarColor,
+  normalizeBotAvatarColor,
   isValidBotAvatarColor,
   relativeLuminance,
   isDarkBotAvatarColor,
@@ -38,13 +44,49 @@ export const WHALE_BOT_MASCOT_IDS = Object.freeze([
 /** Localized Chinese display labels for the 8 WhaleIsle mascots. */
 export const WHALE_MASCOT_LABELS = Object.freeze({
   W1: '鲸鱼娘',
-  W2: '蓝色大肥鱼',
-  W3: '程序大肥鱼',
-  W4: '皇冠大肥鱼',
-  W5: '水手大肥鱼',
-  W6: '干饭大肥鱼',
-  W7: '星夜大肥鱼',
-  W8: 'Q版鲸鱼娘',
+  W2: '极客鲸鱼娘',
+  W3: '星空鲸鱼娘',
+  W4: '樱粉鲸鱼娘',
+  W5: '学院鲸鱼娘',
+  W6: '睡衣鲸鱼娘',
+  W7: '赛博鲸鱼娘',
+  W8: '探险鲸鱼娘',
+});
+
+/** Localized English display labels for the 8 WhaleIsle mascots. */
+export const WHALE_MASCOT_LABELS_EN = Object.freeze({
+  W1: 'Whale Girl',
+  W2: 'Geek Whale',
+  W3: 'Starry Whale',
+  W4: 'Sakura Whale',
+  W5: 'Scholar Whale',
+  W6: 'Pajama Whale',
+  W7: 'Cyber Whale',
+  W8: 'Explorer Whale',
+});
+
+/** Recommended default tile background colors for W1–W8 WhaleIsle mascots. */
+export const WHALE_MASCOT_RECOMMENDED_COLORS = Object.freeze({
+  W1: '#b3dbf4',
+  W2: '#b5e3d8',
+  W3: '#c9b8e8',
+  W4: '#f4c4cf',
+  W5: '#c5dfb5',
+  W6: '#c9b8e8',
+  W7: '#8fa3b8',
+  W8: '#f6e3a1',
+});
+
+/** Localized Chinese short descriptions for the 8 WhaleIsle mascots. */
+export const WHALE_MASCOT_DESCRIPTIONS = Object.freeze({
+  W1: '经典蓝发女仆头饰大头鲸鱼娘',
+  W2: '海蓝短发双丸子、头戴耳机与发光小鲸耳鳍',
+  W3: '深蓝星空渐层长发、小海军贝雷帽与星星发饰',
+  W4: '粉蓝挑染双马尾、贝壳发夹与元气 Wink 甜心风',
+  W5: '浅海青鲍伯头、圆框眼镜与小领结知性风',
+  W6: '薰衣草紫蓝蓬松短发与鲸鱼连帽小兜帽',
+  W7: '银白挑染电光蓝发与科技感透明护目镜',
+  W8: '冰川银白卷发、奶油黄小探险帽与珊瑚饰品',
 });
 
 /** Default mascot triad displayed in the empty-state onboarding card. */
@@ -245,6 +287,14 @@ function extractMascotId(value) {
   }
   const parsed = parseBotAvatar(value);
   return parsed?.kind === 'mascot' ? parsed.id : null;
+}
+
+/** Returns the recommended background color for a WhaleIsle mascot, or `null` for others. */
+export function recommendedMascotColor(value) {
+  const id = extractMascotId(value);
+  return id && Object.prototype.hasOwnProperty.call(WHALE_MASCOT_RECOMMENDED_COLORS, id)
+    ? WHALE_MASCOT_RECOMMENDED_COLORS[id]
+    : null;
 }
 
 function excludedMascotIds(current) {

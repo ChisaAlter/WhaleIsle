@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { randomMascotAvatar } from '../../shared/bot-avatar.js';
-import { DEFAULT_BOT_AVATAR_COLOR, normalizeHexColor } from '../../shared/bot-avatar-color.js';
+import { DEFAULT_BOT_AVATAR_COLOR, normalizeBotAvatarColor } from '../../shared/bot-avatar-color.js';
 import { botsStore, useBotsLocale } from '../store/bots-store';
 import {
   RPC_METHODS,
@@ -94,7 +94,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
           setTargetName(first.name);
           setAvatarVal({
             avatar: first.avatar || randomMascotAvatar(),
-            avatarColor: normalizeHexColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+            avatarColor: normalizeBotAvatarColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
             uploadedImage: null,
           });
         }
@@ -212,7 +212,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
     setExpandedFiles({});
     setAvatarVal({
       avatar: src.avatar || randomMascotAvatar(),
-      avatarColor: normalizeHexColor(src.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+      avatarColor: normalizeBotAvatarColor(src.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
       uploadedImage: null,
     });
   };
@@ -237,6 +237,9 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
           await callBotRpc(RPC_METHODS.AVATAR_UPLOAD, {
             botId: created.id,
             base64Png: avatarVal.uploadedImage.base64Png,
+          });
+          await botsStore.updateBot(created.id, {
+            avatarColor: avatarVal.avatarColor,
           });
           invalidateUploadedAvatarCache(created.id);
         } else {

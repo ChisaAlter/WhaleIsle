@@ -5,7 +5,11 @@
 // all 12 drill-down subpages, and destructive delete.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DEFAULT_BOT_AVATAR_COLOR } from '../../shared/bot-avatar-color.js';
+import {
+  DEFAULT_BOT_AVATAR_COLOR,
+  TRANSPARENT_BOT_AVATAR_COLOR,
+  normalizeBotAvatarColor,
+} from '../../shared/bot-avatar-color.js';
 import { BOT_ITEMS_STALE_CHOICES, DEFAULT_BOT_NOTIFICATIONS } from '../../shared/bot-types.js';
 import {
   botsStore,
@@ -258,6 +262,9 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
       return undefined;
     }
     const handlePaste = (event: ClipboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
       const items = event.clipboardData?.items;
       if (!items) {
         return;
@@ -275,6 +282,9 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
         void cropImageFileToPng512(file)
           .then(async (cropped) => {
             await callBotRpc(RPC_METHODS.AVATAR_UPLOAD, { botId: bot.id, base64Png: cropped.base64Png });
+            if (!normalizeBotAvatarColor(bot.avatarColor) && cropped.edgeColor === TRANSPARENT_BOT_AVATAR_COLOR) {
+              await botsStore.updateBot(bot.id, { avatarColor: TRANSPARENT_BOT_AVATAR_COLOR });
+            }
             invalidateUploadedAvatarCache(bot.id);
             await botsStore.refresh();
             setUndoAvatar(snapshot);
@@ -592,14 +602,21 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
         anchorRect={pickerRect}
         triggerRef={avatarBtnRef}
         onClose={() => setPickerRect(null)}
+        botId={bot.id}
+        hasExplicitColor={Boolean(normalizeBotAvatarColor(bot.avatarColor))}
         value={{
           avatar: bot.avatar || 'mascot:W1',
-          avatarColor: bot.avatarColor || DEFAULT_BOT_AVATAR_COLOR,
+          avatarColor: normalizeBotAvatarColor(bot.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
         }}
         onChange={(next: AvatarPickerValue) => {
-          if (next.avatar !== 'upload:pending') {
-            void botsStore.updateBot(bot.id, { avatar: next.avatar, avatarColor: next.avatarColor });
+          const persisted = normalizeBotAvatarColor(bot.avatarColor);
+          if (next.avatar === 'upload:pending') {
+            if (next.avatarColor !== persisted) {
+              void botsStore.updateBot(bot.id, { avatarColor: next.avatarColor });
+            }
+            return;
           }
+          void botsStore.updateBot(bot.id, { avatar: next.avatar, avatarColor: next.avatarColor });
         }}
         onUploadCommit={handleUploadCommit}
       />

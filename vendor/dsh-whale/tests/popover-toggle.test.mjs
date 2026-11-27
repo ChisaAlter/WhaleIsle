@@ -962,3 +962,123 @@ domTest('Sidebar bot tree omits Home Chat subrow, surfaces home workers, avoids 
   const errToast = doc.querySelector('.dsh-bots-toast[data-tone="error"]');
   assert.ok(errToast, 'delete failure on worker row must surface an error toast');
 });
+
+domTest('AvatarPicker keeps background swatches visible for custom uploaded avatars, supports transparent background everywhere, and displays updated W1-W8 whale girl names', async (t) => {
+  const customFixtures = defaultFixtures();
+  customFixtures.bots[0] = {
+    ...customFixtures.bots[0],
+    avatar: 'upload:0123456789abcdef',
+    avatarColor: '#b3dbf4',
+  };
+  customFixtures.bots[1] = {
+    ...customFixtures.bots[1],
+    avatar: 'mascot:W2',
+    avatarColor: '#b5e3d8',
+  };
+
+  const { doc, root, act, h, rpcCalls, flush, pressAndClick, slotComp } = createDomHarness(t, {
+    fixtures: customFixtures,
+    rpcOverride: (method, params, fixtures) => {
+      if (method === 'bots.avatar.read') {
+        return {
+          botId: params.botId,
+          dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          sha256: '0123456789abcdef',
+        };
+      }
+      if (method === 'bots.update') {
+        const target = fixtures.bots.find((b) => b.id === params.botId);
+        if (target) {
+          if (params.avatar !== undefined) target.avatar = params.avatar;
+          if (params.avatarColor !== undefined) target.avatarColor = params.avatarColor;
+          return { bot: { ...target } };
+        }
+      }
+      return undefined;
+    },
+  });
+
+  const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
+  const RightPanelComp = slotComp((d) => d.name === 'sidebar.right.pane.tab');
+
+  await act(async () => {
+    root.render(h('div', null,
+      h(SidebarComp, { wide: true }),
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, { botId: 'bot-whale' })),
+    ));
+  });
+  await flush();
+
+  // 1. Open AvatarPickerPopover for custom-upload bot -> custom upload slide is active AND swatches + transparent + hex input stay visible.
+  const headerAvatarBtn = doc.querySelector('#right-panel-host .dsh-bots-panel-avatar-trigger');
+  assert.ok(headerAvatarBtn);
+  await pressAndClick(headerAvatarBtn);
+
+  const picker = doc.querySelector('[data-dsh-bots-popover="avatar-picker"]');
+  assert.ok(picker, 'AvatarPickerPopover must open');
+  assert.equal(picker.querySelector('.dsh-bots-picker-caption')?.textContent, '自定义头像');
+
+  const swatchRow = picker.querySelector('.dsh-bots-swatches');
+  assert.ok(swatchRow, 'background color swatches must remain visible for custom uploaded avatars');
+  const transparentSwatch = picker.querySelector('[data-swatch="transparent"]');
+  assert.ok(transparentSwatch, 'transparent swatch must render');
+  assert.ok(transparentSwatch.classList.contains('dsh-bots-swatch-transparent'));
+  assert.equal(transparentSwatch.getAttribute('title'), '透明');
+  assert.equal(transparentSwatch.getAttribute('aria-label'), '透明');
+  assert.ok(picker.querySelector('input[type="color"]'), 'custom color wheel must render for custom upload');
+  const hexInput = picker.querySelector('input[type="text"].dsh-bots-input');
+  assert.ok(hexInput, 'hex text input must render for custom upload');
+  assert.equal(hexInput.value, '#b3dbf4');
+
+  // 2. Select transparent swatch -> persists avatarColor="transparent", sets BotAvatar tiles & carousel truly transparent.
+  await pressAndClick(transparentSwatch);
+  assert.equal(transparentSwatch.getAttribute('data-selected'), 'true');
+  assert.equal(hexInput.value, '');
+  assert.equal(hexInput.getAttribute('placeholder'), '透明');
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.update' && c.params?.botId === 'bot-whale' && c.params?.avatarColor === 'transparent'),
+    'selecting transparent swatch must persist avatarColor="transparent"',
+  );
+
+  const headerTile = doc.querySelector('#right-panel-host .dsh-bots-panel-avatar-trigger .dsh-bots-avatar-tile');
+  assert.ok(headerTile);
+  assert.equal(headerTile.getAttribute('data-transparent'), 'true');
+  assert.equal(headerTile.style.backgroundColor, 'transparent');
+
+  const sidebarWhaleTile = doc.querySelector('.dsh-bots-card .dsh-bots-avatar-tile');
+  assert.ok(sidebarWhaleTile);
+  assert.equal(sidebarWhaleTile.getAttribute('data-transparent'), 'true');
+  assert.equal(sidebarWhaleTile.style.backgroundColor, 'transparent');
+
+  // 3. Select pink swatch (#f4c4cf) on custom upload -> persists hex color; browsing away and back does not overwrite it.
+  const pinkSwatch = picker.querySelector('[data-swatch="#f4c4cf"]');
+  assert.ok(pinkSwatch);
+  await pressAndClick(pinkSwatch);
+  assert.equal(pinkSwatch.getAttribute('data-selected'), 'true');
+  assert.equal(headerTile.getAttribute('data-transparent'), 'false');
+
+  const nextBtn = picker.querySelector('.dsh-bots-carousel-nav[data-dir="next"]');
+  const prevBtn = picker.querySelector('.dsh-bots-carousel-nav[data-dir="prev"]');
+  assert.ok(nextBtn && prevBtn);
+
+  // Step through W1 and W2 to verify updated Whale Girl labels and that explicit color is preserved.
+  await pressAndClick(nextBtn);
+  assert.equal(picker.querySelector('.dsh-bots-picker-caption')?.textContent, '鲸鱼娘');
+  await pressAndClick(nextBtn);
+  assert.equal(picker.querySelector('.dsh-bots-picker-caption')?.textContent, '极客鲸鱼娘');
+
+  // Step back to custom upload slide -> explicit #f4c4cf stays intact.
+  await pressAndClick(prevBtn);
+  await pressAndClick(prevBtn);
+  assert.equal(picker.querySelector('.dsh-bots-picker-caption')?.textContent, '自定义头像');
+  assert.equal(customFixtures.bots[0].avatarColor, '#f4c4cf');
+
+  // 4. Transparent background also works on preset mascot avatars.
+  await pressAndClick(nextBtn);
+  assert.equal(picker.querySelector('.dsh-bots-picker-caption')?.textContent, '鲸鱼娘');
+  await pressAndClick(transparentSwatch);
+  assert.equal(customFixtures.bots[0].avatar, 'mascot:W1');
+  assert.equal(customFixtures.bots[0].avatarColor, 'transparent');
+  assert.equal(headerTile.getAttribute('data-transparent'), 'true');
+  assert.equal(headerTile.style.backgroundColor, 'transparent');
+});
