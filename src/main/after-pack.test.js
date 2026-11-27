@@ -25,6 +25,7 @@ const {
   missingPluginRuntimeClosure,
   missingDshImRuntimeClosure,
   assertDshImSharpRuntime,
+  assertLibreOfficeKitEngine,
 } = require('../../scripts/after-pack');
 
 const RC7_PIN = { npm: '0.1.0-rc.7' };
@@ -1201,4 +1202,77 @@ test('nodeBinaryHasExternalDylibs flags shim binaries but not standalone builds'
   ].join('\n');
   assert.equal(nodeBinaryHasExternalDylibs(shim), true);
   assert.equal(nodeBinaryHasExternalDylibs(standalone), false);
+});
+
+function writeLibreOfficeKitFixture(root, targetSlug, { withEngine = true, withWasm = false, platformOverride, badLink = false } = {}) {
+  const nm = path.join(root, 'node_modules', '@deepseek-ai');
+  const writePkg = (name, files = {}) => {
+    const dir = path.join(nm, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.2.3' }));
+    for (const [rel, content] of Object.entries(files)) {
+      const full = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, content);
+    }
+    return dir;
+  };
+  writePkg('dsh-office-kit');
+  writePkg('dsh-tool-office');
+  writePkg('dsh-skill-office');
+  writePkg('dsh-tool-workspace-dependencies');
+  writePkg('libreoffice-kit', { 'lib/cli.js': 'module.exports = {};\n' });
+  if (withEngine) {
+    const exeRel = targetSlug.startsWith('win32') ? 'bin/dsoffice.exe' : 'MacOS/soffice';
+    writePkg(`libreoffice-kit-${targetSlug}`, {
+      [exeRel]: 'native',
+      'program/program/fundamental.ini': '[Bootstrap]\n',
+      'prebuilds.json': JSON.stringify({
+        version: '0.2.3',
+        platform: platformOverride || targetSlug,
+        status: 'built',
+        engine: { kind: 'native', executable: exeRel, programDirectory: 'program/program' },
+      }),
+    });
+  }
+  if (withWasm) {
+    writePkg('libreoffice-kit-wasm', { 'soffice.wasm': 'wasm' });
+  }
+  if (badLink) {
+    fs.writeFileSync(
+      path.join(root, '.dsh-runtime-links.json'),
+      JSON.stringify({ version: 1, links: [{ path: 'node_modules/@deepseek-ai/missing', target: 'node_modules/.dsh-instances/dead' }] }),
+    );
+  }
+}
+
+test('assertLibreOfficeKitEngine passes for win32-x64 and darwin-arm64 native engines and catches missing, wasm, mismatch, and dangling links', (t) => {
+  for (const [platform, arch] of [['win32', 'x64'], ['darwin', 'arm64']]) {
+    const slug = `${platform}-${arch}`;
+    const valid = fs.mkdtempSync(path.join(os.tmpdir(), `after-pack-lok-ok-${slug}-`));
+    t.after(() => fs.rmSync(valid, { recursive: true, force: true }));
+    writeLibreOfficeKitFixture(valid, slug);
+    const ok = assertLibreOfficeKitEngine(valid, { platform, arch }, { forbidWasm: true });
+    assert.equal(ok.kitVersion, '0.2.3');
+
+    const missing = fs.mkdtempSync(path.join(os.tmpdir(), `after-pack-lok-miss-${slug}-`));
+    t.after(() => fs.rmSync(missing, { recursive: true, force: true }));
+    writeLibreOfficeKitFixture(missing, slug, { withEngine: false });
+    assert.throws(() => assertLibreOfficeKitEngine(missing, { platform, arch }), /LibreOffice Kit 闭包不完整/);
+
+    const wasm = fs.mkdtempSync(path.join(os.tmpdir(), `after-pack-lok-wasm-${slug}-`));
+    t.after(() => fs.rmSync(wasm, { recursive: true, force: true }));
+    writeLibreOfficeKitFixture(wasm, slug, { withWasm: true });
+    assert.throws(() => assertLibreOfficeKitEngine(wasm, { platform, arch }, { forbidWasm: true }), /libreoffice-kit-wasm/);
+
+    const mismatch = fs.mkdtempSync(path.join(os.tmpdir(), `after-pack-lok-badplat-${slug}-`));
+    t.after(() => fs.rmSync(mismatch, { recursive: true, force: true }));
+    writeLibreOfficeKitFixture(mismatch, slug, { platformOverride: 'linux-x64' });
+    assert.throws(() => assertLibreOfficeKitEngine(mismatch, { platform, arch }), /Office 引擎与 kit 不一致/);
+
+    const dangling = fs.mkdtempSync(path.join(os.tmpdir(), `after-pack-lok-link-${slug}-`));
+    t.after(() => fs.rmSync(dangling, { recursive: true, force: true }));
+    writeLibreOfficeKitFixture(dangling, slug, { badLink: true });
+    assert.throws(() => assertLibreOfficeKitEngine(dangling, { platform, arch }), /RUNTIME_LINKS 存在悬空目标/);
+  }
 });

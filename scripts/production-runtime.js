@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { DESKTOP_PACKAGES } = require('../src/shared/harness-desktop-forks');
+const { RUNTIME_LINKS } = require('../src/shared/runtime-links');
 
 /** Follow installed production edges, including present optional and peer dependencies. */
 function productionClosure(roots, resolvePackage, dependencyEntries) {
@@ -128,6 +129,7 @@ function runtimeFileExclusion(packageName, relative, platform = process.platform
     const current = `${platform}-${arch}${platform === 'win32' ? '-msvc' : ''}`;
     if (reflink[1] !== current) return true;
   }
+  if (packageName === '@deepseek-ai/libreoffice-kit-wasm' && platform === 'win32' && arch === 'x64') return true;
   if (packageName === '@koromix/koffi-win32-x64' && relative.replaceAll('\\', '/') === 'win32_x64/koffi.lib') return true;
   return false;
 }
@@ -194,5 +196,115 @@ function officePayloadDigest(payload, manifest) {
   return hash.digest('hex');
 }
 
+/**
+ * @param {string} harnessDest
+ * @param {string} kitDir
+ * @param {string} nm
+ * @param {boolean} forbidWasm
+ * @param {(from: string, name: string, root: string) => string | null} resolvePackageFrom
+ */
+function assertNoWasmAndValidLinks(harnessDest, kitDir, nm, forbidWasm, resolvePackageFrom) {
+  const linksFile = path.join(harnessDest, RUNTIME_LINKS);
+  if (fs.existsSync(linksFile)) {
+    const manifest = JSON.parse(fs.readFileSync(linksFile, 'utf8'));
+    for (const entry of (Array.isArray(manifest?.links) ? manifest.links : [])) {
+      if (forbidWasm && typeof entry.path === 'string' && entry.path.endsWith('/@deepseek-ai/libreoffice-kit-wasm')) {
+        throw new Error(`RUNTIME_LINKS 包含已排除的 libreoffice-kit-wasm 链接：${entry.path}`);
+      }
+      if (typeof entry.target === 'string' && !fs.existsSync(path.join(harnessDest, entry.target))) {
+        throw new Error(`RUNTIME_LINKS 存在悬空目标：${entry.target}`);
+      }
+    }
+  }
+  if (!forbidWasm) return;
+  const resolvedWasm = resolvePackageFrom(kitDir, '@deepseek-ai/libreoffice-kit-wasm', harnessDest);
+  if (resolvedWasm) throw new Error(`安装包仍可解析到已排除的 libreoffice-kit-wasm：${resolvedWasm}`);
+  const directWasm = path.join(nm, 'libreoffice-kit-wasm');
+  if (fs.existsSync(directWasm)) throw new Error(`安装包残留已排除的 libreoffice-kit-wasm：${directWasm}`);
+  const instancesDir = path.join(harnessDest, 'node_modules', '.dsh-instances');
+  if (!fs.existsSync(instancesDir)) return;
+  for (const dirEntry of fs.readdirSync(instancesDir, { withFileTypes: true })) {
+    if (!dirEntry.isDirectory()) continue;
+    const manifestPath = path.join(instancesDir, dirEntry.name, 'package.json');
+    if (!fs.existsSync(manifestPath)) continue;
+    if (JSON.parse(fs.readFileSync(manifestPath, 'utf8'))?.name === '@deepseek-ai/libreoffice-kit-wasm') {
+      throw new Error(`安装包 .dsh-instances 残留已排除的 libreoffice-kit-wasm：${manifestPath}`);
+    }
+  }
+}
+
+/**
+ * @param {string} engineDir
+ * @param {string} kitVersion
+ * @param {string} targetSlug
+ */
+function assertEngineManifestAndFiles(engineDir, kitVersion, targetSlug) {
+  const engineManifest = JSON.parse(fs.readFileSync(path.join(engineDir, 'package.json'), 'utf8'));
+  const prebuilds = JSON.parse(fs.readFileSync(path.join(engineDir, 'prebuilds.json'), 'utf8'));
+  if (engineManifest.version !== kitVersion || prebuilds.version !== kitVersion || prebuilds.status !== 'built'
+    || prebuilds.platform !== targetSlug || prebuilds.engine?.kind !== 'native'
+    || typeof prebuilds.engine.executable !== 'string' || typeof prebuilds.engine.programDirectory !== 'string') {
+    throw new Error(`Office 引擎与 kit 不一致：kit@${kitVersion} engine@${engineManifest.version} prebuilds=${prebuilds.platform}/${prebuilds.status}`);
+  }
+  for (const relative of [prebuilds.engine.executable, prebuilds.engine.programDirectory]) {
+    const file = path.join(engineDir, relative);
+    if (!fs.existsSync(file)) throw new Error(`Office 引擎资源缺失：${file}`);
+  }
+}
+
+/**
+ * @param {string} harnessDest
+ * @param {string} nm
+ * @param {string} kitDir
+ * @param {string} engineDir
+ * @param {string} enginePkgName
+ * @param {{ countResolvers: (root: string, pkgName: string, targetDir: string) => number; longPath: (p: string) => string }} helpers
+ */
+function pruneStaleOfficeSiblings(harnessDest, nm, kitDir, engineDir, enginePkgName, helpers) {
+  if (fs.existsSync(path.join(harnessDest, RUNTIME_LINKS))) return;
+  for (const sibling of ['libreoffice-kit', enginePkgName]) {
+    const stale = path.join(nm, sibling);
+    if (path.resolve(stale) === path.resolve(kitDir) || path.resolve(stale) === path.resolve(engineDir)) continue;
+    const manifestFile = path.join(stale, 'package.json');
+    if (!fs.existsSync(manifestFile)) continue;
+    const staleVersion = JSON.parse(fs.readFileSync(manifestFile, 'utf8')).version;
+    if (helpers.countResolvers(harnessDest, `@deepseek-ai/${sibling}`, stale) > 0) continue;
+    console.log(`Office 孤儿副本清理: @deepseek-ai/${sibling}@${staleVersion}（零解析者，实际解析到 ${path.resolve(stale) === path.resolve(engineDir) ? engineDir : kitDir}）`);
+    fs.rmSync(helpers.longPath(stale), { recursive: true, force: true });
+  }
+}
+
+/**
+ * @param {string} harnessDest
+ * @param {{ platform?: string; arch?: string }} target
+ * @param {{ forbidWasm?: boolean }} options
+ * @param {{ resolvePackageFrom: (from: string, name: string, root: string) => string | null; countResolvers: (root: string, pkgName: string, targetDir: string) => number; longPath: (p: string) => string }} helpers
+ */
+function verifyLibreOfficeKitClosure(harnessDest, target, options, helpers) {
+  const platform = target.platform || process.platform;
+  const arch = target.arch || process.arch;
+  const targetSlug = `${platform}-${arch}`;
+  const forbidWasm = options.forbidWasm ?? (platform === 'win32' && arch === 'x64');
+  const nm = path.join(harnessDest, 'node_modules', '@deepseek-ai');
+  const providerDir = path.join(nm, 'dsh-office-kit');
+  const kitDir = helpers.resolvePackageFrom(providerDir, '@deepseek-ai/libreoffice-kit', harnessDest);
+  const enginePkgName = `libreoffice-kit-${targetSlug}`;
+  const engineDir = kitDir ? helpers.resolvePackageFrom(kitDir, `@deepseek-ai/${enginePkgName}`, harnessDest) : null;
+  if (!kitDir || !engineDir) {
+    throw new Error(`安装包的 LibreOffice Kit 闭包不完整：dsh-office-kit 无法解析 kit/engine（kit=${kitDir || 'unresolved'} engine=${engineDir || 'unresolved'}）`);
+  }
+  const missingClosure = [
+    path.join(providerDir, 'package.json'), path.join(nm, 'dsh-tool-office', 'package.json'),
+    path.join(nm, 'dsh-skill-office', 'package.json'), path.join(nm, 'dsh-tool-workspace-dependencies', 'package.json'),
+    path.join(kitDir, 'lib', 'cli.js'), path.join(engineDir, 'prebuilds.json'),
+  ].filter(file => !fs.existsSync(file));
+  if (missingClosure.length > 0) throw new Error(`安装包的 LibreOffice Kit 闭包不完整：${missingClosure.join(', ')}`);
+  const kitVersion = JSON.parse(fs.readFileSync(path.join(kitDir, 'package.json'), 'utf8')).version;
+  pruneStaleOfficeSiblings(harnessDest, nm, kitDir, engineDir, enginePkgName, helpers);
+  assertEngineManifestAndFiles(engineDir, kitVersion, targetSlug);
+  assertNoWasmAndValidLinks(harnessDest, kitDir, nm, forbidWasm, helpers.resolvePackageFrom);
+  return { kitVersion, engineDir };
+}
+
 module.exports = { productionClosure, selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExclusion,
-  pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest };
+  pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest, verifyLibreOfficeKitClosure };
