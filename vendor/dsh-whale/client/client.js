@@ -2185,6 +2185,18 @@ function normalizeChatsMap(raw) {
   }
   return out;
 }
+function clearSeenDotState(dot) {
+  return dot === "failed" || dot === "interrupted" ? "idle" : dot;
+}
+function markTreeChatSeen(tree, sessionId) {
+  if (!tree) return void 0;
+  const chats = tree.chats.map((c) => {
+    if (sessionId && c.sessionId !== sessionId && c.chatId !== sessionId) return c;
+    const row = c;
+    return { ...row, unread: false, ...row.dotState ? { dotState: clearSeenDotState(row.dotState) } : {} };
+  });
+  return { ...tree, chats };
+}
 function extractNeedsYou(payload) {
   const raw = payload.needsYou;
   if (raw && typeof raw === "object" && "counts" in raw && typeof raw.counts === "object") {
@@ -2487,17 +2499,21 @@ var BotsStore = class {
     const bot = this.state.bots.find((entry) => entry.id === botId);
     const knownSession = bot?.chatSessionId ?? bot?.homeSessionId ?? null;
     this.setState({ activeBotId: botId, activeGroupId: null, ...knownSession ? { activeSessionId: knownSession } : {} });
-    if (knownSession) this.host.openSession?.(knownSession, { botId });
+    if (knownSession) {
+      this.host.openSession?.(knownSession, { botId });
+      void this.markChatSeen(botId, knownSession, true);
+    }
+    if ((bot?.upNextCount ?? 0) > 0) void this.markUpNextSeen(botId);
     try {
       const res = await callBotRpc(RPC_METHODS2.CHAT_OPEN, { botId });
-      if (this.state.activeBotId !== botId) {
-        return;
-      }
+      if (this.state.activeBotId !== botId) return;
       const sid = res?.sessionId ?? knownSession;
       if (sid) {
         this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: sid });
-        if (sid !== knownSession) this.host.openSession?.(sid, { botId });
-        void this.markChatSeen(botId, sid, true);
+        if (sid !== knownSession) {
+          this.host.openSession?.(sid, { botId });
+          void this.markChatSeen(botId, sid, true);
+        }
       }
     } catch (err) {
       this.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
@@ -2536,14 +2552,23 @@ var BotsStore = class {
     return sessionId;
   }
   async markChatSeen(botId, sessionId, seen) {
-    this.setState((prev) => ({ ...prev, bots: prev.bots.map((b) => b.id === botId ? { ...b, unread: !seen } : b) }));
+    this.setState((prev) => {
+      const nextTree = seen ? markTreeChatSeen(prev.chatsByBot[botId], sessionId) : void 0;
+      const bots = prev.bots.map((b) => b.id !== botId ? b : { ...b, unread: !seen, ...seen ? { dotState: clearSeenDotState(b.dotState) } : {} });
+      return { ...prev, bots, ...nextTree ? { chatsByBot: { ...prev.chatsByBot, [botId]: nextTree } } : {} };
+    });
     try {
-      await callBotRpc(seen ? RPC_METHODS2.CHATS_SEEN : RPC_METHODS2.CHATS_UNSEEN, {
-        botId,
-        ...sessionId ? { sessionId } : {}
-      });
+      await callBotRpc(seen ? RPC_METHODS2.CHATS_SEEN : RPC_METHODS2.CHATS_UNSEEN, { botId, ...sessionId ? { sessionId } : {} });
     } catch (err) {
       console.warn(`[dsh-bots] Failed to update read status for ${botId}`, err);
+    }
+  }
+  async markUpNextSeen(botId) {
+    this.setState((prev) => ({ ...prev, bots: prev.bots.map((b) => b.id === botId ? { ...b, upNextCount: 0 } : b) }));
+    try {
+      await callBotRpc(RPC_METHODS2.UP_NEXT_SEEN, { botId });
+    } catch (err) {
+      console.warn(`[dsh-bots] Failed to mark up-next seen for ${botId}`, err);
     }
   }
   async createGroup(params) {
@@ -23278,6 +23303,7 @@ function BotContextMenu({
   }
   const left = Math.max(8, Math.min(position.x, window.innerWidth - 210));
   const top = Math.max(8, Math.min(position.y, window.innerHeight - 280));
+  const hasUnreadSignal = Boolean(bot.unread) || bot.dotState === "failed" || (bot.upNextCount ?? 0) > 0;
   return (0, import_react_dom13.createPortal)(
     /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime36.jsxs)(
@@ -23358,15 +23384,15 @@ function BotContextMenu({
           className: "dsh-bots-menu-item",
           onClick: () => {
             onClose();
-            void botsStore.markChatSeen(
-              bot.id,
-              bot.chatSessionId ?? bot.homeSessionId ?? null,
-              Boolean(bot.unread)
-            );
+            const sessionId = bot.chatSessionId ?? bot.homeSessionId ?? null;
+            void botsStore.markChatSeen(bot.id, sessionId, hasUnreadSignal);
+            if (hasUnreadSignal && (bot.upNextCount ?? 0) > 0) {
+              void botsStore.markUpNextSeen(bot.id);
+            }
           },
           children: [
-            bot.unread ? /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(IconEye, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(IconEyeOff, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime36.jsx)("span", { children: bot.unread ? tr("bots.row.markRead", "Mark Read") : tr("bots.row.markUnread", "Mark Unread") })
+            hasUnreadSignal ? /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(IconEye, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime36.jsx)(IconEyeOff, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime36.jsx)("span", { children: hasUnreadSignal ? tr("bots.row.markRead", "Mark Read") : tr("bots.row.markUnread", "Mark Unread") })
           ]
         }
       ),
@@ -23651,8 +23677,10 @@ function BotSidebarCard({
                       title: tr("bots.upNext.title", "Up next"),
                       onClick: (e) => {
                         e.stopPropagation();
-                        botsStore.setRightPanelTab("home", bot.id);
-                        void botsStore.openBotHome(bot.id);
+                        void botsStore.markUpNextSeen(bot.id);
+                        void botsStore.openBotHome(bot.id).finally(() => {
+                          botsStore.setRightPanelTab("home", bot.id);
+                        });
                       },
                       children: bot.upNextCount
                     }
@@ -24618,8 +24646,9 @@ function openNativeRightPanel(ctx, sessions, capturedRightbar, botId, _tab) {
     return;
   }
   const state = botsStore.getState();
-  const targetBot = state.bots.find((entry) => entry.id === botId);
-  const candidateSessionId = state.activeSessionId ?? targetBot?.chatSessionId ?? targetBot?.homeSessionId ?? readMainSessionId(sessions);
+  const targetBot = botId ? state.bots.find((entry) => entry.id === botId) : void 0;
+  const botSessionId = targetBot?.chatSessionId ?? targetBot?.homeSessionId;
+  const candidateSessionId = (botId ? botSessionId : null) ?? state.activeSessionId ?? readMainSessionId(sessions);
   try {
     if (candidateSessionId && typeof rightbar.openTabIn === "function") {
       const opened = rightbar.openTabIn(candidateSessionId, BOTS_RIGHT_TAB_KIND, { expand: true });
@@ -24807,6 +24836,38 @@ function registerNativeRightSidebarTab(ctx, onRightbarChange) {
     attach(ctx);
   }
 }
+function isBotHomeSession(bot, chatsByBot, sessionId) {
+  const direct = bot.chatSessionId ?? bot.homeSessionId ?? null;
+  if (direct) {
+    return direct === sessionId;
+  }
+  const homeChat = chatsByBot[bot.id]?.chats.find((c) => c.origin === "home" && !c.closed);
+  return homeChat?.sessionId === sessionId || homeChat?.chatId === sessionId;
+}
+function shouldPreserveOptimisticSelection(state, sid, panelId, sameHostView) {
+  if (!sameHostView) {
+    return false;
+  }
+  if (sid === null && panelId === null) {
+    return true;
+  }
+  return Boolean(state.activeBotId && state.activeSessionId && state.activeSessionId !== sid);
+}
+function markEnteredBotSessionSeen(state, prevSid, sid, next) {
+  if (prevSid === void 0 || sid === prevSid || !next.botId || !next.sessionId) {
+    return;
+  }
+  const bot = state.bots.find((entry) => entry.id === next.botId);
+  if (!bot) {
+    return;
+  }
+  if (bot.unread || bot.dotState === "failed") {
+    void botsStore.markChatSeen(bot.id, next.sessionId, true);
+  }
+  if (isBotHomeSession(bot, state.chatsByBot, next.sessionId) && (bot.upNextCount ?? 0) > 0) {
+    void botsStore.markUpNextSeen(bot.id);
+  }
+}
 function apply(ctx) {
   const sessions = readOptionalService(ctx, "sessions");
   let capturedRightbar = null;
@@ -24894,16 +24955,19 @@ function apply(ctx) {
       const currentState = botsStore.getState();
       const sid = readMainSessionId(sessions);
       const panelId = readActivePanelId(ctx.layout);
+      const prevSid = lastMainSessionId;
+      const sameHostView = sid === prevSid && panelId === lastPanelId;
       const dataChanged = currentState.loaded !== prevState.loaded || currentState.bots !== prevState.bots || currentState.chatsByBot !== prevState.chatsByBot;
       prevState = currentState;
-      if (!force && sid === lastMainSessionId && panelId === lastPanelId && !dataChanged) {
+      if (!force && sameHostView && !dataChanged) {
         return;
       }
       lastMainSessionId = sid;
       lastPanelId = panelId;
-      if (!force && dataChanged && sid === null && panelId === null) {
+      if (!force && dataChanged && shouldPreserveOptimisticSelection(currentState, sid, panelId, sameHostView)) {
         return;
       }
+      const settingsBotId = currentState.settingsRoute?.host === "page" ? currentState.settingsRoute.botId : null;
       const next = resolveActiveBotSelection({
         activePanelId: panelId,
         mainSessionId: sid,
@@ -24911,9 +24975,9 @@ function apply(ctx) {
         chatsByBot: currentState.chatsByBot,
         prevActiveGroupId: currentState.activeGroupId,
         prevActiveBotId: currentState.activeBotId,
-        settingsRouteBotId: currentState.settingsRoute?.host === "page" ? currentState.settingsRoute.botId : null
+        settingsRouteBotId: settingsBotId
       });
-      if (next.closePageSettings && currentState.settingsRoute?.host === "page") {
+      if (next.closePageSettings && settingsBotId) {
         botsStore.closeBotSettings();
       }
       botsStore.setActiveSelection({
@@ -24921,6 +24985,7 @@ function apply(ctx) {
         groupId: next.groupId,
         sessionId: next.sessionId
       });
+      markEnteredBotSessionSeen(currentState, prevSid, sid, next);
     };
     syncMainSelection(true);
     const unsubSessions = sessions?.list?.subscribe?.(() => syncMainSelection(true));
