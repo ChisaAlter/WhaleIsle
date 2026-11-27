@@ -1,0 +1,283 @@
+[
+  {
+    "id": "electron-base",
+    "owner": "A",
+    "match": [
+      "base/**"
+    ]
+  },
+  {
+    "id": "office-kit-wasm",
+    "owner": "C×A",
+    "forbidden": {
+      "targets": [
+        "win32-x64",
+        "darwin-arm64"
+      ]
+    },
+    "match": [
+      "tar/node_modules/@deepseek-ai/libreoffice-kit-wasm/**",
+      "tar/node_modules/**/@deepseek-ai/libreoffice-kit-wasm/**"
+    ]
+  },
+  {
+    "id": "office-kit-native",
+    "owner": "C×A",
+    "match": [
+      "tar/node_modules/@deepseek-ai/libreoffice-kit/**",
+      "tar/node_modules/@deepseek-ai/libreoffice-kit-*/**",
+      "tar/node_modules/**/@deepseek-ai/libreoffice-kit/**",
+      "tar/node_modules/**/@deepseek-ai/libreoffice-kit-*/**",
+      "tar/node_modules/@deepseek-ai/dsh-office-kit/**",
+      "tar/node_modules/@deepseek-ai/dsh-skill-office/**",
+      "tar/node_modules/@deepseek-ai/dsh-tool-office/**",
+      "res/runtime/office-skills/**"
+    ]
+  },
+  {
+    "id": "office-python-tk",
+    "owner": "C×A",
+    "match": [
+      "res/runtime/primary-runtime/dependencies/python/tcl/**",
+      "res/runtime/primary-runtime/dependencies/python/DLLs/_tkinter*",
+      "res/runtime/primary-runtime/dependencies/python/DLLs/tcl*.dll",
+      "res/runtime/primary-runtime/dependencies/python/DLLs/tk*.dll",
+      "res/runtime/primary-runtime/dependencies/python/Lib/tkinter/**"
+    ]
+  },
+  {
+    "id": "office-python",
+    "owner": "C×A",
+    "match": [
+      "res/runtime/primary-runtime/dependencies/python/**",
+      "res/runtime/primary-runtime/runtime.json"
+    ]
+  },
+  {
+    "id": "shared-node",
+    "owner": "A",
+    "match": [
+      "res/runtime/primary-runtime/dependencies/node/**",
+      "res/node/**"
+    ]
+  },
+  {
+    "id": "pnpm-office",
+    "owner": "C×A",
+    "match": [
+      "res/runtime/primary-runtime/dependencies/pnpm/**"
+    ]
+  },
+  {
+    "id": "pnpm-bundled",
+    "owner": "A",
+    "match": [
+      "res/pnpm/**"
+    ]
+  },
+  {
+    "id": "dshd-remote",
+    "owner": "D×A",
+    "match": [
+      "res/vendor/dshd-remote/**"
+    ]
+  },
+  {
+    "id": "pet-ort-nonjsep",
+    "owner": "A",
+    "forbidden": {
+      "targets": [
+        "all"
+      ]
+    },
+    "match": [
+      "asar/src/renderer/pet-live2d/ort/ort-wasm-simd-threaded.wasm",
+      "asar/src/renderer/pet-live2d/ort/ort-wasm-simd-threaded.mjs"
+    ]
+  },
+  {
+    "id": "pet-ort",
+    "owner": "A",
+    "match": [
+      "asar/src/renderer/pet-live2d/ort/**"
+    ]
+  },
+  {
+    "id": "pet-anime4k",
+    "owner": "A",
+    "match": [
+      "asar/src/renderer/pet-live2d/anime4k*"
+    ]
+  },
+  {
+    "id": "pet-model",
+    "owner": "A",
+    "match": [
+      "asar/src/renderer/pet-live2d/avatar/**",
+      "asar/src/renderer/pet-live2d/**"
+    ]
+  },
+  {
+    "id": "pet-rig",
+    "owner": "A",
+    "match": [
+      "asar/src/renderer/pet/**"
+    ]
+  },
+  {
+    "id": "mobile-whale-ui-dup",
+    "owner": "E",
+    "forbidden": {
+      "targets": [
+        "all"
+      ]
+    },
+    "match": [
+      "asar/mobile/web/whale-ui/**",
+      "asar/mobile/web/assets/whale-ui/**"
+    ]
+  },
+  {
+    "id": "mobile-head-dup",
+    "owner": "E",
+    "forbidden": {
+      "targets": [
+        "all"
+      ]
+    },
+    "match": [
+      "asar/mobile/web/assets/whale-head.png"
+    ]
+  },
+  {
+    "id": "renderer-openui",
+    "owner": "A",
+    "forbidden": {
+      "targets": [
+        "all"
+      ]
+    },
+    "match": [
+      "asar/src/renderer/openui/**"
+    ]
+  },
+  {
+    "id": "launcher-node-pty",
+    "owner": "A",
+    "targets": [
+      "launcher"
+    ],
+    "forbidden": {
+      "targets": [
+        "launcher"
+      ]
+    },
+    "match": [
+      "asar/node_modules/node-pty/**",
+      "asar-unpacked/node_modules/node-pty/**"
+    ]
+  },
+  {
+    "id": "launcher-whale-ui",
+    "owner": "A",
+    "targets": [
+      "launcher"
+    ],
+    "forbidden": {
+      "targets": [
+        "launcher"
+      ]
+    },
+    "match": [
+      "asar/src/whale-ui/**",
+      "asar/src/renderer/whale-ui/**"
+    ]
+  },
+  {
+    "id": "whale-ui-renderer",
+    "owner": "A",
+    "match": [
+      "asar/src/renderer/whale-ui/**",
+      "asar/src/renderer/**"
+    ]
+  },
+  {
+    "id": "harness-apps-web-dist-dup",
+    "owner": "C×A",
+    "forbidden": {
+      "targets": [
+        "all"
+      ]
+    },
+    "match": [
+      "tar/node_modules/@deepseek-ai/dsh-web-frontend/public/**"
+    ]
+  },
+  {
+    "id": "harness-web-frontend",
+    "owner": "C×A",
+    "match": [
+      "tar/apps/web/**",
+      "tar/node_modules/@deepseek-ai/dsh-web-frontend/**"
+    ]
+  },
+  {
+    "id": "dsh-im-sharp",
+    "owner": "B",
+    "match": [
+      "res/vendor/dsh-im/node_modules/sharp/**",
+      "res/vendor/dsh-im/node_modules/@img/**"
+    ]
+  },
+  {
+    "id": "harness-sharp",
+    "owner": "C×A",
+    "match": [
+      "tar/node_modules/sharp/**",
+      "tar/node_modules/@img/**"
+    ]
+  },
+  {
+    "id": "inspector-lighthouse",
+    "owner": "C×A",
+    "match": [
+      "tar/node_modules/lighthouse/**",
+      "tar/node_modules/**/lighthouse/**"
+    ]
+  },
+  {
+    "id": "inspector",
+    "owner": "C×A",
+    "match": [
+      "tar/node_modules/playwright*/**",
+      "tar/node_modules/@playwright/**",
+      "tar/node_modules/puppeteer*/**",
+      "tar/node_modules/@puppeteer/**",
+      "tar/node_modules/axe-core/**"
+    ]
+  },
+  {
+    "id": "sherpa-onnx",
+    "owner": "C×A",
+    "match": [
+      "tar/node_modules/sherpa-onnx*/**",
+      "tar/node_modules/**/sherpa-onnx*/**"
+    ]
+  },
+  {
+    "id": "harness-runtime-other",
+    "owner": "C×A",
+    "match": [
+      "tar/**"
+    ]
+  },
+  {
+    "id": "desktop-other",
+    "owner": "A",
+    "match": [
+      "asar/**",
+      "asar-unpacked/**",
+      "res/**"
+    ]
+  }
+]

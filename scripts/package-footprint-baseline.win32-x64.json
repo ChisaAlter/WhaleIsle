@@ -1,0 +1,835 @@
+{
+  "schemaVersion": 1,
+  "target": "win32-x64",
+  "source": {
+    "input": "win-unpacked",
+    "commit": "9afd663353e"
+  },
+  "totals": {
+    "bytes": 1446843795,
+    "files": 35132,
+    "byLayer": {
+      "base": {
+        "bytes": 324045260,
+        "files": 19
+      },
+      "asar": {
+        "bytes": 103306144,
+        "files": 939
+      },
+      "asar-unpacked": {
+        "bytes": 8111297,
+        "files": 113
+      },
+      "tar": {
+        "bytes": 588389135,
+        "files": 19212
+      },
+      "res": {
+        "bytes": 422991959,
+        "files": 14849
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "electron-base",
+      "owner": "A",
+      "bytes": 324045260,
+      "files": 19,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "office-kit-wasm",
+      "owner": "C×A",
+      "bytes": 152358756,
+      "files": 49,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "forbidden"
+    },
+    {
+      "id": "office-kit-native",
+      "owner": "C×A",
+      "bytes": 202652792,
+      "files": 852,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "office-python-tk",
+      "owner": "C×A",
+      "bytes": 10902831,
+      "files": 1282,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "office-python",
+      "owner": "C×A",
+      "bytes": 133286758,
+      "files": 3894,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "shared-node",
+      "owner": "A",
+      "bytes": 94105287,
+      "files": 3,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pnpm-office",
+      "owner": "C×A",
+      "bytes": 21454593,
+      "files": 439,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pnpm-bundled",
+      "owner": "A",
+      "bytes": 56513698,
+      "files": 459,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "dshd-remote",
+      "owner": "D×A",
+      "bytes": 47619385,
+      "files": 6638,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-ort-nonjsep",
+      "owner": "A",
+      "bytes": 11231180,
+      "files": 2,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "forbidden"
+    },
+    {
+      "id": "pet-ort",
+      "owner": "A",
+      "bytes": 22713610,
+      "files": 3,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-anime4k",
+      "owner": "A",
+      "bytes": 9458559,
+      "files": 2,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-model",
+      "owner": "A",
+      "bytes": 6632632,
+      "files": 15,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "pet-rig",
+      "owner": "A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "mobile-whale-ui-dup",
+      "owner": "E",
+      "bytes": 16238827,
+      "files": 8,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "forbidden"
+    },
+    {
+      "id": "mobile-head-dup",
+      "owner": "E",
+      "bytes": 1281699,
+      "files": 1,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "forbidden"
+    },
+    {
+      "id": "renderer-openui",
+      "owner": "A",
+      "bytes": 7243302,
+      "files": 6,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "forbidden"
+    },
+    {
+      "id": "whale-ui-renderer",
+      "owner": "A",
+      "bytes": 18128015,
+      "files": 97,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-apps-web-dist-dup",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-web-frontend",
+      "owner": "C×A",
+      "bytes": 9736449,
+      "files": 148,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "dsh-im-sharp",
+      "owner": "B",
+      "bytes": 19956505,
+      "files": 57,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-sharp",
+      "owner": "C×A",
+      "bytes": 20551923,
+      "files": 56,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "inspector-lighthouse",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "inspector",
+      "owner": "C×A",
+      "bytes": 0,
+      "files": 0,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "sherpa-onnx",
+      "owner": "C×A",
+      "bytes": 23514027,
+      "files": 25,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "harness-runtime-other",
+      "owner": "C×A",
+      "bytes": 179576350,
+      "files": 18083,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    },
+    {
+      "id": "desktop-other",
+      "owner": "A",
+      "bytes": 57641357,
+      "files": 2994,
+      "baselineBytes": null,
+      "deltaBytes": null,
+      "maxBytes": null,
+      "status": "ok"
+    }
+  ],
+  "forbidden": [
+    {
+      "component": "mobile-head-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/assets/whale-head.png",
+      "bytes": 1281699
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/echarts-core.js",
+      "bytes": 637321
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/echarts-full.js",
+      "bytes": 1154280
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/icons.js",
+      "bytes": 969100
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/maplibre.js",
+      "bytes": 1641130
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/mermaid.js",
+      "bytes": 3474587
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/standalone-runtime.js",
+      "bytes": 2346094
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/assets/three.js",
+      "bytes": 706443
+    },
+    {
+      "component": "mobile-whale-ui-dup",
+      "owner": "E",
+      "path": "asar/mobile/web/whale-ui/viewer.html",
+      "bytes": 5309872
+    },
+    {
+      "component": "renderer-openui",
+      "owner": "A",
+      "path": "asar/src/renderer/openui/OPENUI-SDK-LICENSES.txt",
+      "bytes": 3348
+    },
+    {
+      "component": "renderer-openui",
+      "owner": "A",
+      "path": "asar/src/renderer/openui/UPSTREAM.md",
+      "bytes": 2111
+    },
+    {
+      "component": "renderer-openui",
+      "owner": "A",
+      "path": "asar/src/renderer/openui/api/image-search.cjs",
+      "bytes": 3943
+    },
+    {
+      "component": "renderer-openui",
+      "owner": "A",
+      "path": "asar/src/renderer/openui/api/street-route.cjs",
+      "bytes": 2892
+    },
+    {
+      "component": "renderer-openui",
+      "owner": "A",
+      "path": "asar/src/renderer/openui/api/wiki.cjs",
+      "bytes": 3249
+    },
+    {
+      "component": "renderer-openui",
+      "owner": "A",
+      "path": "asar/src/renderer/openui/viewer.html",
+      "bytes": 7227759
+    },
+    {
+      "component": "pet-ort-nonjsep",
+      "owner": "A",
+      "path": "asar/src/renderer/pet-live2d/ort/ort-wasm-simd-threaded.mjs",
+      "bytes": 20926
+    },
+    {
+      "component": "pet-ort-nonjsep",
+      "owner": "A",
+      "path": "asar/src/renderer/pet-live2d/ort/ort-wasm-simd-threaded.wasm",
+      "bytes": 11210254
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/assets/dsoffice.cjs",
+      "bytes": 769125
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/assets/dsoffice.data",
+      "bytes": 23024619
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/assets/dsoffice.data.js.metadata",
+      "bytes": 145921
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/assets/dsoffice.wasm",
+      "bytes": 127846009
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/assets/manifest.json",
+      "bytes": 71558
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/licenses/DeepSeek-Harness-MIT.txt",
+      "bytes": 2120
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/licenses/LICENSE",
+      "bytes": 300898
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/licenses/NOTICE",
+      "bytes": 1859
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/package.json",
+      "bytes": 760
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/prebuilds.json",
+      "bytes": 9200
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/build-autogen.input",
+      "bytes": 755
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/core-source.json",
+      "bytes": 120
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/build-identity.mjs",
+      "bytes": 2749
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/core-source.mjs",
+      "bytes": 1599
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/document-operations.hxx",
+      "bytes": 2250
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/ui-resource-policy.mjs",
+      "bytes": 1389
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/autogen.input",
+      "bytes": 681
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/build.mjs",
+      "bytes": 14164
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/lok.cxx",
+      "bytes": 17277
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0001-macos-build-tools.patch",
+      "bytes": 4850
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0002-system-font-demand.patch",
+      "bytes": 14394
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0003-node-runtime.patch",
+      "bytes": 3868
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0004-system-fonts-only.patch",
+      "bytes": 577
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0005-cross-build-rules.patch",
+      "bytes": 1814
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0006-wasm-external-platforms.patch",
+      "bytes": 2100
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0008-disable-link-updates.patch",
+      "bytes": 1524
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0009-disable-optional-curl.patch",
+      "bytes": 401
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0010-refresh-component-registry.patch",
+      "bytes": 622
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0011-preserve-optimization-with-prefix-maps.patch",
+      "bytes": 1614
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0012-anonymize-explicit-source-paths.patch",
+      "bytes": 1698
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0023-pdfium-for-embedded-graphics.patch",
+      "bytes": 758
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0024-pdfium-emscripten-platform.patch",
+      "bytes": 355
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0025-browser-editing.patch",
+      "bytes": 517
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0028-synchronous-workbook-calculation.patch",
+      "bytes": 2650
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0029-unloaded-external-blip.patch",
+      "bytes": 757
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0030-no-password-strength-ui.patch",
+      "bytes": 3850
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0031-size-optimization-lto.patch",
+      "bytes": 905
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/patches/0047-defer-offscreen-canvas-output.patch",
+      "bytes": 2759
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/slim.mjs",
+      "bytes": 3625
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/source.json",
+      "bytes": 501
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/source.mjs",
+      "bytes": 619
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/engine/wasm-source/stage.mjs",
+      "bytes": 5924
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/scripts/checkout-wasm.mjs",
+      "bytes": 1360
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/scripts/core-checkout.mjs",
+      "bytes": 2054
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/scripts/minimize-ui-resources.py",
+      "bytes": 10535
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/scripts/pack-utils.mjs",
+      "bytes": 3327
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/scripts/platform-matrix.mjs",
+      "bytes": 6008
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/scripts/verify-artifacts.mjs",
+      "bytes": 15970
+    },
+    {
+      "component": "office-kit-wasm",
+      "owner": "C×A",
+      "path": "tar/node_modules/.dsh-instances/e61bc0b3845f92c9d54d302b/sources/source-changes.patch",
+      "bytes": 49767
+    }
+  ],
+  "duplicates": [
+    {
+      "sha256": "8e5ecb02b16f0fa276eea39fbb05e43737712575c0759654867e1b955d46691f",
+      "bytesEach": 5309872,
+      "count": 2,
+      "wastedBytes": 5309872,
+      "paths": [
+        "asar/mobile/web/whale-ui/viewer.html",
+        "asar/src/renderer/whale-ui/viewer.html"
+      ]
+    },
+    {
+      "sha256": "645362467375cb7bb16b07eb38b96f64445f2748d82584a8d757ba84fe6efa8e",
+      "bytesEach": 3474587,
+      "count": 2,
+      "wastedBytes": 3474587,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/mermaid.js",
+        "asar/src/renderer/whale-ui/assets/mermaid.js"
+      ]
+    },
+    {
+      "sha256": "7f68c840226505004215c0b82d4e502c24b5bc3f4b93c4baaaa19bd679c0def8",
+      "bytesEach": 1062472,
+      "count": 4,
+      "wastedBytes": 3187416,
+      "paths": [
+        "asar-unpacked/node_modules/node-pty/build/Release/conpty/OpenConsole.exe",
+        "asar-unpacked/node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
+        "tar/node_modules/.dsh-instances/89deb89a1f7b2a8c55846555/build/Release/conpty/OpenConsole.exe",
+        "tar/node_modules/.dsh-instances/89deb89a1f7b2a8c55846555/prebuilds/win32-x64/conpty/OpenConsole.exe"
+      ]
+    },
+    {
+      "sha256": "deb725bfe8cda45421160c5be8c562173fd4343893051f39127c208a093c1ba7",
+      "bytesEach": 1281699,
+      "count": 3,
+      "wastedBytes": 2563398,
+      "paths": [
+        "asar/assets/whale-head.png",
+        "asar/mobile/web/assets/whale-head.png",
+        "tar/apps/web/dist/whale-isle-head.png"
+      ]
+    },
+    {
+      "sha256": "37ae14c4b3979992b6cc6e7645961674c6ef6f3fdbe8bde0fa0cb57093eb8229",
+      "bytesEach": 2346094,
+      "count": 2,
+      "wastedBytes": 2346094,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/standalone-runtime.js",
+        "asar/src/renderer/whale-ui/assets/standalone-runtime.js"
+      ]
+    },
+    {
+      "sha256": "b8db3ab4822edda804bb8be150590932c88917a824c954a6c26eba102a139bc1",
+      "bytesEach": 1641130,
+      "count": 2,
+      "wastedBytes": 1641130,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/maplibre.js",
+        "asar/src/renderer/whale-ui/assets/maplibre.js"
+      ]
+    },
+    {
+      "sha256": "fbb1e29abf3e2fc2e8468f621a73c1a40597a52273e99fc4c285ad8b095b3a8c",
+      "bytesEach": 1154280,
+      "count": 2,
+      "wastedBytes": 1154280,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/echarts-full.js",
+        "asar/src/renderer/whale-ui/assets/echarts-full.js"
+      ]
+    },
+    {
+      "sha256": "57ce6803e8fd00cd163ecd5600bb2fee4580cacf79e3bf9563220a3d08b4543f",
+      "bytesEach": 969100,
+      "count": 2,
+      "wastedBytes": 969100,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/icons.js",
+        "asar/src/renderer/whale-ui/assets/icons.js"
+      ]
+    },
+    {
+      "sha256": "d836b5548476959ce03a4b6c6f31937b12f6f02b8e470d1ca6834ae38c49ea9d",
+      "bytesEach": 706443,
+      "count": 2,
+      "wastedBytes": 706443,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/three.js",
+        "asar/src/renderer/whale-ui/assets/three.js"
+      ]
+    },
+    {
+      "sha256": "f54ca8e6872115818943ec484ab92e5ce9fb2c5c7ea9b093c4123f940583e4be",
+      "bytesEach": 664616,
+      "count": 2,
+      "wastedBytes": 664616,
+      "paths": [
+        "tar/node_modules/.dsh-instances/22479bcf1315147fa7b04de1/build/esm/experimental_attributes.js",
+        "tar/node_modules/.dsh-instances/22479bcf1315147fa7b04de1/build/esnext/experimental_attributes.js"
+      ]
+    },
+    {
+      "sha256": "c367c82be9a9387d01b9744bf4227679762376818fcf1dfde7882d84e3fc94af",
+      "bytesEach": 637321,
+      "count": 2,
+      "wastedBytes": 637321,
+      "paths": [
+        "asar/mobile/web/whale-ui/assets/echarts-core.js",
+        "asar/src/renderer/whale-ui/assets/echarts-core.js"
+      ]
+    },
+    {
+      "sha256": "a4c2229bdc2a2a630acdc095b4d86008e5c3e3bc7773174354f3da4f5beb9cde",
+      "bytesEach": 575056,
+      "count": 2,
+      "wastedBytes": 575056,
+      "paths": [
+        "res/runtime/primary-runtime/dependencies/python/Lib/site-packages/numpy.libs/msvcp140-a4c2229bdc2a2a630acdc095b4d86008.dll",
+        "res/runtime/primary-runtime/dependencies/python/Lib/site-packages/pandas.libs/msvcp140-a4c2229bdc2a2a630acdc095b4d86008.dll"
+      ]
+    }
+  ],
+  "unclassified": {
+    "bytes": 0,
+    "files": 0,
+    "top": []
+  },
+  "installer": null
+}

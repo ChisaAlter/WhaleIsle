@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "win32-x64": {
+    "totalBytes": 1461312233,
+    "maxUnclassifiedBytes": 8388608,
+    "maxDuplicateBytes": 24277889,
+    "pendingSlimmingForbidden": [
+      "office-kit-wasm",
+      "pet-ort-nonjsep",
+      "mobile-whale-ui-dup",
+      "mobile-head-dup",
+      "renderer-openui"
+    ],
+    "components": {
+      "electron-base": {
+        "maxBytes": 327285713
+      },
+      "office-kit-wasm": {
+        "maxBytes": 153882344
+      },
+      "office-kit-native": {
+        "maxBytes": 204679320
+      },
+      "office-python-tk": {
+        "maxBytes": 11951407
+      },
+      "office-python": {
+        "maxBytes": 134619626
+      },
+      "shared-node": {
+        "maxBytes": 95153863
+      },
+      "pnpm-office": {
+        "maxBytes": 22503169
+      },
+      "pnpm-bundled": {
+        "maxBytes": 57562274
+      },
+      "dshd-remote": {
+        "maxBytes": 48667961
+      },
+      "pet-ort-nonjsep": {
+        "maxBytes": 12279756
+      },
+      "pet-ort": {
+        "maxBytes": 23762186
+      },
+      "pet-anime4k": {
+        "maxBytes": 10507135
+      },
+      "pet-model": {
+        "maxBytes": 7681208
+      },
+      "pet-rig": {
+        "maxBytes": 0
+      },
+      "mobile-whale-ui-dup": {
+        "maxBytes": 17287403
+      },
+      "mobile-head-dup": {
+        "maxBytes": 2330275
+      },
+      "renderer-openui": {
+        "maxBytes": 8291878
+      },
+      "whale-ui-renderer": {
+        "maxBytes": 19176591
+      },
+      "harness-apps-web-dist-dup": {
+        "maxBytes": 0
+      },
+      "harness-web-frontend": {
+        "maxBytes": 10785025
+      },
+      "dsh-im-sharp": {
+        "maxBytes": 21005081
+      },
+      "harness-sharp": {
+        "maxBytes": 21600499
+      },
+      "inspector-lighthouse": {
+        "maxBytes": 0
+      },
+      "inspector": {
+        "maxBytes": 0
+      },
+      "sherpa-onnx": {
+        "maxBytes": 24562603
+      },
+      "harness-runtime-other": {
+        "maxBytes": 181372114
+      },
+      "desktop-other": {
+        "maxBytes": 58689933
+      }
+    }
+  }
+}
