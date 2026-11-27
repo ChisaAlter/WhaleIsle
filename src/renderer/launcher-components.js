@@ -231,7 +231,7 @@
 
   function componentIcon(row) {
     return row.source === 'official'
-      ? h('img', { class: 'comp-icon comp-brand', src: '../../assets/whale-head.png', alt: '鲸屿', width: '36', height: '36' })
+      ? h('img', { class: 'comp-icon comp-brand', src: '../../assets/whale-head.png', alt: 'WhaleIsle', width: '36', height: '36' })
       : h('span', { class: 'comp-icon', 'aria-hidden': 'true' }, iconGlyph(row));
   }
 
@@ -331,7 +331,7 @@
             h('h4', {}, name),
             h('span', { class: 'row-meta' }, row.installedVersion ? `v${row.installedVersion}` : '外部运行中')),
           stateBadge(row)),
-        h('p', { class: 'home-component-description' }, row.description || '鲸屿扩展组件'),
+        h('p', { class: 'home-component-description' }, row.description || 'WhaleIsle 扩展组件'),
         failureLine(row),
         h('div', { class: 'home-component-controls' }, control, settings));
     }));

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Whale Isle Launcher</title>
+  <title>WhaleIsle Launcher</title>
   <link rel="stylesheet" href="../shared/dsh-webui-tokens.css" />
   <link rel="stylesheet" href="render-policy.css" />
   <link rel="stylesheet" href="window-controls.css" />
@@ -21,8 +21,8 @@
       <div class="rail-head">
         <img class="brand-avatar" src="../../assets/whale-head.png" alt="" />
         <span class="brand-block">
-          <span class="brand-title"><span class="brand-cn">鲸<span class="brand-isle">屿</span></span><span class="brand-role">启动器</span></span>
-          <span class="brand-en">WHALE ISLE</span>
+          <span class="brand-title"><span class="brand-wordmark">Whale<span class="brand-isle">Isle</span></span></span>
+          <span class="brand-role">LAUNCHER</span>
         </span>
       </div>
       <nav class="tabs" role="tablist" aria-label="启动器分区" aria-orientation="vertical">
@@ -68,7 +68,7 @@
         <section id="panel-home" class="panel is-active" role="tabpanel" aria-labelledby="tab-home">
           <header class="home-heading"><div><h2>首页</h2><p id="lede">桌面端与组件，一处管理。</p></div><button type="button" class="ghost small" data-goto="versions">版本管理</button></header>
           <section class="home-desktop" aria-labelledby="home-desktop-title">
-            <div class="home-desktop-head"><div class="home-product"><div><span class="home-eyebrow">WHALE ISLE</span><h3 id="home-desktop-title">鲸屿桌面端</h3></div></div><span class="badge" id="home-version">读取版本…</span></div>
+            <div class="home-desktop-head"><div class="home-product"><div><span class="home-eyebrow">桌面应用</span><h3 id="home-desktop-title">WhaleIsle 桌面端</h3></div></div><span class="badge" id="home-version">读取版本…</span></div>
             <p class="home-description">在桌面端开始对话，管理模型与工作区。</p>
             <div class="home-desktop-controls"><p class="home-desktop-status"><span class="home-state-dot" id="home-state-dot" aria-hidden="true"></span><span id="home-status" role="status" aria-live="polite" aria-atomic="true">正在读取状态…</span><span id="home-run-badge" hidden></span></p>
             <div class="actions" id="home-actions">
@@ -103,14 +103,14 @@
             </div>
           </section>
           <section id="home-components" class="home-components" aria-labelledby="home-components-title" hidden>
-            <header class="home-section-head"><div><h3 id="home-components-title">我的组件</h3><p>按需开启，扩展鲸屿的能力。</p></div><button type="button" class="ghost small" data-goto="components">管理组件</button></header>
+            <header class="home-section-head"><div><h3 id="home-components-title">我的组件</h3><p>按需开启，扩展 WhaleIsle 的能力。</p></div><button type="button" class="ghost small" data-goto="components">管理组件</button></header>
             <div class="home-component-grid" id="home-components-list"></div>
           </section>
           <section id="home-plugin-guidance" class="card" role="status" aria-labelledby="home-plugin-guidance-title" hidden>
             <h3 class="card-title" id="home-plugin-guidance-title">插件加载失败</h3>
             <p class="recovery-verdict" id="home-plugin-guidance-body"></p>
             <div class="actions">
-              <button type="button" class="primary" id="btn-recover-plugins">禁用并启动鲸屿</button>
+              <button type="button" class="primary" id="btn-recover-plugins">禁用并启动 WhaleIsle</button>
               <button type="button" class="ghost" data-goto="plugins">查看插件排查</button>
             </div>
           </section>

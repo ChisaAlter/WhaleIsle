@@ -146,7 +146,7 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.deepEqual(result.recoveryPending.names, ['dsh-tavern']);
   assert.equal(result.recoveryPending.controlsDisabled, true);
   assert.equal(result.recoveryPending.cancelVisible || result.recoveryPending.okVisible, false);
-  assert.equal(result.recoverySuccess.title, '已禁用并启动鲸屿');
+  assert.equal(result.recoverySuccess.title, '已禁用并启动 WhaleIsle');
   assert.equal(result.recoverySuccess.guidanceVisible, false);
   assert.equal(result.recoveryStickyRefresh.lastStartAt, 'skip-completed-2');
   assert.equal(result.recoveryStickyRefresh.recoveryAt, 'original-failure-2');

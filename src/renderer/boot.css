@@ -232,22 +232,8 @@ body[data-state="error"] .horizon {
   -webkit-text-fill-color: var(--boot-ink);
 }
 
-/* 品牌副标：鲸屿字标独占一行；下一行 BASED ON DEEPSEEK HARNESS */
-.brand-tag {
-  display: block;
-  text-indent: 0;
-}
-
-.tag-mark {
-  font-style: normal;
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-indent: 0;
-}
-
 .brand-sub {
   display: block;
-  margin-top: 6px;
   font-size: 8px;
   letter-spacing: 0.32em;
   text-indent: 0.32em;

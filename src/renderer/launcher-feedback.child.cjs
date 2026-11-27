@@ -241,7 +241,7 @@ app.whenReady().then(async () => {
       recovery: { skipUserPlugins: false },
       forensics: { plugins: [{ name: 'dsh-tavern', disabled: true }, { name: 'healthy-plugin' }] } };
     recoveryResolve({ ok: true, harnessRestarted: true });
-    await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.startsWith('已禁用并启动鲸屿：'))");
+    await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.startsWith('已禁用并启动 WhaleIsle：'))");
     result.recoverySuccess = { ...(await read()), guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden"), calls: recoveryCalls };
     await capture('plugin-recovery-success');
     await clearNotices();
