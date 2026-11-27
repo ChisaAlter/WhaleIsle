@@ -169,6 +169,13 @@ function markTreeChatSeen(tree: BotChatTree | undefined, sessionId: string | nul
   return { ...tree, chats };
 }
 
+function resolveKnownBotSession(bot: BotRecord | undefined): string | null { return bot?.chatSessionId ?? bot?.homeSessionId ?? null; }
+
+function applyOpenedBotSession(prev: BotsState, botId: string, sid: string, known: string | null): BotsState {
+  const bots = sid === known ? prev.bots : prev.bots.map((b) => (b.id === botId ? { ...b, chatSessionId: sid, homeSessionId: b.homeSessionId ?? sid } : b));
+  return { ...prev, activeBotId: botId, activeGroupId: null, activeSessionId: sid, bots };
+}
+
 function extractNeedsYou(payload: BotListPayload) {
   const raw = payload.needsYou;
   if (raw && typeof raw === 'object' && 'counts' in raw && typeof raw.counts === 'object') {
@@ -442,19 +449,19 @@ class BotsStore {
 
   async openBotHome(botId: string): Promise<void> {
     const bot = this.state.bots.find((entry) => entry.id === botId);
-    const knownSession = bot?.chatSessionId ?? bot?.homeSessionId ?? null;
-    this.setState({ activeBotId: botId, activeGroupId: null, ...(knownSession ? { activeSessionId: knownSession } : {}) });
-    if (knownSession) { this.host.openSession?.(knownSession, { botId }); void this.markChatSeen(botId, knownSession, true); }
+    const known = resolveKnownBotSession(bot);
+    this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: known });
+    if (known) { this.host.openSession?.(known, { botId }); void this.markChatSeen(botId, known, true); }
     if ((bot?.upNextCount ?? 0) > 0) void this.markUpNextSeen(botId);
     try {
       const res = await callBotRpc<{ sessionId?: string }>(RPC_METHODS.CHAT_OPEN, { botId });
       if (this.state.activeBotId !== botId) return;
-      const sid = res?.sessionId ?? knownSession;
-      if (sid) {
-        this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: sid });
-        if (sid !== knownSession) { this.host.openSession?.(sid, { botId }); void this.markChatSeen(botId, sid, true); }
-      }
+      const sid = res?.sessionId ?? known;
+      if (!sid) { this.setState({ activeBotId: null }); return; }
+      this.setState((prev) => applyOpenedBotSession(prev, botId, sid, known));
+      if (sid !== known) { this.host.openSession?.(sid, { botId }); void this.markChatSeen(botId, sid, true); }
     } catch (err) {
+      if (!known && this.state.activeBotId === botId) this.setState({ activeBotId: null });
       this.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     }
   }

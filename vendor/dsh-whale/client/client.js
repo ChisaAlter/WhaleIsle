@@ -2197,6 +2197,13 @@ function markTreeChatSeen(tree, sessionId) {
   });
   return { ...tree, chats };
 }
+function resolveKnownBotSession(bot) {
+  return bot?.chatSessionId ?? bot?.homeSessionId ?? null;
+}
+function applyOpenedBotSession(prev, botId, sid, known) {
+  const bots = sid === known ? prev.bots : prev.bots.map((b) => b.id === botId ? { ...b, chatSessionId: sid, homeSessionId: b.homeSessionId ?? sid } : b);
+  return { ...prev, activeBotId: botId, activeGroupId: null, activeSessionId: sid, bots };
+}
 function extractNeedsYou(payload) {
   const raw = payload.needsYou;
   if (raw && typeof raw === "object" && "counts" in raw && typeof raw.counts === "object") {
@@ -2497,25 +2504,28 @@ var BotsStore = class {
   }
   async openBotHome(botId) {
     const bot = this.state.bots.find((entry) => entry.id === botId);
-    const knownSession = bot?.chatSessionId ?? bot?.homeSessionId ?? null;
-    this.setState({ activeBotId: botId, activeGroupId: null, ...knownSession ? { activeSessionId: knownSession } : {} });
-    if (knownSession) {
-      this.host.openSession?.(knownSession, { botId });
-      void this.markChatSeen(botId, knownSession, true);
+    const known = resolveKnownBotSession(bot);
+    this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: known });
+    if (known) {
+      this.host.openSession?.(known, { botId });
+      void this.markChatSeen(botId, known, true);
     }
     if ((bot?.upNextCount ?? 0) > 0) void this.markUpNextSeen(botId);
     try {
       const res = await callBotRpc(RPC_METHODS2.CHAT_OPEN, { botId });
       if (this.state.activeBotId !== botId) return;
-      const sid = res?.sessionId ?? knownSession;
-      if (sid) {
-        this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: sid });
-        if (sid !== knownSession) {
-          this.host.openSession?.(sid, { botId });
-          void this.markChatSeen(botId, sid, true);
-        }
+      const sid = res?.sessionId ?? known;
+      if (!sid) {
+        this.setState({ activeBotId: null });
+        return;
+      }
+      this.setState((prev) => applyOpenedBotSession(prev, botId, sid, known));
+      if (sid !== known) {
+        this.host.openSession?.(sid, { botId });
+        void this.markChatSeen(botId, sid, true);
       }
     } catch (err) {
+      if (!known && this.state.activeBotId === botId) this.setState({ activeBotId: null });
       this.pushToast({ message: err instanceof Error ? err.message : String(err), tone: "error" });
     }
   }
@@ -23384,8 +23394,8 @@ function BotContextMenu({
           className: "dsh-bots-menu-item",
           onClick: () => {
             onClose();
-            const sessionId = bot.chatSessionId ?? bot.homeSessionId ?? null;
-            void botsStore.markChatSeen(bot.id, sessionId, hasUnreadSignal);
+            const targetSessionId = hasUnreadSignal ? null : bot.chatSessionId ?? bot.homeSessionId ?? null;
+            void botsStore.markChatSeen(bot.id, targetSessionId, hasUnreadSignal);
             if (hasUnreadSignal && (bot.upNextCount ?? 0) > 0) {
               void botsStore.markUpNextSeen(bot.id);
             }
@@ -23679,7 +23689,9 @@ function BotSidebarCard({
                         e.stopPropagation();
                         void botsStore.markUpNextSeen(bot.id);
                         void botsStore.openBotHome(bot.id).finally(() => {
-                          botsStore.setRightPanelTab("home", bot.id);
+                          if (botsStore.getState().activeBotId === bot.id) {
+                            botsStore.setRightPanelTab("home", bot.id);
+                          }
                         });
                       },
                       children: bot.upNextCount
@@ -24851,7 +24863,10 @@ function shouldPreserveOptimisticSelection(state, sid, panelId, sameHostView) {
   if (sid === null && panelId === null) {
     return true;
   }
-  return Boolean(state.activeBotId && state.activeSessionId && state.activeSessionId !== sid);
+  if (!state.activeBotId || !state.bots.some((b) => b.id === state.activeBotId)) {
+    return false;
+  }
+  return state.activeSessionId === null || state.activeSessionId !== sid;
 }
 function markEnteredBotSessionSeen(state, prevSid, sid, next) {
   if (prevSid === void 0 || sid === prevSid || !next.botId || !next.sessionId) {

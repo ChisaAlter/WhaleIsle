@@ -178,8 +178,8 @@ function BotContextMenu({
         className="dsh-bots-menu-item"
         onClick={() => {
           onClose();
-          const sessionId = bot.chatSessionId ?? bot.homeSessionId ?? null;
-          void botsStore.markChatSeen(bot.id, sessionId, hasUnreadSignal);
+          const targetSessionId = hasUnreadSignal ? null : (bot.chatSessionId ?? bot.homeSessionId ?? null);
+          void botsStore.markChatSeen(bot.id, targetSessionId, hasUnreadSignal);
           if (hasUnreadSignal && (bot.upNextCount ?? 0) > 0) {
             void botsStore.markUpNextSeen(bot.id);
           }
@@ -503,7 +503,9 @@ export function BotSidebarCard({
                   e.stopPropagation();
                   void botsStore.markUpNextSeen(bot.id);
                   void botsStore.openBotHome(bot.id).finally(() => {
-                    botsStore.setRightPanelTab('home', bot.id);
+                    if (botsStore.getState().activeBotId === bot.id) {
+                      botsStore.setRightPanelTab('home', bot.id);
+                    }
                   });
                 }}
               >

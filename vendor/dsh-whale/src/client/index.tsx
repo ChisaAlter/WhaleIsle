@@ -606,7 +606,10 @@ function shouldPreserveOptimisticSelection(
   if (sid === null && panelId === null) {
     return true;
   }
-  return Boolean(state.activeBotId && state.activeSessionId && state.activeSessionId !== sid);
+  if (!state.activeBotId || !state.bots.some((b) => b.id === state.activeBotId)) {
+    return false;
+  }
+  return state.activeSessionId === null || state.activeSessionId !== sid;
 }
 
 function markEnteredBotSessionSeen(
