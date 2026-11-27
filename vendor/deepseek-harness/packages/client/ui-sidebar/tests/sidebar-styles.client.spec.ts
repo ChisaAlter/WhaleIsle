@@ -260,4 +260,53 @@ describe('SidebarRoot.module.css', () => {
     expect(collapsed?.get('right')).toBe('5px')
     expect(collapsed?.get('top')).toBe('5px')
   })
+
+  it('matches the composer card frosted glass surface, inset rim, and backdrop pseudo-element on expanded New Session', () => {
+    const button = declarations('.newSession')
+    expect(button?.get('border')).toBe('0')
+    expect(button?.get('--dsw-elevation-stroke-color')).toBe('var(--dsw-alias-border-l2)')
+    expect(button?.get('border-radius')).toBe('var(--dsw-radius-md)')
+    expect(button?.get('corner-shape')).toBe('round')
+    expect(button?.get('background')).toBe('var(--dsw-specific-input-major)')
+    expect(button?.get('box-shadow')).toBe('inset 0 0 12px 1px rgba(255, 255, 255, 0.25), var(--dsw-elevation-stroke)')
+    expect(button?.has('backdrop-filter')).toBe(false)
+    expect(button?.has('opacity')).toBe(false)
+
+    const backdrop = declarations('.newSession::before')
+    expect(backdrop?.get('content')).toBe("''")
+    expect(backdrop?.get('position')).toBe('absolute')
+    expect(backdrop?.get('inset')).toBe('0')
+    expect(backdrop?.get('z-index')).toBe('0')
+    expect(backdrop?.get('border-radius')).toBe('inherit')
+    expect(backdrop?.get('corner-shape')).toBe('inherit')
+    expect(backdrop?.get('backdrop-filter')).toBe('var(--dsw-menu-backdrop-filter)')
+    expect(backdrop?.get('pointer-events')).toBe('none')
+
+    for (const foreground of ['.newSessionLabelMask', '.newSessionShortcut']) {
+      expect(declarations(foreground)?.get('position'), foreground).toBe('relative')
+      expect(declarations(foreground)?.get('z-index'), foreground).toBe('1')
+    }
+  })
+
+  it('layers translucent hover/active washes on the backdrop pseudo-element and resets the glass card when collapsed or in Codex skin', () => {
+    expect(declarations('.newSession:hover')?.get('--dsw-elevation-stroke-color')).toBe('var(--dsw-alias-border-l3)')
+    expect(declarations('.newSession:hover::before')?.get('background')).toBe('var(--dsw-alias-interactive-bg-hover)')
+    expect(declarations('.newSession:active')?.get('--dsw-elevation-stroke-color')).toBe('var(--dsw-alias-border-l3)')
+    expect(declarations('.newSession:active::before')?.get('background')).toBe('var(--dsw-alias-interactive-bg-active)')
+    expect(css.indexOf('.newSession:hover::before')).toBeLessThan(css.indexOf('.newSession:active::before'))
+    expect(declarations('.newSession:focus-visible')?.get('outline')).toBe(
+      'var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary))',
+    )
+
+    const collapsed = declarations('.collapsed .newSession')
+    expect(collapsed?.get('border')).toBe('0')
+    expect(collapsed?.get('background')).toBe('transparent')
+    expect(collapsed?.get('box-shadow')).toBe('none')
+    expect(declarations('.collapsed .newSession::before')?.get('display')).toBe('none')
+    expect(declarations('.collapsed .newSession:hover')?.get('background-color')).toBe('var(--dsw-alias-interactive-bg-hover)')
+    expect(declarations('.collapsed .newSession:active')?.get('background-color')).toBe('var(--dsw-alias-interactive-bg-active)')
+
+    expect(declarations(":global(html[data-dsh-skin='codex']) .newSession")?.get('box-shadow')).toBe('none')
+    expect(declarations(":global(html[data-dsh-skin='codex']) .newSession::before")?.get('display')).toBe('none')
+  })
 })
