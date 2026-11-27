@@ -370,10 +370,10 @@ function openNativeRightPanel(
     return;
   }
   const state = botsStore.getState();
-  const targetBot = state.bots.find((entry) => entry.id === botId);
-  const candidateSessionId = state.activeSessionId
-    ?? targetBot?.chatSessionId
-    ?? targetBot?.homeSessionId
+  const targetBot = botId ? state.bots.find((entry) => entry.id === botId) : undefined;
+  const botSessionId = targetBot?.chatSessionId ?? targetBot?.homeSessionId;
+  const candidateSessionId = (botId ? botSessionId : null)
+    ?? state.activeSessionId
     ?? readMainSessionId(sessions);
   try {
     if (candidateSessionId && typeof rightbar.openTabIn === 'function') {
@@ -581,6 +581,58 @@ function registerNativeRightSidebarTab(
   }
 }
 
+function isBotHomeSession(
+  bot: BotRecord,
+  chatsByBot: ReturnType<typeof botsStore.getState>['chatsByBot'],
+  sessionId: string,
+): boolean {
+  const direct = bot.chatSessionId ?? bot.homeSessionId ?? null;
+  if (direct) {
+    return direct === sessionId;
+  }
+  const homeChat = chatsByBot[bot.id]?.chats.find((c) => c.origin === 'home' && !c.closed);
+  return homeChat?.sessionId === sessionId || homeChat?.chatId === sessionId;
+}
+
+function shouldPreserveOptimisticSelection(
+  state: ReturnType<typeof botsStore.getState>,
+  sid: string | null,
+  panelId: string | null,
+  sameHostView: boolean,
+): boolean {
+  if (!sameHostView) {
+    return false;
+  }
+  if (sid === null && panelId === null) {
+    return true;
+  }
+  if (!state.activeBotId || !state.bots.some((b) => b.id === state.activeBotId)) {
+    return false;
+  }
+  return state.activeSessionId === null || state.activeSessionId !== sid;
+}
+
+function markEnteredBotSessionSeen(
+  state: ReturnType<typeof botsStore.getState>,
+  prevSid: string | null | undefined,
+  sid: string | null,
+  next: { botId: string | null; sessionId: string | null },
+): void {
+  if (prevSid === undefined || sid === prevSid || !next.botId || !next.sessionId) {
+    return;
+  }
+  const bot = state.bots.find((entry) => entry.id === next.botId);
+  if (!bot) {
+    return;
+  }
+  if (bot.unread || bot.dotState === 'failed') {
+    void botsStore.markChatSeen(bot.id, next.sessionId, true);
+  }
+  if (isBotHomeSession(bot, state.chatsByBot, next.sessionId) && (bot.upNextCount ?? 0) > 0) {
+    void botsStore.markUpNextSeen(bot.id);
+  }
+}
+
 export function apply(ctx: HarnessClientContext): void {
   const sessions = readOptionalService<SessionsServiceLike>(ctx, 'sessions');
   let capturedRightbar: SidebarRightControllerLike | null = null;
@@ -676,23 +728,25 @@ export function apply(ctx: HarnessClientContext): void {
       const currentState = botsStore.getState();
       const sid = readMainSessionId(sessions);
       const panelId = readActivePanelId(ctx.layout);
+      const prevSid = lastMainSessionId;
+      const sameHostView = sid === prevSid && panelId === lastPanelId;
       const dataChanged =
         currentState.loaded !== prevState.loaded
         || currentState.bots !== prevState.bots
         || currentState.chatsByBot !== prevState.chatsByBot;
       prevState = currentState;
 
-      if (!force && sid === lastMainSessionId && panelId === lastPanelId && !dataChanged) {
+      if (!force && sameHostView && !dataChanged) {
         return;
       }
       lastMainSessionId = sid;
       lastPanelId = panelId;
 
-      // Avoid overwriting optimistic selection before a mock/unhydrated host publishes a mainView session.
-      if (!force && dataChanged && sid === null && panelId === null) {
+      if (!force && dataChanged && shouldPreserveOptimisticSelection(currentState, sid, panelId, sameHostView)) {
         return;
       }
 
+      const settingsBotId = currentState.settingsRoute?.host === 'page' ? currentState.settingsRoute.botId : null;
       const next = resolveActiveBotSelection({
         activePanelId: panelId,
         mainSessionId: sid,
@@ -700,7 +754,7 @@ export function apply(ctx: HarnessClientContext): void {
         chatsByBot: currentState.chatsByBot,
         prevActiveGroupId: currentState.activeGroupId,
         prevActiveBotId: currentState.activeBotId,
-        settingsRouteBotId: currentState.settingsRoute?.host === 'page' ? currentState.settingsRoute.botId : null,
+        settingsRouteBotId: settingsBotId,
       }) as {
         botId: string | null;
         groupId: string | null;
@@ -708,7 +762,7 @@ export function apply(ctx: HarnessClientContext): void {
         closePageSettings: boolean;
       };
 
-      if (next.closePageSettings && currentState.settingsRoute?.host === 'page') {
+      if (next.closePageSettings && settingsBotId) {
         botsStore.closeBotSettings();
       }
       botsStore.setActiveSelection({
@@ -716,6 +770,7 @@ export function apply(ctx: HarnessClientContext): void {
         groupId: next.groupId,
         sessionId: next.sessionId,
       });
+      markEnteredBotSessionSeen(currentState, prevSid, sid, next);
     };
 
     syncMainSelection(true);

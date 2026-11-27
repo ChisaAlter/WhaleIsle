@@ -114,6 +114,7 @@ function BotContextMenu({
 
   const left = Math.max(8, Math.min(position.x, window.innerWidth - 210));
   const top = Math.max(8, Math.min(position.y, window.innerHeight - 280));
+  const hasUnreadSignal = Boolean(bot.unread) || bot.dotState === 'failed' || (bot.upNextCount ?? 0) > 0;
 
   return createPortal(
     <div ref={menuRef} className="dsh-bots-popover" style={{ left, top }}>
@@ -177,15 +178,15 @@ function BotContextMenu({
         className="dsh-bots-menu-item"
         onClick={() => {
           onClose();
-          void botsStore.markChatSeen(
-            bot.id,
-            bot.chatSessionId ?? bot.homeSessionId ?? null,
-            Boolean(bot.unread),
-          );
+          const targetSessionId = hasUnreadSignal ? null : (bot.chatSessionId ?? bot.homeSessionId ?? null);
+          void botsStore.markChatSeen(bot.id, targetSessionId, hasUnreadSignal);
+          if (hasUnreadSignal && (bot.upNextCount ?? 0) > 0) {
+            void botsStore.markUpNextSeen(bot.id);
+          }
         }}
       >
-        {bot.unread ? <IconEye size={14} /> : <IconEyeOff size={14} />}
-        <span>{bot.unread ? tr('bots.row.markRead', 'Mark Read') : tr('bots.row.markUnread', 'Mark Unread')}</span>
+        {hasUnreadSignal ? <IconEye size={14} /> : <IconEyeOff size={14} />}
+        <span>{hasUnreadSignal ? tr('bots.row.markRead', 'Mark Read') : tr('bots.row.markUnread', 'Mark Unread')}</span>
       </button>
       <div className="dsh-bots-menu-sep" />
       <button
@@ -500,8 +501,12 @@ export function BotSidebarCard({
                 title={tr('bots.upNext.title', 'Up next')}
                 onClick={(e) => {
                   e.stopPropagation();
-                  botsStore.setRightPanelTab('home', bot.id);
-                  void botsStore.openBotHome(bot.id);
+                  void botsStore.markUpNextSeen(bot.id);
+                  void botsStore.openBotHome(bot.id).finally(() => {
+                    if (botsStore.getState().activeBotId === bot.id) {
+                      botsStore.setRightPanelTab('home', bot.id);
+                    }
+                  });
                 }}
               >
                 {bot.upNextCount}
