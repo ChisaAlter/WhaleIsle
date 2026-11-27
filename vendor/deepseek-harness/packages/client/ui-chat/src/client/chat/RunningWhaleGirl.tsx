@@ -1,4 +1,4 @@
-/** Whale Isle's running mascot beside the live Turn status. */
+/** WhaleIsle's running mascot beside the live Turn status. */
 import css from './ChatView.module.css'
 
 /**

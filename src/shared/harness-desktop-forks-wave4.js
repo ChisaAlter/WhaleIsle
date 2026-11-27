@@ -49,7 +49,7 @@ const WAVE4_FORK_FILE_MARKERS = [
   { file: 'packages/experimental/liveshare/src/endpoint-classification.ts', includes: ["'authorization/start'", "'credentials/describeRecords'"] },
   { file: 'packages/llm/llm/src/error.ts', includes: ['(?:quota|usage[\\s_-]+limit)[\\s_-]+(?:exceeded|exhausted|reached)'] },
   { file: 'packages/llm/llm-pi-ai/src/auth.ts', includes: ['DEVICE_ID_KEY', 'export async function getOrCreateDeviceId'] },
-  { file: 'packages/llm/llm-pi-ai/src/login.ts', includes: ['OPENAI_OAUTH_REVOKE_URL', 'revokeOpenAIOAuth', "agentName: 'Whale Isle'", 'getDeviceId'] },
+  { file: 'packages/llm/llm-pi-ai/src/login.ts', includes: ['OPENAI_OAUTH_REVOKE_URL', 'revokeOpenAIOAuth', "agentName: 'WhaleIsle'", 'getDeviceId'] },
   { file: 'packages/llm/llm-pi-ai/src/discovery.ts', includes: ['visibility', "visibility === 'list'"] },
   { file: 'patches/@earendil-works__pi-ai@1.3.0.patch', includes: ['isChatGPTSignIn', 'forceDeveloperRole', 'listenCallbackServer', 'subscription_sharing_workplace_individual_usage_limit_exceeded'] },
   { file: 'packages/llm/llm-pi-ai/tests/siwc-patch.spec.ts', includes: ['nonReasoningOpenAIModel'] },

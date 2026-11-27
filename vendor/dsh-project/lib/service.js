@@ -130,7 +130,7 @@ export async function validateWorkspacePath(rawWorkspace, dshHome = '') {
   }
   const canonicalDshHome = dshHome ? await realpath(resolve(dshHome)).catch(() => '') : '';
   if (canonicalDshHome && (withinPath(canonicalDshHome, canonical) || withinPath(canonical, canonicalDshHome))) {
-    throw httpError(400, '鲸屿数据目录不能作为项目工作目录，请选择你的项目文件夹。', { code: 'invalid_workspace' });
+    throw httpError(400, 'WhaleIsle 数据目录不能作为项目工作目录，请选择你的项目文件夹。', { code: 'invalid_workspace' });
   }
   if (anchors.some((anchor) => anchor !== canonicalHome && anchor !== canonicalDshHome && withinPath(canonical, anchor))) {
     throw httpError(400, '系统配置目录不能作为项目工作目录，请选择具体的项目文件夹。', { code: 'invalid_workspace' });

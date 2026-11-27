@@ -137,7 +137,7 @@ export function BotAgentSubpage({ bot }: SubpageProps) {
   };
 
   const runtimeName = !bot.agent || bot.agent === 'deepseek-harness'
-    ? tr('bots.runtime.local', zh ? '鲸屿内核' : 'WhaleIsle Core')
+    ? tr('bots.runtime.local', zh ? 'WhaleIsle 内核' : 'WhaleIsle Core')
     : bot.agent;
 
   return (

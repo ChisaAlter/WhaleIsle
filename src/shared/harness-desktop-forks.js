@@ -188,7 +188,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-chat/src/client/chat/RunningWhaleGirl.tsx', includes: ['claude-isle-reading.png', 'data-dsh-mascot'] },
   { file: 'apps/web/public/Claude-Artwork-NOTICES.txt', includes: ['Ancean', 'ZipZipPipe'] },
   { file: 'packages/client/ui-codex-sidebar/package.json', includes: ['dsh-plugin-codex-ui', 'platform'] },
-  { file: 'packages/client/ui-codex-sidebar/lib/client.js', includes: ['data-dsh-skin', "return 'Whale Isle'", 'installNow'] },
+  { file: 'packages/client/ui-codex-sidebar/lib/client.js', includes: ['data-dsh-skin', "return 'WhaleIsle'", 'installNow'] },
   { file: 'packages/client/ui-codex-sidebar/VENDORED.md', includes: ['ice-ai-lab/dsh-plugin-codex-ui', 'MIT'] },
   { file: 'packages/client/ui-theme/tests/theme-family.client.spec.ts', includes: ["'codex'", 'skin'] },
   { file: 'packages/client/ui-theme/tests/boot-theme.client.spec.ts', includes: ['data-dsh-skin', 'lightSkin'] },

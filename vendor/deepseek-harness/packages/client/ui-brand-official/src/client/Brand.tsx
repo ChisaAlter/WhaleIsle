@@ -14,8 +14,8 @@ export function OfficialBrandMark({ size }: SidebarBrandMarkOwnerProps) {
 }
 
 /**
- * Render the Whale Isle wordmark with the transparent head and Harness attribution.
- * @returns the Whale Isle wordmark.
+ * Render the WhaleIsle wordmark with the transparent head and Harness attribution.
+ * @returns the WhaleIsle wordmark.
  */
 export function OfficialBrandName() {
   return (
@@ -24,8 +24,7 @@ export function OfficialBrandName() {
       <img className={css.avatar} src="claude-isle-head.png" alt="" data-dsh-mascot="claude" />
       <span className={css.nameBlock}>
         <span className={css.titleRow}>
-          <span className={css.chineseName}><span>鲸</span><span className={css.isleGlyph}>屿</span></span>
-          <span className={css.englishName}>WHALE <span className={css.isleWord}>ISLE</span></span>
+          <span className={css.brandName}>Whale<span className={css.isleWord}>Isle</span></span>
         </span>
         <span className={css.attribution}>BASED ON DEEPSEEK HARNESS</span>
       </span>

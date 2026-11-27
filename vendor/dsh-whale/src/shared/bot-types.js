@@ -129,8 +129,9 @@ export const BOT_PROMPT_SNAPSHOT_LIMIT = 10;
 export const BOT_WEBHOOK_MAX_SKEW_SEC = 300;
 export const BOT_WEBHOOK_RATE_LIMIT_PER_MIN = 30;
 
-export const BOT_CREATED_KICKOFF = '鲸屿：你刚刚加入团队，请完成首次初始化并简短打个招呼。';
-export const WHALE_BOT_CREATED_KICKOFF_PREFIX = '鲸屿：你刚刚加入团队';
+export const BOT_CREATED_KICKOFF = 'WhaleIsle：你刚刚加入团队，请完成首次初始化并简短打个招呼。';
+export const WHALE_BOT_CREATED_KICKOFF_PREFIX = 'WhaleIsle：你刚刚加入团队';
+export const LEGACY_WHALE_BOT_CREATED_KICKOFF_PREFIX = '鲸屿：你刚刚加入团队';
 export const LEGACY_BOT_CREATED_KICKOFF_PREFIX = 'Orca: you were just created';
 export const BOT_CREATED_STATUS_LABEL = '正在初始化';
 
@@ -140,6 +141,7 @@ export function isBotCreatedKickoff(prompt) {
   }
   const trimmed = prompt.trim();
   return trimmed.startsWith(WHALE_BOT_CREATED_KICKOFF_PREFIX)
+    || trimmed.startsWith(LEGACY_WHALE_BOT_CREATED_KICKOFF_PREFIX)
     || trimmed.startsWith(LEGACY_BOT_CREATED_KICKOFF_PREFIX);
 }
 

@@ -1,6 +1,6 @@
 /**
  * dsh-task-control — desktop-owned Host plugin implementing the task
- * admission lock and work inspection behind the Whale Isle quit/update
+ * admission lock and work inspection behind the WhaleIsle quit/update
  * protection flow.
  *
  * Admission surface: every webServer route (present and future registrations,

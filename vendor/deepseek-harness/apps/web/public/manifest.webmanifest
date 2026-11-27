@@ -1,6 +1,6 @@
 {
-  "name": "Whale Isle",
-  "short_name": "Whale Isle",
+  "name": "WhaleIsle",
+  "short_name": "WhaleIsle",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

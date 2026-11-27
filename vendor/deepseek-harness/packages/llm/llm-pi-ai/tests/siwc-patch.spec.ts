@@ -216,7 +216,7 @@ describe('pi-ai@1.3.0 SIWC patch hardening', () => {
         },
       },
       {
-        agentName: 'Whale Isle',
+        agentName: 'WhaleIsle',
         getDeviceId: () => '11111111-1111-4111-8111-111111111111',
       },
     )
@@ -225,7 +225,7 @@ describe('pi-ai@1.3.0 SIWC patch hardening', () => {
     const redirectUri = authUrl.searchParams.get('redirect_uri') ?? ''
     const state = authUrl.searchParams.get('state') ?? ''
 
-    expect(seenAuthUrl).toContain('agent_name_hint=Whale+Isle')
+    expect(seenAuthUrl).toContain('agent_name_hint=WhaleIsle')
     expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/)
     expect(redirectUri).not.toBe('http://127.0.0.1:1455/auth/callback')
     expect(seenPlaceholder).toBe(redirectUri)

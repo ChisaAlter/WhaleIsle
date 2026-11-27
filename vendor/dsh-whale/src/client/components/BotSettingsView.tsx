@@ -379,7 +379,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
   );
 
   const runtimeLabel = !bot.agent || bot.agent === 'deepseek-harness'
-    ? tr('bots.runtime.local', zh ? '鲸屿内核' : 'WhaleIsle Core')
+    ? tr('bots.runtime.local', zh ? 'WhaleIsle 内核' : 'WhaleIsle Core')
     : bot.agent;
 
   const innerContent = (

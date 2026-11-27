@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-codex-ui",
   "version": "0.2.0",
-  "description": "Codex-style sidebar for Whale Isle: New chat, Projects and Recents, adapted from ice-ai-lab/dsh-plugin-codex-ui (MIT).",
+  "description": "Codex-style sidebar for WhaleIsle: New chat, Projects and Recents, adapted from ice-ai-lab/dsh-plugin-codex-ui (MIT).",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

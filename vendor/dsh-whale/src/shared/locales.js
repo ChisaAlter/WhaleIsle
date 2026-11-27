@@ -268,7 +268,7 @@ const ZH_CN = Object.freeze({
   'bots.section.showMore_other': '再显示 {{count}} 位队友',
 
   // Runtime badge
-  'bots.runtime.local': '鲸屿内核',
+  'bots.runtime.local': 'WhaleIsle 内核',
 
   // Options & filters
   'bots.options.title': '队友显示选项',

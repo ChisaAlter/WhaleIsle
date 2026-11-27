@@ -30,7 +30,7 @@ export const zh = {
   'card.loadInvalidRef': '页面附件引用无效，无法读取。',
   'card.loadSessionMissing': '此会话已不存在，无法读取页面。',
   'card.frameTitle': '视觉回复：{title}',
-  'card.desktopOnly': '请在鲸屿桌面端打开此页面以交互预览。',
+  'card.desktopOnly': '请在 WhaleIsle 桌面端打开此页面以交互预览。',
   'card.close': '关闭页面',
 } satisfies Record<string, string>
 
@@ -64,7 +64,7 @@ export const en = {
   'card.loadInvalidRef': 'The page attachment reference is invalid and cannot be read.',
   'card.loadSessionMissing': 'This conversation no longer exists, so the page cannot be read.',
   'card.frameTitle': 'Visual reply: {title}',
-  'card.desktopOnly': 'Open this page in the Whale Isle desktop app for an interactive preview.',
+  'card.desktopOnly': 'Open this page in the WhaleIsle desktop app for an interactive preview.',
   'card.close': 'Close page',
 } satisfies Record<VisualRepliesKey, string>
 

@@ -77,8 +77,8 @@ it('ships install metadata with the built web application', async () => {
   // so only an absent `id`, which defaults to the resolved `start_url`, gives
   // each mount its own identity. `public-mount.e2e.ts` reads the resolved form.
   expect(manifest).toEqual({
-    name: 'Whale Isle',
-    short_name: 'Whale Isle',
+    name: 'WhaleIsle',
+    short_name: 'WhaleIsle',
     start_url: './',
     scope: './',
     // `standalone` keeps the phone's status bar; `fullscreen` hides it and the

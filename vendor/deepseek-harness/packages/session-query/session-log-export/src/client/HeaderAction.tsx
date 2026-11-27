@@ -55,7 +55,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
   const copying = useSessionMarkdownCopy(state => state.copying)
   const busy = entry?.status === 'downloading'
   const [open, setOpen] = useState(false)
-  // Hide only the Whale Isle header entry; the export command keeps its feedback.
+  // Hide only the WhaleIsle header entry; the export command keeps its feedback.
   const whaleDesktop = typeof (globalThis as { shell?: { windowAction?: unknown } }).shell?.windowAction === 'function'
 
   return managedSession || whaleDesktop ? null : (

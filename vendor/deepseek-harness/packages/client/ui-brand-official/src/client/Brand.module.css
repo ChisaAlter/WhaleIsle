@@ -42,49 +42,17 @@
   gap: 8px;
 }
 
-.chineseName {
+.brandName {
   display: inline-flex;
-  align-items: center;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 22px;
-  letter-spacing: -0.04em;
-}
-
-.isleGlyph {
-  color: var(--dsw-alias-state-business-primary);
-}
-
-.englishName {
-  display: block;
-  line-height: 12px;
+  align-items: baseline;
   color: var(--dsw-alias-label-primary);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}
-
-/* The locale service keeps the document language in sync with Settings. */
-:global(html[lang|="en"]) .englishName {
-  order: -1;
   font-size: 18px;
   font-weight: 700;
   line-height: 22px;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
 }
 
-:global(html[lang|="en"]) .chineseName {
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 12px;
-  letter-spacing: 0.12em;
-}
-
-:global(html[lang|="en"]) .isleGlyph {
-  color: inherit;
-}
-
-:global(html[lang|="en"]) .isleWord {
+.isleWord {
   color: var(--dsw-alias-state-business-primary);
 }
 

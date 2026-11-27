@@ -145,7 +145,7 @@ Running group titles, reasoning previews, tool and command rows, the active retr
 
 Closing assistant messages use 16px SVG boxes for copy and branch actions at the default content font size, with fixed 1px strokes and 28px click targets. SVG boxes do not shrink in the flex row; their size and targets follow the content font-size delta.
 
-The running status shows Whale Isle's whale girl running ahead of the blue text, using the existing transparent animated WebP mascot. CSS selects its still first frame when reduced motion or forced colors are active. The Claude skin instead shows a static, orange-haired reading portrait and localized “Thinking” text in the family accent; the same status announcement and elapsed-time clock remain. The default images are embedded in the plugin stylesheet; Claude's portrait and its attribution ship with the Web public assets. React does not pass image data through DOM styles.
+The running status shows WhaleIsle's whale girl running ahead of the blue text, using the existing transparent animated WebP mascot. CSS selects its still first frame when reduced motion or forced colors are active. The Claude skin instead shows a static, orange-haired reading portrait and localized “Thinking” text in the family accent; the same status announcement and elapsed-time clock remain. The default images are embedded in the plugin stylesheet; Claude's portrait and its attribution ship with the Web public assets. React does not pass image data through DOM styles.
 
 Scroll-edge fades initialize when `ResizeObserver` reports the open group's layout; opening the group performs no immediate scroll-dimension read in a layout effect.
 

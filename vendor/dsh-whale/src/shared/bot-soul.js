@@ -3,6 +3,7 @@
 const EN_STARTER_LINE = /^Describe .+ here: what it is for, how it talks, and what it must never do\.$/;
 const ZH_STARTER_LINES = Object.freeze([
   /^在这里描述.+：它的职责、沟通方式，以及绝对不能做的事。$/,
+  /^你是 WhaleIsle 的大肥鱼队友「.+」：在这里写下你的专长、沟通风格，以及绝对不能越过的边界。$/,
   /^你是鲸屿的大肥鱼队友「.+」：在这里写下你的专长、沟通风格，以及绝对不能越过的边界。$/,
 ]);
 
@@ -33,7 +34,7 @@ export function starterSoul(name, locale = 'en-US') {
   const isZh = typeof locale === 'string' && locale.toLowerCase().startsWith('zh');
   const cleanName = oneLine(name) || (isZh ? '新大肥鱼队友' : 'New bot');
   if (isZh) {
-    return `# ${cleanName}\n\n你是鲸屿的大肥鱼队友「${cleanName}」：在这里写下你的专长、沟通风格，以及绝对不能越过的边界。\n`;
+    return `# ${cleanName}\n\n你是 WhaleIsle 的大肥鱼队友「${cleanName}」：在这里写下你的专长、沟通风格，以及绝对不能越过的边界。\n`;
   }
   return `# ${cleanName}\n\nDescribe ${cleanName} here: what it is for, how it talks, and what it must never do.\n`;
 }

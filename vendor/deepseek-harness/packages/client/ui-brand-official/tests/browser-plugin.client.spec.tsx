@@ -108,11 +108,12 @@ describe('official browser-brand plugin', () => {
     expect(mark?.getAttribute('style')).toContain('width: 24px; height: 24px;')
   })
 
-  it('renders Whale Isle in Web without a desktop preload', () => {
+  it('renders WhaleIsle in Web without a desktop preload', () => {
     const name = render(<OfficialBrandName />)
-    expect(name.container.textContent).toContain('鲸屿')
-    expect(name.container.textContent).toContain('WHALE ISLE')
-    expect(name.container.textContent!.indexOf('鲸屿')).toBeLessThan(name.container.textContent!.indexOf('WHALE ISLE'))
+    expect(name.container.textContent).toContain('WhaleIsle')
+    expect(name.container.textContent).not.toContain('鲸屿')
+    expect(name.container.textContent).not.toContain('WHALE ISLE')
+    expect(name.container.querySelector('[class*="isleWord"]')?.textContent).toBe('Isle')
     expect(name.getByText('BASED ON DEEPSEEK HARNESS')).toBeTruthy()
     expect(name.container.querySelector('img')?.getAttribute('src')).toBe('/whale-isle-head.png')
     expect(name.container.querySelector('img[data-dsh-mascot="claude"]')?.getAttribute('src')).toBe('claude-isle-head.png')
@@ -128,8 +129,9 @@ describe('official browser-brand plugin', () => {
   it('keeps the same integrated brand with a desktop preload', () => {
     ;(window as Window & { shell?: unknown }).shell = { getWindowState: () => ({}) }
     const name = render(<OfficialBrandName />)
-    expect(name.container.textContent).toContain('鲸屿')
-    expect(name.container.textContent).toContain('WHALE ISLE')
+    expect(name.container.textContent).toContain('WhaleIsle')
+    expect(name.container.textContent).not.toContain('鲸屿')
+    expect(name.container.textContent).not.toContain('WHALE ISLE')
     expect(name.getByText('BASED ON DEEPSEEK HARNESS')).toBeTruthy()
     expect(name.container.querySelector('img')?.getAttribute('src')).toBe('/whale-isle-head.png')
     expect(name.container.querySelector('img[data-dsh-mascot="claude"]')?.getAttribute('src')).toBe('claude-isle-head.png')

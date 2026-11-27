@@ -1322,7 +1322,7 @@ nav[class*="_panelList"] { display: none !important; }
      * is the whole point; the string below is the one place to change it.
      */
     function BrandName() {
-      return 'Whale Isle';
+      return 'WhaleIsle';
     }
 
     /**
@@ -1553,7 +1553,7 @@ nav[class*="_panelList"] { display: none !important; }
     }
 
     /**
-     * Whale Isle activation: install the Codex sidebar while the Codex skin is
+     * WhaleIsle activation: install the Codex sidebar while the Codex skin is
      * active and tear its registrations down when another skin takes over.
      * The boot skin may land after the client entries activate, so an absent
      * attribute waits for the first real value instead of assuming Codex.

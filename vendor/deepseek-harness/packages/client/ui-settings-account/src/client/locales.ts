@@ -13,7 +13,7 @@ export const en = {
   timeoutTitle: 'Sign in timed out', timeoutDescription: 'Sign in again to continue.',
   failureTitle: 'Could not sign in',
   platformFailed: 'Could not complete the operation. Try again.', platformRetry: 'Retry',
-  loading: 'Loading…', backToHarness: 'Back to Whale Isle',
+  loading: 'Loading…', backToHarness: 'Back to WhaleIsle',
   settings: 'Settings', contactUs: 'Feedback', contactUsSignedOut: 'Contact us', menu: 'Account menu',
   nav: 'Account', signedIn: 'Signed in to DeepSeek', signedOut: 'Not signed in',
   signIn: 'Sign in', signOut: 'Sign out',
@@ -31,7 +31,7 @@ export const en = {
   balance: 'Topped-up balance', bonusBalance: 'Granted balance', balanceUnavailable: 'View on Platform', balanceSignedOut: 'Sign in to view',
   accountInfo: 'More account information', more: 'More', launcherLabel: 'Settings & account', usage: 'View usage', topUp: 'Top up',
   quotaTitle: 'No balance available',
-  quotaDescription: 'Whale Isle cannot start a new task with this account when no balance is available. Would you like to top up? You can also top up later in Settings → Account.',
+  quotaDescription: 'WhaleIsle cannot start a new task with this account when no balance is available. Would you like to top up? You can also top up later in Settings → Account.',
   quotaTopUp: 'Top up',
 } as const
 /** Account locale keys. */
@@ -48,7 +48,7 @@ export const zh: Record<AccountKey, string> = {
   timeoutTitle: '登录已超时', timeoutDescription: '请重新登录后继续操作。',
   failureTitle: '登录失败',
   platformFailed: '操作未完成，请重试', platformRetry: '重试',
-  loading: '加载中…', backToHarness: '返回 Whale Isle',
+  loading: '加载中…', backToHarness: '返回 WhaleIsle',
   settings: '设置', contactUs: '意见反馈', contactUsSignedOut: '联系我们', menu: '账号菜单',
   nav: '账号与余额', signedIn: '已登录 DeepSeek', signedOut: '尚未登录',
   signIn: '登录', signOut: '退出登录',
@@ -66,7 +66,7 @@ export const zh: Record<AccountKey, string> = {
   balance: '充值余额', bonusBalance: '赠金余额', balanceUnavailable: '前往开放平台查看', balanceSignedOut: '登录后查看',
   accountInfo: '更多账号信息', more: '更多', launcherLabel: '设置与账号', usage: '查询用量', topUp: '充值',
   quotaTitle: '当前无可用余额',
-  quotaDescription: '没有可用额度时，Whale Isle 无法开始新的任务，是否前往充值？或者可以稍后前往 设置 → 账号与余额 进行充值。',
+  quotaDescription: '没有可用额度时，WhaleIsle 无法开始新的任务，是否前往充值？或者可以稍后前往 设置 → 账号与余额 进行充值。',
   quotaTopUp: '去充值',
 }
 
