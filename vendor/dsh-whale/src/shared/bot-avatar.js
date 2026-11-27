@@ -289,11 +289,16 @@ function extractMascotId(value) {
   return parsed?.kind === 'mascot' ? parsed.id : null;
 }
 
-/** Returns the recommended background color for a WhaleIsle mascot, or `null` for others. */
+/**
+ * Returns the recommended background color for a WhaleIsle mascot, or `null` for others.
+ *
+ * @param {unknown} value
+ * @returns {string | null}
+ */
 export function recommendedMascotColor(value) {
   const id = extractMascotId(value);
   return id && Object.prototype.hasOwnProperty.call(WHALE_MASCOT_RECOMMENDED_COLORS, id)
-    ? WHALE_MASCOT_RECOMMENDED_COLORS[id]
+    ? WHALE_MASCOT_RECOMMENDED_COLORS[/** @type {keyof typeof WHALE_MASCOT_RECOMMENDED_COLORS} */ (id)]
     : null;
 }
 

@@ -67,6 +67,7 @@ export function normalizeHexColor(value) {
   return null;
 }
 
+/** @param {unknown} value */
 export function isTransparentBotAvatarColor(value) {
   return typeof value === 'string' && value.trim().toLowerCase() === TRANSPARENT_BOT_AVATAR_COLOR;
 }
@@ -75,6 +76,9 @@ export function isTransparentBotAvatarColor(value) {
  * Normalizes a bot avatar background color: `'transparent'` (case-insensitive)
  * or a CSS hex color (`#rgb`, `#rrggbb`, or without leading `#`).
  * Returns `null` if invalid.
+ *
+ * @param {unknown} value
+ * @returns {string | null}
  */
 export function normalizeBotAvatarColor(value) {
   if (isTransparentBotAvatarColor(value)) {
@@ -125,6 +129,10 @@ function hashSvgKey(svgText) {
   return `${svgText.length}:${(hash >>> 0).toString(36)}`;
 }
 
+/**
+ * @param {string} svgText
+ * @param {string} resolvedColor
+ */
 function applyMascotTint(svgText, resolvedColor) {
   const svgFill = resolvedColor === TRANSPARENT_BOT_AVATAR_COLOR ? 'none' : resolvedColor;
   const bgReplaced = svgText.replaceAll(AVATAR_BG_VAR, svgFill);
