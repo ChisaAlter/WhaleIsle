@@ -131,6 +131,10 @@ export interface BotChatRow {
   failedTotal?: number;
   handedOver?: boolean;
   fromClosedChat?: boolean;
+  workId?: string;
+  dispatchId?: string;
+  taskId?: string;
+  workState?: 'running' | 'done' | 'failed';
 }
 
 export interface BotChatTree {

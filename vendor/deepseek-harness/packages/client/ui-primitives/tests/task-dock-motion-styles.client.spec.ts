@@ -48,4 +48,11 @@ describe('TaskDock.module.css motion', () => {
       expect(declarations(selector).some(declaration => /^opacity|transition:.*opacity/.test(declaration))).toBe(false)
     }
   })
+
+  it('bounds the single grid column and wrappers so long single-line items cannot widen the dock past the composer', () => {
+    expect(declarations('.root')).toContain('grid-template-columns: minmax(0, 1fr)')
+    for (const selector of ['.root', '.slot', '.slide[data-state]', '.surface[data-state]', '.body']) {
+      expect(declarations(selector)).toContain('min-width: 0')
+    }
+  })
 })

@@ -25,7 +25,14 @@ import { botsRootDir, readSoul } from './fs-home.js';
 import { resolveBotLaunchRoute } from './launch-route.js';
 import { BOT_PRESET_ID } from './prompt-engine.js';
 import { createOwedMailDrainer } from './session-mail.js';
-import { buildSideChatSpec, createSessionWorkOps, executeControllerTurn, pruneClosedItemInbox, resolveTurnSource } from './session-work.js';
+import {
+  buildSideChatSpec,
+  createSessionWorkOps,
+  executeControllerTurn,
+  installStaleInboxMailPruner,
+  pruneClosedItemInbox,
+  resolveTurnSource,
+} from './session-work.js';
 
 export const BOT_OWNER_HOME = 'dsh-bots:home';
 export const BOT_OWNER_CHAT = 'dsh-bots:chat';
@@ -624,6 +631,9 @@ export function createSessionRuntime(deps) {
     })
     : null;
 
+  const staleInboxPruner = installStaleInboxMailPruner({ ctx, botsStore, itemsStore });
+  const pruneStaleInboxMail = () => staleInboxPruner.pruneAll();
+
   const {
     deleteChat,
     stopWork,
@@ -741,6 +751,7 @@ export function createSessionRuntime(deps) {
 
   function close() {
     try { offEvents?.(); } catch { /* Ignore cleanup error. */ }
+    staleInboxPruner.dispose();
     try { offItemClosed?.(); } catch { /* Ignore item close listener cleanup error. */ }
     customMailReconciler = null;
     for (const entries of inFlightTurns.values()) {
@@ -767,6 +778,7 @@ export function createSessionRuntime(deps) {
     deliverOwedMail,
     sendOwedMail,
     triggerOwedMail,
+    pruneStaleInboxMail,
     registerCustomMailReconciler,
     deleteChat,
     stopWork,

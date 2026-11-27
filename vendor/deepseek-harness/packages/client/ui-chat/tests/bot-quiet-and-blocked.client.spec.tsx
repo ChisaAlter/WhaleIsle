@@ -127,6 +127,11 @@ describe('Bot quiet NO_REPLY stripping', () => {
     expect(settledBot.container.textContent).not.toContain('NO_REPLY')
     cleanup()
 
+    const legacyWhale = renderAssistant('收到，已关掉。\n\nNO_REPLY', 'dsh-whale:assistant', 'settled')
+    expect(legacyWhale.container.textContent).toContain('收到，已关掉。')
+    expect(legacyWhale.container.textContent).not.toContain('NO_REPLY')
+    cleanup()
+
     const quietOnlyBot = renderAssistant('NO_REPLY', 'dsh-bots:group-member', 'settled')
     expect(quietOnlyBot.container.textContent).toBe('')
     cleanup()

@@ -43,4 +43,12 @@ describe('QueueDock.module.css motion', () => {
       expect(declarations(selector).some(declaration => /^opacity|transition:.*opacity/.test(declaration))).toBe(false)
     }
   })
+
+  it('bounds the single grid column and flex wrappers so long single-line rows ellipsize instead of overflowing right', () => {
+    expect(declarations('.dock')).toContain('grid-template-columns: minmax(0, 1fr)')
+    expect(declarations('.dock')).toContain('min-width: 0')
+    for (const selector of ['.clip', '.surface[data-state]', '.panel', '.panelBody']) {
+      expect(declarations(selector)).toContain('min-width: 0')
+    }
+  })
 })

@@ -8,7 +8,7 @@ const MARKER_DRESSING = /^[`*_]*/
 const MARKER_TRAILING_DRESSING = /^[`*_.!]*$/
 
 export function isBotOwnerSession(owner: unknown): boolean {
-  return typeof owner === 'string' && owner.startsWith('dsh-bots:')
+  return typeof owner === 'string' && (owner.startsWith('dsh-bots:') || owner === 'dsh-whale:assistant')
 }
 
 function insideOpenCodeFence(prefix: string): boolean {

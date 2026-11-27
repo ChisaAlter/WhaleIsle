@@ -1,7 +1,9 @@
 .root {
   box-sizing: border-box;
+  min-width: 0;
   min-height: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr;
   flex: none;
   margin: 0 auto;
@@ -46,6 +48,7 @@
    next card as the track-clipped strip did, and a busy main thread cannot make
    it jump. `clip` is neither a scroll container nor a backdrop root. */
 .slot {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -64,6 +67,7 @@
 
 .slide[data-state] {
   flex: none;
+  min-width: 0;
   padding-bottom: var(--dsh-composer-stack-gap, 6px);
   pointer-events: auto;
   transform: none;
@@ -78,6 +82,7 @@
 /* The material owns its own fade, so no ancestor below full opacity cuts the
    backdrop filter off from the page. */
 .surface[data-state] {
+  min-width: 0;
   overflow: hidden;
   transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
   border: 0;
@@ -96,6 +101,7 @@
 .body {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   padding: 6px 12px;
 }
 

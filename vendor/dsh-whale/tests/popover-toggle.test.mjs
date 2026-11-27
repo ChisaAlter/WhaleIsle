@@ -893,12 +893,24 @@ domTest('Sidebar bot tree omits Home Chat subrow, surfaces home workers, avoids 
   assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-active'), 'true');
   assert.equal(whaleWrap.querySelector('.dsh-bots-card')?.getAttribute('data-has-active-child'), 'false');
 
-  // 3. CSS layout contract: subrow-more-btn and worker-stop-btn use flex flow (no position: absolute overlap).
+  // 3. CSS layout contract: subrow-more-btn and worker-stop-btn use flex flow (no position: absolute overlap),
+  //    and worker rows share the exact 16px centered icon slot + 8px padding + 6px gap as sibling subrows so icons & titles align.
   const cssText = [...doc.head.querySelectorAll('style[data-dsh-whale-style]')].map((el) => el.textContent).join('\n');
   const subrowMoreBlock = /\.dsh-bots-subrow-more-btn\s*\{([^}]*)\}/.exec(cssText);
   assert.ok(subrowMoreBlock && !/position:\s*absolute/.test(subrowMoreBlock[1]), '.dsh-bots-subrow-more-btn must not use position: absolute');
   const workerStopBlock = /\.dsh-bots-worker-row\s+\.dsh-bots-worker-stop-btn\s*\{([^}]*)\}/.exec(cssText);
   assert.ok(workerStopBlock && !/position:\s*absolute/.test(workerStopBlock[1]), '.dsh-bots-worker-row .dsh-bots-worker-stop-btn must not use position: absolute');
+  const subrowIconBlock = /\.dsh-bots-subrow-icon\s*\{([^}]*)\}/.exec(cssText);
+  const workerIconBlock = /\.dsh-bots-worker-icon\s*\{([^}]*)\}/.exec(cssText);
+  assert.ok(subrowIconBlock && /width:\s*16px/.test(subrowIconBlock[1]), '.dsh-bots-subrow-icon must be 16px wide');
+  assert.ok(
+    workerIconBlock && /width:\s*16px/.test(workerIconBlock[1]) && /justify-content:\s*center/.test(workerIconBlock[1]),
+    '.dsh-bots-worker-icon must be a centered 16px box matching .dsh-bots-subrow-icon',
+  );
+  assert.ok(
+    homeWorkerRow.querySelector('.dsh-bots-worker-icon > .dsh-bots-worker-dot'),
+    'worker dot must render inside .dsh-bots-worker-icon so icon centers and title left edges align with .dsh-bots-subrow',
+  );
 
   // 4. Real backend subrow WITHOUT chatId opens '...' menu on first click and executes Open / Delete.
   const workSubrow = whaleWrap.querySelector('.dsh-bots-subrow');
