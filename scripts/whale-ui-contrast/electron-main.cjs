@@ -125,7 +125,7 @@ async function run() {
       }
       return { viewer: viewerPath, results }
     } finally {
-      win.destroy()
+      if (!win.isDestroyed()) win.destroy()
     }
   })
 }
@@ -133,16 +133,27 @@ async function run() {
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+// Prevent Electron's default window-all-closed quit from terminating the process
+// before run() finishes cleaning up its temp dir and writing outPath.
+app.on('window-all-closed', () => {})
 
 app.whenReady().then(async () => {
   const watchdog = setTimeout(() => app.exit(3), 280000)
   let code = 0
   try {
-    fs.writeFileSync(outPath, JSON.stringify(await run(), null, 2))
+    const result = await run()
+    if (!outPath) throw new Error('missing --out=<path> argument')
+    fs.writeFileSync(outPath, JSON.stringify(result, null, 2))
   } catch (error) {
     code = 2
-    fs.writeFileSync(outPath, JSON.stringify({ error: error instanceof Error ? error.stack || error.message : String(error) }))
+    const payload = JSON.stringify({ error: error instanceof Error ? error.stack || error.message : String(error) })
+    if (outPath) {
+      try { fs.writeFileSync(outPath, payload) } catch (writeError) { process.stderr.write(`${writeError}\n`) }
+    } else {
+      process.stderr.write(`${payload}\n`)
+    }
+  } finally {
+    clearTimeout(watchdog)
+    app.exit(code)
   }
-  clearTimeout(watchdog)
-  app.exit(code)
 })

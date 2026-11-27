@@ -432,8 +432,9 @@ class DshdRemote extends EventEmitter {
       const relayEndpoint = (config.remoteRelayEndpoint || config.remoteRelayUrl || defaults.relayEndpoint || '').trim();
       const useTls = relayUseTls(config, relayEndpoint);
       const listen = daemonListen(config);
-      const staticDir = path.join(VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server');
+      const staticDir = path.join(home, 'empty-public');
       const agentStoragePath = path.join(home, 'agents');
+      fs.mkdirSync(staticDir, { recursive: true });
       fs.mkdirSync(agentStoragePath, { recursive: true });
 
       const away = modeIsAway(config);
@@ -455,7 +456,7 @@ class DshdRemote extends EventEmitter {
         // encrypted relay (or loopback /lan-ws E2EE bridge in pure LAN mode);
         // the daemon itself still admits its own loopback origins and Origin-less local clients.
         corsAllowedOrigins: [],
-        staticDir: fs.existsSync(staticDir) ? staticDir : home,
+        staticDir,
         mcpDebug: false,
         agentClients: {},
         agentStoragePath,
@@ -834,38 +835,26 @@ class DshdRemote extends EventEmitter {
     }
   }
 
-  async revokePairingLink() {
-    await this.refreshPairing({ revokeLink: true });
-    return this.snapshot();
-  }
-
-  rotateToken() {
-    // Only the one-time QR changes; persistent links and devices stay bound.
-    return this.refreshPairing().then((pairing) => {
-      this.pairingEnsureBlocked = false;
-      return this.snapshot();
-    });
-  }
-
+  async revokePairingLink() { await this.refreshPairing({ revokeLink: true }); return this.snapshot(); }
+  rotateToken() { return this.refreshPairing().then(() => { this.pairingEnsureBlocked = false; return this.snapshot(); }); }
   unbindDevice(id) {
     const store = this.deviceStore();
     if (store && typeof store.revokeDevice === 'function' && id) {
-      store.revokeDevice(String(id));
+      const deviceId = String(id).trim();
+      store.revokeDevice(deviceId);
+      const child = this.daemon?.child;
+      if (deviceId && child?.stdin && !child.killed) {
+        try { passSecretToChild(child, 'revoke-device', deviceId); } catch { /* child already gone */ }
+      }
     }
     return this.snapshot();
   }
-
   renameDevice(id, name) {
     const store = this.deviceStore();
-    if (store && typeof store.renameDevice === 'function' && id) {
-      store.renameDevice(String(id), String(name ?? ''));
-    }
+    if (store && typeof store.renameDevice === 'function' && id) store.renameDevice(String(id), String(name ?? ''));
     return this.snapshot();
   }
-
-  ensureToken() {
-    return '';
-  }
+  ensureToken() { return ''; }
 
   runtimeConfigKey(config = this.getConfig() || {}) {
     const defaults = readDefaults();

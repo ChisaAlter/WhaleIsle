@@ -75,16 +75,22 @@ function createUpdateFlow({
     isMaximized: (win) => require('./chrome').isEffectivelyMaximized(win),
   });
 
+  const MAX_OPEN_UPDATE_CENTER_ATTEMPTS = 20;
+
   /**
    * Open the update center over `parent`, or the first visible shell window.
    * @param {any} [parent]
+   * @param {number} [attempts]
    */
-  function openUpdateCenter(parent) {
+  function openUpdateCenter(parent, attempts = 0) {
+    if (state.quitting || state.stoppingForQuit) return;
     const target = [parent, getMainWindow(), getLauncherWindow()]
       .find((win) => win && !win.isDestroyed() && win.isVisible());
     if (!target) {
+      if (attempts >= MAX_OPEN_UPDATE_CENTER_ATTEMPTS) return;
       showForeground();
-      setTimeout(() => openUpdateCenter(), 300);
+      const timer = setTimeout(() => openUpdateCenter(undefined, attempts + 1), 300);
+      timer.unref?.();
       return;
     }
     updateCenterWindow.open(target);

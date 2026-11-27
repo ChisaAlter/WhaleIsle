@@ -171,24 +171,24 @@ function proveGuardDiscriminates(t, {
       `mutation anchor not found in the validator; the guard was refactored and this proof must be updated: ${before}`,
     )
   }
-  // The scratch copy lives outside the checkout, so the bare `js-yaml`
+  // The scratch copy lives outside the checkout, so the bare `yaml`
   // specifier no longer resolves. Rewrite ONLY that specifier to an absolute
   // file URL so the mutated copy tests the same guard against the same parser;
   // assert the rewrite happened exactly once so it cannot silently no-op.
-  const YAML_IMPORT = "from 'js-yaml'"
+  const YAML_IMPORT = "from 'yaml'"
   assert.equal(
     raw.split(YAML_IMPORT).length - 1,
     1,
-    'expected exactly one bare js-yaml import to rewrite',
+    'expected exactly one bare yaml import to rewrite',
   )
   const scratch = mkdtempSync(path.join(tmpdir(), 'dshd-release-mutation-'))
   t.after(() => rmSync(scratch, { recursive: true, force: true }))
-  const jsYamlEntry = fileURLToPath(import.meta.resolve
-    ? new URL(import.meta.resolve('js-yaml'))
-    : path.join(process.cwd(), 'node_modules', 'js-yaml', 'index.js'))
+  const yamlEntry = fileURLToPath(import.meta.resolve
+    ? new URL(import.meta.resolve('yaml'))
+    : path.join(process.cwd(), 'node_modules', 'yaml', 'dist', 'index.js'))
   const rewritten = raw
     .split(YAML_IMPORT)
-    .join(`from ${JSON.stringify(pathToFileURL(jsYamlEntry).href)}`)
+    .join(`from ${JSON.stringify(pathToFileURL(yamlEntry).href)}`)
   const mutatedPath = path.join(scratch, 'check-release-assets.mutated.mjs')
   const controlPath = path.join(scratch, 'check-release-assets.control.mjs')
   writeFileSync(controlPath, rewritten)
@@ -322,7 +322,19 @@ test('rejects duplicate Setup executables', async (t) => {
 test('rejects duplicated YAML mapping keys', async (t) => {
   const yaml = renderMetadata().replace(`version: ${VERSION}\n`, `version: ${VERSION}\nversion: ${VERSION}\n`)
   const f = createFixture(t, { metadata: yaml })
-  await rejects(validate(f.dir), /parse|duplicated/)
+  await rejects(validate(f.dir), /parse|duplicated|unique/i)
+})
+
+test('rejects custom tags, YAML 1.1 extra tags, and coerced duplicate keys', async (t) => {
+  for (const extra of [
+    'notes: !evil payload',
+    'notes: !!js/function "function(){return 1}"',
+    'extraDate: !!timestamp 2026-09-20',
+    '1: first\n"1": second',
+  ]) {
+    const f = createFixture(t, { metadata: `${renderMetadata()}${extra}\n` })
+    await rejects(validate(f.dir), /parse|tag|unique|duplicate/i)
+  }
 })
 
 test('rejects malformed YAML', async (t) => {

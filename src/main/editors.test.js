@@ -195,3 +195,47 @@ test('openInEditor safely handles Windows .cmd/.bat wrappers and async spawn err
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('openInEditor rejects Windows cmd quote/newline injection and missing targets', async () => {
+  const cwd = makeTempDir();
+  try {
+    const spawned = [];
+    for (const badPath of ['x"&calc.exe&rem ', 'a\nb.txt', 'missing.ts']) {
+      const res = await openInEditor(
+        { editor: 'vscode', cwd, relativePath: badPath },
+        {
+          platform: 'win32',
+          execFile: (_file, _args, _opts, cb) => cb(null, 'C:\\Program Files\\VS Code\\bin\\code.cmd\r\n'),
+          spawn(command, args) {
+            spawned.push({ command, args });
+            return { unref() {} };
+          },
+        },
+      );
+      assert.equal(res.ok, false, `must reject ${JSON.stringify(badPath)}`);
+    }
+    assert.equal(spawned.length, 0);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('openWithSystemDefault refuses executable, script, and shortcut extensions', async () => {
+  const cwd = makeTempDir();
+  try {
+    const opened = [];
+    for (const filename of ['run.bat', 'run.cmd', 'tool.exe', 'link.lnk', 'script.ps1', 'evil.vbs', 'run.command']) {
+      fs.writeFileSync(path.join(cwd, filename), 'echo hi\n');
+      const res = await openWithSystemDefault(
+        { cwd, relativePath: filename },
+        { shell: { async openPath(target) { opened.push(target); return ''; } } },
+      );
+      assert.equal(res.ok, false, `must refuse ${filename}`);
+    }
+    assert.deepEqual(opened, []);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

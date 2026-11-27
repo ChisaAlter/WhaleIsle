@@ -80,6 +80,9 @@ export async function openStatsCache(home: string, warn: (message: string) => vo
       'PRAGMA journal_mode = WAL', // concurrent reads with the write path + crash recovery
     )
     db.exec(
+      'PRAGMA busy_timeout = 5000',
+    )
+    db.exec(
       'PRAGMA synchronous = NORMAL', // WAL's standard durability/perf pairing
     )
     db.exec(
@@ -160,7 +163,11 @@ export async function openStatsCache(home: string, warn: (message: string) => vo
       close(): void {
         try {
           db.exec('PRAGMA optimize')
-          // DatabaseSync instances close on GC; no explicit API needed here.
+        } catch {
+          /* ignore */
+        }
+        try {
+          (db as { close?: () => void }).close?.()
         } catch {
           /* ignore */
         }

@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { addressedBotWords } from '../../shared/bot-quiet-result.js';
 import { CHAT_TREE_CAPS, orderBotChats } from '../../shared/bot-sidebar-logic.js';
 import {
   botsStore,
@@ -349,7 +350,8 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
     }
     return allLocalChats.filter((chat) => {
       const title = (chat.title || (chat.origin === 'home' ? 'Home Chat' : '')).toLowerCase();
-      const preview = (chat.lastMessageText || chat.statusText || '').toLowerCase();
+      const lastMsg = chat.lastMessageText ? (addressedBotWords(chat.lastMessageText) ?? '') : '';
+      const preview = (lastMsg || chat.statusText || '').toLowerCase();
       return title.includes(q) || preview.includes(q);
     });
   }, [allLocalChats, isSearching, remoteChats, trimmedQuery]);
@@ -715,7 +717,8 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
             <div className="dsh-bots-row">
               <span className="dsh-bots-muted dsh-bots-ellipsis">
                 {(() => {
-                  const sub = chat.statusText || chat.lastMessageText || (chat.closed ? (zh ? '已归档历史' : 'Closed') : '');
+                  const lastMsg = chat.lastMessageText ? (addressedBotWords(chat.lastMessageText) ?? '') : '';
+                  const sub = chat.statusText || lastMsg || (chat.closed ? (zh ? '已归档历史' : 'Closed') : '');
                   return isSearching ? highlightMatch(sub, trimmedQuery) : sub;
                 })()}
               </span>

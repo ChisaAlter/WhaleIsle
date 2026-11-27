@@ -240,22 +240,33 @@ function storeInternalSecrets(entries) {
  * 改变流的挂起状态。
  *
  * @param {import('stream').Readable} stream - 通常是 process.stdin
- * @param {{ endMarker?: string }} [options]
+ * @param {{ endMarker?: string, timeoutMs?: number }} [options]
  * @returns {Promise<{ get(name: string): string | undefined }>} 安装好的只读密钥视图
  */
 function collectInternalSecrets(stream, options = {}) {
   const endMarker = options.endMarker || INTERNAL_SECRETS_END;
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 10_000;
   return new Promise((resolve) => {
     /** @type {Array<[string, string]>} */
     const entries = [];
     let buffer = '';
+    let settled = false;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let timer = null;
     const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
       stream.off('data', onData);
       stream.off('end', finish);
       stream.off('close', finish);
       stream.off('error', finish);
       resolve(storeInternalSecrets(entries));
     };
+    if (timeoutMs > 0) {
+      timer = setTimeout(finish, timeoutMs);
+      timer.unref?.();
+    }
     /** @param {unknown} chunk */
     const onData = (chunk) => {
       buffer += String(chunk);

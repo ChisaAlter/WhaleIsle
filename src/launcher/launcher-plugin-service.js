@@ -170,7 +170,7 @@ function createLauncherPluginService(deps) {
         return { ok: false, error: 'desktop-only' };
       }
       const kernelStopped = await stopKernelIfRunning();
-      const result = await marketInstall.uninstallPlugin(raw, { onProgress });
+      const result = await marketInstall.uninstallPlugin(raw, { onProgress, delegatedToken: guard });
       if (result && result.ok !== false) {
         const disabled = (pluginConfigIO.load().disabledPlugins || []).filter((/** @type {any} */ item) => item !== raw);
         pluginConfigIO.save({ disabledPlugins: disabled });

@@ -130,7 +130,9 @@ class DesktopPlatformView {
     }
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false); });
     browserSession.setPermissionCheckHandler(() => false);
-    const deploymentHeaders = account.requestHeaders ?? {};
+    const deploymentHeaders = Object.fromEntries(
+      Object.entries(account.requestHeaders ?? {}).map(([name, value]) => [name.toLowerCase(), value]),
+    );
     const injectedNames = new Set([...Object.keys(deploymentHeaders),
       ...Object.keys(platformClientHeaders(this.platform, this.clientMetadata()))]
       .map((name) => name.toLowerCase()));
@@ -139,12 +141,14 @@ class DesktopPlatformView {
     browserSession.webRequest.onErrorOccurred((details) => { injectedRequests.delete(details.id); });
     browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
       let headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]));
-      if (new URL(details.url).origin === account.origin) {
+      let requestOrigin = '';
+      try { requestOrigin = new URL(details.url).origin; } catch { requestOrigin = ''; }
+      if (requestOrigin && requestOrigin === account.origin) {
         injectedRequests.add(details.id);
-        const injected = {
+        const injected = /** @type {Record<string, string | undefined>} */ ({
           ...deploymentHeaders,
           ...platformClientHeaders(this.platform, this.clientMetadata()),
-        };
+        });
         const cookie = headers.cookie ?? '';
         Object.assign(headers, injected);
         if (injected.cookie !== undefined) headers.cookie = mergePlatformCookies(cookie, injected.cookie);
@@ -160,9 +164,13 @@ class DesktopPlatformView {
     } });
     this.view = view;
     view.webContents.setWindowOpenHandler(({ url }) => {
-      const destination = new URL(url);
-      if (destination.protocol === 'https:' && !destination.username && !destination.password) {
-        void openExternalHttp(url).catch((error) => { console.warn('[src/main/platform-view.js] background operation failed', error); });
+      try {
+        const destination = new URL(url);
+        if (destination.protocol === 'https:' && !destination.username && !destination.password) {
+          void openExternalHttp(url).catch((error) => { console.warn('[src/main/platform-view.js] background operation failed', error); });
+        }
+      } catch {
+        // Ignore unparseable window.open URLs.
       }
       return { action: 'deny' };
     });
@@ -200,8 +208,10 @@ class DesktopPlatformView {
   bootstrap(event) {
     const view = this.view;
     const account = this.account;
+    let senderOrigin = '';
+    try { senderOrigin = new URL(event.senderFrame.url).origin; } catch { senderOrigin = ''; }
     if (view === undefined || account === null || event.sender !== view.webContents
-      || event.senderFrame !== view.webContents.mainFrame || new URL(event.senderFrame.url).origin !== account.origin) {
+      || event.senderFrame !== view.webContents.mainFrame || senderOrigin !== account.origin) {
       throw new Error('Rejected Platform bootstrap');
     }
     return { origin: account.origin, token: account.token, locale: this.getLocale() };

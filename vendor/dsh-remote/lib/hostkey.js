@@ -2,8 +2,8 @@
 // of lib/index.js so the ssh2 hostVerifier contract (raw Buffer blob since
 // ssh2 v1.17) is unit-tested against the REAL wire shape — the v0.6.7 bug
 // class ("mock object hid a contract drift") must not regress.
-import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -58,8 +58,15 @@ export function createHostKeyGuard(config, knownHostsFile) {
   const read = () => loadKnownHosts(knownHostsFile)
   const write = (kh) => {
     if (!knownHostsFile) return
-    try { mkdirSync(path.dirname(knownHostsFile), { recursive: true }) } catch { /* The following write reports a directory or permission failure to the caller. */ }
-    writeFileSync(knownHostsFile, JSON.stringify(kh, null, 2))
+    try { mkdirSync(path.dirname(knownHostsFile), { recursive: true, mode: 0o700 }) } catch { /* The following write reports a directory or permission failure to the caller. */ }
+    const tmp = `${knownHostsFile}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+    try {
+      writeFileSync(tmp, JSON.stringify(kh, null, 2), { encoding: 'utf8', mode: 0o600 })
+      renameSync(tmp, knownHostsFile)
+    } catch (err) {
+      try { unlinkSync(tmp) } catch { /* ignore */ }
+      throw err
+    }
   }
   const guard = {
     mode,

@@ -8,8 +8,33 @@ const { resolveMobileWebRoot, resolveSpaAsset } = require('./mobile-web');
 const MOBILE_WEB_PORT = 3180;
 const LAN_BRIDGE_WS_PATH = '/ws';
 const MAX_PENDING_BRIDGE_MESSAGES = 64;
+const MAX_PENDING_BRIDGE_BYTES = 16 * 1024 * 1024;
 const MAX_BRIDGE_PAYLOAD_BYTES = 16 * 1024 * 1024;
+const MAX_BRIDGE_CONNECTIONS = 16;
 const VALID_HOST_HEADER_RE = /^(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::\d{1,5})?$/;
+
+/** @param {import('ws').RawData} data */
+function rawDataByteLength(data) {
+  if (typeof data === 'string') return Buffer.byteLength(data);
+  if (Array.isArray(data)) return data.reduce((sum, buf) => sum + buf.byteLength, 0);
+  return data.byteLength;
+}
+
+/**
+ * @param {string | undefined} rawOrigin
+ * @param {string} rawHost
+ * @returns {boolean}
+ */
+function isAllowedUpgradeOrigin(rawOrigin, rawHost) {
+  if (!rawOrigin) return true;
+  try {
+    const parsed = new URL(rawOrigin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return parsed.host.toLowerCase() === rawHost.toLowerCase();
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Normalize a WebSocket close code so reserved/non-wire codes (e.g. 1005/1006)
@@ -136,18 +161,19 @@ function createMobileWebServer(options = {}) {
       res.end('Method not allowed');
       return;
     }
-    let body;
-    try {
-      body = fs.readFileSync(asset.file);
-    } catch {
+    fs.promises.readFile(asset.file).then((body) => {
+      if (res.writableEnded || req.destroyed) return;
+      res.writeHead(200, headers);
+      res.end(body);
+    }, () => {
+      if (res.writableEnded || req.destroyed) return;
       // A file can disappear after asset resolution during an update/rebuild.
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('Not found');
-      return;
-    }
-    res.writeHead(200, headers);
-    res.end(body);
+    });
   });
+  server.headersTimeout = 15_000;
+  server.requestTimeout = 30_000;
 
   const wss = new WebSocketServer({
     noServer: true,
@@ -177,6 +203,17 @@ function createMobileWebServer(options = {}) {
       return;
     }
 
+    const rawOrigin = typeof req.headers.origin === 'string' ? req.headers.origin.trim() : '';
+    if (!isAllowedUpgradeOrigin(rawOrigin, rawHost)) {
+      rejectUpgrade(socket, 403, 'Origin not allowed');
+      return;
+    }
+
+    if (activeUpstreams.size >= MAX_BRIDGE_CONNECTIONS) {
+      rejectUpgrade(socket, 503, 'Too many bridge connections');
+      return;
+    }
+
     const targetBase = parseLoopbackLanTarget(resolveLanWsTarget());
     if (!targetBase) {
       rejectUpgrade(socket, 503, 'LAN E2EE bridge unavailable');
@@ -200,6 +237,7 @@ function createMobileWebServer(options = {}) {
 
       /** @type {Array<{ data: import('ws').RawData, isBinary: boolean }>} */
       const pendingToUpstream = [];
+      let pendingBytes = 0;
       let closed = false;
 
       const teardown = (/** @type {unknown} */ code, /** @type {unknown} */ reason) => {
@@ -207,6 +245,7 @@ function createMobileWebServer(options = {}) {
         closed = true;
         activeUpstreams.delete(upstreamWs);
         pendingToUpstream.length = 0;
+        pendingBytes = 0;
         const safeCode = normalizeForwardCloseCode(code);
         const safeReason = typeof reason === 'string' ? reason.slice(0, 120) : '';
         if (clientWs.readyState === WebSocket.OPEN || clientWs.readyState === WebSocket.CONNECTING) {
@@ -242,6 +281,10 @@ function createMobileWebServer(options = {}) {
       clientWs.on('message', (data, isBinary) => {
         if (closed) return;
         if (upstreamWs.readyState === WebSocket.OPEN) {
+          if (upstreamWs.bufferedAmount > MAX_BRIDGE_PAYLOAD_BYTES) {
+            teardown(1008, 'Upstream backpressure overflow');
+            return;
+          }
           try {
             upstreamWs.send(data, { binary: isBinary });
           } catch {
@@ -250,16 +293,22 @@ function createMobileWebServer(options = {}) {
           return;
         }
         if (upstreamWs.readyState === WebSocket.CONNECTING) {
-          if (pendingToUpstream.length >= MAX_PENDING_BRIDGE_MESSAGES) {
+          const bytes = rawDataByteLength(data);
+          if (pendingToUpstream.length >= MAX_PENDING_BRIDGE_MESSAGES || pendingBytes + bytes > MAX_PENDING_BRIDGE_BYTES) {
             teardown(1008, 'Bridge queue overflow');
             return;
           }
+          pendingBytes += bytes;
           pendingToUpstream.push({ data, isBinary });
         }
       });
 
       upstreamWs.on('message', (data, isBinary) => {
         if (closed || clientWs.readyState !== WebSocket.OPEN) return;
+        if (clientWs.bufferedAmount > MAX_BRIDGE_PAYLOAD_BYTES) {
+          teardown(1008, 'Client backpressure overflow');
+          return;
+        }
         try {
           clientWs.send(data, { binary: isBinary });
         } catch {

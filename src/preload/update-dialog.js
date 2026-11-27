@@ -30,6 +30,6 @@ const api = {
 
 // Only the packaged dialog document gets the bridge; it is served from
 // file:// rather than the upstream dsh-app://shell route.
-if (/^file:.*update-dialog\.html(?:[?#].*)?$/u.test(location.href)) {
+if (process.isMainFrame && /^file:.*update-dialog\.html(?:[?#].*)?$/u.test(location.href)) {
   contextBridge.exposeInMainWorld('dshUpdateDialog', api);
 }

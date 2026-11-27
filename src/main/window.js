@@ -64,12 +64,14 @@ const PLUGIN_BOOT_PROBE = `(() => {
 })()`;
 
 let mainWindow = null;
+/** @type {any} */
 let harnessView = null;
 /** @type {any} */
 let prewarmedHarnessView = null;
 /** @type {any} */
 let prewarmTimer = null;
 let prewarmGen = 0;
+let viewTransitionSeq = 0;
 let harnessRevealed = false;
 let harnessOrigin = '';
 const harnessOriginListeners = createListenerSet();
@@ -184,6 +186,10 @@ function attachPrivilegedNavigationGuards(contents, options) {
   contents.on('frame-created', (_event, { frame }) => {
     if (isGeneratedFrame(frame)) generatedFrames.add(frame.frameTreeNodeId);
   });
+  contents.on('did-start-navigation', (event, _url, inPlace, isMainFrame) => {
+    if ((event?.isMainFrame ?? isMainFrame) && !(event?.isSameDocument ?? inPlace)) generatedFrames.clear();
+  });
+  contents.once?.('destroyed', () => { generatedFrames.clear(); });
   contents.on('will-frame-navigate', event => {
     const frame = event.frame;
     if (isGeneratedFrame(frame)) generatedFrames.add(frame.frameTreeNodeId);
@@ -269,7 +275,8 @@ function disposePrewarmedHarnessView() {
   if (view && !view.webContents.isDestroyed()) view.webContents.close();
 }
 
-function hideHarnessView(win, { keepPrewarmed = false } = {}) {
+function hideHarnessView(win, { keepPrewarmed = false, keepTransitionSeq = false } = {}) {
+  if (!keepTransitionSeq) viewTransitionSeq += 1;
   if (!keepPrewarmed) disposePrewarmedHarnessView();
   harnessRevealed = false;
   harnessOrigin = '';
@@ -501,6 +508,7 @@ function watchPluginBoot(view, win) {
     cancelPluginBootWatch();
     pluginBootWatch = watch;
 
+    let lastBootKey = '';
     const tick = async () => {
       watch.timer = null;
       if (!isCurrent()) return;
@@ -515,14 +523,19 @@ function watchPluginBoot(view, win) {
       const settled = Boolean(status.hasApp);
       const timedOut = !settled && !status.failed && Date.now() > deadline;
       const error = status.error || (timedOut ? 'Web UI 插件加载超时，应用界面未就绪' : '');
-      sendPluginBoot({
+      const payload = {
         ready: status.ready,
         total: status.total,
         pending: Boolean(status.pending) && !settled && !timedOut,
         failed: Boolean(status.failed) || timedOut,
         settled,
         error,
-      });
+      };
+      const bootKey = JSON.stringify(payload);
+      if (bootKey !== lastBootKey) {
+        lastBootKey = bootKey;
+        sendPluginBoot(payload);
+      }
       if (status.failed || timedOut) {
         finish(reject, new Error(error || '插件加载失败'));
         return;
@@ -531,7 +544,6 @@ function watchPluginBoot(view, win) {
         try {
           await revealHarnessView(win);
         } catch (revealError) {
-          // Reject the boot waiter so the boot page stays visible and shows retry on reveal failure.
           finish(reject, revealError);
           return;
         }
@@ -539,19 +551,17 @@ function watchPluginBoot(view, win) {
         finish(resolve, status);
         return;
       }
-      watch.timer = setTimeout(tick, 16);
+      watch.timer = setTimeout(tick, 100);
     };
-    watch.timer = setTimeout(tick, 20);
+    watch.timer = setTimeout(tick, 50);
   });
 }
 
 /** @param {any} win */
 function createHarnessBrowserView(win) {
-  return new BrowserView({
+  const view = new BrowserView({
     webPreferences: {
       preload: preloadFile(),
-      // The remote flag travels to the sandboxed preload via argv; the
-      // preload must not (and cannot) require src/main/config.js itself.
       additionalArguments: [
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
@@ -562,19 +572,12 @@ function createHarnessBrowserView(win) {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
-      // Transparent view background so the harness page's rounded corners
-      // (injected by harness-chrome-inject) reveal the window's transparent
-      // corners instead of an opaque rectangle.
-      backgroundColor: '#00000000',
-      // Hidden pages get their compositor surface suspended; on restore the
-      // window's own layer presents first and the view's next frame lags a
-      // beat — the minimize blank-flash. Keep the view producing frames.
       backgroundThrottling: false,
-      // Sidebar browser guests: <webview> attaches only through the
-      // BrowserGuests lease checks (will-attach-webview), never free-form.
       webviewTag: true,
     },
   });
+  view.setBackgroundColor?.('#00000000');
+  return view;
 }
 
 /** @param {any} win */
@@ -596,7 +599,7 @@ function scheduleHarnessPrewarm(win) {
 
 function ensureHarnessView(win) {
   if (harnessView && !harnessView.webContents.isDestroyed()) return harnessView;
-  hideHarnessView(win, { keepPrewarmed: true });
+  hideHarnessView(win, { keepPrewarmed: true, keepTransitionSeq: true });
   const reusable = prewarmedHarnessView && prewarmedHarnessView._dshOwnerWin === win
     && !prewarmedHarnessView.webContents.isDestroyed();
   if (reusable) {
@@ -672,6 +675,26 @@ function ensureHarnessView(win) {
     };
     win.on('focus', reassertChrome);
     win.on('show', reassertChrome);
+    /** @type {any} */
+    let throttleTimer = null;
+    const setThrottle = (/** @type {boolean} */ on) => {
+      try { if (harnessView && !harnessView.webContents.isDestroyed()) harnessView.webContents.setBackgroundThrottling?.(on); } catch { /* ignore */ }
+    };
+    const scheduleThrottle = () => {
+      if (throttleTimer) clearTimeout(throttleTimer);
+      throttleTimer = setTimeout(() => { throttleTimer = null; if (!win.isDestroyed() && (win.isMinimized?.() || !win.isVisible?.())) setThrottle(true); }, 2000);
+      throttleTimer.unref?.();
+    };
+    const clearThrottle = () => {
+      if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; }
+      setThrottle(false);
+    };
+    win.on('minimize', scheduleThrottle);
+    win.on('hide', scheduleThrottle);
+    win.on('restore', clearThrottle);
+    win.on('show', clearThrottle);
+    win.on('focus', clearThrottle);
+    win.once('closed', () => { if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; } });
     const relayoutOnMetricsChange = () => {
       if (!win.isDestroyed()) {
         relayout();
@@ -710,10 +733,11 @@ function ensureHarnessView(win) {
 function showBoot(options = {}) {
   const win = createMainWindow(options);
   hideHarnessView(win);
+  const seq = viewTransitionSeq;
   paintBackground(win, currentTheme().bg);
   const loaded = isBootLoaded(win) ? Promise.resolve() : win.loadFile(rendererFile('boot.html'));
   return loaded.then(() => {
-    if (!win.isDestroyed() && !getHarnessView() && isBootLoaded(win)) scheduleHarnessPrewarm(win);
+    if (seq === viewTransitionSeq && !win.isDestroyed() && !getHarnessView() && isBootLoaded(win)) scheduleHarnessPrewarm(win);
   });
 }
 
@@ -724,72 +748,57 @@ function showHarness(baseUrl, options = {}) {
   const viewUrl = cookie && launchTokenFromUrl(loadUrl) ? loadUrlAfterRedeem(loadUrl) : loadUrl;
   const win = createMainWindow(options);
   hideHarnessView(win, { keepPrewarmed: true });
+  const seq = viewTransitionSeq;
   const bootReady = isBootLoaded(win) ? Promise.resolve() : win.loadFile(rendererFile('boot.html'));
   return bootReady.then(async () => {
     await renderHintsSettled();
+    if (seq !== viewTransitionSeq || win.isDestroyed()) throw pluginBootCancelled();
     const view = ensureHarnessView(win);
     harnessOrigin = new URL(viewUrl).origin;
     notifyHarnessOrigin();
     if (cookie) await applyHarnessCookieToSession(view.webContents.session, harnessOrigin, cookie);
+    if (seq !== viewTransitionSeq || win.isDestroyed() || view.webContents.isDestroyed()) throw pluginBootCancelled();
     sendPluginBoot({ ready: 0, total: 0, pending: true, failed: false, settled: false, error: '' });
-    return view.webContents.loadURL(viewUrl).then(() => watchPluginBoot(view, win));
+    return view.webContents.loadURL(viewUrl).then(() => {
+      if (seq !== viewTransitionSeq) throw pluginBootCancelled();
+      return watchPluginBoot(view, win);
+    });
   });
 }
 
 function showMain({ activate = true } = {}) {
   const win = getMainWindow();
-  if (!win) {
-    return null;
-  }
-  if (activate) {
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  } else {
-    win.showInactive();
-  }
+  if (!win) return null;
+  if (activate) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+  else win.showInactive();
   return win;
 }
 
 /** Tear down the desktop shell window after the kernel stops (launcher stays open). */
 function dismissMainWindow() {
   const win = getMainWindow();
-  if (!win || win.isDestroyed()) {
-    return false;
-  }
+  if (!win || win.isDestroyed()) return false;
   hideHarnessView(win);
   win.destroy();
   return true;
 }
 
 function isHarnessLoaded(win) {
-  if (!harnessRevealed) {
-    return false;
-  }
+  if (!harnessRevealed) return false;
   const wc = getHarnessWebContents(win);
   return Boolean(wc && isHarnessNavigationUrl(wc.getURL() || ''));
 }
 
 function isBootLoaded(win) {
-  const url = win?.webContents.getURL() || '';
-  return isLocalAppNavigationUrl(url);
+  return isLocalAppNavigationUrl(win?.webContents.getURL() || '');
 }
 
 function openHarnessSettings(sectionId) {
   const requested = normalizeSettingsSection(sectionId);
-  if (!requested.ok) {
-    return Promise.resolve(false);
-  }
+  if (!requested.ok) return Promise.resolve(false);
   const win = showMain();
-  if (!win || !isHarnessLoaded(win)) {
-    return Promise.resolve(false);
-  }
-  return harnessPageContents(win)
-    .executeJavaScript(buildSettingsSectionScript(requested.section))
-    .catch(() => {
-      // executeJavaScript rejected (destroyed view or thrown page script).
-      return false;
-    });
+  if (!win || !isHarnessLoaded(win)) return Promise.resolve(false);
+  return harnessPageContents(win).executeJavaScript(buildSettingsSectionScript(requested.section)).catch(() => false);
 }
 
 function jumpToMarketplaceTab() {
@@ -799,63 +808,32 @@ function jumpToMarketplaceTab() {
 }
 
 function consumePendingMarketplaceJump(win) {
-  if (!pendingMarketplaceJump) {
-    return;
-  }
-  if (!win || !isHarnessLoaded(win)) {
-    return;
-  }
-  void jumpToMarketplaceTab().then((ok) => {
-    if (ok) {
-      pendingMarketplaceJump = false;
-    }
-  });
+  if (!pendingMarketplaceJump || !win || !isHarnessLoaded(win)) return;
+  void jumpToMarketplaceTab().then((ok) => { if (ok) pendingMarketplaceJump = false; });
 }
 
 function openMarketplace() {
   const win = showMain();
-  if (!win || !isHarnessLoaded(win)) {
-    pendingMarketplaceJump = true;
-    return win || null;
-  }
+  if (!win || !isHarnessLoaded(win)) { pendingMarketplaceJump = true; return win || null; }
   return jumpToMarketplaceTab();
 }
 
 /** @param {any} win */
-function consumePendingSessionJump(win) {
-  sessionJump.consume(win, isHarnessLoaded, getHarnessWebContents);
-}
-
+function consumePendingSessionJump(win) { sessionJump.consume(win, isHarnessLoaded, getHarnessWebContents); }
 /** @param {string} sessionId */
-function openHarnessSession(sessionId) {
-  return sessionJump.request(showMain({ activate: true }), isHarnessLoaded, getHarnessWebContents, sessionId);
-}
+function openHarnessSession(sessionId) { return sessionJump.request(showMain({ activate: true }), isHarnessLoaded, getHarnessWebContents, sessionId); }
 
 function sendToBoot(channel, payload) {
   const win = getMainWindow();
-  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed?.()) {
-    return;
-  }
-  const url = win.webContents.getURL();
-  if (isLocalAppNavigationUrl(url)) {
-    win.webContents.send(channel, payload);
-  }
+  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed?.()) return;
+  if (isLocalAppNavigationUrl(win.webContents.getURL())) win.webContents.send(channel, payload);
 }
 
-function getLauncherWindow() {
-  return launcherWindow && !launcherWindow.isDestroyed() ? launcherWindow : null;
-}
+function getLauncherWindow() { return launcherWindow && !launcherWindow.isDestroyed() ? launcherWindow : null; }
 
 function isLauncherLoaded(win) {
-  if (!win || win.isDestroyed?.() || !win.webContents || win.webContents.isDestroyed?.()) {
-    return false;
-  }
-  try {
-    const url = win.webContents.getURL() || '';
-    return isLauncherNavigationUrl(url);
-  } catch {
-    return false;
-  }
+  if (!win || win.isDestroyed?.() || !win.webContents || win.webContents.isDestroyed?.()) return false;
+  try { return isLauncherNavigationUrl(win.webContents.getURL() || ''); } catch { return false; }
 }
 
 function createLauncherWindow() {
@@ -949,10 +927,7 @@ function sendToLauncher(channel, payload) {
 
 function closeLauncherWindow() {
   const win = getLauncherWindow();
-  if (!win) {
-    return;
-  }
-  win.close();
+  if (win) win.close();
 }
 
 module.exports = {

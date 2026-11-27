@@ -1783,3 +1783,105 @@ test('bot-item-ask-advice.js, bot-tools-items.js, bot-tools-schema.js & bot-rpc-
     assert.equal(listedHere.items.length, 1);
   });
 });
+
+test('items-store.js: answers/questionEventId alignment, ownerComment short-window idempotency, close auto-reconcile, and terminal status mail suppression', async () => {
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const { createItemsStore, BotItemError } = await importBotsModule('items-store.js');
+
+  await withTempWorkspace('items-mail-idemp-close', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+    const items = createItemsStore(handle.db);
+    const t0 = 1_850_000_000_000;
+    const owner = { kind: 'owner' };
+    const botA = { kind: 'bot', botId: 'bot-a', chatId: 'chat-a' };
+
+    // 1. `answers` alias aligns with `questionEventId`, and orca-asked questions also resolve needs_you -> working
+    const orcaItem = items.add({
+      ownerBotId: 'bot-a',
+      chatId: 'chat-a',
+      source: { kind: 'home', title: null },
+      title: 'Reflection proposal',
+      status: 'needs_you',
+      comment: 'Adopt this standing rule?',
+    }, { kind: 'orca', why: 'tidy_up_reflection' }, t0);
+    const orcaAns = items.ownerComment(orcaItem.item.uid, {
+      text: 'Approved',
+      requestId: 'req-orca-1',
+    }, owner, t0 + 100);
+    assert.equal(orcaAns.item.status, 'working');
+    assert.equal(orcaAns.item.questionEvent, null);
+    assert.equal(orcaAns.event.data.answers, orcaItem.item.questionEventId);
+
+    const askItem = items.add({
+      ownerBotId: 'bot-a',
+      chatId: 'chat-a',
+      source: { kind: 'home', title: null },
+      title: 'Quick ask alignment',
+      status: 'needs_you',
+      ask: { questions: [{ prompt: 'Target env?', options: [{ label: 'Staging' }, { label: 'Prod' }] }] },
+    }, botA, t0 + 200);
+    const firstAns = items.ownerComment(askItem.item.uid, {
+      text: 'Staging',
+      answers: askItem.item.questionEventId,
+      requestId: 'req-quick-1',
+    }, owner, t0 + 300);
+    assert.equal(firstAns.deduplicated, false);
+    assert.equal(firstAns.item.status, 'working');
+    assert.equal(firstAns.item.questionEvent, null);
+    assert.equal(firstAns.event.data.answers, askItem.item.questionEventId);
+
+    // 2. Duplicate quick answer with different requestId on same questionEvent is idempotent (no new owed mail)
+    const dupQuickAns = items.ownerComment(askItem.item.uid, {
+      text: 'Staging',
+      questionEventId: askItem.item.questionEventId,
+      requestId: 'req-quick-2',
+    }, owner, t0 + 400);
+    assert.equal(dupQuickAns.deduplicated, true);
+    assert.equal(dupQuickAns.event.id, firstAns.event.id);
+    assert.equal(items.owedMail(0).reduce((acc, g) => acc + g.eventIds.length, 0), 4); // 2 events from orcaAns + 2 from firstAns
+
+    // Short-window duplicate content comment (different requestId) is also deduplicated; distinct or post-window is kept
+    const c1 = items.ownerComment(askItem.item.uid, { text: 'Also check logs', requestId: 'req-c1' }, owner, t0 + 1000);
+    assert.equal(c1.deduplicated, false);
+    const c1Dup = items.ownerComment(askItem.item.uid, { text: 'Also check logs', requestId: 'req-c2' }, owner, t0 + 15000);
+    assert.equal(c1Dup.deduplicated, true);
+    assert.equal(c1Dup.event.id, c1.event.id);
+    const c1AfterWindow = items.ownerComment(askItem.item.uid, { text: 'Also check logs', requestId: 'req-c3' }, owner, t0 + 70000);
+    assert.equal(c1AfterWindow.deduplicated, false);
+    assert.notEqual(c1AfterWindow.event.id, c1.event.id);
+
+    // If a new question supersedes an older one, stale questionEventId still throws item_changed
+    const reAsked = items.set(askItem.item.uid, { status: 'needs_you', comment: 'Need prod approval too?' }, botA, t0 + 71000);
+    assert.throws(() => items.ownerComment(askItem.item.uid, {
+      text: 'Staging',
+      questionEventId: askItem.item.questionEventId,
+      requestId: 'req-stale-q',
+    }, owner, t0 + 71100), (err) => err instanceof BotItemError && err.code === 'item_changed');
+    assert.ok(reAsked.item.questionEventId);
+
+    // 3. Closing item (`canceled` or `done`) atomically reconciles all owed mail for that item to 'sent'
+    const closeRes = items.close(askItem.item.uid, { status: 'canceled', reason: 'Ignore suggestion' }, botA, t0 + 72000);
+    assert.equal(closeRes.item.status, 'canceled');
+    const askOwedCount = handle.db.prepare(
+      "SELECT count(*) AS cnt FROM bot_item_events WHERE item_uid = ? AND mail = 'owed'",
+    ).get(askItem.item.uid).cnt;
+    assert.equal(Number(askOwedCount), 0);
+
+    // 4. ownerComment on closed item writes mail: null (never queues 'owed')
+    const closedComment = items.ownerComment(askItem.item.uid, { text: 'Late comment', requestId: 'req-closed-1' }, owner, t0 + 73000);
+    assert.equal(closedComment.event.mail, null);
+
+    // 5. owedMail SQL query excludes done/canceled items even if a legacy 'owed' row exists and doesn't starve open items
+    for (let i = 0; i < 55; i += 1) {
+      const dummy = items.add({
+        ownerBotId: 'bot-a', chatId: 'chat-a', source: { kind: 'home', title: null }, title: `Closed ${i}`, status: 'planned',
+      }, botA, t0 + 80000 + i);
+      items.close(dummy.item.uid, { status: 'done', note: 'finished' }, botA, t0 + 81000 + i);
+      handle.db.prepare("UPDATE bot_item_events SET mail = 'owed' WHERE item_uid = ?").run(dummy.item.uid);
+    }
+    const openOnly = items.owedMail(0);
+    assert.ok(openOnly.every((g) => g.itemUids.every((uid) => items.get(uid).status !== 'done' && items.get(uid).status !== 'canceled')));
+    assert.ok(openOnly.some((g) => g.itemUids.includes(orcaItem.item.uid)), 'closed owed rows must not starve open items beyond LIMIT 50');
+  });
+});

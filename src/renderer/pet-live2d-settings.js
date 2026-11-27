@@ -44,7 +44,7 @@ function wanderSuppressed() {
     || panel || chatOpen;
 }
 function powerSaving(now) {
-  return settings.powerSave && !interactive && now - idle.lastInteract > 300000;
+  return settings.powerSave && !interactive && now - idle.lastInteract > 60000;
 }
 function clickBlip() {
   if (!settings.clickSound) { return; }

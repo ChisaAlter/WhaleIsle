@@ -46,15 +46,17 @@ export class ForwardManager {
   }
 
   /** Called by the pool after a successful connect: restore autoStart tunnels. */
-  attach(client) {
+  attach(client, machineId = null) {
     if (this.client === client) return
     this.client = client
+    this.machineId = machineId || null
     this.onTcpip = (info, accept, reject) => this._handleTcpip(info, accept, reject)
     client.on('tcp connection', this.onTcpip)
     this.onClose = () => this.stopAll()
     client.on('close', this.onClose)
     for (const d of this.defs) {
-      if (d.autoStart && d.direction === 'local' && !this.servers.has(d.id)) {
+      if (d.autoStart && d.direction === 'local' && !this.servers.has(d.id)
+        && (!d.machineId || !this.machineId || d.machineId === this.machineId)) {
         this.start(d).catch((error) => { console.warn('[vendor/dsh-remote/lib/forwards.js] background operation failed', error); })
       }
     }
@@ -134,12 +136,18 @@ export class ForwardManager {
 
   _startLocal(d, client) {
     return new Promise((resolve, reject) => {
+      const sockets = new Set()
       const server = net.createServer((socket) => {
+        sockets.add(socket)
         client.forwardOut('127.0.0.1', 0, d.targetHost, d.targetPort, (err, channel) => {
-          if (err) { socket.destroy(); return }
+          if (err) { sockets.delete(socket); socket.destroy(); return }
           socket.pipe(channel)
           channel.pipe(socket)
-          const kill = () => { try { socket.destroy() } catch { /* The peer may have closed first; still release the other half of the tunnel. */ }; try { channel.close() } catch { /* The peer may have closed first; still release the other half of the tunnel. */ } }
+          const kill = () => {
+            sockets.delete(socket)
+            try { socket.destroy() } catch { /* The peer may have closed first; still release the other half of the tunnel. */ }
+            try { channel.close() } catch { /* The peer may have closed first; still release the other half of the tunnel. */ }
+          }
           socket.on('error', kill)
           channel.on('error', kill)
           socket.on('close', kill)
@@ -148,7 +156,7 @@ export class ForwardManager {
       })
       server.on('error', (e) => reject(new Error(`本地转发 ${d.listenPort} 启动失败: ${e.message}`)))
       server.listen(d.listenPort, '127.0.0.1', () => {
-        this.servers.set(d.id, { kind: 'local', server, sockets: new Set(), client })
+        this.servers.set(d.id, { kind: 'local', server, sockets, client })
         resolve()
       })
     })

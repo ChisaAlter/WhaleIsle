@@ -105,6 +105,16 @@ export function createItemsStore(db, options = {}) {
   const selectRequestIdDup = db.prepare(
     "SELECT * FROM bot_item_events WHERE item_uid = ? AND kind = 'commented' AND json_extract(data, '$.requestId') = ? LIMIT 1",
   );
+  const selectRecentOwnerCommentsStmt = db.prepare(
+    "SELECT * FROM bot_item_events WHERE item_uid = ? AND kind = 'commented' AND json_extract(actor, '$.kind') = 'owner' AND created_at >= ? AND created_at <= ? ORDER BY id DESC LIMIT 10",
+  );
+  const selectAnsweredQuestionDupStmt = db.prepare(
+    "SELECT * FROM bot_item_events WHERE item_uid = ? AND kind = 'commented' AND json_extract(actor, '$.kind') = 'owner' AND json_extract(data, '$.answers') = ? ORDER BY id DESC LIMIT 1",
+  );
+  const markItemOwedMailSentStmt = db.prepare(
+    "UPDATE bot_item_events SET mail = 'sent' WHERE item_uid = ? AND mail = 'owed'",
+  );
+  const OWNER_COMMENT_DEDUP_WINDOW_MS = 60_000;
   const checkSnoozeConflictStmt = db.prepare(
     "SELECT 1 FROM bot_item_events WHERE item_uid = ? AND id > ? AND kind = 'status' AND json_extract(actor, '$.kind') != 'owner' LIMIT 1",
   );
@@ -257,6 +267,12 @@ export function createItemsStore(db, options = {}) {
     }
     const closeEvent = applyStatusAndQuestion(item, parsed, next, tx, validActor, mail, now);
     if (tx.versionDelta > 0) persistItemMeta(item, next, tx, now);
+    if (isClosedStatus(next.status)) {
+      markItemOwedMailSentStmt.run(item.uid);
+      for (const ev of tx.events) {
+        if (ev.mail === 'owed') ev.mail = 'sent';
+      }
+    }
     return { item: requireItem(item.uid), events: tx.events, closeEvent };
   }
 
@@ -296,7 +312,7 @@ export function createItemsStore(db, options = {}) {
         const dup = selectRequestIdDup.get(item.uid, requestId);
         if (dup) return { item, event: mapEventRow(dup), deduplicated: true };
       }
-      const mail = shouldQueueMail(item, validActor) ? 'owed' : null;
+      const mail = !isClosedStatus(item.status) && shouldQueueMail(item, validActor) ? 'owed' : null;
       const tx = createTxContext(db, item.uid);
       const next = { ...itemMutableState(item), lastActivityAt: now };
       if (ask) {
@@ -352,7 +368,7 @@ export function createItemsStore(db, options = {}) {
     return withTransaction(db, () => {
       const item = requireItem(uid);
       assertBotItemAttach(validActor, item, validLinks, { isDispatchOwnedBy });
-      const mail = shouldQueueMail(item, validActor) ? 'owed' : null;
+      const mail = !isClosedStatus(item.status) && shouldQueueMail(item, validActor) ? 'owed' : null;
       const tx = createTxContext(db, item.uid);
       const added = insertItemLinks(item.uid, validLinks, item.lastEventId + 1);
       if (added.length === 0) return { item, added: [], event: null };
@@ -422,6 +438,54 @@ export function createItemsStore(db, options = {}) {
     }, { readOnlyCode: 'items_read_only' });
   }
 
+  /** @param {any} rowData @param {any} parsed */
+  function matchesOwnerCommentPayload(rowData, parsed) {
+    if ((rowData?.text ?? null) !== (parsed.text ?? null)) return false;
+    if (Boolean(rowData?.plain) !== parsed.plain) return false;
+    if ((rowData?.askedInConversation ?? null) !== (parsed.askedInConversation ?? null)) return false;
+    if (JSON.stringify(rowData?.images ?? []) !== JSON.stringify(parsed.images)) return false;
+    return JSON.stringify(rowData?.files ?? []) === JSON.stringify(parsed.files);
+  }
+
+  /** @param {any} rowData @param {any} item @param {any} parsed */
+  function matchesDedupQuestionContext(rowData, item, parsed) {
+    if (parsed.expectedQuestionId !== null) {
+      return rowData?.answers === formatEventId(parsed.expectedQuestionId);
+    }
+    if (parsed.plain) return Boolean(rowData?.plain);
+    if (item.status === 'needs_you' && item.questionEvent) {
+      return rowData?.answers === formatEventId(item.questionEvent);
+    }
+    return true;
+  }
+
+  /** @param {any} item @param {any} parsed @param {number} now */
+  function findDuplicateOwnerComment(item, parsed, now) {
+    if (parsed.requestId) {
+      const dup = selectRequestIdDup.get(item.uid, parsed.requestId);
+      if (dup) return mapEventRow(dup);
+    }
+    const supersededByNewQuestion = item.status === 'needs_you'
+      && item.questionEvent !== null
+      && item.questionEvent !== parsed.expectedQuestionId;
+    if (parsed.expectedQuestionId !== null && !supersededByNewQuestion && item.status !== 'needs_you') {
+      const dupAns = selectAnsweredQuestionDupStmt.get(item.uid, formatEventId(parsed.expectedQuestionId));
+      if (dupAns) {
+        const data = JSON.parse(String(dupAns.data));
+        if (matchesOwnerCommentPayload(data, parsed) || (now - Number(dupAns.created_at) <= OWNER_COMMENT_DEDUP_WINDOW_MS)) {
+          return mapEventRow(dupAns);
+        }
+      }
+    }
+    const recentRows = selectRecentOwnerCommentsStmt.all(item.uid, now - OWNER_COMMENT_DEDUP_WINDOW_MS, now);
+    for (const row of recentRows) {
+      const data = JSON.parse(String(row.data));
+      if (!matchesOwnerCommentPayload(data, parsed)) continue;
+      if (matchesDedupQuestionContext(data, item, parsed)) return mapEventRow(row);
+    }
+    return null;
+  }
+
   /** @param {any} item @param {{ plain: boolean, expectedQuestionId: number | null }} parsed */
   function resolveOwnerAnswerRef(item, parsed) {
     if (parsed.plain) return null;
@@ -442,7 +506,8 @@ export function createItemsStore(db, options = {}) {
     }
     if (item.status === 'needs_you' && item.questionEvent) {
       const qRow = selectEventById.get(item.questionEvent);
-      if (qRow && JSON.parse(String(qRow.actor))?.kind === 'bot') {
+      const qActorKind = qRow ? JSON.parse(String(qRow.actor))?.kind : null;
+      if (qActorKind && qActorKind !== 'owner') {
         return formatEventId(item.questionEvent);
       }
     }
@@ -460,14 +525,12 @@ export function createItemsStore(db, options = {}) {
 
     return withTransaction(db, () => {
       const item = requireItem(uid);
-      if (parsed.requestId) {
-        const dup = selectRequestIdDup.get(item.uid, parsed.requestId);
-        if (dup) {
-          const ev = mapEventRow(dup);
-          return { item, event: ev, events: [ev], deduplicated: true };
-        }
+      const dupEvent = findDuplicateOwnerComment(item, parsed, now);
+      if (dupEvent) {
+        return { item, event: dupEvent, events: [dupEvent], deduplicated: true };
       }
       const answersRef = resolveOwnerAnswerRef(item, parsed);
+      const mail = isClosedStatus(item.status) ? null : 'owed';
       const tx = createTxContext(db, item.uid);
       const commentData = {
         ...(parsed.text ? { text: parsed.text } : {}),
@@ -478,13 +541,13 @@ export function createItemsStore(db, options = {}) {
         ...(parsed.plain ? { plain: true } : {}),
         ...(parsed.askedInConversation ? { askedInConversation: parsed.askedInConversation } : {}),
       };
-      const ev = tx.append('commented', validActor, commentData, 'owed', now);
+      const ev = tx.append('commented', validActor, commentData, mail, now);
       const next = { ...itemMutableState(item), lastActivityAt: now };
       if (answersRef) {
         next.status = 'working';
         next.questionEvent = null;
         endSnooze(next, tx, validActor, now, 'answer');
-        tx.append('status', validActor, { from: 'needs_you', to: 'working', cause: 'answer' }, 'owed', now);
+        tx.append('status', validActor, { from: 'needs_you', to: 'working', cause: 'answer' }, mail, now);
       } else {
         endSnooze(next, tx, validActor, now, 'comment');
       }

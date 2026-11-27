@@ -42,6 +42,7 @@ function presentCeilingMs(now) {
 // is dropped rather than queued, so a slow backend stays responsive instead
 // of accumulating a backlog of catch-up frames.
 function inferenceGapMs(now) {
+  if (typeof sleeping === 'boolean' && sleeping) { return 250; }
   if (powerSaving(now)) { return 110; }
   if (inferCeilingOverride !== null && inferCeilingOverride > 0) {
     return 1000 / inferCeilingOverride;

@@ -7,7 +7,6 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.json': 'application/json',
-  '.map': 'application/json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -34,7 +33,7 @@ function safeJoin(root, urlPath) {
   if (resolved !== rootResolved && !resolved.startsWith(`${rootResolved}${path.sep}`)) {
     return null;
   }
-  if (/\.test\.js$/i.test(resolved)) {
+  if (/(?:\.test\.js|\.fixture\.html|\.map)$/i.test(resolved) || path.basename(resolved).toLowerCase() === 'package.json') {
     return null;
   }
   return resolved;
@@ -46,12 +45,19 @@ function contentTypeFor(file) {
 }
 
 /**
+ * @param {string} root
  * @param {string | null | undefined} file
  * @returns {string | null}
  */
-function existingFile(file) {
+function existingFile(root, file) {
+  if (!file) return null;
   try {
-    return file && fs.statSync(file).isFile() ? file : null;
+    const realRoot = fs.realpathSync(root);
+    const realFile = fs.realpathSync(file);
+    if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${path.sep}`)) {
+      return null;
+    }
+    return fs.statSync(realFile).isFile() ? realFile : null;
   } catch {
     return null;
   }
@@ -67,10 +73,10 @@ function resolveSpaAsset(root, urlPath) {
   const last = pathname.split('/').filter(Boolean).pop() || '';
   const hasExt = /\.[a-z0-9]+$/i.test(last);
   if (hasExt) {
-    const file = existingFile(safeJoin(root, pathname));
+    const file = existingFile(root, safeJoin(root, pathname));
     return file ? { file, type: contentTypeFor(file) } : null;
   }
-  const index = existingFile(safeJoin(root, '/index.html'));
+  const index = existingFile(root, safeJoin(root, '/index.html'));
   return index ? { file: index, type: contentTypeFor(index) } : null;
 }
 

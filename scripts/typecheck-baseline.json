@@ -2105,9 +2105,6 @@
         "Parameter 'segment' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 3
       },
-      "TS7016": {
-        "Could not find a declaration file for module 'js-yaml'. '<node_modules>/js-yaml/dist/js-yaml.mjs' implicitly has an 'any' type.": 1
-      },
       "TS7034": {
         "Variable 'blockmapCandidates' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'matches' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
@@ -4438,12 +4435,16 @@
         "Variable 'settingsCache' implicitly has an 'any' type.": 2
       },
       "TS7006": {
+        "Parameter 'canEncrypt' implicitly has an 'any' type.": 2,
         "Parameter 'config' implicitly has an 'any' type.": 7,
+        "Parameter 'creds' implicitly has an 'any' type.": 1,
         "Parameter 'data' implicitly has an 'any' type.": 2,
         "Parameter 'dir' implicitly has an 'any' type.": 1,
         "Parameter 'fallback' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 3,
+        "Parameter 'file' implicitly has an 'any' type.": 5,
+        "Parameter 'fresh' implicitly has an 'any' type.": 1,
         "Parameter 'impl' implicitly has an 'any' type.": 1,
+        "Parameter 'key' implicitly has an 'any' type.": 1,
         "Parameter 'line' implicitly has an 'any' type.": 2,
         "Parameter 'list' implicitly has an 'any' type.": 1,
         "Parameter 'next' implicitly has an 'any' type.": 1,
@@ -4513,8 +4514,6 @@
         "Property 'extraSkillDirs' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'extraSkillDirs' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
         "Property 'extraSkillDirs' does not exist on type '{}'.": 2,
-        "Property 'headers' does not exist on type '{}'.": 4,
-        "Property 'id' does not exist on type '{}'.": 4,
         "Property 'importAttachments' does not exist on type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Property 'importAttachments' does not exist on type '{}'.": 1,
         "Property 'installPlugin' does not exist on type '{ overwrite?: boolean | undefined; }'.": 1,
@@ -4561,9 +4560,6 @@
         "Object literal may only specify known properties, and 'scan' does not exist in type '{ overwrite?: boolean | undefined; deferJournalDone?: boolean | undefined; }'.": 1,
         "Object literal may only specify known properties, and 'scan' does not exist in type '{ overwrite?: boolean | undefined; }'.": 1
       },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
-      },
       "TS7005": {
         "Variable 'credentials' implicitly has an 'any[]' type.": 2,
         "Variable 'current' implicitly has an 'any[]' type.": 1,
@@ -4587,7 +4583,7 @@
         "Parameter 'explicit' implicitly has an 'any' type.": 1,
         "Parameter 'file' implicitly has an 'any' type.": 5,
         "Parameter 'from' implicitly has an 'any' type.": 1,
-        "Parameter 'home' implicitly has an 'any' type.": 2,
+        "Parameter 'home' implicitly has an 'any' type.": 1,
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'journal' implicitly has an 'any' type.": 1,
         "Parameter 'journalFile' implicitly has an 'any' type.": 1,
@@ -4611,10 +4607,9 @@
         "Parameter 'sourceDir' implicitly has an 'any' type.": 1,
         "Parameter 'sourceHome' implicitly has an 'any' type.": 4,
         "Parameter 'target' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 3,
+        "Parameter 'text' implicitly has an 'any' type.": 2,
         "Parameter 'to' implicitly has an 'any' type.": 1,
-        "Parameter 'userDataDir' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 2
+        "Parameter 'userDataDir' implicitly has an 'any' type.": 2
       },
       "TS7031": {
         "Binding element 'agentsSkillsRoot' implicitly has an 'any' type.": 1,
@@ -4641,9 +4636,6 @@
         "Variable 'found' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'removed' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'results' implicitly has type 'any[]' in some locations where its type cannot be determined.": 4
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 2
       },
       "TS7057": {
         "'yield' expression implicitly results in an 'any' type because its containing generator lacks a return-type annotation.": 1
@@ -4696,7 +4688,7 @@
         "'pet.y' is possibly 'null'.": 2
       },
       "TS2322": {
-        "Type 'Timeout' is not assignable to type 'number'.": 3
+        "Type 'Timeout' is not assignable to type 'number'.": 1
       },
       "TS2339": {
         "Property 'BrowserWindow' does not exist on type '{}'.": 1,
@@ -4723,7 +4715,7 @@
         "Property 'scanTokens' does not exist on type '{}'.": 1,
         "Property 'screen' does not exist on type '{}'.": 1,
         "Property 'sessionsDir' does not exist on type '{}'.": 9,
-        "Property 'unref' does not exist on type 'number'.": 3
+        "Property 'unref' does not exist on type 'number'.": 1
       },
       "TS2345": {
         "Argument of type 'number | null' is not assignable to parameter of type 'number'.": 2,
@@ -4734,15 +4726,13 @@
         "Variable 'hitRects' implicitly has an 'any[]' type.": 1,
         "Variable 'pendingPersonality' implicitly has an 'any' type.": 5,
         "Variable 'roamRect' implicitly has an 'any' type.": 1,
-        "Variable 'stopDshWatch' implicitly has an 'any' type.": 1,
-        "Variable 'surfaceWatch' implicitly has an 'any[]' type.": 1,
-        "Variable 'win' implicitly has an 'any' type.": 23
+        "Variable 'surfaceWatch' implicitly has an 'any[]' type.": 2
       },
       "TS7006": {
         "Parameter '_e' implicitly has an 'any' type.": 3,
         "Parameter '_event' implicitly has an 'any' type.": 11,
         "Parameter 'amount' implicitly has an 'any' type.": 1,
-        "Parameter 'b' implicitly has an 'any' type.": 1,
+        "Parameter 'b' implicitly has an 'any' type.": 2,
         "Parameter 'code' implicitly has an 'any' type.": 1,
         "Parameter 'desc' implicitly has an 'any' type.": 1,
         "Parameter 'details' implicitly has an 'any' type.": 1,
@@ -4750,8 +4740,8 @@
         "Parameter 'e' implicitly has an 'any' type.": 1,
         "Parameter 'enabled' implicitly has an 'any' type.": 1,
         "Parameter 'endpoint' implicitly has an 'any' type.": 1,
-        "Parameter 'ev' implicitly has an 'any' type.": 1,
-        "Parameter 'event' implicitly has an 'any' type.": 3,
+        "Parameter 'ev' implicitly has an 'any' type.": 2,
+        "Parameter 'event' implicitly has an 'any' type.": 2,
         "Parameter 'eventName' implicitly has an 'any' type.": 1,
         "Parameter 'kind' implicitly has an 'any' type.": 1,
         "Parameter 'level' implicitly has an 'any' type.": 1,
@@ -4759,15 +4749,22 @@
         "Parameter 'msg' implicitly has an 'any' type.": 1,
         "Parameter 'names' implicitly has an 'any' type.": 1,
         "Parameter 'next' implicitly has an 'any' type.": 4,
+        "Parameter 'onPause' implicitly has an 'any' type.": 1,
+        "Parameter 'onWake' implicitly has an 'any' type.": 1,
         "Parameter 'options' implicitly has an 'any' type.": 1,
+        "Parameter 'pad' implicitly has an 'any' type.": 1,
         "Parameter 'payload' implicitly has an 'any' type.": 12,
+        "Parameter 'point' implicitly has an 'any' type.": 2,
+        "Parameter 'powerMonitor' implicitly has an 'any' type.": 1,
+        "Parameter 'r' implicitly has an 'any' type.": 1,
         "Parameter 'regions' implicitly has an 'any' type.": 2,
         "Parameter 'rendererFile' implicitly has an 'any' type.": 1,
         "Parameter 'request' implicitly has an 'any' type.": 2,
         "Parameter 's' implicitly has an 'any' type.": 2,
         "Parameter 'snap' implicitly has an 'any' type.": 1,
+        "Parameter 'surfaceWatch' implicitly has an 'any' type.": 1,
         "Parameter 'target' implicitly has an 'any' type.": 1,
-        "Parameter 'url' implicitly has an 'any' type.": 2,
+        "Parameter 'url' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 3,
         "Parameter 'workArea' implicitly has an 'any' type.": 1,
         "Parameter 'x' implicitly has an 'any' type.": 3,
@@ -4778,9 +4775,7 @@
         "Variable 'hitRects' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
         "Variable 'pendingPersonality' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'roamRect' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'stopDshWatch' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'surfaceWatch' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
-        "Variable 'win' implicitly has type 'any' in some locations where its type cannot be determined.": 1
+        "Variable 'surfaceWatch' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... <n> more ...; fileEat: { ...; }; }'.": 1,
@@ -4935,6 +4930,8 @@
         "Parameter 'code' implicitly has an 'any' type.": 3,
         "Parameter 'command' implicitly has an 'any' type.": 4,
         "Parameter 'config' implicitly has an 'any' type.": 6,
+        "Parameter 'context' implicitly has an 'any' type.": 1,
+        "Parameter 'contextOverride' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
         "Parameter 'error' implicitly has an 'any' type.": 3,
         "Parameter 'gen' implicitly has an 'any' type.": 3,
@@ -4952,6 +4949,7 @@
         "Parameter 'raw' implicitly has an 'any' type.": 1,
         "Parameter 'readiness' implicitly has an 'any' type.": 2,
         "Parameter 'root' implicitly has an 'any' type.": 1,
+        "Parameter 'shell' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 3,
         "Parameter 'startPort' implicitly has an 'any' type.": 1,
         "Parameter 'startTime' implicitly has an 'any' type.": 2,
@@ -4997,7 +4995,6 @@
     },
     "src/main/dshd-daemon-runner.mjs": {
       "TS7005": {
-        "Variable 'daemon' implicitly has an 'any' type.": 1,
         "Variable 'launch' implicitly has an 'any' type.": 5
       },
       "TS7006": {
@@ -5009,7 +5006,6 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       },
       "TS7034": {
-        "Variable 'daemon' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'launch' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
@@ -5070,8 +5066,7 @@
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'next' implicitly has an 'any' type.": 1,
-        "Parameter 'origin' implicitly has an 'any' type.": 1,
-        "Parameter 'pairing' implicitly has an 'any' type.": 1
+        "Parameter 'origin' implicitly has an 'any' type.": 1
       },
       "TS7022": {
         "'gitTunnelStarting' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.": 1,
@@ -5732,7 +5727,7 @@
     },
     "src/main/marketplace-install.js": {
       "TS18046": {
-        "'error' is of type 'unknown'.": 9
+        "'error' is of type 'unknown'.": 7
       },
       "TS2339": {
         "Property 'deprecated' does not exist on type 'object'.": 2,
@@ -5768,21 +5763,20 @@
         "Parameter 'installedSpec' implicitly has an 'any' type.": 1,
         "Parameter 'key' implicitly has an 'any' type.": 1,
         "Parameter 'keys' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 2,
+        "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'nodeBin' implicitly has an 'any' type.": 1,
         "Parameter 'onProgress' implicitly has an 'any' type.": 1,
-        "Parameter 'options' implicitly has an 'any' type.": 5,
+        "Parameter 'options' implicitly has an 'any' type.": 4,
         "Parameter 'packageName' implicitly has an 'any' type.": 6,
         "Parameter 'pinned' implicitly has an 'any' type.": 1,
         "Parameter 'pkg' implicitly has an 'any' type.": 1,
         "Parameter 'plugin' implicitly has an 'any' type.": 1,
         "Parameter 'result' implicitly has an 'any' type.": 4,
         "Parameter 'row' implicitly has an 'any' type.": 3,
-        "Parameter 'snapshot' implicitly has an 'any' type.": 5,
+        "Parameter 'snapshot' implicitly has an 'any' type.": 3,
         "Parameter 'spec' implicitly has an 'any' type.": 8,
         "Parameter 'text' implicitly has an 'any' type.": 1,
-        "Parameter 'token' implicitly has an 'any' type.": 1,
-        "Parameter 'work' implicitly has an 'any' type.": 1
+        "Parameter 'token' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'hits' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
@@ -6010,19 +6004,22 @@
       "TS7006": {
         "Parameter 'commit' implicitly has an 'any' type.": 1,
         "Parameter 'deferred' implicitly has an 'any' type.": 1,
-        "Parameter 'dsh' implicitly has an 'any' type.": 1,
+        "Parameter 'dsh' implicitly has an 'any' type.": 2,
         "Parameter 'error' implicitly has an 'any' type.": 1,
         "Parameter 'ev' implicitly has an 'any' type.": 2,
         "Parameter 'extra' implicitly has an 'any' type.": 1,
         "Parameter 'file' implicitly has an 'any' type.": 1,
         "Parameter 'fsImpl' implicitly has an 'any' type.": 1,
+        "Parameter 'live' implicitly has an 'any' type.": 1,
         "Parameter 'next' implicitly has an 'any' type.": 1,
         "Parameter 'outboxBefore' implicitly has an 'any' type.": 1,
         "Parameter 'sessKey' implicitly has an 'any' type.": 1,
+        "Parameter 'sessKeyOf' implicitly has an 'any' type.": 1,
         "Parameter 'sessionsDir' implicitly has an 'any' type.": 1,
         "Parameter 'slice' implicitly has an 'any' type.": 2,
         "Parameter 't' implicitly has an 'any' type.": 1,
         "Parameter 'type' implicitly has an 'any' type.": 1,
+        "Parameter 'usageSeen' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 1
       },
       "TS7031": {
@@ -6050,8 +6047,8 @@
       },
       "TS2339": {
         "Property 'message' does not exist on type '{}'.": 1,
-        "Property 'source' does not exist on type '{ sampleTotals?: {} | undefined; total: number; sessions: number; } | { todayUsed: number; source: string; sampleTotals?: {} | undefined; total: number; sessions: number; }'.": 2,
-        "Property 'todayUsed' does not exist on type '{ sampleTotals?: {} | undefined; total: number; sessions: number; } | { todayUsed: number; source: string; sampleTotals?: {} | undefined; total: number; sessions: number; }'.": 2
+        "Property 'source' does not exist on type '{ sampleTotals?: {} | undefined; total: number; sessions: number; } | { todayUsed: number; source: string; sampleTotals?: { [x: string]: number; } | undefined; total: number; sessions: number; }'.": 2,
+        "Property 'todayUsed' does not exist on type '{ sampleTotals?: {} | undefined; total: number; sessions: number; } | { todayUsed: number; source: string; sampleTotals?: { [x: string]: number; } | undefined; total: number; sessions: number; }'.": 2
       },
       "TS2353": {
         "Object literal may only specify known properties, and 'sessionsDir' does not exist in type '{ includeSamples?: boolean | undefined; }'.": 1
@@ -6060,9 +6057,6 @@
     "src/main/pet-growth.js": {
       "TS18047": {
         "'seen' is possibly 'null'.": 2
-      },
-      "TS18048": {
-        "'g.food' is possibly 'undefined'.": 1
       },
       "TS2339": {
         "Property 'cache' does not exist on type '{ includeSamples?: boolean | undefined; }'.": 1,
@@ -6082,7 +6076,7 @@
         "Parameter 'dir' implicitly has an 'any' type.": 1,
         "Parameter 'err' implicitly has an 'any' type.": 1,
         "Parameter 'event' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 2,
+        "Parameter 'file' implicitly has an 'any' type.": 1,
         "Parameter 'g' implicitly has an 'any' type.": 2,
         "Parameter 'id' implicitly has an 'any' type.": 1,
         "Parameter 'lastWins' implicitly has an 'any' type.": 1,
@@ -6113,7 +6107,7 @@
         "Variable 'worker' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 5
+        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 2
       }
     },
     "src/main/pet-settings.js": {
@@ -6307,7 +6301,7 @@
         "Property 'close' does not exist on type 'object'.": 1,
         "Property 'data' does not exist on type '{}'.": 1,
         "Property 'getContentSize' does not exist on type 'object'.": 2,
-        "Property 'isDestroyed' does not exist on type 'object'.": 6,
+        "Property 'isDestroyed' does not exist on type 'object'.": 5,
         "Property 'mimeType' does not exist on type '{}'.": 3,
         "Property 'scope' does not exist on type '{}'.": 1,
         "Property 'setAspectRatio' does not exist on type 'object'.": 2,
@@ -6578,9 +6572,6 @@
         "Property 'journalBlocked' does not exist on type '{}'.": 1,
         "Property 'startHarness' does not exist on type '{ startWhenIdle?: boolean | undefined; }'.": 1,
         "Property 'startHarness' does not exist on type '{}'.": 1
-      },
-      "TS2783": {
-        "'ok' is specified more than once, so this usage will be overwritten.": 3
       },
       "TS7005": {
         "Variable 'journalBlockedProbe' implicitly has an 'any' type.": 1,
@@ -7744,14 +7735,10 @@
         "Property 'code' does not exist on type 'Error'.": 1,
         "Property 'cookie' does not exist on type '{}'.": 2
       },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'backgroundColor' does not exist in type 'WebPreferences'.": 1
-      },
       "TS2769": {
         "No overload matches this call.": 2
       },
       "TS7005": {
-        "Variable 'harnessView' implicitly has an 'any' type.": 11,
         "Variable 'launcherWindow' implicitly has an 'any' type.": 3,
         "Variable 'mainWindow' implicitly has an 'any' type.": 5,
         "Variable 'pluginBootWatch' implicitly has an 'any' type.": 3,
@@ -7778,7 +7765,6 @@
         "Parameter 'win' implicitly has an 'any' type.": 13
       },
       "TS7034": {
-        "Variable 'harnessView' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'launcherWindow' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'mainWindow' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'pluginBootWatch' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
@@ -7824,9 +7810,6 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 10
       },
-      "TS7005": {
-        "Variable 'chunks' implicitly has an 'any[]' type.": 1
-      },
       "TS7006": {
         "Parameter 'authority' implicitly has an 'any' type.": 1,
         "Parameter 'authorityForRead' implicitly has an 'any' type.": 1,
@@ -7838,9 +7821,6 @@
         "Parameter 'relativePath' implicitly has an 'any' type.": 9,
         "Parameter 'target' implicitly has an 'any' type.": 1,
         "Parameter 'text' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'chunks' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ png: string; jpg: string; jpeg: string; gif: string; webp: string; svg: string; bmp: string; ico: string; avif: string; }'.": 1
@@ -10649,17 +10629,13 @@
     "vendor/dsh-whale/lib/bots/service.js": {
       "TS2339": {
         "Property 'code' does not exist on type '{}'.": 1,
-        "Property 'imDefault' does not exist on type '{}'.": 1,
-        "Property 'message' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 3,
-        "Property 'skillProjects' does not exist on type '{}'.": 1,
-        "Property 'skipModelApply' does not exist on type '{}'.": 1
+        "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
         "Parameter 'b' implicitly has an 'any' type.": 1,
         "Parameter 'base64Png' implicitly has an 'any' type.": 1,
         "Parameter 'bot' implicitly has an 'any' type.": 2,
-        "Parameter 'botId' implicitly has an 'any' type.": 14,
+        "Parameter 'botId' implicitly has an 'any' type.": 13,
         "Parameter 'content' implicitly has an 'any' type.": 1,
         "Parameter 'createdBotId' implicitly has an 'any' type.": 1,
         "Parameter 'fromOffer' implicitly has an 'any' type.": 2,
@@ -10964,9 +10940,6 @@
       },
       "TS2349": {
         "This expression is not callable.": 2
-      },
-      "TS2488": {
-        "Type 'RegExpExecArray | null' must have a '[Symbol.iterator]()' method that returns an iterator.": 1
       },
       "TS7005": {
         "Variable 'rows' implicitly has an 'any[]' type.": 1

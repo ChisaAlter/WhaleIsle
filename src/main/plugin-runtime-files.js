@@ -4,6 +4,24 @@ const fs = require('fs');
 const path = require('path');
 
 const SKIP_EXPORT_KEYS = new Set(['types', 'typings']);
+/** @type {Set<string>} */
+const packagedPassingCache = new Set();
+
+/** @param {string} packageDir @param {{ depth?: number, resolveRoot?: string }} options */
+function packagedCacheKey(packageDir, options) {
+  if (options.depth !== undefined || options.resolveRoot !== undefined) return '';
+  try {
+    const electronApp = require('electron')?.app;
+    if (!electronApp?.isPackaged || !process.resourcesPath) return '';
+    const resRoot = path.resolve(process.resourcesPath);
+    const resolvedDir = path.resolve(packageDir);
+    if (resolvedDir !== resRoot && !resolvedDir.startsWith(`${resRoot}${path.sep}`)) return '';
+    const version = typeof electronApp.getVersion === 'function' ? electronApp.getVersion() : '';
+    return `${version}|${resRoot}|${resolvedDir}`;
+  } catch {
+    return '';
+  }
+}
 
 function resolveDependencyDir(fromDir, name, resolveRoot) {
   const segments = String(name).split('/');
@@ -132,6 +150,10 @@ function posixJoin(...parts) {
  * @returns {string[]}
  */
 function missingRuntimeFiles(packageDir, options = {}) {
+  const cacheKey = packagedCacheKey(packageDir, options);
+  if (cacheKey && packagedPassingCache.has(cacheKey)) {
+    return [];
+  }
   const depth = options.depth === undefined ? 1 : options.depth;
   const resolveRoot = options.resolveRoot || packageDir;
   const pkgFile = path.join(packageDir, 'package.json');
@@ -170,6 +192,9 @@ function missingRuntimeFiles(packageDir, options = {}) {
         missing.push(posixJoin(name, nested));
       }
     }
+  }
+  if (cacheKey && missing.length === 0) {
+    packagedPassingCache.add(cacheKey);
   }
   return missing;
 }

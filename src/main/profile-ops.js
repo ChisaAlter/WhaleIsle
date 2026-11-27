@@ -261,16 +261,16 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
   io.save({ disabledPlugins: disabled });
   if (enabled.ok === false) {
     releaseMaintenance(token);
-    return { ok: false, ...enabled, harnessRestarted: false };
+    return { ...enabled, ok: false, harnessRestarted: false };
   }
   if (!kernelNeedsAlign(dsh)) {
     releaseMaintenance(token);
-    return { ok: true, ...enabled, harnessRestarted: false };
+    return { ...enabled, ok: true, harnessRestarted: false };
   }
   transferred = true;
   return holdThrough(token, enqueueProfileAlign(async () => {
     const align = await alignHarnessAfterProfileChange(startHarness, HARNESS_DOWN_AFTER_ENABLE, token);
-    return { ok: true, ...enabled, ...align };
+    return { ...enabled, ok: true, ...align };
   }));
   } catch (error) {
     if (!transferred) {

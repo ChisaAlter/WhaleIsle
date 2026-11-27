@@ -2033,6 +2033,9 @@ async function openStatsCache(home, warn) {
       // concurrent reads with the write path + crash recovery
     );
     db.exec(
+      "PRAGMA busy_timeout = 5000"
+    );
+    db.exec(
       "PRAGMA synchronous = NORMAL"
       // WAL's standard durability/perf pairing
     );
@@ -2104,6 +2107,10 @@ async function openStatsCache(home, warn) {
       close() {
         try {
           db.exec("PRAGMA optimize");
+        } catch {
+        }
+        try {
+          db.close?.();
         } catch {
         }
       }

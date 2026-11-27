@@ -168,16 +168,49 @@ function pluginCommand(options) {
   return typeof options.runPlugin === 'function' ? options.runPlugin : runPlugin;
 }
 
-async function withPluginLock(work) {
-  if (pluginLock) {
-    return { ok: false, error: BUSY_ERROR };
+/**
+ * @param {() => Promise<any>} work
+ * @param {{ delegatedToken?: unknown, allowImportOwner?: boolean }} [options]
+ */
+async function withPluginLock(work, options = {}) {
+  if (pluginLock) return { ok: false, error: BUSY_ERROR };
+  const importGuard = require('./import-guard');
+  const delegated = options.delegatedToken;
+  const ownerKind = importGuard.maintenanceOwner()?.kind;
+  const canReenter = importGuard.holdsMaintenance(delegated) || (options.allowImportOwner === true && ownerKind === 'import');
+  if (importGuard.isMaintenanceHeld() && !canReenter) {
+    return { ok: false, error: BUSY_ERROR, code: 'maintenance-in-progress' };
   }
+  if (!canReenter) {
+    try {
+      const { app } = require('electron');
+      const { readImportJournal, journalIsBlocked } = require('./data-import');
+      if (app && typeof app.getPath === 'function' && journalIsBlocked(readImportJournal(app.getPath('userData')))) {
+        return { ok: false, error: '数据导入恢复尚未完成，请先处理导入阻塞后再变更插件', code: 'import-recovery-blocked' };
+      }
+    } catch { /* Electron app unavailable in isolated unit tests. */ }
+  }
+  const acquired = !importGuard.isMaintenanceHeld() ? importGuard.acquireMaintenance('plugin-install') : null;
+  if (!acquired && !canReenter) return { ok: false, error: BUSY_ERROR, code: 'maintenance-in-progress' };
   pluginLock = true;
   try {
+    pruneOrphanRollbackSnapshots(webProfileDir());
     return await work();
   } finally {
     pluginLock = false;
+    if (acquired) importGuard.releaseMaintenance(acquired);
   }
+}
+
+/** @param {string} profileDir */
+function pruneOrphanRollbackSnapshots(profileDir) {
+  try {
+    for (const entry of fs.readdirSync(profileDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name.startsWith('.install-rollback-')) {
+        fs.rmSync(path.join(profileDir, entry.name), { recursive: true, force: true });
+      }
+    }
+  } catch { /* Missing profile dir or locked orphan snapshot is skipped safely. */ }
 }
 
 /**
@@ -550,7 +583,7 @@ async function discardInstallSnapshot(snapshot, result) {
   return result;
 }
 
-async function rollbackInstall(snapshot, failure) {
+async function rollbackInstall(snapshot, failure, restoredSuffix = '；已恢复安装前状态') {
   const errors = [];
   for (const entry of snapshot.entries) {
     try {
@@ -571,7 +604,7 @@ async function rollbackInstall(snapshot, failure) {
     ok: false,
     rolledBack: !rollbackError,
     rollbackError,
-    error: `${failure.error || '安装失败'}${rollbackError ? `；自动回滚失败：${rollbackError}` : '；已恢复安装前状态'}`,
+    error: `${failure.error || '安装失败'}${rollbackError ? `；自动回滚失败：${rollbackError}` : restoredSuffix}`,
     // Do not offer a retry/approval while the profile needs manual recovery.
     ...(rollbackError ? { needsAllowBuilds: false, allowBuilds: [] } : {}),
   };
@@ -674,7 +707,7 @@ async function installPlugin(spec, options = {}) {
     }
     const { added, failure } = await addAndValidate(name, options);
     return failure || added;
-  });
+  }, options);
 }
 
 /** Launcher-import registry spec: `name@1.2.3` / `name@^1.2.3` / `name@~1.2.3`. */
@@ -727,7 +760,7 @@ async function installImportPlugin(spec, options = {}) {
     }
     const { added, failure } = await addAndValidate(value, options);
     return failure || added;
-  });
+  }, { ...options, allowImportOwner: true });
 }
 
 async function uninstallPlugin(packageName, options = {}) {
@@ -748,14 +781,14 @@ async function uninstallPlugin(packageName, options = {}) {
       return { ...result, installed: listInstalledPlugins() };
     }
     return { ...result, error: '卸载失败' };
-  });
+  }, options);
 }
 
 /**
  * Install a curated marketplace plugin by catalog id.
  * The CLI only receives that row's installSpec after marketplace validation.
  * @param {string} id - registry `owner/name` id.
- * @param {{ allowBuilds?: string[], token?: string, onProgress?: Function }} [options]
+ * @param {{ allowBuilds?: string[], token?: string, onProgress?: Function, delegatedToken?: unknown }} [options]
  * @returns {Promise<{ ok: boolean, error?: string, spec?: string, needsAllowBuilds?: boolean, allowBuilds?: string[], log?: string, installed?: object }>}
  */
 async function installMarketplacePlugin(id, options = {}) {
@@ -783,75 +816,19 @@ async function installMarketplacePlugin(id, options = {}) {
     }
     invalidateMarketplaceUpdates();
     return added;
-  });
-}
-
-function captureProfileFile(name) {
-  const file = path.join(webProfileDir(), name);
-  const existed = fs.existsSync(file);
-  return {
-    file,
-    existed,
-    contents: existed ? fs.readFileSync(file) : null,
-  };
-}
-
-function captureUpdateSnapshot() {
-  return [
-    captureProfileFile('package.json'),
-    captureProfileFile('pnpm-lock.yaml'),
-    captureProfileFile('pnpm-workspace.yaml'),
-  ];
-}
-
-function restoreUpdateSnapshot(snapshot) {
-  for (const entry of snapshot) {
-    if (!entry.existed) {
-      if (fs.existsSync(entry.file)) fs.unlinkSync(entry.file);
-      continue;
-    }
-    fs.mkdirSync(path.dirname(entry.file), { recursive: true });
-    atomicWriteFileSync(entry.file, entry.contents);
-  }
-}
-
-async function rollbackMarketplaceUpdate(snapshot, options) {
-  if (typeof options.onProgress === 'function') {
-    options.onProgress({ phase: 'rollback', line: '更新失败，正在恢复原版本' });
-  }
-  try {
-    restoreUpdateSnapshot(snapshot);
-  } catch (error) {
-    return { ok: false, error: `无法恢复 profile 快照：${error.message}` };
-  }
-  let restored;
-  try {
-    restored = await pluginCommand(options)(['install'], options.onProgress);
-  } catch (error) {
-    restored = { ok: false, log: error.message };
-  }
-  invalidateMarketplaceUpdates();
-  return restored.ok
-    ? { ok: true, log: restored.log || '' }
-    : { ok: false, error: 'profile 快照已恢复，但重新安装原版本失败', log: restored.log || '' };
+  }, options);
 }
 
 async function failedMarketplaceUpdate(result, snapshot, options, error) {
-  const rollback = await rollbackMarketplaceUpdate(snapshot, options);
-  const suffix = rollback.ok ? '；已恢复原版本' : `；自动回滚失败：${rollback.error}`;
-  return {
-    ...result,
-    ok: false,
-    error: `${error}${suffix}`,
-    rolledBack: rollback.ok,
-    rollbackError: rollback.ok ? undefined : rollback.error,
-    log: [result?.log, rollback.log].filter(Boolean).join('\n'),
-  };
+  if (typeof options.onProgress === 'function') {
+    options.onProgress({ phase: 'rollback', line: '更新失败，正在恢复原版本' });
+  }
+  return rollbackInstall(snapshot, { ...result, error }, '；已恢复原版本');
 }
 
 /** Update one installed curated plugin to the checked version or commit. */
 async function updateMarketplacePlugin(id, options = {}) {
-  return withPluginLock(() => updateMarketplacePluginLocked(id, options));
+  return withPluginLock(() => updateMarketplacePluginLocked(id, options), options);
 }
 
 async function updateMarketplacePluginLocked(id, options = {}) {
@@ -877,7 +854,7 @@ async function updateMarketplacePluginLocked(id, options = {}) {
 
     let snapshot;
     try {
-      snapshot = captureUpdateSnapshot();
+      snapshot = await captureInstallSnapshot();
     } catch (error) {
       return { ok: false, error: `无法创建更新回滚点：${error.message}` };
     }
@@ -912,12 +889,12 @@ async function updateMarketplacePluginLocked(id, options = {}) {
       );
     }
     invalidateMarketplaceUpdates();
-    return {
+    return discardInstallSnapshot(snapshot, {
       ...added,
       updated: true,
       update: { ...status, current, updateAvailable: false },
       installed: listInstalledPlugins(),
-    };
+    });
   }
 }
 
@@ -945,7 +922,7 @@ async function updateMarketplacePlugins(ids, options = {}) {
       results,
       error: results.every(result => result.ok) ? undefined : '部分插件更新失败，请查看操作记录；构建授权需逐项确认',
     };
-  });
+  }, options);
 }
 
 module.exports = {

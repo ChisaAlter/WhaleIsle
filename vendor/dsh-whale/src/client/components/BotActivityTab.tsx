@@ -4,7 +4,7 @@
 // Work Items (5 smooth collapsible groups, sticky floating bulk pill) -> BotActivityUpcoming ->
 // Lightweight today's cost & peak/off-peak summary strip.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOT_ITEM_STATUSES,
   botItemPrUrl,
@@ -15,6 +15,12 @@ import {
   isBotItemSnoozed,
   isBotItemStale,
 } from '../../shared/bot-items.js';
+import {
+  askLockKey,
+  buildOwnerAnswerPayload,
+  buildQuickAskRequestId,
+  resolveItemQuestionEventId,
+} from './bot-quick-ask';
 import {
   botsStore,
   formatRelativeTime,
@@ -178,7 +184,10 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
   const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = useState(false);
   const [bulkSnoozeMenuOpen, setBulkSnoozeMenuOpen] = useState(false);
   const [bulkCustomSnooze, setBulkCustomSnooze] = useState('');
-  const [submittingAskUid, setSubmittingAskUid] = useState<string | null>(null);
+  const [submittingAskKeys, setSubmittingAskKeys] = useState<Record<string, boolean>>({});
+  const [answeredAskKeys, setAnsweredAskKeys] = useState<Record<string, boolean>>({});
+  const inFlightAskRef = useRef<Set<string>>(new Set());
+  const answeredAskRef = useRef<Set<string>>(new Set());
 
   const reloadAll = useCallback(async () => {
     const [itemsRes, autoRes, accessRes, upNextRes, budgetRes] = await Promise.allSettled([
@@ -343,24 +352,40 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
   };
 
   const submitQuickAsk = async (item: DigestWorkItem, payload: AskSubmitPayload) => {
-    if (!payload.text || submittingAskUid) {
+    const questionEventId = resolveItemQuestionEventId(item);
+    const askKey = askLockKey(item.uid, questionEventId);
+    if (!payload.text || inFlightAskRef.current.has(askKey) || answeredAskRef.current.has(askKey)) {
       return;
     }
-    setSubmittingAskUid(item.uid);
+    inFlightAskRef.current.add(askKey);
+    setSubmittingAskKeys((prev) => ({ ...prev, [askKey]: true }));
     try {
       await callBotRpc(RPC_METHODS.ITEMS_OWNER_COMMENT, {
         botId: bot.id,
         uid: item.uid,
         text: payload.text,
-        decisions: payload.decisions,
-        ...(item.question?.eventId !== undefined ? { questionEventId: item.question.eventId } : {}),
-        requestId: `ask-${Date.now().toString(36)}`,
+        ...buildOwnerAnswerPayload(questionEventId, payload.decisions),
+        requestId: buildQuickAskRequestId(item.uid, questionEventId, payload.decisions, payload.text),
       });
-      void reloadAll();
+      answeredAskRef.current.add(askKey);
+      setAnsweredAskKeys((prev) => ({ ...prev, [askKey]: true }));
+      await reloadAll();
     } catch (err) {
-      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/item_changed|question has changed|no longer open/i.test(msg)) {
+        answeredAskRef.current.add(askKey);
+        setAnsweredAskKeys((prev) => ({ ...prev, [askKey]: true }));
+        void reloadAll();
+      }
+      botsStore.pushToast({ message: msg, tone: 'error' });
     } finally {
-      setSubmittingAskUid(null);
+      inFlightAskRef.current.delete(askKey);
+      setSubmittingAskKeys((prev) => {
+        if (!prev[askKey]) return prev;
+        const next = { ...prev };
+        delete next[askKey];
+        return next;
+      });
     }
   };
 
@@ -641,16 +666,21 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
                     </div>
                   )}
 
-                  {shape && shape.decisions.length > 0 ? (
-                    <BotItemQuestionStep
-                      questionKey={`inline:${item.uid}:${item.question?.eventId ?? '0'}`}
-                      shape={shape}
-                      compact
-                      submitting={submittingAskUid === item.uid}
-                      onSubmit={(payload) => void submitQuickAsk(item, payload)}
-                      onFillComment={(text) => handleInlineFillComment(item.uid, text)}
-                    />
-                  ) : (
+                  {shape && shape.decisions.length > 0 ? (() => {
+                    const qEventId = resolveItemQuestionEventId(item);
+                    const askKey = askLockKey(item.uid, qEventId);
+                    return (
+                      <BotItemQuestionStep
+                        questionKey={`inline:${item.uid}:${qEventId ?? '0'}`}
+                        shape={shape}
+                        compact
+                        submitting={Boolean(submittingAskKeys[askKey])}
+                        submitted={Boolean(answeredAskKeys[askKey])}
+                        onSubmit={(payload) => void submitQuickAsk(item, payload)}
+                        onFillComment={(text) => handleInlineFillComment(item.uid, text)}
+                      />
+                    );
+                  })() : (
                     <div className="dsh-bots-muted">
                       {item.question?.text || item.summary || (zh ? '等待你的确认或回复' : 'Waiting for your input')}
                     </div>

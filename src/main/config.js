@@ -419,9 +419,31 @@ const CREDENTIALS_ENVELOPE_VERSION = 'safeStorage-v1';
  * otherwise reads and writes stay plaintext so no platform loses credentials.
  */
 let safeStorageImpl = safeStorage;
+/** @type {any} */
+let credentialsCache = null;
 
 function setSafeStorageForTests(impl) {
   safeStorageImpl = impl === undefined ? safeStorage : impl;
+  credentialsCache = null;
+}
+
+function getCachedCredentials(file, canEncrypt, fresh) {
+  const key = settingsFileKey(file);
+  if (!fresh && key !== null && credentialsCache?.key === key
+      && credentialsCache.safeStorage === safeStorageImpl
+      && credentialsCache.canEncrypt === canEncrypt) {
+    return { key, hit: credentialsCache.creds };
+  }
+  return { key, hit: null };
+}
+
+function cacheCredentialsResult(file, key, canEncrypt, creds) {
+  const afterKey = settingsFileKey(file);
+  if (key !== null && afterKey !== null && key === afterKey) {
+    credentialsCache = { key: afterKey, safeStorage: safeStorageImpl, canEncrypt, creds: freezeSettings(creds) };
+    return credentialsCache.creds;
+  }
+  return creds;
 }
 
 function canEncryptCredentials() {
@@ -453,8 +475,14 @@ function isEncryptedCredentialsFile(raw) {
  * keyring, a denied keychain prompt, a file held by another program) are
  * `unreadable`: reads see none, and saves leave the file untouched.
  */
-function readCredentials() {
+function readCredentials(fresh = false) {
   const file = credentialsPath();
+  const canEncrypt = canEncryptCredentials();
+  const { key, hit } = getCachedCredentials(file, canEncrypt, fresh);
+  if (hit) {
+    return { creds: hit, needsWrite: false };
+  }
+  credentialsCache = null;
   let raw;
   try {
     raw = parseJsonText(fs.readFileSync(file, 'utf8'));
@@ -462,28 +490,29 @@ function readCredentials() {
     return error.code === 'ENOENT' ? { creds: {}, needsWrite: true } : { creds: {}, needsWrite: false, unreadable: true };
   }
   if (isEncryptedCredentialsFile(raw)) {
-    if (!canEncryptCredentials()) {
+    if (!canEncrypt) {
       return { creds: {}, needsWrite: false, unreadable: true };
     }
     try {
       const json = safeStorageImpl.decryptString(Buffer.from(raw.payload, 'base64'));
       const parsed = JSON.parse(json);
-      return { creds: parsed && typeof parsed === 'object' ? parsed : {}, needsWrite: false };
+      const creds = parsed && typeof parsed === 'object' ? parsed : {};
+      return { creds: cacheCredentialsResult(file, key, canEncrypt, creds), needsWrite: false };
     } catch {
       return { creds: {}, needsWrite: false, unreadable: true };
     }
   }
   const plain = raw && typeof raw === 'object' ? raw : {};
   let needsWrite = false;
-  if (canEncryptCredentials()) {
+  if (canEncrypt) {
     try {
       writeCredentials(plain);
     } catch {
-      // Migration is best-effort; the plaintext copy stays readable.
       needsWrite = true;
     }
+    return { creds: plain, needsWrite };
   }
-  return { creds: plain, needsWrite };
+  return { creds: cacheCredentialsResult(file, key, canEncrypt, plain), needsWrite };
 }
 
 /**
@@ -498,6 +527,7 @@ function credentialStorageMode() {
 
 /** Persist credentials, encrypted via safeStorage whenever the OS allows. */
 function writeCredentials(data) {
+  credentialsCache = null;
   const file = credentialsPath();
   // Owner-only: the plaintext fallback must not be readable by other local users.
   if (!canEncryptCredentials()) {
@@ -575,7 +605,7 @@ function readConfigLayers(fresh = false) {
       settingsCache = { key, stored: freezeSettings(stored), config: freezeSettings(settings) };
     }
   }
-  const { creds, needsWrite, unreadable: credentialsUnreadable = false } = readCredentials();
+  const { creds, needsWrite, unreadable: credentialsUnreadable = false } = readCredentials(fresh);
   const config = {
     ...settings,
     apiKey: typeof creds.apiKey === 'string' ? creds.apiKey : stored.apiKey || '',
@@ -583,7 +613,7 @@ function readConfigLayers(fresh = false) {
     githubToken: typeof creds.githubToken === 'string' ? creds.githubToken : stored.githubToken || '',
     remoteToken: typeof creds.remoteToken === 'string' ? creds.remoteToken : stored.remoteToken || '',
     remoteRelayToken: normalizeRelayHostToken(typeof creds.remoteRelayToken === 'string' ? creds.remoteRelayToken : ''),
-    remoteDevices: Array.isArray(creds.remoteDevices) ? creds.remoteDevices : [],
+    remoteDevices: Array.isArray(creds.remoteDevices) ? [...creds.remoteDevices] : [],
   };
   return { config, stored, creds, credentialsNeedWrite: needsWrite, configUnreadable, credentialsUnreadable };
 }

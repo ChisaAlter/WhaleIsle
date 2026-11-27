@@ -1901,3 +1901,190 @@ test('Right-panel RPCs: dismiss idempotency, non-blocking background start/lookN
     assert.equal(reportedErrors.length, 0);
   });
 });
+
+test('Bot mail pipeline regressions: internal notice channel, coalescing, inbox pruning, close cleanup, and unpause routing', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+  const { createBotsHttpHandler } = await importBots('rpc-router.js');
+
+  await withTempDir('mail-pipeline-regressions', async ({ root, onClose }) => {
+    const dshHome = path.join(root, 'dsh-home');
+    fs.mkdirSync(dshHome, { recursive: true });
+
+    const followups = [];
+    const promptCalls = [];
+    /** @type {Map<string, { id: string, inbox: { nextTurn: any[], remove: (id: string) => boolean }, followup: (msg: any) => void }>} */
+    const liveAgents = new Map();
+    const getOrSeedAgent = (sid) => {
+      let agent = liveAgents.get(sid);
+      if (!agent) {
+        /** @type {any[]} */
+        const nextTurn = [];
+        agent = {
+          id: sid,
+          inbox: {
+            nextTurn,
+            remove(id) {
+              const idx = nextTurn.findIndex((m) => m.id === id);
+              if (idx === -1) return false;
+              nextTurn.splice(idx, 1);
+              return true;
+            },
+          },
+          followup(msg) {
+            followups.push({ sid, msg });
+          },
+        };
+        liveAgents.set(sid, agent);
+      }
+      return agent;
+    };
+
+    const mock = createMockHarness();
+    mock.controller.runTurnForTest = undefined;
+    mock.controller.prompt = async (spec) => {
+      promptCalls.push(spec);
+      return { ok: true };
+    };
+    mock.controller.resolveAgent = async (sid) => ({ agent: getOrSeedAgent(sid) });
+
+    const rt = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome,
+      enableSchedulers: false,
+      getController: () => mock.controller,
+    });
+    onClose(() => rt.close());
+    await rt.recoveryPromise;
+
+    const call = (method, params) => rt.http.invokeRpc(method, params);
+    const created = await call('bots.create', { name: 'CoalesceBot', skipKickoff: true });
+    const botId = created.bot.id;
+    const homeSid = created.sessionId;
+    const agent = getOrSeedAgent(homeSid);
+
+    // 1. Add needs_you item + quick-answer via RPC `answers` alias -> switches to working; duplicate click is idempotent
+    const added = await call('bots.items.add', {
+      ownerBotId: botId,
+      chatId: homeSid,
+      source: { kind: 'home', title: null },
+      title: 'Refactor mail queue',
+      status: 'needs_you',
+      comment: 'Proceed with notice channel?',
+      actor: { kind: 'bot', botId, chatId: homeSid },
+    });
+    const qEvId = added.item.questionEventId;
+    const firstQuick = await call('bots.items.owner.comment', {
+      uid: added.item.uid,
+      text: 'Yes, proceed',
+      answers: qEvId,
+      requestId: 'rpc-quick-1',
+    });
+    assert.equal(firstQuick.item.status, 'working');
+    const dupQuick = await call('bots.items.owner.comment', {
+      uid: added.item.uid,
+      text: 'Yes, proceed',
+      questionEventId: qEvId,
+      requestId: 'rpc-quick-2',
+    });
+    assert.equal(dupQuick.deduplicated, true);
+
+    // Add a second distinct owner comment on the same item, then drain
+    await call('bots.items.owner.comment', {
+      uid: added.item.uid,
+      text: 'Also prune duplicate inbox notices',
+      requestId: 'rpc-follow-1',
+    });
+    // Wait briefly for any async fire-and-forget trigger, then reset to test explicit coalesced drain cleanly
+    await new Promise((r) => setTimeout(r, 25));
+    followups.length = 0;
+
+    // Seed 2 more owed comments directly so we guarantee multiple owed events exist before single drain
+    rt.itemsStore.ownerComment(added.item.uid, { text: 'Coalesce note A', requestId: 'c-a' });
+    rt.itemsStore.ownerComment(added.item.uid, { text: 'Coalesce note B', requestId: 'c-b' });
+    // Seed stale unconsumed inbox notices for this item AND an unrelated item + user message
+    agent.inbox.nextTurn.push(
+      { id: 'stale-v2', role: 'user', source: { kind: 'dsh-bots:mail', itemUid: added.item.uid }, content: [{ type: 'text', text: 'old v2' }] },
+      { id: 'stale-legacy', role: 'user', source: { rpcId: 'bot-item-mail-12' }, content: [{ type: 'text', text: `Item: #${added.item.number} "Refactor mail queue"` }] },
+      { id: 'keep-other-item', role: 'user', source: { kind: 'dsh-bots:mail', itemUid: 'other-uid-999' }, content: [{ type: 'text', text: 'Item: #99 "Other"' }] },
+      { id: 'keep-user', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'owner hello' }] },
+    );
+
+    const drainRes = await rt.sessionRuntime.sendOwedMail();
+    assert.equal(drainRes.ok, true);
+    assert.equal(drainRes.deliveredGroups, 1, 'multiple owed events for same item+session must coalesce into 1 notice');
+    assert.equal(followups.length, 1);
+    assert.equal(promptCalls.length, 0, 'must deliver via liveAgent.followup, never controller.prompt');
+    const deliveredMsg = followups[0].msg;
+    assert.equal(deliveredMsg.source.kind, 'dsh-bots:mail');
+    assert.equal(deliveredMsg.source.form, 'notice');
+    assert.ok(deliveredMsg.source.summary);
+    assert.deepEqual(deliveredMsg.source.itemUids, [added.item.uid]);
+    assert.equal(deliveredMsg.source.eventIds.length, 2);
+    assert.match(deliveredMsg.content[0].text, /Coalesce note A/);
+    assert.match(deliveredMsg.content[0].text, /Coalesce note B/);
+    assert.deepEqual(agent.inbox.nextTurn.map((m) => m.id), ['keep-other-item', 'keep-user']);
+
+    // 2. Closing an item (`canceled`) auto-reconciles owed mail AND prunes stale inbox notices for that item
+    rt.itemsStore.ownerComment(added.item.uid, { text: 'Ignore this suggestion', requestId: 'c-cancel-before' });
+    agent.inbox.nextTurn.push(
+      { id: 'stale-after-cancel-v2', role: 'user', source: { kind: 'dsh-bots:mail', itemUids: [added.item.uid] }, content: [{ type: 'text', text: 'stale' }] },
+      { id: 'stale-after-cancel-legacy', role: 'user', source: { rpcId: 'bot-item-mail-55' }, content: [{ type: 'text', text: `Item: #${added.item.number} (${added.item.uid})` }] },
+    );
+    await call('bots.items.owner.status', { uid: added.item.uid, status: 'canceled', reason: 'Ignore suggestion' });
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(rt.itemsStore.owedMail().length, 0);
+    assert.deepEqual(agent.inbox.nextTurn.map((m) => m.id), ['keep-other-item', 'keep-user']);
+
+    const afterCancelDrain = await rt.sessionRuntime.sendOwedMail();
+    assert.equal(afterCancelDrain.deliveredGroups, 0);
+    assert.equal(followups.length, 1);
+
+    // 3. Unpause via both RPC (`bots.update`) and `botsService.updateBot` obeys `hasCustomWakeBot` routing
+    const wakes = [];
+    const dshHome2 = path.join(root, 'dsh-home-wake');
+    fs.mkdirSync(dshHome2, { recursive: true });
+    const mockWake = createMockHarness();
+    const wakeRt = createBotsRuntime({
+      ctx: mockWake.ctx,
+      dshHome: dshHome2,
+      enableSchedulers: false,
+      getController: () => mockWake.controller,
+      wakeBot: async (payload) => {
+        wakes.push(payload);
+        return { ok: true };
+      },
+    });
+    onClose(() => wakeRt.close());
+    await wakeRt.recoveryPromise;
+    const httpWake = createBotsHttpHandler(wakeRt, { requestRejection: () => undefined });
+    const srv = await startHttpServer(httpWake.handler);
+    onClose(() => srv.close());
+
+    const created2 = await wakeRt.botsService.createBot({ name: 'WakePauseBot', skipKickoff: true });
+    await wakeRt.botsService.updateBot(created2.bot.id, { paused: true });
+    const item2 = wakeRt.itemsStore.add({
+      ownerBotId: created2.bot.id,
+      chatId: created2.sessionId,
+      source: { kind: 'home', title: null },
+      title: 'Wait until unpaused',
+      status: 'planned',
+    }, { kind: 'bot', botId: created2.bot.id, chatId: created2.sessionId }).item;
+    wakeRt.itemsStore.ownerComment(item2.uid, { text: 'Wake via custom reconciler on RPC unpause', requestId: 'u-1' });
+    assert.equal(wakes.length, 0);
+
+    const unpauseRpc = await rpcPost(srv.baseUrl, 'bots.update', { botId: created2.bot.id, patch: { paused: false } });
+    assert.equal(unpauseRpc.status, 200);
+    assert.equal(unpauseRpc.body.ok, true);
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(wakes.length, 1);
+    assert.equal(mockWake.prompted.filter((p) => String(p.requestId || '').startsWith('bot-item-mail-')).length, 0);
+
+    // Direct botsService.updateBot unpause must also honor custom wakeBot without calling sendOwedMail
+    await wakeRt.botsService.updateBot(created2.bot.id, { paused: true });
+    wakeRt.itemsStore.ownerComment(item2.uid, { text: 'Wake via custom reconciler on direct unpause', requestId: 'u-2' });
+    await wakeRt.botsService.updateBot(created2.bot.id, { paused: false });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(wakes.length, 2);
+    assert.equal(mockWake.prompted.filter((p) => String(p.requestId || '').startsWith('bot-item-mail-')).length, 0);
+  });
+});

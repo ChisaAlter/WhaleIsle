@@ -15,64 +15,17 @@ const {
 } = require('./preview-session');
 const net = require('node:net');
 const { DEFAULT_ZOOM_FACTOR, ZOOM_EPSILON, nextZoomLevel } = require('./preview-zoom');
+const { isPathInside } = require('./workspace-authority');
+const { FRAME_RESOURCE_TYPES, isBlockedControlUrl } = require('./guest-network-policy');
 
 const DISCOVER_PORTS = Object.freeze([
   3000, 3001, 3333, 4173, 4200, 4321, 5000, 5173, 5174, 5175, 5500, 8000, 8080, 8081, 8888, 9000,
 ]);
 const DISCOVER_TIMEOUT_MS = 200;
-/** Document navigations that must stay http(s). */
-const FRAME_RESOURCE_TYPES = new Set(['mainFrame', 'subFrame']);
 /** Max hostname characters in a screenshot filename slug. */
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 /** Byte cap for one saved MediaRecorder artifact. */
 const MAX_RECORDING_BYTES = 512 * 1024 * 1024;
-
-const LOOPBACK_MATCH_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
-
-function defaultControlOrigins() {
-  const urls = [];
-  try {
-    const { getHarnessOrigin } = require('./window');
-    const origin = typeof getHarnessOrigin === 'function' ? getHarnessOrigin() : '';
-    if (origin) urls.push(origin);
-  } catch {
-    // Window module unavailable in isolated tests.
-  }
-  try {
-    const { desktopInstallEnv } = require('./desktop-install-control');
-    const controlUrl = typeof desktopInstallEnv === 'function'
-      ? desktopInstallEnv()?.DSH_DESKTOP_INSTALL_URL
-      : '';
-    if (controlUrl) urls.push(controlUrl);
-  } catch {
-    // Install control module unavailable in isolated tests.
-  }
-  return urls;
-}
-
-function matchesControlOrigin(/** @type {URL} */ url, /** @type {unknown} */ candidate) {
-  if (typeof candidate !== 'string' || candidate.trim() === '') return false;
-  try {
-    const host = new URL(candidate);
-    if (url.port !== host.port) return false;
-    return url.hostname === host.hostname
-      || (LOOPBACK_MATCH_HOSTS.has(url.hostname) && LOOPBACK_MATCH_HOSTS.has(host.hostname));
-  } catch {
-    return false;
-  }
-}
-
-function isBlockedControlUrl(/** @type {URL} */ url, /** @type {{ blockedOrigins?: string[], getHarnessOrigin?: () => string } | undefined} */ options) {
-  const origins = [
-    ...defaultControlOrigins(),
-    ...(Array.isArray(options?.blockedOrigins) ? options.blockedOrigins : []),
-  ];
-  if (typeof options?.getHarnessOrigin === 'function') {
-    const origin = options.getHarnessOrigin();
-    if (origin) origins.push(origin);
-  }
-  return origins.some((candidate) => matchesControlOrigin(url, candidate));
-}
 
 /**
  * Guest document URLs: any http(s) host without URL credentials or application
@@ -143,8 +96,7 @@ function resolvePreviewArtifactPath(userData, artifactPath) {
   } catch {
     return null;
   }
-  const relative = path.relative(realRoot, realTarget);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  if (!isPathInside(realRoot, realTarget)) return null;
   return realTarget;
 }
 
@@ -213,8 +165,11 @@ function defaultAttach({ bounds, partition }) {
       view.setVisible(next);
     },
     destroy() {
-      win.contentView.removeChildView(view);
-      view.webContents.close();
+      try {
+        if (!win.isDestroyed?.()) win.contentView.removeChildView(view);
+      } finally {
+        if (!view.webContents.isDestroyed?.()) view.webContents.close();
+      }
     },
   };
 }

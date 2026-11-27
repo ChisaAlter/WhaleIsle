@@ -21,15 +21,16 @@
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { execFile } from 'node:child_process'
-import { readFileSync, mkdirSync, writeFileSync, existsSync, readdirSync, statSync, renameSync, copyFileSync, appendFileSync, watch } from 'node:fs'
+import { readFileSync, mkdirSync, writeFileSync, existsSync, readdirSync, statSync, renameSync, copyFileSync, watch } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import iconv from 'iconv-lite'
 
 import {
   shq, normalizeRemotePath, joinRemotePath, remoteDirname, mkdirRemoteDirs,
-  toShellPath, toDisplayPath, remotePathBase, truncate, shortHash,
+  toShellPath, toDisplayPath, remotePathBase, resolveMirrorDownloadPath, truncate, shortHash,
 } from './paths.js'
+import { createAuditLog } from './audit.js'
 import { createHostKeyGuard, isHostKeyKnown as _isHostKeyKnown } from './hostkey.js'
 import { compileIgnore, DEFAULT_IGNORE } from './ignore.js'
 import { friendlyMessage } from './errors.js'
@@ -40,7 +41,7 @@ import { searchRemote } from './search.js'
 import { resolveMirror, poolKey, lookupSessionCwd, encodeSegmentSafe, readSessionHeaderCwd, requestSessionHint } from './binding.js'
 import { TaskManager } from './tasks.js'
 import { ForwardManager } from './forwards.js'
-import { loadMachines as _loadMachines, saveMachines as _saveMachines, sanitizeMachine as _sanitizeMachine, applyMachine as _applyMachine, machineId as _machineId, passphraseSecretId, proxyPasswordSecretId, buildAndPersistMachine, deleteMachineSecrets } from './registry.js'
+import { loadMachines as _loadMachines, saveMachines as _saveMachines, sanitizeMachine as _sanitizeMachine, applyMachine as _applyMachine, machineId as _machineId, passphraseSecretId, proxyPasswordSecretId, buildAndPersistMachine, deleteMachineSecrets, upsertConnectedMachine } from './registry.js'
 import { registerHttpTransports } from './http-transport.js'
 import { SshPool } from './pool.js'
 import { createFsRoutes } from './routes-fs.js'
@@ -505,25 +506,7 @@ export async function apply(ctx, config) {
    * @param {number|null} code - exit code, or null when not applicable.
    * @param {{host?: string, username?: string, port?: number}} [target] - machine acted on; defaults to the active machine.
    */
-  const audit = (op, cmd, code, target) => {
-    if (!config.auditLog) return
-    const host = (target && target.host) || config.host
-    const user = (target && target.username) || config.username
-    const port = (target && target.port) || config.port
-    try {
-      const line = [new Date().toISOString(), `${user || '?'}@${host || '?'}:${port}`, op, code == null ? '-' : String(code), String(cmd || '').replace(/\s+/g, ' ').slice(0, 400)].join(' | ') + '\n'
-      appendFileSync(auditFile(), line, 'utf8')
-    } catch (error) { ctx.logger.warn('写入 SSH 审计日志失败；请检查应用数据目录的写入权限。', error); }
-  }
-  const readAudit = (limit) => {
-    try {
-      const text = readFileSync(auditFile(), 'utf8')
-      const lines = text.split('\n').filter(Boolean)
-      return lines.slice(-Math.max(1, Math.min(Number(limit) || 50, 500)))
-    } catch {
-      return []
-    }
-  }
+  const { audit, readAudit } = createAuditLog({ auditFile, config, logger: ctx.logger })
 
   // ── ignore rules (defaults + user file) ───────────────────────────────────
   const ignoreMatcher = () => {
@@ -538,7 +521,7 @@ export async function apply(ctx, config) {
   // ── task + forward managers ───────────────────────────────────────────────
   const tasks = new TaskManager()
   const forwards = new ForwardManager(pool, { file: forwardsFile() })
-  pool.onReady = (client) => forwards.attach(client)
+  pool.onReady = (client) => forwards.attach(client, activeMachine()?.id || null)
   pool.onCloseHook = () => forwards.detach()
 
   // ── auto-push watcher (config.autoPush, default off) ──────────────────────
@@ -934,19 +917,10 @@ export async function apply(ctx, config) {
           privateKeyPath: args.privateKeyPath || '',
         }
         if (args.save !== false) {
-          // Upsert into the registry and make it the current machine so the
-          // settings UI and the tools always agree on who is active.
-          const i = machines.findIndex((m) => m.host === rec.host && m.username === rec.username && Number(m.port) === rec.port)
-          if (i >= 0) {
-            machines[i] = { ...machines[i], ...rec, id: machines[i].id, password: rec.password || machines[i].password || '' }
-            store.currentId = machines[i].id
-            saveMachines(machines, store.currentId)
-          } else {
-            const id = machineId()
-            machines.push({ id, name: host, ...rec })
-            store.currentId = id
-            saveMachines(machines, store.currentId)
-          }
+          store.currentId = await upsertConnectedMachine({
+            machines, rec, platformBackend, secretsDir: secretsDir(), persistPassword, deleteSecret,
+          })
+          saveMachines(machines, store.currentId)
           ephemeral = null
           await applyActiveMachine()
         } else {
@@ -964,7 +938,7 @@ export async function apply(ctx, config) {
             return { text: 'connect failed: ' + (res.stderr || 'exit ' + res.code) }
           }
           audit('connect', `connect ${user}@${host}:${port || 22}`, 0)
-          return { text: `Connected to ${host} as ${config.username}.\n\npick a workspace with rw_pick_workspace (path=<abs>).` }
+          return { text: `Connected to ${host} as ${user}.\n\npick a workspace with rw_pick_workspace (path=<abs>).` }
         } catch (err) {
           throw new Error(friendlyMessage(err, { host, port }))
         }
@@ -1500,8 +1474,8 @@ export async function apply(ctx, config) {
           const ws = b.ws
           if (!ws) throw new Error('rw_download: no remote workspace set — pass localPath explicitly')
           const base = mirrorDirFor(ws, b.host, b.username, b.port)
-          const rel = p.startsWith(ws) ? p.slice(ws.length).replace(/^\/+/, '') : p.slice(1)
-          local = path.join(base, rel)
+          local = resolveMirrorDownloadPath(path, base, ws, p)
+          if (!local) throw new Error('rw_download: resolved local path escapes mirror directory')
         }
         mkdirSync(path.dirname(local), { recursive: true })
         const st = await sftp.stat(p).catch(() => null)
@@ -2211,9 +2185,12 @@ export async function apply(ctx, config) {
             commandTimeoutMs: 10000,
           }, { knownHostsFile })
           const started = Date.now()
-          await probe.connect()
-          await probe.exec('true', { timeoutMs: 10000 })
-          probe.close()
+          try {
+            await probe.connect()
+            await probe.exec('true', { timeoutMs: 10000 })
+          } finally {
+            probe.close()
+          }
           const latencyMs = Date.now() - started
           const mi = machines.findIndex((m) => m.host === probe.config.host && m.username === probe.config.username && Number(m.port) === probe.config.port)
           if (mi >= 0) {

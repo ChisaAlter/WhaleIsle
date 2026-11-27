@@ -3,6 +3,8 @@ const path = require('node:path');
 const { atomicWriteFile } = require('../shared/fs-safe');
 const { logicalRealpathSync } = require('./logical-realpath');
 const { spawn } = require('node:child_process');
+const { spawnTreeOptions } = require('../shared/process-tree');
+const { gitChildEnv, killProcessTree, probeGitExecutable, GIT_MAX_OUTPUT_BYTES } = require('./git-exec');
 const {
   createCachedWorkspaceAuthority,
   hasGitDirSegment,
@@ -123,40 +125,78 @@ function entryRelativePath(relativePath, name) {
  * paths, or an empty set with `gitMissing` when git is absent or fails
  * (every entry is then listed, matching the previous per-entry fallback).
  */
-function gitIgnoredSet(cwd, relPaths) {
+const CHECK_IGNORE_TIMEOUT_MS = 10_000;
+
+/**
+ * @param {string} command
+ * @param {string} cwd
+ * @param {string[]} relPaths
+ * @returns {Promise<{ ignored: Set<string>, gitMissing: boolean, enoent: boolean }>}
+ */
+function runCheckIgnore(command, cwd, relPaths) {
   return new Promise((resolve) => {
-    if (relPaths.length === 0) {
-      resolve({ ignored: new Set(), gitMissing: false });
-      return;
-    }
-    const child = spawn('git', ['-C', cwd, 'check-ignore', '--no-index', '--stdin', '-z'], {
+    const child = spawn(command, ['-C', cwd, 'check-ignore', '--no-index', '--stdin', '-z'], {
       windowsHide: true,
+      env: gitChildEnv(),
+      ...spawnTreeOptions(),
     });
+    /** @type {Buffer[]} */
     const chunks = [];
+    let bytes = 0;
+    let overflow = false;
     let settled = false;
-    child.on('error', () => {
-      settled = true;
-      resolve({ ignored: new Set(), gitMissing: true });
-    });
-    child.stdout.on('data', (chunk) => chunks.push(chunk));
-    child.on('close', (code) => {
+    /** @param {{ ignored: Set<string>, gitMissing: boolean, enoent: boolean }} result */
+    const finish = (result) => {
       if (settled) return;
-      // check-ignore exits 0 when some paths are ignored and 1 when none are;
-      // anything else (128: not a repo error, bad input) falls back to unfiltered.
-      if (code !== 0 && code !== 1) {
-        resolve({ ignored: new Set(), gitMissing: true });
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      killProcessTree(child);
+      finish({ ignored: new Set(), gitMissing: true, enoent: false });
+    }, CHECK_IGNORE_TIMEOUT_MS);
+    child.on('error', (error) => {
+      const code = /** @type {NodeJS.ErrnoException} */ (error)?.code;
+      finish({ ignored: new Set(), gitMissing: true, enoent: code === 'ENOENT' });
+    });
+    child.stdout.on('data', (chunk) => {
+      bytes += chunk.length;
+      if (bytes > GIT_MAX_OUTPUT_BYTES) {
+        if (!overflow) { overflow = true; killProcessTree(child); }
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.on('close', (code) => {
+      if (overflow || (code !== 0 && code !== 1)) {
+        finish({ ignored: new Set(), gitMissing: true, enoent: false });
         return;
       }
       const out = Buffer.concat(chunks).toString('utf8');
-      resolve({
+      finish({
         ignored: new Set(out.split('\0').filter((part) => part.length > 0)),
         gitMissing: false,
+        enoent: false,
       });
     });
-    // EPIPE when git exits before consuming stdin; close settles the promise.
-    child.stdin.on('error', () => {});
+    child.stdin.on('error', () => { /* Child exited before consuming stdin; close settles. */ });
     child.stdin.end(`${relPaths.join('\0')}\0`);
   });
+}
+
+/**
+ * @param {string} cwd
+ * @param {string[]} relPaths
+ */
+async function gitIgnoredSet(cwd, relPaths) {
+  if (relPaths.length === 0) return { ignored: new Set(), gitMissing: false };
+  let res = await runCheckIgnore('git', cwd, relPaths);
+  if (res.enoent) {
+    const fallback = probeGitExecutable();
+    if (fallback) res = await runCheckIgnore(fallback, cwd, relPaths);
+  }
+  return { ignored: res.ignored, gitMissing: res.gitMissing };
 }
 
 async function listDir(cwd, relativePath) {

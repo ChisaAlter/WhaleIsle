@@ -33,6 +33,6 @@ const api = {
 };
 
 // Only the packaged update center document gets the bridge.
-if (/^file:.*update-center\.html(?:[?#].*)?$/u.test(location.href)) {
+if (process.isMainFrame && /^file:.*update-center\.html(?:[?#].*)?$/u.test(location.href)) {
   contextBridge.exposeInMainWorld('whaleUpdateCenter', api);
 }

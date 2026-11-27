@@ -247,15 +247,26 @@ function windowsProcessStartTime(pid) {
 }
 
 const ISO_TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
+const WINFT_TIMESTAMP_RE = /^winft:(\d+)$/;
 
 /**
- * Normalize an ISO-8601 timestamp with explicit UTC or offset designator to a
- * timezone-independent `<wholeEpochMs>:<7-digit-100ns-fraction>` key.
+ * Normalize an ISO-8601 timestamp or Windows FILETIME `winft:<100ns>` token to
+ * a timezone-independent `<wholeEpochMs>:<7-digit-100ns-fraction>` key.
  * @param {string} value
  * @returns {string | null}
  */
 function canonicalIsoInstant(value) {
-  const match = ISO_TIMESTAMP_RE.exec(String(value));
+  const raw = String(value);
+  const winft = WINFT_TIMESTAMP_RE.exec(raw);
+  if (winft) {
+    const unixTicks = BigInt(winft[1]) - FILETIME_EPOCH_DIFF_100NS;
+    const rem = ((unixTicks % 10_000_000n) + 10_000_000n) % 10_000_000n;
+    const wholeSec = (unixTicks - rem) / 10_000_000n;
+    const wholeMs = Number(wholeSec * 1000n);
+    if (!Number.isFinite(wholeMs)) return null;
+    return `${wholeMs}:${String(Number(rem)).padStart(7, '0')}`;
+  }
+  const match = ISO_TIMESTAMP_RE.exec(raw);
   if (!match) return null;
   const wholeMs = Date.parse(`${match[1]}${match[3]}`);
   if (!Number.isFinite(wholeMs)) return null;
@@ -264,9 +275,40 @@ function canonicalIsoInstant(value) {
 }
 
 /**
+ * Cross-platform synchronous process start-time token for lock-owner identity.
+ * @param {number} pid
+ * @returns {string}
+ */
+function readProcessStartTimeSync(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return '';
+  if (process.platform === 'win32') return windowsProcessStartTime(pid);
+  if (process.platform === 'linux') {
+    try {
+      const stat = require('node:fs').readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const end = stat.lastIndexOf(')');
+      if (end < 0) return '';
+      const fields = stat.slice(end + 2).trim().split(/\s+/);
+      return fields[19] ? `proc:${fields[19]}` : '';
+    } catch {
+      return '';
+    }
+  }
+  try {
+    const out = require('node:child_process').execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      timeout: 1500,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Compare two OS process start timestamps. Matches identical strings directly
- * and equates ISO-8601 timestamps representing the same 100ns instant across
- * UTC (`Z`) and local-offset (`±HH:MM`) encodings.
+ * and equates ISO-8601 and `winft:` timestamps representing the same 100ns
+ * instant across UTC (`Z`) and local-offset (`±HH:MM`) encodings.
  * @param {string} current
  * @param {string} recorded
  * @returns {boolean}
@@ -284,5 +326,6 @@ module.exports = {
   signalProcessTree,
   killProcessTree,
   windowsProcessStartTime,
+  readProcessStartTimeSync,
   sameProcessStartTime,
 };

@@ -128,6 +128,9 @@ test('resolveLatestMagpieRelease preserves prerelease tag suffixes, paginates CN
       const s = String(url);
       if (s.includes('/-/releases?page_size=')) {
         requestedPages.push(s);
+        if (s.includes('page=3')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
         if (!s.includes('page=2')) {
           return new Response(JSON.stringify([{ tag_name: 'v0.3.20', draft: false, prerelease: false, assets: [] }]), { status: 200 });
         }
@@ -147,7 +150,7 @@ test('resolveLatestMagpieRelease preserves prerelease tag suffixes, paginates CN
       return new Response('', { status: 404 });
     },
   });
-  assert.equal(requestedPages.length, 2);
+  assert.equal(requestedPages.length, 3);
   assert.equal(page2Rel.version, '0.1.4800');
 
   let maxPageCalls = 0;

@@ -723,7 +723,15 @@ async function forwardHostRespond({ origin, rpcId, value, cookie, fetchImpl, sig
     throw new Error('respond 缺少 rpcId');
   }
   if (rpcId.startsWith('remote-event:')) {
-    const identity = JSON.parse(rpcId.slice('remote-event:'.length));
+    let identity;
+    try {
+      identity = JSON.parse(rpcId.slice('remote-event:'.length));
+    } catch {
+      throw new Error('Remote event rpcId 格式无效');
+    }
+    if (!identity || typeof identity !== 'object') {
+      throw new Error('Remote event rpcId 格式无效');
+    }
     const outcome = value && typeof value === 'object'
       ? /** @type {{ outcome?: unknown }} */ (value).outcome : undefined;
     if (!(typeof outcome === 'string' && ['allowed-once', 'rejected'].includes(outcome))) {
