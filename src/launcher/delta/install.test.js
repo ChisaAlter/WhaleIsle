@@ -314,6 +314,36 @@ test('installDelta end-to-end: a product name with spaces validates before prote
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('installDelta refuses a cross-rename delta before stopping the desktop so shortcuts stay valid', async () => {
+  const dir = tmpdir();
+  const fromDir = path.join(dir, 'from');
+  const toDir = path.join(dir, 'to');
+  const installDir = path.join(dir, 'installed');
+  fs.mkdirSync(fromDir, { recursive: true });
+  fs.mkdirSync(toDir, { recursive: true });
+  fs.writeFileSync(path.join(fromDir, 'Whale Isle.exe'), 'old-exe');
+  fs.writeFileSync(path.join(toDir, 'WhaleIsle.exe'), 'new-exe');
+  fs.cpSync(fromDir, installDir, { recursive: true });
+  const zipPath = path.join(dir, 'wire.zip');
+  await buildDelta({
+    fromDir, toDir, outFile: zipPath, product: 'Whale-Isle', fromVersion: '1.0.0', toVersion: '2.0.0', allowExecutableRename: true,
+  });
+  const wireBytes = fs.readFileSync(zipPath);
+  let stopped = 0;
+  const result = await installDelta('v2.0.0', null, baseDeps({
+    installedInfo: async () => ({ registeredInstall: true, installPath: installDir, version: '1.0.0' }),
+    update: { downloadReleaseAsset: async (_info, dest) => { fs.writeFileSync(dest, wireBytes); return dest; } },
+    beforeApply: async () => { stopped += 1; return { ok: true }; },
+    applyFile: applyDeltaFile,
+    deltaDir: path.join(dir, 'cache'),
+  }));
+  assert.deepEqual(result, { ok: false, mode: 'delta', error: 'executable-renamed' });
+  assert.equal(stopped, 0);
+  assert.equal(fs.existsSync(path.join(installDir, 'Whale Isle.exe')), true);
+  assert.equal(fs.existsSync(path.join(installDir, 'WhaleIsle.exe')), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // --- ipc-delta contract -------------------------------------------------------
 
 function fakeCtx(install = async () => ({ ok: true, mode: 'delta' })) {

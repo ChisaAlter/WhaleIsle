@@ -210,7 +210,6 @@ body[data-state="error"] .horizon {
   font-weight: 400;
   letter-spacing: 0.08em;
   text-indent: 0.08em;
-  /* 闪光：一道窄亮带 6s 周期扫过英文名 */
   background: linear-gradient(105deg,
     var(--boot-brand-base) 45.5%, var(--boot-shine) 50%, var(--boot-brand-base) 54.5%);
   background-size: 240% 100%;

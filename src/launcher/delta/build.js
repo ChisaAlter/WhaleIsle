@@ -74,6 +74,16 @@ async function buildDelta(options, deps = {}) {
   const fromTree = await scanTree(fromDir, deps);
   const toTree = await scanTree(toDir, deps);
   const ops = diffTrees(fromTree, toTree);
+  const deletedTopExe = ops.find((op) => op.op === 'delete'
+    && !op.path.includes('/')
+    && /\.exe$/i.test(op.path)
+    && !/^uninstall(?: |\.)/i.test(op.path));
+  if (deletedTopExe && options.allowExecutableRename !== true) {
+    throw Object.assign(
+      new Error(`cannot build file-level delta across top-level executable removal (${deletedTopExe.path}); full Setup installer is required`),
+      { code: 'executable-renamed' },
+    );
+  }
 
   const files = [];
   const entries = [];

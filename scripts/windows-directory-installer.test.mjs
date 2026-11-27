@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
+  assistedInstallerScript,
+  desktopInstallSection,
+  legacyProcessCheckScript,
   directoryRemovalScript,
   directoryTransactionsScript,
   transactionalUninstallerScript,
@@ -438,4 +441,27 @@ test('installWindowsDirectoryInstaller reclaims .nsis-directory-installer on bot
   await cleanupDirectoryInstaller(outDir)
   assert.equal(existsSync(staging), false)
   assert.equal(existsSync(join(outDir, 'keep.exe')), true)
+})
+
+test('NSIS rename adapters preserve legacy install dirs, shortcut targets, and running-process checks', async () => {
+  const { directoryInstallSection, directoryInstallerExits } = await import('../vendor/deepseek-harness/apps/desktop/scripts/windows-directory-installer.mjs')
+  const assisted = assistedInstallerScript(readFileSync(join(templates, 'assistedInstaller.nsh'), 'utf8'))
+  assert.match(assisted, /ReadRegStr \$0 SHELL_CONTEXT "\$\{INSTALL_REGISTRY_KEY\}" InstallLocation/)
+  assert.match(assisted, /\$\{StrContains\} \$0 "Whale Isle" \$INSTDIR/)
+  assert.match(assisted, /\$\{StrContains\} \$0 "Deepseek-Harness-Desktop" \$INSTDIR/)
+  assert.match(assisted, /\$\{StrContains\} \$0 "Whale Isle Launcher" \$INSTDIR/)
+
+  const section = desktopInstallSection(directoryInstallSection(readFileSync(join(templates, 'installSection.nsh'), 'utf8')))
+  assert.match(section, /\$\{orIf\} \$\{FileExists\} "\$INSTDIR\\Whale Isle\.exe"/)
+  assert.match(section, /\$\{orIf\} \$\{FileExists\} "\$INSTDIR\\Deepseek-Harness-Desktop\.exe"/)
+  assert.match(section, /\$\{orIf\} \$\{FileExists\} "\$INSTDIR\\Whale Isle Launcher\.exe"/)
+  assert.match(section, /Delete "\$oldStartMenuLink"/)
+  assert.match(section, /Delete "\$oldDesktopLink"/)
+  assert.match(section, /CreateShortCut "\$newStartMenuLink" "\$appExe"/)
+  assert.match(section, /CreateShortCut "\$newDesktopLink" "\$appExe"/)
+
+  const running = legacyProcessCheckScript(directoryInstallerExits(readFileSync(join(templates, 'include/allowOnlyOneInstallerInstance.nsh'), 'utf8')))
+  assert.match(running, /StrCpy \$dshRunningExeName "Whale Isle\.exe"/)
+  assert.match(running, /!insertmacro FIND_PROCESS "\$dshRunningExeName"/)
+  assert.match(running, /!insertmacro KILL_PROCESS "\$dshRunningExeName"/)
 })

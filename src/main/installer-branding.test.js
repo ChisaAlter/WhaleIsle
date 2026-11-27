@@ -96,7 +96,7 @@ test('installer.nsh preserves branded pages and keeps installation work silent-i
   assert.ok(unWelcome, 'customUnWelcomePage macro body');
   assert.match(unWelcome[1], /!define MUI_WELCOMEPAGE_TITLE_3LINES/);
   assert.match(unWelcome[1], /!insertmacro MUI_UNPAGE_WELCOME/);
-  assert.match(nsh, /BrandingText "WhaleIsle \$\{VERSION\}"/);
+  assert.match(nsh, /BrandingText "\$\{PRODUCT_NAME\} \$\{VERSION\}"/);
   const code = nsh
     .split('\n')
     .filter((line) => !line.trim().startsWith('#') && !line.trim().startsWith(';'))

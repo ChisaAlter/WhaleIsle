@@ -1,4 +1,3 @@
-# WhaleIsle NSIS customization (assisted installer only).
 !include "${__FILEDIR__}\remove-directory.nsh"
 !ifdef BUILD_UNINSTALLER
   !insertmacro dshDefineRemoveDirectory "un."
@@ -230,8 +229,7 @@
 !macroend
 
 !macro customHeader
-  # Replace the stock "Nullsoft Install System vX.XX" footer with the product.
-  BrandingText "WhaleIsle ${VERSION}"
+  BrandingText "${PRODUCT_NAME} ${VERSION}"
 !macroend
 
 # --- Corrupted install-record hygiene (incident 2026-09-12) ----------------

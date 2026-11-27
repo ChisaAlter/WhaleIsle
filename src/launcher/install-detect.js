@@ -4,12 +4,12 @@ const { spawn, execFileSync } = require('child_process');
 const { app } = require('electron');
 const { openExternalFixedTarget } = require('../main/open-external');
 
-const APP_ID = 'ai.deepseek.harness.gui';
 const {
+  APP_ID,
   PRODUCT_NAME,
-  LAUNCHER_NAME,
-  LEGACY_PRODUCT_NAMES,
-  LEGACY_LAUNCHER_NAMES,
+  productNames,
+  nsisUninstallRegistryId,
+  matchesProductEntry,
 } = require('../shared/product-identity');
 // The desktop runtime keeps this identity even once a slim launcher package
 // exists: the launcher then scans for this product, not for itself.
@@ -19,13 +19,6 @@ const WINDOWS_UNINSTALL_WOW = 'Software\\WOW6432Node\\Microsoft\\Windows\\Curren
 const SETTINGS_APPS_URL = 'ms-settings:appsfeatures';
 
 /** @typedef {{ target?: { appId?: string, productName?: string }, execFileSync?: typeof execFileSync, statSync?: typeof fs.statSync, existsSync?: typeof fs.existsSync, platform?: string, isPackaged?: boolean, spawn?: typeof spawn }} InstallDeps */
-
-/** @param {string} productName */
-function productNames(productName) {
-  if (productName === PRODUCT_NAME) return [PRODUCT_NAME, ...LEGACY_PRODUCT_NAMES];
-  if (productName === LAUNCHER_NAME) return [LAUNCHER_NAME, ...LEGACY_LAUNCHER_NAMES];
-  return [productName];
-}
 
 // `deps.target` selects which product's install registration to inspect.
 // Absent → self (today's full package installs the desktop identity).
@@ -202,10 +195,14 @@ function parseRegBlock(block, keyPath = '') {
 /** @param {{ appId?: string }} target */
 function uninstallRegistryKeyPaths(target) {
   const appId = (target && target.appId) || APP_ID;
+  const nsisId = nsisUninstallRegistryId(appId);
+  const subkeys = nsisId === appId ? [appId] : [nsisId, appId];
   const keys = [];
   for (const root of ['HKLM', 'HKCU']) {
     for (const rel of [WINDOWS_UNINSTALL_REL, WINDOWS_UNINSTALL_WOW]) {
-      keys.push(`${root}\\${rel}\\${appId}`);
+      for (const sub of subkeys) {
+        keys.push(`${root}\\${rel}\\${sub}`);
+      }
     }
   }
   return keys;
@@ -342,9 +339,7 @@ function findRegisteredWindowsInstallNative(target) {
     }
     for (const name of names) {
       for (const parsed of entries) {
-        if (parsed.displayName.includes(name)
-          || parsed.uninstallCommand.includes(name)
-          || parsed.installPath.includes(name)) {
+        if (matchesProductEntry(parsed, name, target)) {
           return parsed;
         }
       }
@@ -413,11 +408,7 @@ function findRegisteredWindowsInstall(deps = {}) {
           const keyMatch = block.match(/^HKEY_[^\r\n]+/m);
           const candidateKey = keyMatch ? keyMatch[0] : root;
           const parsed = parseRegBlock(Buffer.isBuffer(output) ? unicodeRegistryBlock(candidateKey) : block, candidateKey);
-          if (parsed && (
-            parsed.displayName.includes(name)
-            || parsed.uninstallCommand.includes(name)
-            || parsed.installPath.includes(name)
-          )) {
+          if (matchesProductEntry(parsed, name, target)) {
             return parsed;
           }
         }
@@ -752,4 +743,6 @@ module.exports = {
   productNames,
   parseRegBlock,
   uninstallExeCandidates,
+  nsisUninstallRegistryId,
+  uninstallRegistryKeyPaths,
 };

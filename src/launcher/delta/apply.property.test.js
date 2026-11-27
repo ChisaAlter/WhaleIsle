@@ -21,7 +21,7 @@ const { fuzzAssert } = require('../../../scripts/lib/fuzz.cjs');
 const NUM_RUNS = 40;
 const STAGING_PREFIX = '.dshd-delta-';
 const KNOWN_CODES = new Set(['artifact-sha512-mismatch', 'bad-zip', 'manifest-invalid',
-  'manifest-target-mismatch', 'base-mismatch', 'payload-missing', 'payload-mismatch',
+  'manifest-target-mismatch', 'executable-renamed', 'base-mismatch', 'payload-missing', 'payload-mismatch',
   'apply-failed', 'target-missing']);
 
 /** File map of a directory tree: rel path -> sha256 hex. Directories ignored. */

@@ -359,6 +359,40 @@ function checkDeltaInstallSpace(targetDir, files, fsx, deps) {
   }
 }
 
+/** @param {unknown} value */
+function normalizeDeltaVersion(value) {
+  return String(value || '').trim().replace(/^v/i, '');
+}
+
+/** @param {{ op?: string, path: string }} row */
+function isTopLevelProductExeDelete(row) {
+  return row.op === 'delete'
+    && !row.path.includes('/')
+    && /\.exe$/i.test(row.path)
+    && !/^uninstall(?: |\.)/i.test(row.path);
+}
+
+/**
+ * @param {{ fromVersion?: string, toVersion?: string, product?: string, files: Array<{ op?: string, path: string }> }} doc
+ * @param {{ expectedFromVersion?: string, expectedToVersion?: string, expectedProduct?: string }} [options]
+ */
+function assertManifestCompatible(doc, options = {}) {
+  if ((options.expectedFromVersion && normalizeDeltaVersion(doc.fromVersion) !== normalizeDeltaVersion(options.expectedFromVersion))
+    || (options.expectedToVersion && normalizeDeltaVersion(doc.toVersion) !== normalizeDeltaVersion(options.expectedToVersion))
+    || (options.expectedProduct
+      && manifest.deltaAssetName(doc.product, '', '') !== manifest.deltaAssetName(options.expectedProduct, '', ''))) {
+    throw new DeltaApplyError('manifest-target-mismatch', 'delta manifest does not match the selected product and versions');
+  }
+  const deletedTopExe = doc.files.find(isTopLevelProductExeDelete);
+  if (deletedTopExe) {
+    throw new DeltaApplyError(
+      'executable-renamed',
+      `delta removes top-level executable (${deletedTopExe.path}); full installer required`,
+      deletedTopExe.path,
+    );
+  }
+}
+
 /**
  * @returns {Promise<{ok:true, fromVersion, toVersion, applied:{added,patched,deleted,skipped}}|{ok:false}>}
  * @throws {DeltaApplyError} code ∈ artifact-sha512-mismatch | bad-zip |
@@ -399,13 +433,7 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
       error.message || String(error));
   }
 
-  const version = (value) => String(value || '').trim().replace(/^v/i, '');
-  if ((options.expectedFromVersion && version(doc.fromVersion) !== version(options.expectedFromVersion))
-    || (options.expectedToVersion && version(doc.toVersion) !== version(options.expectedToVersion))
-    || (options.expectedProduct
-      && manifest.deltaAssetName(doc.product, '', '') !== manifest.deltaAssetName(options.expectedProduct, '', ''))) {
-    throw new DeltaApplyError('manifest-target-mismatch', 'delta manifest does not match the selected product and versions');
-  }
+  assertManifestCompatible(doc, options);
 
   const skip = await preflightBase(targetDir, doc.files, deps);
   checkDeltaInstallSpace(targetDir, doc.files, fsx, deps);

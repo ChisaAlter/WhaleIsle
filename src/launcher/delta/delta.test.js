@@ -771,3 +771,41 @@ test('applyDeltaFile preserves staging backups and flags rollbackIncomplete when
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('buildDelta and applyDeltaFile refuse deltas that delete a renamed top-level executable', async () => {
+  const dir = tmpdir();
+  try {
+    const fromDir = path.join(dir, 'from');
+    const toDir = path.join(dir, 'to');
+    const target = path.join(dir, 'target');
+    writeTree(fromDir, { 'Whale Isle.exe': 'MZ-0.3.16', 'resources/app.asar': 'asar-old' });
+    writeTree(toDir, { 'WhaleIsle.exe': 'MZ-0.3.17', 'resources/app.asar': 'asar-new' });
+    fs.cpSync(fromDir, target, { recursive: true });
+
+    const out = path.join(dir, 'rename-delta.zip');
+    await assert.rejects(
+      () => buildDelta({ fromDir, toDir, outFile: out, product: 'Whale-Isle', fromVersion: '0.3.16', toVersion: '0.3.17' }),
+      (error) => error.code === 'executable-renamed',
+    );
+
+    const forced = await buildDelta({
+      fromDir, toDir, outFile: out, product: 'Whale-Isle', fromVersion: '0.3.16', toVersion: '0.3.17', allowExecutableRename: true,
+    });
+    let stopped = 0;
+    await assert.rejects(
+      () => applyDeltaFile(out, target, {
+        expectedSha512: forced.sha512,
+        expectedProduct: 'Whale-Isle',
+        expectedFromVersion: '0.3.16',
+        expectedToVersion: '0.3.17',
+        beforeApply: async () => { stopped += 1; return { ok: true }; },
+      }),
+      (error) => error instanceof DeltaApplyError && error.code === 'executable-renamed',
+    );
+    assert.equal(stopped, 0);
+    assert.equal(fs.existsSync(path.join(target, 'Whale Isle.exe')), true);
+    assert.equal(fs.existsSync(path.join(target, 'WhaleIsle.exe')), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

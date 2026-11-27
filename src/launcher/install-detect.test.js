@@ -87,3 +87,72 @@ test('empty DisplayVersion falls back to the runtime exe product version', () =>
   assert.equal(info.registeredInstall, true);
   assert.equal(info.version, '0.3.2');
 });
+
+test('NSIS UUIDv5 uninstall keys match builder-util-runtime and prevent WhaleIsle Launcher self-collision', () => {
+  const { UUID } = require('builder-util-runtime');
+  const ns = UUID.parse('50e065bc-3134-11e6-9bab-38c9862bdaf3');
+  const guiUuid = UUID.v5('ai.deepseek.harness.gui', ns);
+  const launcherUuid = UUID.v5('ai.deepseek.harness.launcher', ns);
+  assert.equal(detect.nsisUninstallRegistryId('ai.deepseek.harness.gui'), guiUuid);
+  assert.equal(detect.nsisUninstallRegistryId('ai.deepseek.harness.launcher'), launcherUuid);
+
+  const launcherBlock = [
+    `HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${launcherUuid}`,
+    '    DisplayName    REG_SZ    WhaleIsle Launcher 0.3.17',
+    '    DisplayVersion    REG_SZ    0.3.17',
+    '    InstallLocation    REG_SZ    C:\\Apps\\WhaleIsle Launcher',
+    '    UninstallString    REG_SZ    "C:\\Apps\\WhaleIsle Launcher\\Uninstall WhaleIsle Launcher.exe" /currentuser',
+  ].join('\r\n');
+  const legacyDesktopBlock = [
+    `HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${guiUuid}`,
+    '    DisplayName    REG_SZ    Whale Isle 0.3.16',
+    '    DisplayVersion    REG_SZ    0.3.16',
+    '    InstallLocation    REG_SZ    C:\\Apps\\Whale Isle',
+    '    UninstallString    REG_SZ    "C:\\Apps\\Whale Isle\\Uninstall Whale Isle.exe" /currentuser',
+  ].join('\r\n');
+  const newDesktopBlock = [
+    `HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${guiUuid}`,
+    '    DisplayName    REG_SZ    WhaleIsle 0.3.17',
+    '    DisplayVersion    REG_SZ    0.3.17',
+    '    InstallLocation    REG_SZ    C:\\Apps\\WhaleIsle',
+    '    UninstallString    REG_SZ    "C:\\Apps\\WhaleIsle\\Uninstall WhaleIsle.exe" /currentuser',
+  ].join('\r\n');
+
+  const makeScanOnlyRegExec = (blocks) => (_cmd, args) => {
+    if (!args.includes('/s')) throw new Error('force fallback scan');
+    const needle = args[args.indexOf('/f') + 1];
+    const matched = blocks.filter((b) => b.toLowerCase().includes(needle.toLowerCase()));
+    if (!matched.length) throw new Error('not found');
+    return matched.join('\r\n\r\n');
+  };
+
+  const legacyCoexist = detect.getInstalledAppInfo({
+    platform: 'win32',
+    isPackaged: true,
+    target: detect.DESKTOP_TARGET,
+    existsSync: (p) => p.startsWith('C:\\Apps\\Whale Isle\\'),
+    execFileSync: makeScanOnlyRegExec([launcherBlock, legacyDesktopBlock]),
+  });
+  assert.equal(legacyCoexist.installPath, 'C:\\Apps\\Whale Isle');
+  assert.equal(legacyCoexist.version, '0.3.16');
+
+  const newCoexist = detect.getInstalledAppInfo({
+    platform: 'win32',
+    isPackaged: true,
+    target: detect.DESKTOP_TARGET,
+    existsSync: (p) => p.startsWith('C:\\Apps\\WhaleIsle\\'),
+    execFileSync: makeScanOnlyRegExec([launcherBlock, newDesktopBlock]),
+  });
+  assert.equal(newCoexist.installPath, 'C:\\Apps\\WhaleIsle');
+  assert.equal(newCoexist.version, '0.3.17');
+
+  const launcherOnly = detect.getInstalledAppInfo({
+    platform: 'win32',
+    isPackaged: true,
+    target: detect.DESKTOP_TARGET,
+    existsSync: () => true,
+    execFileSync: makeScanOnlyRegExec([launcherBlock]),
+  });
+  assert.equal(launcherOnly.registeredInstall, false);
+  assert.equal(launcherOnly.installPath, '');
+});

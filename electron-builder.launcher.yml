@@ -1,6 +1,3 @@
-# Slim launcher package: a second executable that manages the installed DSHD
-# desktop runtime. No vendor/ extraResources, no harness stack at runtime —
-# the package carries the launcher surface only.
 appId: ai.deepseek.harness.launcher
 productName: WhaleIsle Launcher
 copyright: MIT
