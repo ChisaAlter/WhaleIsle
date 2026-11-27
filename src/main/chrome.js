@@ -26,6 +26,39 @@ const injectScript = [
   '})()',
 ].join('\n');
 let ipcBound = false;
+/** @type {string | null} */
+let cachedStarPromptInjectScript = null;
+
+function getStarPromptInjectScript() {
+  if (cachedStarPromptInjectScript !== null) {
+    return cachedStarPromptInjectScript;
+  }
+  const injectPath = path.join(__dirname, 'star-prompt-inject.js');
+  if (!fs.existsSync(injectPath)) {
+    return '';
+  }
+  cachedStarPromptInjectScript = [
+    '(() => {',
+    fs.readFileSync(path.join(__dirname, '..', 'shared', 'dom.js'), 'utf8'),
+    fs.readFileSync(injectPath, 'utf8'),
+    '})()',
+  ].join('\n');
+  return cachedStarPromptInjectScript;
+}
+
+function buildHarnessInjectScript() {
+  const starPrompt = getStarPromptInjectScript();
+  if (!starPrompt) {
+    return injectScript;
+  }
+  return [
+    '(() => {',
+    `const result = ${injectScript};`,
+    `try { ${starPrompt}; } catch (error) { console.warn('[chrome] Failed to inject star prompt:', error); }`,
+    'return result;',
+    '})()',
+  ].join('\n');
+}
 const chromeRoles = new WeakMap();
 const transparentWindows = new WeakSet();
 
@@ -335,7 +368,7 @@ async function syncHarnessChrome(win, webContents = win.webContents) {
         return;
       }
       try {
-        const sample = await webContents.executeJavaScript(injectScript);
+        const sample = await webContents.executeJavaScript(buildHarnessInjectScript());
         if (sample?.bg) {
           paintBackground(win, sample.bg);
         }

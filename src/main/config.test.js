@@ -551,3 +551,42 @@ test('the update proxy is stored in canonical form and a stored invalid value fa
   assert.equal(saveConfig({ updateProxy: 'http://proxy.lan:8080' }).updateProxy, 'http://proxy.lan:8080');
   assert.equal(saveConfig({ updateProxy: '' }).updateProxy, '');
 });
+
+test('starPrompt defaults, normalizes, persists to public config, and is not renderer-writable', () => {
+  const before = loadConfig();
+  try {
+    assert.deepEqual(DEFAULTS.starPrompt, {
+      starredAt: '',
+      dismissedForever: false,
+      snoozedUntil: '',
+    });
+    assert.deepEqual(loadConfig().starPrompt, DEFAULTS.starPrompt);
+    assert.deepEqual(publicConfig({ starPrompt: { starredAt: ' 2026-11-27T00:00:00Z ', dismissedForever: 'yes', snoozedUntil: 123 } }).starPrompt, {
+      starredAt: '2026-11-27T00:00:00Z',
+      dismissedForever: false,
+      snoozedUntil: '',
+    });
+    const saved = saveConfig({
+      starPrompt: {
+        starredAt: ' 2026-11-27T01:02:03Z ',
+        dismissedForever: true,
+        snoozedUntil: ' 2026-12-04T01:02:03Z ',
+      },
+    });
+    assert.deepEqual(saved.starPrompt, {
+      starredAt: '2026-11-27T01:02:03Z',
+      dismissedForever: true,
+      snoozedUntil: '2026-12-04T01:02:03Z',
+    });
+    const loaded = loadConfig();
+    assert.deepEqual(loaded.starPrompt, saved.starPrompt);
+    const storedPublic = JSON.parse(fs.readFileSync(path.join(userData, 'config.json'), 'utf8'));
+    assert.deepEqual(storedPublic.starPrompt, saved.starPrompt);
+    assert.throws(
+      () => normalizeRendererConfigPatch({ starPrompt: { dismissedForever: true } }),
+      /not renderer-writable: starPrompt/,
+    );
+  } finally {
+    saveConfig({ starPrompt: before.starPrompt });
+  }
+});

@@ -163,6 +163,10 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:reload-page', kind: 'invoke', roles: HARNESS_ONLY, validate: noArgs },
   { channel: 'shell:live2d-pet-settings', kind: 'invoke', roles: HARNESS_ONLY, validate: objectArg },
   { channel: 'shell:open-dsh-home', kind: 'invoke', roles: HARNESS_ONLY, validate: noArgs },
+  { channel: 'shell:star-prompt-activity', kind: 'send', roles: HARNESS_ONLY, validate: noArgs },
+  { channel: 'shell:star-prompt-state', kind: 'invoke', roles: HARNESS_ONLY, validate: noArgs },
+  { channel: 'shell:star-prompt-action', kind: 'invoke', roles: HARNESS_ONLY, validate: requiredObject },
+  { channel: 'shell:star-prompt-changed', kind: 'event', roles: HARNESS_ONLY },
 
   // --- Updates --------------------------------------------------------------
   { channel: 'shell:check-update', kind: 'invoke', roles: UPDATE_SURFACES, validate: noArgs },

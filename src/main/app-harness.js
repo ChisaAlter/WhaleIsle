@@ -55,7 +55,9 @@ function createAppHarness({ state, dsh, remote, createMainWindow, initializeDesk
     showHarness: async (/** @type {string} */ url, /** @type {any} */ extra) => {
       // Account services must not delay or gate workspace entry.
       void initializeDesktopAccount(url);
-      return showHarness(url, { cookie: dsh.sessionCookie, activate: !state.backgroundStartup, ...extra });
+      const shown = await showHarness(url, { cookie: dsh.sessionCookie, activate: !state.backgroundStartup, ...extra });
+      state.starPrompt?.syncConfig();
+      return shown;
     },
     sendToBoot,
     isBootLoaded,

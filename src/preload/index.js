@@ -118,6 +118,10 @@ function harnessApi(renderer, remoteFeature) {
     // Live2D pet settings section writes — normalize + persist + push to
     // the live pet window through the pet manager.
     saveLive2dPetSettings: invoke(renderer, 'shell:live2d-pet-settings'),
+    reportStarPromptActivity: send(renderer, 'shell:star-prompt-activity'),
+    getStarPromptState: invoke(renderer, 'shell:star-prompt-state'),
+    starPromptAction: invoke(renderer, 'shell:star-prompt-action'),
+    onStarPromptChanged: subscribe(renderer, 'shell:star-prompt-changed'),
     openLauncher: invoke(renderer, 'shell:open-launcher'),
     retryFullPlugins: invoke(renderer, 'shell:retry-full-plugins'),
     checkUpdate: invoke(renderer, 'shell:check-update'),

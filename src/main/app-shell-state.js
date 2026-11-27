@@ -22,6 +22,7 @@
  * @property {any} platformView — embedded Platform documents view
  * @property {Function|undefined} platformSessionRefresh — session refetch hook
  * @property {any} approvalMonitor — minimized approval popup & app badge coordinator
+ * @property {any} starPrompt — idle GitHub star prompt coordinator
  */
 
 /**
@@ -50,6 +51,7 @@ function createShellState() {
     platformView: undefined,
     platformSessionRefresh: undefined,
     approvalMonitor: null,
+    starPrompt: null,
   };
 }
 
