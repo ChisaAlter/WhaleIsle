@@ -5,7 +5,8 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { botFallback, parseBotAvatar } from '../../shared/bot-avatar.js';
 import {
   DEFAULT_BOT_AVATAR_COLOR,
-  normalizeHexColor,
+  isTransparentBotAvatarColor,
+  normalizeBotAvatarColor,
 } from '../../shared/bot-avatar-color.js';
 import {
   getTintedMascotDataUrl,
@@ -152,9 +153,9 @@ function useResolvedAvatarSrc(
   const parsedVersion = parsed?.kind === 'upload' && parsed.version ? parsed.version : null;
   const parsedEmoji = parsed?.kind === 'emoji' && parsed.emoji ? parsed.emoji : null;
 
-  const hexColor = normalizeHexColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const resolvedColor = normalizeBotAvatarColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
   const directMascotUrl =
-    parsedMascotId && hexColor === DEFAULT_BOT_AVATAR_COLOR
+    parsedMascotId && resolvedColor === DEFAULT_BOT_AVATAR_COLOR
       ? mascotAssetUrl(parsedMascotId, 'svg')
       : null;
 
@@ -166,7 +167,7 @@ function useResolvedAvatarSrc(
     }
     let cancelled = false;
     if (parsedMascotId) {
-      void getTintedMascotDataUrl(parsedMascotId, hexColor).then((url) => {
+      void getTintedMascotDataUrl(parsedMascotId, resolvedColor).then((url) => {
         if (!cancelled) {
           setAsyncSrc(url);
         }
@@ -183,7 +184,7 @@ function useResolvedAvatarSrc(
     return () => {
       cancelled = true;
     };
-  }, [botId, dataUrlOverride, directMascotUrl, hexColor, parsedKind, parsedMascotId, parsedVersion]);
+  }, [botId, dataUrlOverride, directMascotUrl, parsedKind, parsedMascotId, parsedVersion, resolvedColor]);
 
   if (dataUrlOverride) {
     return { src: dataUrlOverride, emoji: null };
@@ -216,7 +217,8 @@ export function BotAvatar({
   const borderRadius = radius ?? defaultRadiusForSize(size);
   const { src, emoji } = useResolvedAvatarSrc(botId, avatar, avatarColor, dataUrlOverride);
   const fallbackChar = botFallback({ avatar: avatar ?? null, name: name ?? '' });
-  const bg = normalizeHexColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const resolvedBg = normalizeBotAvatarColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const isTransparent = isTransparentBotAvatarColor(resolvedBg);
   const maskStyle = getAvatarMaskStyle(size, Boolean(effectiveStatus));
 
   return (
@@ -225,12 +227,14 @@ export function BotAvatar({
       style={{ width: size, height: size, ...style }}
     >
       <span
+        className={isTransparent ? 'dsh-bots-avatar-tile dsh-bots-avatar-tile-transparent' : 'dsh-bots-avatar-tile'}
+        data-transparent={isTransparent ? 'true' : 'false'}
         style={{
           width: size,
           height: size,
           borderRadius,
           overflow: 'hidden',
-          backgroundColor: bg,
+          backgroundColor: isTransparent ? 'transparent' : resolvedBg,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

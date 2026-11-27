@@ -1055,6 +1055,10 @@
   user-select: none;
 }
 
+.dsh-bots-avatar-tile-transparent .dsh-bots-avatar-fallback {
+  color: var(--dsw-alias-label-primary);
+}
+
 .dsh-bots-avatar-dot {
   position: absolute;
   right: -1px;
@@ -1225,7 +1229,7 @@
 }
 
 /* ---- Avatar Picker (Group Switcher + 3D Carousel + Swatches) ---- */
-/* border-box + 100% keeps 12px padding inside the 352px popover (0px right overflow). */
+/* border-box + 100% keeps 12px padding inside the 376px popover (0px right overflow). */
 .dsh-bots-picker {
   display: flex;
   flex-direction: column;
@@ -1327,6 +1331,10 @@
   box-shadow: var(--dsw-shadow-lv2);
 }
 
+.dsh-bots-carousel-slide[data-transparent='true'] {
+  box-shadow: none;
+}
+
 .dsh-bots-carousel-nav {
   position: absolute;
   top: 50%;
@@ -1388,6 +1396,16 @@
 
 .dsh-bots-swatch[data-selected='true'] {
   box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3.5px var(--dsw-alias-label-primary);
+}
+
+.dsh-bots-swatch-transparent {
+  background-color: var(--dsw-alias-bg-layer-1);
+  background-image: repeating-conic-gradient(
+    color-mix(in srgb, var(--dsw-alias-label-primary) 16%, transparent) 0% 25%,
+    transparent 0% 50%
+  );
+  background-size: 8px 8px;
+  background-position: 0 0;
 }
 
 .dsh-bots-swatch-wheel {

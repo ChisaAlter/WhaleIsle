@@ -40,7 +40,7 @@ if (typeof document !== "undefined") {
   __style = __existing || (typeof document.createElement === "function" ? document.createElement("style") : null);
   if (__style) {
     if (typeof __style.setAttribute === "function") __style.setAttribute("data-dsh-whale-style", __id);
-    __style.textContent = "/* WhaleIsle Bots shared styles \u2014 strictly driven by DSHD design-language & motion tokens.\r\n * Zero theme branches, zero hardcoded hex/rgb colors, zero custom scrollbar rules, zero ms literals. */\r\n\r\n/* ---- Animations & Motion (prefers-reduced-motion zeroes --ds-transition-duration* in base.css) ---- */\r\n@keyframes dsh-bots-spin {\r\n  from { transform: rotate(0deg); }\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n@keyframes dsh-bots-pulse {\r\n  0%, 100% { opacity: 1; transform: scale(1); }\r\n  50% { opacity: 0.45; transform: scale(0.86); }\r\n}\r\n\r\n@keyframes dsh-bots-popover-in {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(var(--ds-motion-distance-popover, 4px)) scale(0.98);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: none;\r\n  }\r\n}\r\n\r\n@keyframes dsh-bots-overlay-in {\r\n  from { transform: translateY(var(--ds-motion-distance-overlay, 8px)) scale(var(--ds-motion-scale-overlay, 0.96)); }\r\n  to { transform: none; }\r\n}\r\n\r\n@keyframes dsh-bots-mask-in {\r\n  from { opacity: 0; }\r\n  to { opacity: 1; }\r\n}\r\n\r\n@keyframes dsh-bots-toast-in {\r\n  from { opacity: 0; transform: translateY(var(--ds-motion-distance-popover, 4px)); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes dsh-bots-check-pop {\r\n  from { opacity: 0; transform: scale(0.5); }\r\n  to { opacity: 1; transform: scale(1); }\r\n}\r\n\r\n.dsh-bots-spin {\r\n  animation: dsh-bots-spin calc(var(--ds-transition-duration-slow) * 3) linear infinite;\r\n}\r\n\r\n.dsh-bots-pulse {\r\n  animation: dsh-bots-pulse calc(var(--ds-transition-duration-slow) * 5) var(--ds-ease-in-out) infinite;\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n  .dsh-bots-spin,\r\n  .dsh-bots-pulse,\r\n  .dsh-bots-backdrop,\r\n  .dsh-bots-modal,\r\n  .dsh-bots-popover,\r\n  .dsh-bots-hovercard,\r\n  .dsh-bots-toast,\r\n  .dsh-bots-check-badge {\r\n    animation: none;\r\n  }\r\n\r\n  .dsh-bots-carousel-slide,\r\n  .dsh-bots-icon-btn,\r\n  .dsh-bots-card,\r\n  .dsh-bots-subrow,\r\n  .dsh-bots-subrow-fold-meta,\r\n  .dsh-bots-btn,\r\n  .dsh-bots-section,\r\n  .dsh-bots-chevron,\r\n  .dsh-bots-disclosure,\r\n  .dsh-bots-disclosure-inner,\r\n  .dsh-bots-preview-wrap,\r\n  .dsh-bots-header-action-slot,\r\n  .dsh-bots-popover[data-motion='presence'],\r\n  .dsh-bots-resize-handle::after {\r\n    transition: none;\r\n  }\r\n}\r\n\r\n:root[data-dsh-minimal] .dsh-bots-spin,\r\n:root[data-dsh-minimal] .dsh-bots-pulse,\r\n:root[data-dsh-minimal] .dsh-bots-backdrop,\r\n:root[data-dsh-minimal] .dsh-bots-modal,\r\n:root[data-dsh-minimal] .dsh-bots-popover,\r\n:root[data-dsh-minimal] .dsh-bots-hovercard,\r\n:root[data-dsh-minimal] .dsh-bots-toast,\r\n:root[data-dsh-minimal] .dsh-bots-check-badge {\r\n  animation: none;\r\n}\r\n\r\n:root[data-dsh-minimal] .dsh-bots-carousel-slide,\r\n:root[data-dsh-minimal] .dsh-bots-icon-btn,\r\n:root[data-dsh-minimal] .dsh-bots-card,\r\n:root[data-dsh-minimal] .dsh-bots-subrow,\r\n:root[data-dsh-minimal] .dsh-bots-subrow-fold-meta,\r\n:root[data-dsh-minimal] .dsh-bots-btn,\r\n:root[data-dsh-minimal] .dsh-bots-section,\r\n:root[data-dsh-minimal] .dsh-bots-chevron,\r\n:root[data-dsh-minimal] .dsh-bots-disclosure,\r\n:root[data-dsh-minimal] .dsh-bots-disclosure-inner,\r\n:root[data-dsh-minimal] .dsh-bots-preview-wrap,\r\n:root[data-dsh-minimal] .dsh-bots-header-action-slot,\r\n:root[data-dsh-minimal] .dsh-bots-popover[data-motion='presence'],\r\n:root[data-dsh-minimal] .dsh-bots-resize-handle::after {\r\n  transition: none;\r\n}\r\n\r\n/* ---- Smooth Disclosure Tracks & Rotating Chevrons (docs/motion.md GroupSessionRun pattern) ---- */\r\n.dsh-bots-chevron {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n  transform: rotate(0deg);\r\n  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-chevron[data-open='true'] {\r\n  transform: rotate(90deg);\r\n}\r\n\r\n.dsh-bots-disclosure {\r\n  display: grid;\r\n  grid-template-rows: 1fr;\r\n  opacity: 1;\r\n  transition:\r\n    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),\r\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-disclosure[data-state='closed'] {\r\n  grid-template-rows: 0fr;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-disclosure-inner {\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  display: flex;\r\n  flex-direction: column;\r\n  transform: translateY(0);\r\n  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-disclosure[data-state='closed'] > .dsh-bots-disclosure-inner {\r\n  transform: translateY(-3px);\r\n}\r\n\r\n.dsh-bots-preview-wrap {\r\n  display: flex;\r\n  align-items: center;\r\n  min-width: 0;\r\n  flex: 1 1 auto;\r\n  opacity: 1;\r\n  transform: translateX(0);\r\n  transition:\r\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out),\r\n    transform var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-preview-wrap[data-state='closed'] {\r\n  opacity: 0;\r\n  transform: translateX(-4px);\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-header-action-slot {\r\n  display: grid;\r\n  grid-template-columns: 1fr;\r\n  opacity: 1;\r\n  transition:\r\n    grid-template-columns var(--ds-transition-duration) var(--ds-ease-in-out),\r\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-header-action-slot[data-open='false'] {\r\n  grid-template-columns: 0fr;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-header-action-slot-inner {\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  display: inline-flex;\r\n  align-items: center;\r\n}\r\n\r\n/* ---- Sidebar Section & Header (pixel-aligned with WorkspaceBrowser 36px toolbar) ---- */\r\n.dsh-bots-section {\r\n  display: flex;\r\n  flex-direction: column;\r\n  width: 100%;\r\n  box-sizing: border-box;\r\n  padding: 0;\r\n  margin-bottom: 2px;\r\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\r\n  font-family: var(--dsw-font-family);\r\n  color: var(--dsw-alias-label-primary);\r\n  user-select: none;\r\n  flex-shrink: 0;\r\n  transition: border-bottom-color var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-section[data-has-resize='true'] {\r\n  border-bottom-color: transparent;\r\n}\r\n\r\n.dsh-bots-rail-btn {\r\n  position: relative;\r\n  width: 36px;\r\n  height: 36px;\r\n  margin: 0 0 12px;\r\n  padding: 0;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-md);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-rail-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-rail-btn:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-rail-badge {\r\n  position: absolute;\r\n  top: 4px;\r\n  right: 4px;\r\n  min-width: 14px;\r\n  height: 14px;\r\n  padding: 0 4px;\r\n  box-sizing: border-box;\r\n  border-radius: 999px;\r\n  background: var(--dsw-alias-state-warn-primary);\r\n  color: var(--dsw-alias-label-on-color);\r\n  font-size: 10px;\r\n  font-weight: 600;\r\n  line-height: 14px;\r\n  text-align: center;\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n.dsh-bots-header {\r\n  flex: none;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  height: 36px;\r\n  padding-left: var(--dsh-sidebar-row-padding, 12px);\r\n  padding-right: 1px;\r\n  margin-right: -4px;\r\n  box-sizing: border-box;\r\n  min-width: 0;\r\n  color: var(--dsw-alias-label-tertiary);\r\n}\r\n\r\n.dsh-bots-header-toggle {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  height: 28px;\r\n  padding: 0 6px 0 4px;\r\n  margin-left: -4px;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  font-family: inherit;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 500;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-header-toggle:hover {\r\n  color: var(--dsw-alias-label-secondary);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-header-toggle:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-header-spacer {\r\n  flex: 1 1 auto;\r\n  min-width: 4px;\r\n  display: flex;\r\n  align-items: center;\r\n  overflow: hidden;\r\n}\r\n\r\n.dsh-bots-header-actions {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 2px;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-icon-btn {\r\n  position: relative;\r\n  width: 28px;\r\n  height: 28px;\r\n  padding: 0;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-secondary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-icon-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-icon-btn[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-icon-btn:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-icon-btn-sm {\r\n  width: 22px;\r\n  height: 22px;\r\n}\r\n\r\n.dsh-bots-filter-badge {\r\n  position: absolute;\r\n  top: 4px;\r\n  right: 4px;\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 999px;\r\n  background: var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n/* ---- Collapsed Preview Strip ---- */\r\n.dsh-bots-preview-strip {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  height: 24px;\r\n  padding: 0 4px;\r\n  min-width: 0;\r\n  flex: 1 1 auto;\r\n  overflow: hidden;\r\n}\r\n\r\n.dsh-bots-preview-item {\r\n  position: relative;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 0;\r\n  border: 0;\r\n  background: transparent;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  border-radius: var(--dsw-radius-xs);\r\n}\r\n\r\n.dsh-bots-preview-item[data-paused='true'] {\r\n  opacity: 0.45;\r\n}\r\n\r\n.dsh-bots-preview-more {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  min-width: 20px;\r\n  height: 20px;\r\n  padding: 0 4px;\r\n  border-radius: var(--dsw-radius-xs);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  font-weight: 500;\r\n  flex-shrink: 0;\r\n}\r\n\r\n/* ---- Inline Search Bar ---- */\r\n.dsh-bots-search-box {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  height: 32px;\r\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\r\n  padding: 0 8px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-sm);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  color: var(--dsw-alias-label-tertiary);\r\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-search-box:focus-within {\r\n  border-color: var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-search-input {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  border: 0;\r\n  outline: none;\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-family: inherit;\r\n}\r\n\r\n.dsh-bots-search-input::placeholder {\r\n  color: var(--dsw-alias-label-placeholder);\r\n}\r\n\r\n.dsh-bots-mark {\r\n  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 26%, transparent);\r\n  color: inherit;\r\n  border-radius: 2px;\r\n  padding: 0 1px;\r\n}\r\n\r\n.dsh-bots-search-banner {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  padding: 6px 10px;\r\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-search-empty {\r\n  padding: 12px 8px;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  text-align: center;\r\n}\r\n\r\n.dsh-bots-link-btn {\r\n  border: 0;\r\n  padding: 0;\r\n  background: transparent;\r\n  color: var(--dsw-alias-link);\r\n  font-size: inherit;\r\n  font-weight: 500;\r\n  cursor: pointer;\r\n}\r\n\r\n.dsh-bots-link-btn:hover {\r\n  text-decoration: underline;\r\n}\r\n\r\n/* ---- List Scroller, Resize Handle & Empty State ---- */\r\n.dsh-bots-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  overflow-y: auto;\r\n  overflow-x: hidden;\r\n  padding: 2px 0 4px;\r\n}\r\n\r\n.dsh-bots-resize-handle {\r\n  position: relative;\r\n  height: 8px;\r\n  margin: 0;\r\n  cursor: row-resize;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  outline: none;\r\n}\r\n\r\n.dsh-bots-resize-handle::after {\r\n  content: '';\r\n  width: 100%;\r\n  height: 1px;\r\n  background: var(--dsw-alias-border-l1);\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-resize-handle:hover::after,\r\n.dsh-bots-resize-handle:focus-visible::after,\r\n.dsh-bots-resize-handle[data-dragging='true']::after {\r\n  height: 1px;\r\n  background: var(--dsw-alias-border-l3);\r\n}\r\n\r\n.dsh-bots-empty-card {\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  gap: 8px;\r\n  padding: 14px 12px;\r\n  margin: 4px var(--dsh-sidebar-paint-inset, 3px) 6px;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: 0.5px solid var(--dsw-alias-border-l1);\r\n  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 60%, transparent);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  text-align: center;\r\n}\r\n\r\n.dsh-bots-empty-stack {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  height: 32px;\r\n  margin-bottom: 2px;\r\n}\r\n\r\n.dsh-bots-empty-stack-item {\r\n  border-radius: var(--dsw-radius-sm);\r\n  border: 1.5px solid var(--dsw-alias-bg-base);\r\n  box-shadow: var(--dsw-shadow-lv1);\r\n  overflow: hidden;\r\n  display: inline-flex;\r\n  flex: none;\r\n}\r\n\r\n.dsh-bots-empty-stack-item:nth-child(1) {\r\n  transform: rotate(-6deg) translateX(6px);\r\n}\r\n\r\n.dsh-bots-empty-stack-item:nth-child(2) {\r\n  z-index: 2;\r\n  transform: translateY(-2px);\r\n}\r\n\r\n.dsh-bots-empty-stack-item:nth-child(3) {\r\n  transform: rotate(6deg) translateX(-6px);\r\n}\r\n\r\n.dsh-bots-empty-title {\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 600;\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-empty-subtitle {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 400;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-empty-actions {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 8px;\r\n  margin-top: 4px;\r\n}\r\n\r\n/* ---- Bot Card & Sub-Chats ---- */\r\n.dsh-bots-card-wrap {\r\n  display: flex;\r\n  flex-direction: column;\r\n}\r\n\r\n.dsh-bots-card-wrap[data-dragging='true'] {\r\n  opacity: 0.55;\r\n}\r\n\r\n.dsh-bots-card-wrap[data-drop-position='before'] {\r\n  box-shadow: inset 0 2px 0 0 var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-card-wrap[data-drop-position='after'] {\r\n  box-shadow: inset 0 -2px 0 0 var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-card {\r\n  position: relative;\r\n  display: flex;\r\n  flex-direction: row;\r\n  align-items: center;\r\n  text-align: left;\r\n  width: 100%;\r\n  box-sizing: border-box;\r\n  gap: 8px;\r\n  padding: 6px 8px;\r\n  border: 0;\r\n  border-inline: var(--dsh-sidebar-paint-inset, 3px) solid transparent;\r\n  background-clip: padding-box;\r\n  border-radius: var(--dsw-radius-inset);\r\n  background-color: transparent;\r\n  cursor: pointer;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-card:hover {\r\n  background-color: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-card[data-active='true'] {\r\n  background-color: var(--dsw-alias-interactive-bg-active);\r\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\r\n}\r\n\r\n.dsh-bots-card[data-dimmed='true'] {\r\n  opacity: 0.6;\r\n}\r\n\r\n.dsh-bots-card-body {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: stretch;\r\n  text-align: left;\r\n  gap: 1px;\r\n}\r\n\r\n.dsh-bots-card-top {\r\n  display: flex;\r\n  flex-direction: row;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 6px;\r\n  min-width: 0;\r\n}\r\n\r\n.dsh-bots-card-name {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n  text-align: left;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-card[data-unread='true'] .dsh-bots-card-name,\r\n.dsh-bots-card[data-has-active-child='true'] .dsh-bots-card-name {\r\n  font-weight: 600;\r\n}\r\n\r\n.dsh-bots-card-time {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  flex-shrink: 0;\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n.dsh-bots-card-sub {\r\n  display: flex;\r\n  flex-direction: row;\r\n  align-items: center;\r\n  gap: 4px;\r\n  min-width: 0;\r\n}\r\n\r\n.dsh-bots-card-line {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n  text-align: left;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-card-line[data-tone='attention'] {\r\n  color: var(--dsw-alias-state-warn-label);\r\n  font-weight: 500;\r\n}\r\n\r\n.dsh-bots-card-line[data-tone='working'] {\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-upnext-pill {\r\n  border: 0;\r\n  border-radius: 999px;\r\n  padding: 1px 6px;\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  font-weight: 600;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-upnext-pill:hover {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-card-fold-btn {\r\n  position: relative;\r\n  width: 24px;\r\n  height: 24px;\r\n  padding: 0;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  opacity: 0;\r\n  transition:\r\n    opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-card:hover .dsh-bots-card-fold-btn,\r\n.dsh-bots-card:focus-within .dsh-bots-card-fold-btn,\r\n.dsh-bots-card-fold-btn[data-has-signal='true'],\r\n.dsh-bots-card-fold-btn[data-collapsed='true'] {\r\n  opacity: 1;\r\n}\r\n\r\n.dsh-bots-card-fold-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-fold-dot {\r\n  position: absolute;\r\n  top: 3px;\r\n  right: 3px;\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 999px;\r\n}\r\n\r\n.dsh-bots-fold-dot[data-signal='permission'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n}\r\n\r\n.dsh-bots-fold-dot[data-signal='failed'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-fold-dot[data-signal='working'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-inline-rename {\r\n  width: 100%;\r\n  height: 24px;\r\n  padding: 0 6px;\r\n  box-sizing: border-box;\r\n  border: 1px solid var(--dsw-alias-state-business-primary);\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-family: inherit;\r\n  outline: none;\r\n}\r\n\r\n/* ---- Sub-chat Rows & Workers ---- */\r\n.dsh-bots-sublist {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  margin-left: 20px;\r\n  padding-left: 10px;\r\n  border-left: 1px solid var(--dsw-alias-border-l1);\r\n  padding-right: var(--dsh-sidebar-paint-inset, 3px);\r\n  padding-bottom: 4px;\r\n}\r\n\r\n.dsh-bots-sublist[data-paused='true'] {\r\n  opacity: 0.6;\r\n}\r\n\r\n.dsh-bots-subrow {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  height: 30px;\r\n  padding: 0 8px;\r\n  border-radius: var(--dsw-radius-sm);\r\n  cursor: pointer;\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  min-width: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-subrow:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-subrow[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 500;\r\n}\r\n\r\n.dsh-bots-subrow-icon {\r\n  position: relative;\r\n  width: 16px;\r\n  height: 16px;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n  color: var(--dsw-alias-label-tertiary);\r\n}\r\n\r\n.dsh-bots-subrow-badge {\r\n  position: absolute;\r\n  right: -2px;\r\n  bottom: -2px;\r\n  width: 7px;\r\n  height: 7px;\r\n  border-radius: 999px;\r\n  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-base);\r\n}\r\n\r\n.dsh-bots-subrow-badge[data-live='replying'] {\r\n  background: var(--dsw-alias-bg-base);\r\n  color: var(--dsw-alias-state-warn-primary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n}\r\n\r\n.dsh-bots-subrow-badge[data-live='attention'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n}\r\n\r\n.dsh-bots-subrow-badge[data-live='working'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-subrow-title {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n}\r\n\r\n.dsh-bots-subrow[data-unread='true'] .dsh-bots-subrow-title {\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 600;\r\n}\r\n\r\n.dsh-bots-subrow-meta {\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  flex-shrink: 0;\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n.dsh-bots-subrow-fold-meta {\r\n  border: 0;\r\n  background: transparent;\r\n  padding: 2px 4px;\r\n  border-radius: var(--dsw-radius-xs);\r\n  font-family: inherit;\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  flex-shrink: 0;\r\n  font-variant-numeric: tabular-nums;\r\n  cursor: pointer;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-subrow-fold-meta:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-worker-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  padding-left: 14px;\r\n  margin-left: 8px;\r\n  border-left: 1px solid var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-worker-list[data-root-workers='true'] {\r\n  padding-left: 0;\r\n  margin-left: 0;\r\n  border-left: 0;\r\n}\r\n\r\n.dsh-bots-worker-list[data-root-workers='true'] .dsh-bots-worker-row {\r\n  height: 30px;\r\n}\r\n\r\n.dsh-bots-worker-row {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  height: 26px;\r\n  padding: 0 8px;\r\n  border-radius: var(--dsw-radius-sm);\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  cursor: pointer;\r\n  min-width: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-worker-row:hover,\r\n.dsh-bots-worker-row[data-menu-open='true'] {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-worker-row[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 500;\r\n}\r\n\r\n.dsh-bots-worker-icon {\r\n  position: relative;\r\n  width: 16px;\r\n  height: 16px;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-worker-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 999px;\r\n  flex-shrink: 0;\r\n  background: var(--dsw-alias-state-idle-primary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='needs-you'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='failed'],\r\n.dsh-bots-worker-dot[data-state='unreachable'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='running'],\r\n.dsh-bots-worker-dot[data-state='working'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='done'] {\r\n  background: var(--dsw-alias-state-success-primary);\r\n}\r\n\r\n.dsh-bots-worker-more {\r\n  border: 0;\r\n  background: transparent;\r\n  padding: 4px 8px;\r\n  text-align: left;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  cursor: pointer;\r\n}\r\n\r\n.dsh-bots-worker-more:hover {\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n/* ---- Avatar & Cutout Status Dot ---- */\r\n.dsh-bots-avatar-wrap {\r\n  position: relative;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-avatar-img {\r\n  display: block;\r\n  width: 100%;\r\n  height: 100%;\r\n  object-fit: cover;\r\n}\r\n\r\n.dsh-bots-avatar-fallback {\r\n  width: 100%;\r\n  height: 100%;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  font-weight: 600;\r\n  color: var(--dsw-static-neutral-bluish-1000);\r\n  user-select: none;\r\n}\r\n\r\n.dsh-bots-avatar-dot {\r\n  position: absolute;\r\n  right: -1px;\r\n  bottom: -1px;\r\n  border-radius: 999px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='attention'],\r\n.dsh-bots-avatar-dot[data-state='permission'],\r\n.dsh-bots-avatar-dot[data-state='unconfirmed'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n  color: var(--dsw-alias-label-on-color);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='working'],\r\n.dsh-bots-avatar-dot[data-state='monitoring'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='unread'] {\r\n  background: var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='failed'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='paused'],\r\n.dsh-bots-avatar-dot[data-state='disconnected'] {\r\n  background: var(--dsw-alias-state-idle-primary);\r\n}\r\n\r\n.dsh-bots-group-collage {\r\n  display: grid;\r\n  grid-template-columns: repeat(2, 1fr);\r\n  grid-template-rows: repeat(2, 1fr);\r\n  gap: 2px;\r\n  padding: 2px;\r\n  box-sizing: border-box;\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  border-radius: var(--dsw-radius-inset);\r\n  overflow: hidden;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-group-collage-more {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 10px;\r\n  line-height: 12px;\r\n  font-weight: 600;\r\n  border-radius: var(--dsw-radius-xs);\r\n}\r\n\r\n/* ---- Popovers, Context Menu & Hover Card (DSHD Glass Menu Material) ---- */\r\n.dsh-bots-popover {\r\n  position: fixed;\r\n  z-index: 1400;\r\n  min-width: 196px;\r\n  padding: 4px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-specific-menu);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  box-shadow: var(--dsw-shadow-lv3);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: var(--dsw-font-family);\r\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-popover[data-motion='presence'] {\r\n  animation: none;\r\n  opacity: 1;\r\n  transform: none;\r\n  transform-origin: top center;\r\n  transition:\r\n    opacity var(--ds-motion-duration-popover) var(--ds-ease-in-out),\r\n    transform var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-popover[data-motion='presence'][data-state='closed'] {\r\n  opacity: 0;\r\n  transform: translateY(var(--ds-motion-distance-popover, 4px)) scale(0.98);\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-menu-section {\r\n  padding: 6px 8px 4px;\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-tertiary);\r\n}\r\n\r\n.dsh-bots-menu-item {\r\n  width: 100%;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  min-height: 32px;\r\n  padding: 6px 8px;\r\n  box-sizing: border-box;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: inherit;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  text-align: left;\r\n  cursor: pointer;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-menu-item:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-menu-item:disabled {\r\n  opacity: 0.4;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.dsh-bots-menu-item[data-danger='true'] {\r\n  color: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-menu-item[data-danger='true']:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover-danger);\r\n}\r\n\r\n.dsh-bots-menu-item-desc {\r\n  display: block;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  margin-top: 2px;\r\n}\r\n\r\n.dsh-bots-menu-sep {\r\n  height: 1px;\r\n  margin: 4px 8px;\r\n  background: var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-hovercard {\r\n  position: fixed;\r\n  z-index: 1180;\r\n  width: 288px;\r\n  padding: 12px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-specific-menu);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  box-shadow: var(--dsw-shadow-lv3);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: var(--dsw-font-family);\r\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n/* ---- Avatar Picker (Group Switcher + 3D Carousel + Swatches) ---- */\r\n/* border-box + 100% keeps 12px padding inside the 352px popover (0px right overflow). */\r\n.dsh-bots-picker {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 12px;\r\n  box-sizing: border-box;\r\n  width: 100%;\r\n  min-width: 0;\r\n  padding: 12px;\r\n  border-radius: var(--dsw-radius-md);\r\n}\r\n\r\n.dsh-bots-picker[data-drag-file='true'] {\r\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-picker *,\r\n.dsh-bots-picker *::before,\r\n.dsh-bots-picker *::after {\r\n  box-sizing: border-box;\r\n}\r\n\r\n.dsh-bots-picker-head {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n}\r\n\r\n.dsh-bots-picker-seg {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 2px;\r\n  padding: 2px;\r\n  border-radius: var(--dsw-radius-inset);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-picker-seg-btn {\r\n  height: 24px;\r\n  padding: 0 10px;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-family: inherit;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 400;\r\n  cursor: pointer;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-picker-seg-btn:hover {\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-picker-seg-btn[aria-pressed='true'] {\r\n  background: var(--dsw-alias-bg-layer-2);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 500;\r\n  box-shadow: var(--dsw-shadow-lv1);\r\n}\r\n\r\n.dsh-bots-picker-caption {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-secondary);\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n}\r\n\r\n.dsh-bots-carousel {\r\n  position: relative;\r\n  width: 100%;\r\n  height: 120px;\r\n  overflow: hidden;\r\n  border-radius: var(--dsw-radius-md);\r\n}\r\n\r\n/* Slides are anchored to exact horizontal/vertical center; JS only adds translateX(offset). */\r\n.dsh-bots-carousel-slide {\r\n  position: absolute;\r\n  left: 50%;\r\n  top: 50%;\r\n  width: 112px;\r\n  height: 112px;\r\n  margin: -56px 0 0 -56px;\r\n  border-radius: var(--dsw-radius-lg);\r\n  overflow: hidden;\r\n  cursor: pointer;\r\n  transition:\r\n    transform var(--ds-transition-duration) var(--ds-ease-in-out),\r\n    opacity var(--ds-transition-duration) var(--ds-ease-in-out);\r\n  box-shadow: var(--dsw-shadow-lv2);\r\n}\r\n\r\n.dsh-bots-carousel-nav {\r\n  position: absolute;\r\n  top: 50%;\r\n  transform: translateY(-50%);\r\n  z-index: 10;\r\n  width: 28px;\r\n  height: 28px;\r\n  padding: 0;\r\n  border-radius: 999px;\r\n  corner-shape: round;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-alias-bg-layer-2);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  color: var(--dsw-alias-label-primary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  box-shadow: var(--dsw-shadow-lv1);\r\n  opacity: 1;\r\n  visibility: visible;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-carousel-nav[data-dir='prev'] {\r\n  left: 6px;\r\n  right: auto;\r\n}\r\n\r\n.dsh-bots-carousel-nav[data-dir='next'] {\r\n  right: 6px;\r\n  left: auto;\r\n}\r\n\r\n.dsh-bots-carousel-nav:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-swatches {\r\n  display: flex;\r\n  flex-wrap: wrap;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 5px;\r\n  width: 100%;\r\n}\r\n\r\n.dsh-bots-swatch {\r\n  flex: none;\r\n  width: 22px;\r\n  height: 22px;\r\n  border-radius: 999px;\r\n  corner-shape: round;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  cursor: pointer;\r\n  padding: 0;\r\n  position: relative;\r\n}\r\n\r\n.dsh-bots-swatch[data-selected='true'] {\r\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3.5px var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-swatch-wheel {\r\n  background: conic-gradient(\r\n    from 0deg,\r\n    var(--dsw-static-red-400),\r\n    var(--dsw-static-amber-400),\r\n    var(--dsw-static-green-400),\r\n    var(--dsw-static-blue-400),\r\n    var(--dsw-static-violet-400),\r\n    var(--dsw-static-red-400)\r\n  );\r\n  overflow: hidden;\r\n}\r\n\r\n/* ---- Buttons, Inputs, Modals & Toasts (DSHD Capsules & Dialog Material) ---- */\r\n.dsh-bots-btn {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 6px;\r\n  height: 36px;\r\n  padding: 0 16px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-button);\r\n  corner-shape: round;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-size: 14px;\r\n  line-height: 22px;\r\n  font-weight: 500;\r\n  font-family: inherit;\r\n  cursor: pointer;\r\n  white-space: nowrap;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-btn:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-btn:disabled {\r\n  opacity: 0.4;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.dsh-bots-btn:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: 2px;\r\n}\r\n\r\n.dsh-bots-btn[data-variant='primary'] {\r\n  background: var(--dsw-alias-button-primary-fill);\r\n  border-color: transparent;\r\n  color: var(--dsw-alias-label-primary-foreground);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='primary']:hover:not(:disabled) {\r\n  background: var(--dsw-alias-button-primary-hover);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='danger'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n  border-color: transparent;\r\n  color: var(--dsw-alias-label-on-color);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='danger']:hover:not(:disabled) {\r\n  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, var(--dsw-static-neutral-1000));\r\n}\r\n\r\n.dsh-bots-btn[data-variant='ghost'] {\r\n  background: transparent;\r\n  border-color: transparent;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='ghost']:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-btn[data-size='sm'] {\r\n  height: 28px;\r\n  border-radius: var(--dsw-radius-button-sm);\r\n  padding: 0 12px;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n}\r\n\r\n.dsh-bots-input,\r\n.dsh-bots-textarea,\r\n.dsh-bots-select {\r\n  width: 100%;\r\n  box-sizing: border-box;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: inherit;\r\n  font-size: 14px;\r\n  line-height: 22px;\r\n  padding: 7px 12px;\r\n  outline: none;\r\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-input:focus,\r\n.dsh-bots-textarea:focus,\r\n.dsh-bots-select:focus {\r\n  border-color: var(--dsw-alias-state-business-primary);\r\n  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);\r\n}\r\n\r\n.dsh-bots-select option {\r\n  background: var(--dsw-alias-bg-panel-solid);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-backdrop {\r\n  position: fixed;\r\n  inset: 0;\r\n  z-index: 1300;\r\n  background: var(--dsw-alias-bg-mask-1);\r\n  backdrop-filter: var(--dsw-mask-blur, blur(2px));\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 24px;\r\n  animation: dsh-bots-mask-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-modal {\r\n  position: relative;\r\n  width: 100%;\r\n  max-width: 480px;\r\n  max-height: calc(100vh - 48px);\r\n  display: flex;\r\n  flex-direction: column;\r\n  border-radius: var(--dsw-radius-dialog);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-alias-bg-layer-2);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  color: var(--dsw-alias-label-primary);\r\n  box-shadow: var(--dsw-shadow-lv3);\r\n  font-family: var(--dsw-font-family);\r\n  overflow: hidden;\r\n  animation: dsh-bots-overlay-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-modal[data-drag-file='true'] {\r\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-modal-sm {\r\n  max-width: 420px;\r\n}\r\n\r\n.dsh-bots-modal-lg {\r\n  max-width: 640px;\r\n}\r\n\r\n.dsh-bots-modal-templates {\r\n  width: min(1040px, calc(100vw - 48px));\r\n  max-width: 1040px;\r\n  height: min(760px, calc(100vh - 48px));\r\n}\r\n\r\n.dsh-bots-modal-band {\r\n  height: 80px;\r\n  flex-shrink: 0;\r\n  opacity: 0.36;\r\n  background: linear-gradient(180deg, var(--new-bot-band, var(--dsw-static-deepseek-200)) 0%, transparent 100%);\r\n}\r\n\r\n.dsh-bots-modal-header {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  padding: 18px 16px 14px 24px;\r\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-modal-title {\r\n  font-size: 16px;\r\n  line-height: 24px;\r\n  font-weight: 600;\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-modal-body {\r\n  flex: 1 1 auto;\r\n  overflow-y: auto;\r\n  padding: 16px 24px;\r\n}\r\n\r\n.dsh-bots-modal-footer {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  padding: 14px 24px 18px;\r\n  border-top: 1px solid var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-modal-card {\r\n  border: 1px solid var(--dsw-alias-border-l1);\r\n  border-radius: var(--dsw-radius-md);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  padding: 12px;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 8px;\r\n}\r\n\r\n.dsh-bots-modal-row-btn {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  width: 100%;\r\n  padding: 8px 10px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-inset);\r\n  border: 1px solid transparent;\r\n  background: transparent;\r\n  text-align: left;\r\n  cursor: pointer;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: inherit;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-modal-row-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-modal-row-btn[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  border-color: var(--dsw-alias-border-l2);\r\n}\r\n\r\n.dsh-bots-check-badge {\r\n  position: absolute;\r\n  right: -3px;\r\n  bottom: -3px;\r\n  width: 16px;\r\n  height: 16px;\r\n  border-radius: 999px;\r\n  background: var(--dsw-alias-state-business-primary);\r\n  color: var(--dsw-alias-label-on-color);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-panel-solid);\r\n  animation: dsh-bots-check-pop var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-field-label {\r\n  display: block;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-secondary);\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.dsh-bots-error-text {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n/* ---- Toasts (DSHD dark pill, auto-fade, no close button, zero layout shift) ---- */\r\n.dsh-bots-toasts {\r\n  position: fixed;\r\n  right: 20px;\r\n  bottom: 20px;\r\n  z-index: 1500;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: flex-end;\r\n  gap: 8px;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-toast {\r\n  pointer-events: auto;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  max-width: 380px;\r\n  padding: 10px 16px;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: none;\r\n  background: var(--dsw-alias-toast-bg);\r\n  color: var(--dsw-alias-toast-label);\r\n  box-shadow: var(--dsw-shadow-lv2);\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-family: var(--dsw-font-family);\r\n  animation: dsh-bots-toast-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-toast[data-tone='error'] {\r\n  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, transparent), var(--dsw-shadow-lv2);\r\n}\r\n\r\n.dsh-bots-toast-action {\r\n  border: 0;\r\n  padding: 0;\r\n  background: transparent;\r\n  color: var(--dsw-alias-toast-action);\r\n  font-family: inherit;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 500;\r\n  cursor: pointer;\r\n}\r\n\r\n.dsh-bots-toast-action:hover {\r\n  opacity: 0.85;\r\n}\r\n";
+    __style.textContent = "/* WhaleIsle Bots shared styles \u2014 strictly driven by DSHD design-language & motion tokens.\r\n * Zero theme branches, zero hardcoded hex/rgb colors, zero custom scrollbar rules, zero ms literals. */\r\n\r\n/* ---- Animations & Motion (prefers-reduced-motion zeroes --ds-transition-duration* in base.css) ---- */\r\n@keyframes dsh-bots-spin {\r\n  from { transform: rotate(0deg); }\r\n  to { transform: rotate(360deg); }\r\n}\r\n\r\n@keyframes dsh-bots-pulse {\r\n  0%, 100% { opacity: 1; transform: scale(1); }\r\n  50% { opacity: 0.45; transform: scale(0.86); }\r\n}\r\n\r\n@keyframes dsh-bots-popover-in {\r\n  from {\r\n    opacity: 0;\r\n    transform: translateY(var(--ds-motion-distance-popover, 4px)) scale(0.98);\r\n  }\r\n  to {\r\n    opacity: 1;\r\n    transform: none;\r\n  }\r\n}\r\n\r\n@keyframes dsh-bots-overlay-in {\r\n  from { transform: translateY(var(--ds-motion-distance-overlay, 8px)) scale(var(--ds-motion-scale-overlay, 0.96)); }\r\n  to { transform: none; }\r\n}\r\n\r\n@keyframes dsh-bots-mask-in {\r\n  from { opacity: 0; }\r\n  to { opacity: 1; }\r\n}\r\n\r\n@keyframes dsh-bots-toast-in {\r\n  from { opacity: 0; transform: translateY(var(--ds-motion-distance-popover, 4px)); }\r\n  to { opacity: 1; transform: none; }\r\n}\r\n\r\n@keyframes dsh-bots-check-pop {\r\n  from { opacity: 0; transform: scale(0.5); }\r\n  to { opacity: 1; transform: scale(1); }\r\n}\r\n\r\n.dsh-bots-spin {\r\n  animation: dsh-bots-spin calc(var(--ds-transition-duration-slow) * 3) linear infinite;\r\n}\r\n\r\n.dsh-bots-pulse {\r\n  animation: dsh-bots-pulse calc(var(--ds-transition-duration-slow) * 5) var(--ds-ease-in-out) infinite;\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n  .dsh-bots-spin,\r\n  .dsh-bots-pulse,\r\n  .dsh-bots-backdrop,\r\n  .dsh-bots-modal,\r\n  .dsh-bots-popover,\r\n  .dsh-bots-hovercard,\r\n  .dsh-bots-toast,\r\n  .dsh-bots-check-badge {\r\n    animation: none;\r\n  }\r\n\r\n  .dsh-bots-carousel-slide,\r\n  .dsh-bots-icon-btn,\r\n  .dsh-bots-card,\r\n  .dsh-bots-subrow,\r\n  .dsh-bots-subrow-fold-meta,\r\n  .dsh-bots-btn,\r\n  .dsh-bots-section,\r\n  .dsh-bots-chevron,\r\n  .dsh-bots-disclosure,\r\n  .dsh-bots-disclosure-inner,\r\n  .dsh-bots-preview-wrap,\r\n  .dsh-bots-header-action-slot,\r\n  .dsh-bots-popover[data-motion='presence'],\r\n  .dsh-bots-resize-handle::after {\r\n    transition: none;\r\n  }\r\n}\r\n\r\n:root[data-dsh-minimal] .dsh-bots-spin,\r\n:root[data-dsh-minimal] .dsh-bots-pulse,\r\n:root[data-dsh-minimal] .dsh-bots-backdrop,\r\n:root[data-dsh-minimal] .dsh-bots-modal,\r\n:root[data-dsh-minimal] .dsh-bots-popover,\r\n:root[data-dsh-minimal] .dsh-bots-hovercard,\r\n:root[data-dsh-minimal] .dsh-bots-toast,\r\n:root[data-dsh-minimal] .dsh-bots-check-badge {\r\n  animation: none;\r\n}\r\n\r\n:root[data-dsh-minimal] .dsh-bots-carousel-slide,\r\n:root[data-dsh-minimal] .dsh-bots-icon-btn,\r\n:root[data-dsh-minimal] .dsh-bots-card,\r\n:root[data-dsh-minimal] .dsh-bots-subrow,\r\n:root[data-dsh-minimal] .dsh-bots-subrow-fold-meta,\r\n:root[data-dsh-minimal] .dsh-bots-btn,\r\n:root[data-dsh-minimal] .dsh-bots-section,\r\n:root[data-dsh-minimal] .dsh-bots-chevron,\r\n:root[data-dsh-minimal] .dsh-bots-disclosure,\r\n:root[data-dsh-minimal] .dsh-bots-disclosure-inner,\r\n:root[data-dsh-minimal] .dsh-bots-preview-wrap,\r\n:root[data-dsh-minimal] .dsh-bots-header-action-slot,\r\n:root[data-dsh-minimal] .dsh-bots-popover[data-motion='presence'],\r\n:root[data-dsh-minimal] .dsh-bots-resize-handle::after {\r\n  transition: none;\r\n}\r\n\r\n/* ---- Smooth Disclosure Tracks & Rotating Chevrons (docs/motion.md GroupSessionRun pattern) ---- */\r\n.dsh-bots-chevron {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n  transform: rotate(0deg);\r\n  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-chevron[data-open='true'] {\r\n  transform: rotate(90deg);\r\n}\r\n\r\n.dsh-bots-disclosure {\r\n  display: grid;\r\n  grid-template-rows: 1fr;\r\n  opacity: 1;\r\n  transition:\r\n    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),\r\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-disclosure[data-state='closed'] {\r\n  grid-template-rows: 0fr;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-disclosure-inner {\r\n  min-height: 0;\r\n  overflow: hidden;\r\n  display: flex;\r\n  flex-direction: column;\r\n  transform: translateY(0);\r\n  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-disclosure[data-state='closed'] > .dsh-bots-disclosure-inner {\r\n  transform: translateY(-3px);\r\n}\r\n\r\n.dsh-bots-preview-wrap {\r\n  display: flex;\r\n  align-items: center;\r\n  min-width: 0;\r\n  flex: 1 1 auto;\r\n  opacity: 1;\r\n  transform: translateX(0);\r\n  transition:\r\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out),\r\n    transform var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-preview-wrap[data-state='closed'] {\r\n  opacity: 0;\r\n  transform: translateX(-4px);\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-header-action-slot {\r\n  display: grid;\r\n  grid-template-columns: 1fr;\r\n  opacity: 1;\r\n  transition:\r\n    grid-template-columns var(--ds-transition-duration) var(--ds-ease-in-out),\r\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-header-action-slot[data-open='false'] {\r\n  grid-template-columns: 0fr;\r\n  opacity: 0;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-header-action-slot-inner {\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  display: inline-flex;\r\n  align-items: center;\r\n}\r\n\r\n/* ---- Sidebar Section & Header (pixel-aligned with WorkspaceBrowser 36px toolbar) ---- */\r\n.dsh-bots-section {\r\n  display: flex;\r\n  flex-direction: column;\r\n  width: 100%;\r\n  box-sizing: border-box;\r\n  padding: 0;\r\n  margin-bottom: 2px;\r\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\r\n  font-family: var(--dsw-font-family);\r\n  color: var(--dsw-alias-label-primary);\r\n  user-select: none;\r\n  flex-shrink: 0;\r\n  transition: border-bottom-color var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-section[data-has-resize='true'] {\r\n  border-bottom-color: transparent;\r\n}\r\n\r\n.dsh-bots-rail-btn {\r\n  position: relative;\r\n  width: 36px;\r\n  height: 36px;\r\n  margin: 0 0 12px;\r\n  padding: 0;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-md);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-rail-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-rail-btn:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-rail-badge {\r\n  position: absolute;\r\n  top: 4px;\r\n  right: 4px;\r\n  min-width: 14px;\r\n  height: 14px;\r\n  padding: 0 4px;\r\n  box-sizing: border-box;\r\n  border-radius: 999px;\r\n  background: var(--dsw-alias-state-warn-primary);\r\n  color: var(--dsw-alias-label-on-color);\r\n  font-size: 10px;\r\n  font-weight: 600;\r\n  line-height: 14px;\r\n  text-align: center;\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n.dsh-bots-header {\r\n  flex: none;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  height: 36px;\r\n  padding-left: var(--dsh-sidebar-row-padding, 12px);\r\n  padding-right: 1px;\r\n  margin-right: -4px;\r\n  box-sizing: border-box;\r\n  min-width: 0;\r\n  color: var(--dsw-alias-label-tertiary);\r\n}\r\n\r\n.dsh-bots-header-toggle {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  height: 28px;\r\n  padding: 0 6px 0 4px;\r\n  margin-left: -4px;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  font-family: inherit;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 500;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-header-toggle:hover {\r\n  color: var(--dsw-alias-label-secondary);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-header-toggle:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-header-spacer {\r\n  flex: 1 1 auto;\r\n  min-width: 4px;\r\n  display: flex;\r\n  align-items: center;\r\n  overflow: hidden;\r\n}\r\n\r\n.dsh-bots-header-actions {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 2px;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-icon-btn {\r\n  position: relative;\r\n  width: 28px;\r\n  height: 28px;\r\n  padding: 0;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-secondary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-icon-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-icon-btn[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-icon-btn:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-icon-btn-sm {\r\n  width: 22px;\r\n  height: 22px;\r\n}\r\n\r\n.dsh-bots-filter-badge {\r\n  position: absolute;\r\n  top: 4px;\r\n  right: 4px;\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 999px;\r\n  background: var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n/* ---- Collapsed Preview Strip ---- */\r\n.dsh-bots-preview-strip {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 4px;\r\n  height: 24px;\r\n  padding: 0 4px;\r\n  min-width: 0;\r\n  flex: 1 1 auto;\r\n  overflow: hidden;\r\n}\r\n\r\n.dsh-bots-preview-item {\r\n  position: relative;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 0;\r\n  border: 0;\r\n  background: transparent;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  border-radius: var(--dsw-radius-xs);\r\n}\r\n\r\n.dsh-bots-preview-item[data-paused='true'] {\r\n  opacity: 0.45;\r\n}\r\n\r\n.dsh-bots-preview-more {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  min-width: 20px;\r\n  height: 20px;\r\n  padding: 0 4px;\r\n  border-radius: var(--dsw-radius-xs);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  font-weight: 500;\r\n  flex-shrink: 0;\r\n}\r\n\r\n/* ---- Inline Search Bar ---- */\r\n.dsh-bots-search-box {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  height: 32px;\r\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\r\n  padding: 0 8px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-sm);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  color: var(--dsw-alias-label-tertiary);\r\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-search-box:focus-within {\r\n  border-color: var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-search-input {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  border: 0;\r\n  outline: none;\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-family: inherit;\r\n}\r\n\r\n.dsh-bots-search-input::placeholder {\r\n  color: var(--dsw-alias-label-placeholder);\r\n}\r\n\r\n.dsh-bots-mark {\r\n  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 26%, transparent);\r\n  color: inherit;\r\n  border-radius: 2px;\r\n  padding: 0 1px;\r\n}\r\n\r\n.dsh-bots-search-banner {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  padding: 6px 10px;\r\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-search-empty {\r\n  padding: 12px 8px;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  text-align: center;\r\n}\r\n\r\n.dsh-bots-link-btn {\r\n  border: 0;\r\n  padding: 0;\r\n  background: transparent;\r\n  color: var(--dsw-alias-link);\r\n  font-size: inherit;\r\n  font-weight: 500;\r\n  cursor: pointer;\r\n}\r\n\r\n.dsh-bots-link-btn:hover {\r\n  text-decoration: underline;\r\n}\r\n\r\n/* ---- List Scroller, Resize Handle & Empty State ---- */\r\n.dsh-bots-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  overflow-y: auto;\r\n  overflow-x: hidden;\r\n  padding: 2px 0 4px;\r\n}\r\n\r\n.dsh-bots-resize-handle {\r\n  position: relative;\r\n  height: 8px;\r\n  margin: 0;\r\n  cursor: row-resize;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  outline: none;\r\n}\r\n\r\n.dsh-bots-resize-handle::after {\r\n  content: '';\r\n  width: 100%;\r\n  height: 1px;\r\n  background: var(--dsw-alias-border-l1);\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-resize-handle:hover::after,\r\n.dsh-bots-resize-handle:focus-visible::after,\r\n.dsh-bots-resize-handle[data-dragging='true']::after {\r\n  height: 1px;\r\n  background: var(--dsw-alias-border-l3);\r\n}\r\n\r\n.dsh-bots-empty-card {\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: center;\r\n  gap: 8px;\r\n  padding: 14px 12px;\r\n  margin: 4px var(--dsh-sidebar-paint-inset, 3px) 6px;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: 0.5px solid var(--dsw-alias-border-l1);\r\n  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 60%, transparent);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  text-align: center;\r\n}\r\n\r\n.dsh-bots-empty-stack {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  height: 32px;\r\n  margin-bottom: 2px;\r\n}\r\n\r\n.dsh-bots-empty-stack-item {\r\n  border-radius: var(--dsw-radius-sm);\r\n  border: 1.5px solid var(--dsw-alias-bg-base);\r\n  box-shadow: var(--dsw-shadow-lv1);\r\n  overflow: hidden;\r\n  display: inline-flex;\r\n  flex: none;\r\n}\r\n\r\n.dsh-bots-empty-stack-item:nth-child(1) {\r\n  transform: rotate(-6deg) translateX(6px);\r\n}\r\n\r\n.dsh-bots-empty-stack-item:nth-child(2) {\r\n  z-index: 2;\r\n  transform: translateY(-2px);\r\n}\r\n\r\n.dsh-bots-empty-stack-item:nth-child(3) {\r\n  transform: rotate(6deg) translateX(-6px);\r\n}\r\n\r\n.dsh-bots-empty-title {\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 600;\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-empty-subtitle {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 400;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-empty-actions {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 8px;\r\n  margin-top: 4px;\r\n}\r\n\r\n/* ---- Bot Card & Sub-Chats ---- */\r\n.dsh-bots-card-wrap {\r\n  display: flex;\r\n  flex-direction: column;\r\n}\r\n\r\n.dsh-bots-card-wrap[data-dragging='true'] {\r\n  opacity: 0.55;\r\n}\r\n\r\n.dsh-bots-card-wrap[data-drop-position='before'] {\r\n  box-shadow: inset 0 2px 0 0 var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-card-wrap[data-drop-position='after'] {\r\n  box-shadow: inset 0 -2px 0 0 var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-card {\r\n  position: relative;\r\n  display: flex;\r\n  flex-direction: row;\r\n  align-items: center;\r\n  text-align: left;\r\n  width: 100%;\r\n  box-sizing: border-box;\r\n  gap: 8px;\r\n  padding: 6px 8px;\r\n  border: 0;\r\n  border-inline: var(--dsh-sidebar-paint-inset, 3px) solid transparent;\r\n  background-clip: padding-box;\r\n  border-radius: var(--dsw-radius-inset);\r\n  background-color: transparent;\r\n  cursor: pointer;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-card:hover {\r\n  background-color: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-card[data-active='true'] {\r\n  background-color: var(--dsw-alias-interactive-bg-active);\r\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\r\n}\r\n\r\n.dsh-bots-card[data-dimmed='true'] {\r\n  opacity: 0.6;\r\n}\r\n\r\n.dsh-bots-card-body {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: stretch;\r\n  text-align: left;\r\n  gap: 1px;\r\n}\r\n\r\n.dsh-bots-card-top {\r\n  display: flex;\r\n  flex-direction: row;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 6px;\r\n  min-width: 0;\r\n}\r\n\r\n.dsh-bots-card-name {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n  text-align: left;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-card[data-unread='true'] .dsh-bots-card-name,\r\n.dsh-bots-card[data-has-active-child='true'] .dsh-bots-card-name {\r\n  font-weight: 600;\r\n}\r\n\r\n.dsh-bots-card-time {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  flex-shrink: 0;\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n.dsh-bots-card-sub {\r\n  display: flex;\r\n  flex-direction: row;\r\n  align-items: center;\r\n  gap: 4px;\r\n  min-width: 0;\r\n}\r\n\r\n.dsh-bots-card-line {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n  text-align: left;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-card-line[data-tone='attention'] {\r\n  color: var(--dsw-alias-state-warn-label);\r\n  font-weight: 500;\r\n}\r\n\r\n.dsh-bots-card-line[data-tone='working'] {\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-upnext-pill {\r\n  border: 0;\r\n  border-radius: 999px;\r\n  padding: 1px 6px;\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  font-weight: 600;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-upnext-pill:hover {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-card-fold-btn {\r\n  position: relative;\r\n  width: 24px;\r\n  height: 24px;\r\n  padding: 0;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  flex-shrink: 0;\r\n  opacity: 0;\r\n  transition:\r\n    opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-card:hover .dsh-bots-card-fold-btn,\r\n.dsh-bots-card:focus-within .dsh-bots-card-fold-btn,\r\n.dsh-bots-card-fold-btn[data-has-signal='true'],\r\n.dsh-bots-card-fold-btn[data-collapsed='true'] {\r\n  opacity: 1;\r\n}\r\n\r\n.dsh-bots-card-fold-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-fold-dot {\r\n  position: absolute;\r\n  top: 3px;\r\n  right: 3px;\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 999px;\r\n}\r\n\r\n.dsh-bots-fold-dot[data-signal='permission'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n}\r\n\r\n.dsh-bots-fold-dot[data-signal='failed'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-fold-dot[data-signal='working'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-inline-rename {\r\n  width: 100%;\r\n  height: 24px;\r\n  padding: 0 6px;\r\n  box-sizing: border-box;\r\n  border: 1px solid var(--dsw-alias-state-business-primary);\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-family: inherit;\r\n  outline: none;\r\n}\r\n\r\n/* ---- Sub-chat Rows & Workers ---- */\r\n.dsh-bots-sublist {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  margin-left: 20px;\r\n  padding-left: 10px;\r\n  border-left: 1px solid var(--dsw-alias-border-l1);\r\n  padding-right: var(--dsh-sidebar-paint-inset, 3px);\r\n  padding-bottom: 4px;\r\n}\r\n\r\n.dsh-bots-sublist[data-paused='true'] {\r\n  opacity: 0.6;\r\n}\r\n\r\n.dsh-bots-subrow {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  height: 30px;\r\n  padding: 0 8px;\r\n  border-radius: var(--dsw-radius-sm);\r\n  cursor: pointer;\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  min-width: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-subrow:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-subrow[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 500;\r\n}\r\n\r\n.dsh-bots-subrow-icon {\r\n  position: relative;\r\n  width: 16px;\r\n  height: 16px;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n  color: var(--dsw-alias-label-tertiary);\r\n}\r\n\r\n.dsh-bots-subrow-badge {\r\n  position: absolute;\r\n  right: -2px;\r\n  bottom: -2px;\r\n  width: 7px;\r\n  height: 7px;\r\n  border-radius: 999px;\r\n  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-base);\r\n}\r\n\r\n.dsh-bots-subrow-badge[data-live='replying'] {\r\n  background: var(--dsw-alias-bg-base);\r\n  color: var(--dsw-alias-state-warn-primary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n}\r\n\r\n.dsh-bots-subrow-badge[data-live='attention'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n}\r\n\r\n.dsh-bots-subrow-badge[data-live='working'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-subrow-title {\r\n  flex: 1 1 auto;\r\n  min-width: 0;\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n}\r\n\r\n.dsh-bots-subrow[data-unread='true'] .dsh-bots-subrow-title {\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 600;\r\n}\r\n\r\n.dsh-bots-subrow-meta {\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  flex-shrink: 0;\r\n  font-variant-numeric: tabular-nums;\r\n}\r\n\r\n.dsh-bots-subrow-fold-meta {\r\n  border: 0;\r\n  background: transparent;\r\n  padding: 2px 4px;\r\n  border-radius: var(--dsw-radius-xs);\r\n  font-family: inherit;\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  flex-shrink: 0;\r\n  font-variant-numeric: tabular-nums;\r\n  cursor: pointer;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-subrow-fold-meta:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-worker-list {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 2px;\r\n  padding-left: 14px;\r\n  margin-left: 8px;\r\n  border-left: 1px solid var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-worker-list[data-root-workers='true'] {\r\n  padding-left: 0;\r\n  margin-left: 0;\r\n  border-left: 0;\r\n}\r\n\r\n.dsh-bots-worker-list[data-root-workers='true'] .dsh-bots-worker-row {\r\n  height: 30px;\r\n}\r\n\r\n.dsh-bots-worker-row {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 6px;\r\n  height: 26px;\r\n  padding: 0 8px;\r\n  border-radius: var(--dsw-radius-sm);\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  cursor: pointer;\r\n  min-width: 0;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-worker-row:hover,\r\n.dsh-bots-worker-row[data-menu-open='true'] {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-worker-row[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 500;\r\n}\r\n\r\n.dsh-bots-worker-icon {\r\n  position: relative;\r\n  width: 16px;\r\n  height: 16px;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-worker-dot {\r\n  width: 6px;\r\n  height: 6px;\r\n  border-radius: 999px;\r\n  flex-shrink: 0;\r\n  background: var(--dsw-alias-state-idle-primary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='needs-you'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='failed'],\r\n.dsh-bots-worker-dot[data-state='unreachable'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='running'],\r\n.dsh-bots-worker-dot[data-state='working'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-worker-dot[data-state='done'] {\r\n  background: var(--dsw-alias-state-success-primary);\r\n}\r\n\r\n.dsh-bots-worker-more {\r\n  border: 0;\r\n  background: transparent;\r\n  padding: 4px 8px;\r\n  text-align: left;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  cursor: pointer;\r\n}\r\n\r\n.dsh-bots-worker-more:hover {\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n/* ---- Avatar & Cutout Status Dot ---- */\r\n.dsh-bots-avatar-wrap {\r\n  position: relative;\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-avatar-img {\r\n  display: block;\r\n  width: 100%;\r\n  height: 100%;\r\n  object-fit: cover;\r\n}\r\n\r\n.dsh-bots-avatar-fallback {\r\n  width: 100%;\r\n  height: 100%;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  font-weight: 600;\r\n  color: var(--dsw-static-neutral-bluish-1000);\r\n  user-select: none;\r\n}\r\n\r\n.dsh-bots-avatar-tile-transparent .dsh-bots-avatar-fallback {\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-avatar-dot {\r\n  position: absolute;\r\n  right: -1px;\r\n  bottom: -1px;\r\n  border-radius: 999px;\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='attention'],\r\n.dsh-bots-avatar-dot[data-state='permission'],\r\n.dsh-bots-avatar-dot[data-state='unconfirmed'] {\r\n  background: var(--dsw-alias-state-warn-primary);\r\n  color: var(--dsw-alias-label-on-color);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='working'],\r\n.dsh-bots-avatar-dot[data-state='monitoring'] {\r\n  background: var(--dsw-alias-state-warn-secondary);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='unread'] {\r\n  background: var(--dsw-alias-state-business-primary);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='failed'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-avatar-dot[data-state='paused'],\r\n.dsh-bots-avatar-dot[data-state='disconnected'] {\r\n  background: var(--dsw-alias-state-idle-primary);\r\n}\r\n\r\n.dsh-bots-group-collage {\r\n  display: grid;\r\n  grid-template-columns: repeat(2, 1fr);\r\n  grid-template-rows: repeat(2, 1fr);\r\n  gap: 2px;\r\n  padding: 2px;\r\n  box-sizing: border-box;\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  border-radius: var(--dsw-radius-inset);\r\n  overflow: hidden;\r\n  flex-shrink: 0;\r\n}\r\n\r\n.dsh-bots-group-collage-more {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-size: 10px;\r\n  line-height: 12px;\r\n  font-weight: 600;\r\n  border-radius: var(--dsw-radius-xs);\r\n}\r\n\r\n/* ---- Popovers, Context Menu & Hover Card (DSHD Glass Menu Material) ---- */\r\n.dsh-bots-popover {\r\n  position: fixed;\r\n  z-index: 1400;\r\n  min-width: 196px;\r\n  padding: 4px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-specific-menu);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  box-shadow: var(--dsw-shadow-lv3);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: var(--dsw-font-family);\r\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-popover[data-motion='presence'] {\r\n  animation: none;\r\n  opacity: 1;\r\n  transform: none;\r\n  transform-origin: top center;\r\n  transition:\r\n    opacity var(--ds-motion-duration-popover) var(--ds-ease-in-out),\r\n    transform var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-popover[data-motion='presence'][data-state='closed'] {\r\n  opacity: 0;\r\n  transform: translateY(var(--ds-motion-distance-popover, 4px)) scale(0.98);\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-menu-section {\r\n  padding: 6px 8px 4px;\r\n  font-size: 11px;\r\n  line-height: 14px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-tertiary);\r\n}\r\n\r\n.dsh-bots-menu-item {\r\n  width: 100%;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 8px;\r\n  min-height: 32px;\r\n  padding: 6px 8px;\r\n  box-sizing: border-box;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: inherit;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  text-align: left;\r\n  cursor: pointer;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-menu-item:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-menu-item:disabled {\r\n  opacity: 0.4;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.dsh-bots-menu-item[data-danger='true'] {\r\n  color: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n.dsh-bots-menu-item[data-danger='true']:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover-danger);\r\n}\r\n\r\n.dsh-bots-menu-item-desc {\r\n  display: block;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-label-tertiary);\r\n  margin-top: 2px;\r\n}\r\n\r\n.dsh-bots-menu-sep {\r\n  height: 1px;\r\n  margin: 4px 8px;\r\n  background: var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-hovercard {\r\n  position: fixed;\r\n  z-index: 1180;\r\n  width: 288px;\r\n  padding: 12px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-specific-menu);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  box-shadow: var(--dsw-shadow-lv3);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: var(--dsw-font-family);\r\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n/* ---- Avatar Picker (Group Switcher + 3D Carousel + Swatches) ---- */\r\n/* border-box + 100% keeps 12px padding inside the 376px popover (0px right overflow). */\r\n.dsh-bots-picker {\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 12px;\r\n  box-sizing: border-box;\r\n  width: 100%;\r\n  min-width: 0;\r\n  padding: 12px;\r\n  border-radius: var(--dsw-radius-md);\r\n}\r\n\r\n.dsh-bots-picker[data-drag-file='true'] {\r\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-picker *,\r\n.dsh-bots-picker *::before,\r\n.dsh-bots-picker *::after {\r\n  box-sizing: border-box;\r\n}\r\n\r\n.dsh-bots-picker-head {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n}\r\n\r\n.dsh-bots-picker-seg {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  gap: 2px;\r\n  padding: 2px;\r\n  border-radius: var(--dsw-radius-inset);\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-picker-seg-btn {\r\n  height: 24px;\r\n  padding: 0 10px;\r\n  border: 0;\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-secondary);\r\n  font-family: inherit;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 400;\r\n  cursor: pointer;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-picker-seg-btn:hover {\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-picker-seg-btn[aria-pressed='true'] {\r\n  background: var(--dsw-alias-bg-layer-2);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-weight: 500;\r\n  box-shadow: var(--dsw-shadow-lv1);\r\n}\r\n\r\n.dsh-bots-picker-caption {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-secondary);\r\n  overflow: hidden;\r\n  text-overflow: ellipsis;\r\n  white-space: nowrap;\r\n}\r\n\r\n.dsh-bots-carousel {\r\n  position: relative;\r\n  width: 100%;\r\n  height: 120px;\r\n  overflow: hidden;\r\n  border-radius: var(--dsw-radius-md);\r\n}\r\n\r\n/* Slides are anchored to exact horizontal/vertical center; JS only adds translateX(offset). */\r\n.dsh-bots-carousel-slide {\r\n  position: absolute;\r\n  left: 50%;\r\n  top: 50%;\r\n  width: 112px;\r\n  height: 112px;\r\n  margin: -56px 0 0 -56px;\r\n  border-radius: var(--dsw-radius-lg);\r\n  overflow: hidden;\r\n  cursor: pointer;\r\n  transition:\r\n    transform var(--ds-transition-duration) var(--ds-ease-in-out),\r\n    opacity var(--ds-transition-duration) var(--ds-ease-in-out);\r\n  box-shadow: var(--dsw-shadow-lv2);\r\n}\r\n\r\n.dsh-bots-carousel-slide[data-transparent='true'] {\r\n  box-shadow: none;\r\n}\r\n\r\n.dsh-bots-carousel-nav {\r\n  position: absolute;\r\n  top: 50%;\r\n  transform: translateY(-50%);\r\n  z-index: 10;\r\n  width: 28px;\r\n  height: 28px;\r\n  padding: 0;\r\n  border-radius: 999px;\r\n  corner-shape: round;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-alias-bg-layer-2);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  color: var(--dsw-alias-label-primary);\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  cursor: pointer;\r\n  box-shadow: var(--dsw-shadow-lv1);\r\n  opacity: 1;\r\n  visibility: visible;\r\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-carousel-nav[data-dir='prev'] {\r\n  left: 6px;\r\n  right: auto;\r\n}\r\n\r\n.dsh-bots-carousel-nav[data-dir='next'] {\r\n  right: 6px;\r\n  left: auto;\r\n}\r\n\r\n.dsh-bots-carousel-nav:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-swatches {\r\n  display: flex;\r\n  flex-wrap: wrap;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 5px;\r\n  width: 100%;\r\n}\r\n\r\n.dsh-bots-swatch {\r\n  flex: none;\r\n  width: 22px;\r\n  height: 22px;\r\n  border-radius: 999px;\r\n  corner-shape: round;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  cursor: pointer;\r\n  padding: 0;\r\n  position: relative;\r\n}\r\n\r\n.dsh-bots-swatch[data-selected='true'] {\r\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3.5px var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-swatch-transparent {\r\n  background-color: var(--dsw-alias-bg-layer-1);\r\n  background-image: repeating-conic-gradient(\r\n    color-mix(in srgb, var(--dsw-alias-label-primary) 16%, transparent) 0% 25%,\r\n    transparent 0% 50%\r\n  );\r\n  background-size: 8px 8px;\r\n  background-position: 0 0;\r\n}\r\n\r\n.dsh-bots-swatch-wheel {\r\n  background: conic-gradient(\r\n    from 0deg,\r\n    var(--dsw-static-red-400),\r\n    var(--dsw-static-amber-400),\r\n    var(--dsw-static-green-400),\r\n    var(--dsw-static-blue-400),\r\n    var(--dsw-static-violet-400),\r\n    var(--dsw-static-red-400)\r\n  );\r\n  overflow: hidden;\r\n}\r\n\r\n/* ---- Buttons, Inputs, Modals & Toasts (DSHD Capsules & Dialog Material) ---- */\r\n.dsh-bots-btn {\r\n  display: inline-flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  gap: 6px;\r\n  height: 36px;\r\n  padding: 0 16px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-button);\r\n  corner-shape: round;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: transparent;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-size: 14px;\r\n  line-height: 22px;\r\n  font-weight: 500;\r\n  font-family: inherit;\r\n  cursor: pointer;\r\n  white-space: nowrap;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-btn:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-btn:disabled {\r\n  opacity: 0.4;\r\n  cursor: not-allowed;\r\n}\r\n\r\n.dsh-bots-btn:focus-visible {\r\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\r\n  outline-offset: 2px;\r\n}\r\n\r\n.dsh-bots-btn[data-variant='primary'] {\r\n  background: var(--dsw-alias-button-primary-fill);\r\n  border-color: transparent;\r\n  color: var(--dsw-alias-label-primary-foreground);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='primary']:hover:not(:disabled) {\r\n  background: var(--dsw-alias-button-primary-hover);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='danger'] {\r\n  background: var(--dsw-alias-state-error-primary);\r\n  border-color: transparent;\r\n  color: var(--dsw-alias-label-on-color);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='danger']:hover:not(:disabled) {\r\n  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, var(--dsw-static-neutral-1000));\r\n}\r\n\r\n.dsh-bots-btn[data-variant='ghost'] {\r\n  background: transparent;\r\n  border-color: transparent;\r\n  color: var(--dsw-alias-label-secondary);\r\n}\r\n\r\n.dsh-bots-btn[data-variant='ghost']:hover:not(:disabled) {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-btn[data-size='sm'] {\r\n  height: 28px;\r\n  border-radius: var(--dsw-radius-button-sm);\r\n  padding: 0 12px;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n}\r\n\r\n.dsh-bots-input,\r\n.dsh-bots-textarea,\r\n.dsh-bots-select {\r\n  width: 100%;\r\n  box-sizing: border-box;\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  border-radius: var(--dsw-radius-sm);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: inherit;\r\n  font-size: 14px;\r\n  line-height: 22px;\r\n  padding: 7px 12px;\r\n  outline: none;\r\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-input:focus,\r\n.dsh-bots-textarea:focus,\r\n.dsh-bots-select:focus {\r\n  border-color: var(--dsw-alias-state-business-primary);\r\n  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);\r\n}\r\n\r\n.dsh-bots-select option {\r\n  background: var(--dsw-alias-bg-panel-solid);\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-backdrop {\r\n  position: fixed;\r\n  inset: 0;\r\n  z-index: 1300;\r\n  background: var(--dsw-alias-bg-mask-1);\r\n  backdrop-filter: var(--dsw-mask-blur, blur(2px));\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  padding: 24px;\r\n  animation: dsh-bots-mask-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-modal {\r\n  position: relative;\r\n  width: 100%;\r\n  max-width: 480px;\r\n  max-height: calc(100vh - 48px);\r\n  display: flex;\r\n  flex-direction: column;\r\n  border-radius: var(--dsw-radius-dialog);\r\n  border: 1px solid var(--dsw-alias-border-l2);\r\n  background: var(--dsw-alias-bg-layer-2);\r\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\r\n  color: var(--dsw-alias-label-primary);\r\n  box-shadow: var(--dsw-shadow-lv3);\r\n  font-family: var(--dsw-font-family);\r\n  overflow: hidden;\r\n  animation: dsh-bots-overlay-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-modal[data-drag-file='true'] {\r\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\r\n  outline-offset: -2px;\r\n}\r\n\r\n.dsh-bots-modal-sm {\r\n  max-width: 420px;\r\n}\r\n\r\n.dsh-bots-modal-lg {\r\n  max-width: 640px;\r\n}\r\n\r\n.dsh-bots-modal-templates {\r\n  width: min(1040px, calc(100vw - 48px));\r\n  max-width: 1040px;\r\n  height: min(760px, calc(100vh - 48px));\r\n}\r\n\r\n.dsh-bots-modal-band {\r\n  height: 80px;\r\n  flex-shrink: 0;\r\n  opacity: 0.36;\r\n  background: linear-gradient(180deg, var(--new-bot-band, var(--dsw-static-deepseek-200)) 0%, transparent 100%);\r\n}\r\n\r\n.dsh-bots-modal-header {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  padding: 18px 16px 14px 24px;\r\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-modal-title {\r\n  font-size: 16px;\r\n  line-height: 24px;\r\n  font-weight: 600;\r\n  color: var(--dsw-alias-label-primary);\r\n}\r\n\r\n.dsh-bots-modal-body {\r\n  flex: 1 1 auto;\r\n  overflow-y: auto;\r\n  padding: 16px 24px;\r\n}\r\n\r\n.dsh-bots-modal-footer {\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: space-between;\r\n  gap: 8px;\r\n  padding: 14px 24px 18px;\r\n  border-top: 1px solid var(--dsw-alias-border-l1);\r\n}\r\n\r\n.dsh-bots-modal-card {\r\n  border: 1px solid var(--dsw-alias-border-l1);\r\n  border-radius: var(--dsw-radius-md);\r\n  background: var(--dsw-alias-bg-layer-1);\r\n  padding: 12px;\r\n  display: flex;\r\n  flex-direction: column;\r\n  gap: 8px;\r\n}\r\n\r\n.dsh-bots-modal-row-btn {\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  width: 100%;\r\n  padding: 8px 10px;\r\n  box-sizing: border-box;\r\n  border-radius: var(--dsw-radius-inset);\r\n  border: 1px solid transparent;\r\n  background: transparent;\r\n  text-align: left;\r\n  cursor: pointer;\r\n  color: var(--dsw-alias-label-primary);\r\n  font-family: inherit;\r\n  transition:\r\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\r\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-modal-row-btn:hover {\r\n  background: var(--dsw-alias-interactive-bg-hover);\r\n}\r\n\r\n.dsh-bots-modal-row-btn[data-active='true'] {\r\n  background: var(--dsw-alias-interactive-bg-active);\r\n  border-color: var(--dsw-alias-border-l2);\r\n}\r\n\r\n.dsh-bots-check-badge {\r\n  position: absolute;\r\n  right: -3px;\r\n  bottom: -3px;\r\n  width: 16px;\r\n  height: 16px;\r\n  border-radius: 999px;\r\n  background: var(--dsw-alias-state-business-primary);\r\n  color: var(--dsw-alias-label-on-color);\r\n  display: flex;\r\n  align-items: center;\r\n  justify-content: center;\r\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-panel-solid);\r\n  animation: dsh-bots-check-pop var(--ds-transition-duration) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-field-label {\r\n  display: block;\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  font-weight: 500;\r\n  color: var(--dsw-alias-label-secondary);\r\n  margin-bottom: 4px;\r\n}\r\n\r\n.dsh-bots-error-text {\r\n  font-size: 12px;\r\n  line-height: 18px;\r\n  color: var(--dsw-alias-state-error-primary);\r\n}\r\n\r\n/* ---- Toasts (DSHD dark pill, auto-fade, no close button, zero layout shift) ---- */\r\n.dsh-bots-toasts {\r\n  position: fixed;\r\n  right: 20px;\r\n  bottom: 20px;\r\n  z-index: 1500;\r\n  display: flex;\r\n  flex-direction: column;\r\n  align-items: flex-end;\r\n  gap: 8px;\r\n  pointer-events: none;\r\n}\r\n\r\n.dsh-bots-toast {\r\n  pointer-events: auto;\r\n  display: flex;\r\n  align-items: center;\r\n  gap: 10px;\r\n  max-width: 380px;\r\n  padding: 10px 16px;\r\n  border-radius: var(--dsw-radius-md);\r\n  border: none;\r\n  background: var(--dsw-alias-toast-bg);\r\n  color: var(--dsw-alias-toast-label);\r\n  box-shadow: var(--dsw-shadow-lv2);\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-family: var(--dsw-font-family);\r\n  animation: dsh-bots-toast-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\r\n}\r\n\r\n.dsh-bots-toast[data-tone='error'] {\r\n  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, transparent), var(--dsw-shadow-lv2);\r\n}\r\n\r\n.dsh-bots-toast-action {\r\n  border: 0;\r\n  padding: 0;\r\n  background: transparent;\r\n  color: var(--dsw-alias-toast-action);\r\n  font-family: inherit;\r\n  font-size: 13px;\r\n  line-height: 20px;\r\n  font-weight: 500;\r\n  cursor: pointer;\r\n}\r\n\r\n.dsh-bots-toast-action:hover {\r\n  opacity: 0.85;\r\n}\r\n";
     if (!__existing && __head && typeof __head.appendChild === "function") __head.appendChild(__style);
   }
 }
@@ -256,6 +256,7 @@ var EN_US = Object.freeze({
   "bots.new.picture": "Avatar",
   "bots.new.pictureColor": "Background color",
   "bots.new.pictureColorCustom": "Custom color",
+  "bots.new.colorTransparent": "Transparent",
   "bots.new.colorSky": "Sky",
   "bots.new.colorWhite": "White",
   "bots.new.colorLavender": "Lavender",
@@ -484,6 +485,7 @@ var ZH_CN = Object.freeze({
   "bots.new.picture": "\u5934\u50CF",
   "bots.new.pictureColor": "\u80CC\u666F\u989C\u8272",
   "bots.new.pictureColorCustom": "\u81EA\u5B9A\u4E49\u989C\u8272",
+  "bots.new.colorTransparent": "\u900F\u660E",
   "bots.new.colorSky": "\u5929\u84DD",
   "bots.new.colorWhite": "\u767D\u8272",
   "bots.new.colorLavender": "\u85B0\u8863\u8349\u7D2B",
@@ -1377,7 +1379,9 @@ function normalizeSidebarBotsHeight(value) {
 
 // vendor/dsh-whale/src/shared/bot-avatar-color.js
 var DEFAULT_BOT_AVATAR_COLOR = "#b3dbf4";
+var TRANSPARENT_BOT_AVATAR_COLOR = "transparent";
 var BOT_AVATAR_COLORS = Object.freeze([
+  TRANSPARENT_BOT_AVATAR_COLOR,
   DEFAULT_BOT_AVATAR_COLOR,
   "#ffffff",
   "#c9b8e8",
@@ -1391,6 +1395,7 @@ var BOT_AVATAR_COLORS = Object.freeze([
   "#1f2126"
 ]);
 var BOT_AVATAR_COLOR_NAMES = Object.freeze({
+  [TRANSPARENT_BOT_AVATAR_COLOR]: "bots.new.colorTransparent",
   "#b3dbf4": "bots.new.colorSky",
   "#ffffff": "bots.new.colorWhite",
   "#c9b8e8": "bots.new.colorLavender",
@@ -1429,6 +1434,15 @@ function normalizeHexColor(value) {
   }
   return null;
 }
+function isTransparentBotAvatarColor(value) {
+  return typeof value === "string" && value.trim().toLowerCase() === TRANSPARENT_BOT_AVATAR_COLOR;
+}
+function normalizeBotAvatarColor(value) {
+  if (isTransparentBotAvatarColor(value)) {
+    return TRANSPARENT_BOT_AVATAR_COLOR;
+  }
+  return normalizeHexColor(value);
+}
 function linearizeChannel(hexPair) {
   const c = Number.parseInt(hexPair, 16) / 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -1455,18 +1469,19 @@ function hashSvgKey(svgText) {
   }
   return `${svgText.length}:${(hash >>> 0).toString(36)}`;
 }
-function applyMascotTint(svgText, hexColor) {
-  const bgReplaced = svgText.replaceAll(AVATAR_BG_VAR, hexColor);
-  const rimValue = isDarkBotAvatarColor(hexColor) ? "1" : "0";
+function applyMascotTint(svgText, resolvedColor) {
+  const svgFill = resolvedColor === TRANSPARENT_BOT_AVATAR_COLOR ? "none" : resolvedColor;
+  const bgReplaced = svgText.replaceAll(AVATAR_BG_VAR, svgFill);
+  const rimValue = isDarkBotAvatarColor(resolvedColor) ? "1" : "0";
   return bgReplaced.replaceAll(AVATAR_RIM_VAR, rimValue);
 }
 function tintMascotSvg(svgText, color = DEFAULT_BOT_AVATAR_COLOR, options = {}) {
   if (typeof svgText !== "string") {
     return "";
   }
-  const hex = normalizeHexColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const resolved = normalizeBotAvatarColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
   const asDataUri = options.asDataUri === true;
-  const baseKey = options.cacheKey ? `${options.cacheKey}|${hex}` : `${hashSvgKey(svgText)}|${hex}`;
+  const baseKey = options.cacheKey ? `${options.cacheKey}|${resolved}` : `${hashSvgKey(svgText)}|${resolved}`;
   const fullKey = `${baseKey}|${asDataUri ? "uri" : "svg"}`;
   const hit = tintCache.get(fullKey);
   if (hit !== void 0) {
@@ -1474,7 +1489,7 @@ function tintMascotSvg(svgText, color = DEFAULT_BOT_AVATAR_COLOR, options = {}) 
     tintCache.set(fullKey, hit);
     return hit;
   }
-  const tinted = applyMascotTint(svgText, hex);
+  const tinted = applyMascotTint(svgText, resolved);
   const result = asDataUri ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(tinted)}` : tinted;
   tintCache.set(fullKey, result);
   if (tintCache.size > TINT_MASCOT_SVG_CACHE_LIMIT) {
@@ -1850,11 +1865,11 @@ function loadMascotSvgText(mascotId) {
   return task;
 }
 async function getTintedMascotDataUrl(mascotId, color) {
-  const hex = normalizeHexColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
-  if (hex === DEFAULT_BOT_AVATAR_COLOR) {
+  const resolved = normalizeBotAvatarColor(color) ?? DEFAULT_BOT_AVATAR_COLOR;
+  if (resolved === DEFAULT_BOT_AVATAR_COLOR) {
     return mascotAssetUrl(mascotId, "svg");
   }
-  const key = `${mascotId}|${hex}`;
+  const key = `${mascotId}|${resolved}`;
   const cached = tintedDataUrlCache.get(key);
   if (cached) {
     return cached;
@@ -1863,7 +1878,7 @@ async function getTintedMascotDataUrl(mascotId, color) {
   if (!svgText) {
     return null;
   }
-  const tinted = tintMascotSvg(svgText, hex);
+  const tinted = tintMascotSvg(svgText, resolved);
   const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(tinted)}`;
   if (tintedDataUrlCache.size >= MAX_TINTED_CACHE) {
     const oldest = tintedDataUrlCache.keys().next().value;
@@ -2694,13 +2709,43 @@ var WHALE_BOT_MASCOT_IDS = Object.freeze([
 ]);
 var WHALE_MASCOT_LABELS = Object.freeze({
   W1: "\u9CB8\u9C7C\u5A18",
-  W2: "\u84DD\u8272\u5927\u80A5\u9C7C",
-  W3: "\u7A0B\u5E8F\u5927\u80A5\u9C7C",
-  W4: "\u7687\u51A0\u5927\u80A5\u9C7C",
-  W5: "\u6C34\u624B\u5927\u80A5\u9C7C",
-  W6: "\u5E72\u996D\u5927\u80A5\u9C7C",
-  W7: "\u661F\u591C\u5927\u80A5\u9C7C",
-  W8: "Q\u7248\u9CB8\u9C7C\u5A18"
+  W2: "\u6781\u5BA2\u9CB8\u9C7C\u5A18",
+  W3: "\u661F\u7A7A\u9CB8\u9C7C\u5A18",
+  W4: "\u6A31\u7C89\u9CB8\u9C7C\u5A18",
+  W5: "\u5B66\u9662\u9CB8\u9C7C\u5A18",
+  W6: "\u7761\u8863\u9CB8\u9C7C\u5A18",
+  W7: "\u8D5B\u535A\u9CB8\u9C7C\u5A18",
+  W8: "\u63A2\u9669\u9CB8\u9C7C\u5A18"
+});
+var WHALE_MASCOT_LABELS_EN = Object.freeze({
+  W1: "Whale Girl",
+  W2: "Geek Whale",
+  W3: "Starry Whale",
+  W4: "Sakura Whale",
+  W5: "Scholar Whale",
+  W6: "Pajama Whale",
+  W7: "Cyber Whale",
+  W8: "Explorer Whale"
+});
+var WHALE_MASCOT_RECOMMENDED_COLORS = Object.freeze({
+  W1: "#b3dbf4",
+  W2: "#b5e3d8",
+  W3: "#c9b8e8",
+  W4: "#f4c4cf",
+  W5: "#c5dfb5",
+  W6: "#c9b8e8",
+  W7: "#8fa3b8",
+  W8: "#f6e3a1"
+});
+var WHALE_MASCOT_DESCRIPTIONS = Object.freeze({
+  W1: "\u7ECF\u5178\u84DD\u53D1\u5973\u4EC6\u5934\u9970\u5927\u5934\u9CB8\u9C7C\u5A18",
+  W2: "\u6D77\u84DD\u77ED\u53D1\u53CC\u4E38\u5B50\u3001\u5934\u6234\u8033\u673A\u4E0E\u53D1\u5149\u5C0F\u9CB8\u8033\u9CCD",
+  W3: "\u6DF1\u84DD\u661F\u7A7A\u6E10\u5C42\u957F\u53D1\u3001\u5C0F\u6D77\u519B\u8D1D\u96F7\u5E3D\u4E0E\u661F\u661F\u53D1\u9970",
+  W4: "\u7C89\u84DD\u6311\u67D3\u53CC\u9A6C\u5C3E\u3001\u8D1D\u58F3\u53D1\u5939\u4E0E\u5143\u6C14 Wink \u751C\u5FC3\u98CE",
+  W5: "\u6D45\u6D77\u9752\u9C8D\u4F2F\u5934\u3001\u5706\u6846\u773C\u955C\u4E0E\u5C0F\u9886\u7ED3\u77E5\u6027\u98CE",
+  W6: "\u85B0\u8863\u8349\u7D2B\u84DD\u84EC\u677E\u77ED\u53D1\u4E0E\u9CB8\u9C7C\u8FDE\u5E3D\u5C0F\u515C\u5E3D",
+  W7: "\u94F6\u767D\u6311\u67D3\u7535\u5149\u84DD\u53D1\u4E0E\u79D1\u6280\u611F\u900F\u660E\u62A4\u76EE\u955C",
+  W8: "\u51B0\u5DDD\u94F6\u767D\u5377\u53D1\u3001\u5976\u6CB9\u9EC4\u5C0F\u63A2\u9669\u5E3D\u4E0E\u73CA\u745A\u9970\u54C1"
 });
 var EMPTY_CARD_MASCOT_IDS = Object.freeze(["W1", "W2", "W4"]);
 var BOT_MASCOT_IDS = Object.freeze([
@@ -2769,6 +2814,13 @@ function extractMascotId(value) {
   }
   const parsed = parseBotAvatar(value);
   return parsed?.kind === "mascot" ? parsed.id : null;
+}
+function recommendedMascotColor(value) {
+  const id = extractMascotId(value);
+  return id && Object.prototype.hasOwnProperty.call(WHALE_MASCOT_RECOMMENDED_COLORS, id) ? WHALE_MASCOT_RECOMMENDED_COLORS[
+    /** @type {keyof typeof WHALE_MASCOT_RECOMMENDED_COLORS} */
+    id
+  ] : null;
 }
 function excludedMascotIds(current) {
   const excluded = /* @__PURE__ */ new Set();
@@ -3203,8 +3255,8 @@ function useResolvedAvatarSrc(botId, avatar, avatarColor, dataUrlOverride) {
   const parsedMascotId = parsed?.kind === "mascot" && parsed.id ? parsed.id : null;
   const parsedVersion = parsed?.kind === "upload" && parsed.version ? parsed.version : null;
   const parsedEmoji = parsed?.kind === "emoji" && parsed.emoji ? parsed.emoji : null;
-  const hexColor = normalizeHexColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
-  const directMascotUrl = parsedMascotId && hexColor === DEFAULT_BOT_AVATAR_COLOR ? mascotAssetUrl(parsedMascotId, "svg") : null;
+  const resolvedColor = normalizeBotAvatarColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const directMascotUrl = parsedMascotId && resolvedColor === DEFAULT_BOT_AVATAR_COLOR ? mascotAssetUrl(parsedMascotId, "svg") : null;
   const [asyncSrc, setAsyncSrc] = (0, import_react2.useState)(null);
   (0, import_react2.useEffect)(() => {
     if (dataUrlOverride || directMascotUrl) {
@@ -3212,7 +3264,7 @@ function useResolvedAvatarSrc(botId, avatar, avatarColor, dataUrlOverride) {
     }
     let cancelled = false;
     if (parsedMascotId) {
-      void getTintedMascotDataUrl(parsedMascotId, hexColor).then((url) => {
+      void getTintedMascotDataUrl(parsedMascotId, resolvedColor).then((url) => {
         if (!cancelled) {
           setAsyncSrc(url);
         }
@@ -3229,7 +3281,7 @@ function useResolvedAvatarSrc(botId, avatar, avatarColor, dataUrlOverride) {
     return () => {
       cancelled = true;
     };
-  }, [botId, dataUrlOverride, directMascotUrl, hexColor, parsedKind, parsedMascotId, parsedVersion]);
+  }, [botId, dataUrlOverride, directMascotUrl, parsedKind, parsedMascotId, parsedVersion, resolvedColor]);
   if (dataUrlOverride) {
     return { src: dataUrlOverride, emoji: null };
   }
@@ -3260,7 +3312,8 @@ function BotAvatar({
   const borderRadius = radius ?? defaultRadiusForSize(size);
   const { src, emoji } = useResolvedAvatarSrc(botId, avatar, avatarColor, dataUrlOverride);
   const fallbackChar = botFallback({ avatar: avatar ?? null, name: name2 ?? "" });
-  const bg = normalizeHexColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const resolvedBg = normalizeBotAvatarColor(avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const isTransparent = isTransparentBotAvatarColor(resolvedBg);
   const maskStyle = getAvatarMaskStyle(size, Boolean(effectiveStatus));
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
     "span",
@@ -3271,12 +3324,14 @@ function BotAvatar({
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
           "span",
           {
+            className: isTransparent ? "dsh-bots-avatar-tile dsh-bots-avatar-tile-transparent" : "dsh-bots-avatar-tile",
+            "data-transparent": isTransparent ? "true" : "false",
             style: {
               width: size,
               height: size,
               borderRadius,
               overflow: "hidden",
-              backgroundColor: bg,
+              backgroundColor: isTransparent ? "transparent" : resolvedBg,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -3734,7 +3789,7 @@ function extractEdgeColorFromCanvas(canvas) {
     sample(width - 3, y);
   }
   if (count === 0) {
-    return DEFAULT_BOT_AVATAR_COLOR;
+    return TRANSPARENT_BOT_AVATAR_COLOR;
   }
   return rgbToHex(rSum / count, gSum / count, bSum / count);
 }
@@ -3791,38 +3846,45 @@ function circularDelta(index, active, length) {
   return delta;
 }
 function MascotWebpTile({ mascotId, color }) {
-  const dark = isDarkBotAvatarColor(color);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { position: "relative", width: "100%", height: "100%", backgroundColor: color }, children: [
-    dark && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      "img",
-      {
-        src: mascotAssetUrl(mascotId, "rim"),
-        alt: "",
-        draggable: false,
-        style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }
-      }
-    ),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      "img",
-      {
-        src: mascotAssetUrl(mascotId, "webp"),
-        alt: mascotId,
-        draggable: false,
-        style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }
-      }
-    )
-  ] });
+  const transparent = isTransparentBotAvatarColor(color);
+  const dark = !transparent && isDarkBotAvatarColor(color);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    "div",
+    {
+      "data-transparent": transparent ? "true" : "false",
+      style: {
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        backgroundColor: transparent ? "transparent" : color
+      },
+      children: [
+        dark && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "img",
+          {
+            src: mascotAssetUrl(mascotId, "rim"),
+            alt: "",
+            draggable: false,
+            style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "img",
+          {
+            src: mascotAssetUrl(mascotId, "webp"),
+            alt: mascotId,
+            draggable: false,
+            style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }
+          }
+        )
+      ]
+    }
+  );
 }
-var WHALE_MASCOT_LABELS_EN = {
-  W1: "Whale Chan",
-  W2: "Blue Whale",
-  W3: "Coder Whale",
-  W4: "Crown Whale",
-  W5: "Sailor Whale",
-  W6: "Foodie Whale",
-  W7: "Starry Whale",
-  W8: "Chibi Whale"
-};
+function isCommittedUploadAvatar(avatar) {
+  const parsed = parseBotAvatar(avatar);
+  return parsed?.kind === "upload" && Boolean(parsed.version) && parsed.version !== "pending";
+}
 function isWhaleMascotId(id) {
   return Boolean(id && WHALE_BOT_MASCOT_IDS.includes(id));
 }
@@ -3839,12 +3901,15 @@ function mascotCaption(slide, locale) {
     const label = WHALE_MASCOT_LABELS[id];
     return label ?? `\u840C\u5BA0 ${id}`;
   }
-  return WHALE_MASCOT_LABELS_EN[id] ?? `Mascot ${id}`;
+  const labelEn = WHALE_MASCOT_LABELS_EN[id];
+  return labelEn ?? `Mascot ${id}`;
 }
 function AvatarPicker({
   value,
   onChange,
   onUploadCommit,
+  botId,
+  hasExplicitColor,
   showUpload = true,
   className
 }) {
@@ -3855,20 +3920,73 @@ function AvatarPicker({
   const parsed = parseBotAvatar(value.avatar);
   const parsedKind = parsed?.kind ?? null;
   const parsedMascotId = parsed?.kind === "mascot" ? parsed.id : null;
+  const parsedVersion = parsed?.kind === "upload" ? parsed.version : null;
   const [group, setGroup] = (0, import_react5.useState)(() => parsedMascotId && !isWhaleMascotId(parsedMascotId) ? "all" : "whale");
   const [error, setError] = (0, import_react5.useState)(null);
   const [draggingFile, setDraggingFile] = (0, import_react5.useState)(false);
   const [undoSnapshot, setUndoSnapshot] = (0, import_react5.useState)(null);
-  const normalizedColor = normalizeHexColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
-  const [customHexText, setCustomHexText] = (0, import_react5.useState)(normalizedColor);
+  const [persistedUpload, setPersistedUpload] = (0, import_react5.useState)(() => isCommittedUploadAvatar(value.avatar) ? { avatar: value.avatar, dataUrl: value.uploadedImage?.dataUrl ?? null } : null);
+  const [localUpload, setLocalUpload] = (0, import_react5.useState)(null);
+  const [pendingUpload, setPendingUpload] = (0, import_react5.useState)(false);
+  const [committingUpload, setCommittingUpload] = (0, import_react5.useState)(false);
+  const normalizedColor = normalizeBotAvatarColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const isTransparent = isTransparentBotAvatarColor(normalizedColor);
+  const hasExplicitColorRef = (0, import_react5.useRef)(Boolean(hasExplicitColor || value.explicitColor));
+  const lastHexColorRef = (0, import_react5.useRef)(normalizeHexColor(normalizedColor) ?? DEFAULT_BOT_AVATAR_COLOR);
+  const [customHexText, setCustomHexText] = (0, import_react5.useState)(isTransparent ? "" : normalizedColor);
   (0, import_react5.useEffect)(() => {
-    setCustomHexText(normalizedColor);
-  }, [normalizedColor]);
+    if (hasExplicitColor || value.explicitColor) {
+      hasExplicitColorRef.current = true;
+    }
+  }, [hasExplicitColor, value.explicitColor]);
+  (0, import_react5.useEffect)(() => {
+    const hex = normalizeHexColor(normalizedColor);
+    if (hex) {
+      lastHexColorRef.current = hex;
+    }
+    setCustomHexText(isTransparent ? "" : normalizedColor);
+  }, [isTransparent, normalizedColor]);
+  (0, import_react5.useEffect)(() => {
+    if (committingUpload || !isCommittedUploadAvatar(value.avatar)) {
+      return;
+    }
+    setPendingUpload(false);
+    setPersistedUpload((prev) => {
+      const nextDataUrl = localUpload?.dataUrl ?? value.uploadedImage?.dataUrl ?? (prev?.avatar === value.avatar ? prev.dataUrl : null);
+      if (prev?.avatar === value.avatar && prev.dataUrl === nextDataUrl) {
+        return prev;
+      }
+      return { avatar: value.avatar, dataUrl: nextDataUrl };
+    });
+  }, [committingUpload, localUpload?.dataUrl, value.avatar, value.uploadedImage?.dataUrl]);
+  (0, import_react5.useEffect)(() => {
+    const targetAvatar = persistedUpload?.avatar;
+    if (!botId || !targetAvatar || persistedUpload?.dataUrl || localUpload?.dataUrl) {
+      return void 0;
+    }
+    const targetParsed = parseBotAvatar(targetAvatar);
+    if (targetParsed?.kind !== "upload" || !targetParsed.version || targetParsed.version === "pending") {
+      return void 0;
+    }
+    let cancelled = false;
+    void readUploadedAvatarDataUrl(botId, targetParsed.version).then((dataUrl) => {
+      if (!cancelled && dataUrl) {
+        setPersistedUpload((prev) => prev?.avatar === targetAvatar ? { avatar: targetAvatar, dataUrl } : prev);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId, localUpload?.dataUrl, persistedUpload?.avatar, persistedUpload?.dataUrl]);
   (0, import_react5.useEffect)(() => () => {
     if (undoTimerRef.current !== null) {
       window.clearTimeout(undoTimerRef.current);
     }
   }, []);
+  const effectiveUploadedImage = value.uploadedImage ?? localUpload;
+  const effectiveUploadDataUrl = value.uploadedImage?.dataUrl ?? localUpload?.dataUrl ?? persistedUpload?.dataUrl ?? null;
+  const committedUploadAvatar = !committingUpload && isCommittedUploadAvatar(value.avatar) ? value.avatar : persistedUpload?.avatar;
+  const effectiveUploadAvatar = value.uploadedImage?.dataUrl ? "upload:pending" : committedUploadAvatar ?? "upload:pending";
   const slides = (0, import_react5.useMemo)(() => {
     const ids = group === "whale" ? WHALE_BOT_MASCOT_IDS : PICKABLE_BOT_MASCOT_IDS;
     const list = ids.map((id) => ({
@@ -3876,17 +3994,19 @@ function AvatarPicker({
       kind: "mascot",
       mascotId: id
     }));
-    if (value.uploadedImage?.dataUrl) {
+    if (effectiveUploadDataUrl) {
       list.unshift({
         key: "upload:custom",
         kind: "upload",
-        dataUrl: value.uploadedImage.dataUrl
+        dataUrl: effectiveUploadDataUrl,
+        uploadAvatar: effectiveUploadAvatar
       });
     }
     return list;
-  }, [group, value.uploadedImage?.dataUrl]);
+  }, [effectiveUploadAvatar, effectiveUploadDataUrl, group]);
+  const isUploadActive = pendingUpload || parsedKind === "upload";
   const activeIndex = (0, import_react5.useMemo)(() => {
-    if (value.uploadedImage?.dataUrl && parsedKind === "upload") {
+    if (effectiveUploadDataUrl && isUploadActive) {
       return 0;
     }
     if (parsedMascotId) {
@@ -3895,50 +4015,98 @@ function AvatarPicker({
         return idx;
       }
     }
-    return value.uploadedImage?.dataUrl ? 1 : 0;
-  }, [parsedKind, parsedMascotId, slides, value.uploadedImage?.dataUrl]);
+    return effectiveUploadDataUrl ? 1 : 0;
+  }, [effectiveUploadDataUrl, isUploadActive, parsedMascotId, slides]);
   const handleGroupSwitch = (nextGroup) => {
     setGroup(nextGroup);
-    if (nextGroup === "whale" && parsedKind !== "upload" && !isWhaleMascotId(parsedMascotId)) {
+    if (nextGroup === "whale" && !isUploadActive && !isWhaleMascotId(parsedMascotId)) {
+      const firstId = WHALE_BOT_MASCOT_IDS[0] ?? "W1";
       onChange({
-        avatar: mascotAvatar(WHALE_BOT_MASCOT_IDS[0] ?? "W1"),
-        avatarColor: normalizedColor,
-        uploadedImage: value.uploadedImage
+        avatar: mascotAvatar(firstId),
+        avatarColor: hasExplicitColorRef.current ? normalizedColor : recommendedMascotColor(firstId) ?? normalizedColor,
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current
       });
     }
   };
+  const commitUploadedAvatar = (0, import_react5.useCallback)(async (image) => {
+    if (!onUploadCommit) {
+      return null;
+    }
+    setCommittingUpload(true);
+    try {
+      const committedAvatar = await onUploadCommit(image);
+      if (isCommittedUploadAvatar(committedAvatar)) {
+        setPersistedUpload({ avatar: committedAvatar, dataUrl: image.dataUrl });
+        setPendingUpload(false);
+        return committedAvatar;
+      }
+      return null;
+    } finally {
+      setCommittingUpload(false);
+    }
+  }, [onUploadCommit]);
   const selectIndex = (0, import_react5.useCallback)((nextIdx) => {
     const wrapped = (nextIdx % slides.length + slides.length) % slides.length;
     const target = slides[wrapped];
     if (!target) {
       return;
     }
-    if (target.kind === "upload" && value.uploadedImage) {
+    if (target.kind === "upload") {
+      const targetAvatar = target.uploadAvatar ?? "upload:pending";
+      if (targetAvatar === "upload:pending" && localUpload && onUploadCommit) {
+        setPendingUpload(true);
+        onChange({
+          avatar: "upload:pending",
+          avatarColor: normalizedColor,
+          uploadedImage: localUpload,
+          explicitColor: hasExplicitColorRef.current
+        });
+        void commitUploadedAvatar(localUpload).catch((err) => {
+          setPendingUpload(false);
+          setError(err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
+      setPendingUpload(false);
       onChange({
-        avatar: "upload:pending",
-        avatarColor: value.uploadedImage.edgeColor || normalizedColor,
-        uploadedImage: value.uploadedImage
+        avatar: targetAvatar,
+        avatarColor: normalizedColor,
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current
       });
     } else if (target.mascotId) {
+      setPendingUpload(false);
+      const nextColor = hasExplicitColorRef.current ? normalizedColor : recommendedMascotColor(target.mascotId) ?? normalizedColor;
       onChange({
         avatar: mascotAvatar(target.mascotId),
-        avatarColor: normalizedColor,
-        uploadedImage: value.uploadedImage
+        avatarColor: nextColor,
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current
       });
     }
-  }, [normalizedColor, onChange, slides, value.uploadedImage]);
+  }, [commitUploadedAvatar, effectiveUploadedImage, localUpload, normalizedColor, onChange, onUploadCommit, slides]);
   const processFile = (0, import_react5.useCallback)(async (file) => {
     setError(null);
-    const snapshot = { ...value };
+    const snapshot = {
+      value: { ...value },
+      persistedUpload,
+      localUpload
+    };
     try {
       const cropped = await cropImageFileToPng512(file);
+      const nextColor = hasExplicitColorRef.current ? normalizedColor : cropped.edgeColor;
+      setLocalUpload(cropped);
+      setPersistedUpload(null);
+      setPendingUpload(true);
       onChange({
         avatar: "upload:pending",
-        avatarColor: cropped.edgeColor,
-        uploadedImage: cropped
+        avatarColor: nextColor,
+        uploadedImage: cropped,
+        explicitColor: hasExplicitColorRef.current
       });
       if (onUploadCommit) {
-        await onUploadCommit(cropped);
+        await commitUploadedAvatar(cropped);
       }
       setUndoSnapshot(snapshot);
       if (undoTimerRef.current !== null) {
@@ -3949,9 +4117,12 @@ function AvatarPicker({
         undoTimerRef.current = null;
       }, 8e3);
     } catch (err) {
+      setLocalUpload(snapshot.localUpload);
+      setPersistedUpload(snapshot.persistedUpload);
+      setPendingUpload(false);
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [onChange, onUploadCommit, value]);
+  }, [commitUploadedAvatar, localUpload, normalizedColor, onChange, onUploadCommit, persistedUpload, value]);
   const handleKeyDown = (event) => {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
@@ -3962,39 +4133,75 @@ function AvatarPicker({
     }
   };
   const handleDrop = (event) => {
+    if (!showUpload) {
+      return;
+    }
     event.preventDefault();
+    event.stopPropagation();
     setDraggingFile(false);
     const file = event.dataTransfer.files?.[0];
-    if (file && showUpload) {
+    if (file) {
       void processFile(file);
     }
   };
-  const handleColorPick = (hex) => {
-    const valid = normalizeHexColor(hex);
+  const handlePaste = (event) => {
+    if (!showUpload) {
+      return;
+    }
+    const items = event.clipboardData?.items;
+    if (!items) {
+      return;
+    }
+    for (const item of Array.from(items)) {
+      if (!item.type.startsWith("image/")) {
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) {
+        event.preventDefault();
+        event.stopPropagation();
+        void processFile(file);
+        return;
+      }
+    }
+  };
+  const handleColorPick = (rawColor) => {
+    const valid = normalizeBotAvatarColor(rawColor);
     if (!valid) {
       return;
     }
+    hasExplicitColorRef.current = true;
     onChange({
       ...value,
-      avatarColor: valid
+      avatar: pendingUpload ? "upload:pending" : value.avatar,
+      avatarColor: valid,
+      uploadedImage: effectiveUploadedImage,
+      explicitColor: true
     });
   };
   const activeSlide = slides[activeIndex];
-  const isUploadSelected = activeSlide?.kind === "upload";
   const currentCaption = mascotCaption(activeSlide, locale);
+  const transparentLabel = tr("bots.new.colorTransparent", zh ? "\u900F\u660E" : "Transparent");
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
     "div",
     {
       className: `dsh-bots-picker ${className ?? ""}`.trim(),
       "data-drag-file": draggingFile ? "true" : "false",
       onKeyDown: handleKeyDown,
+      onPaste: handlePaste,
       onDragOver: (e) => {
         if (showUpload) {
           e.preventDefault();
+          e.stopPropagation();
           setDraggingFile(true);
         }
       },
-      onDragLeave: () => setDraggingFile(false),
+      onDragLeave: (e) => {
+        if (showUpload) {
+          e.stopPropagation();
+        }
+        setDraggingFile(false);
+      },
       onDrop: handleDrop,
       tabIndex: 0,
       children: [
@@ -4048,6 +4255,7 @@ function AvatarPicker({
               "div",
               {
                 className: "dsh-bots-carousel-slide",
+                "data-transparent": isTransparent ? "true" : "false",
                 onClick: () => selectIndex(idx),
                 style: {
                   transform: `translateX(${tx}px) scale(${scale})`,
@@ -4056,12 +4264,24 @@ function AvatarPicker({
                   pointerEvents: Math.abs(delta) <= 1 ? "auto" : "none"
                 },
                 children: slide.kind === "upload" && slide.dataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-                  "img",
+                  "div",
                   {
-                    src: slide.dataUrl,
-                    alt: "Custom avatar",
-                    draggable: false,
-                    style: { width: "100%", height: "100%", objectFit: "cover" }
+                    "data-transparent": isTransparent ? "true" : "false",
+                    style: {
+                      position: "relative",
+                      width: "100%",
+                      height: "100%",
+                      backgroundColor: isTransparent ? "transparent" : normalizedColor
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      "img",
+                      {
+                        src: slide.dataUrl,
+                        alt: "Custom avatar",
+                        draggable: false,
+                        style: { width: "100%", height: "100%", objectFit: "cover", display: "block" }
+                      }
+                    )
                   }
                 ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MascotWebpTile, { mascotId: slide.mascotId ?? "W1", color: normalizedColor })
               },
@@ -4080,24 +4300,28 @@ function AvatarPicker({
             }
           )
         ] }),
-        !isUploadSelected && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 6 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontSize: 12, lineHeight: "18px", color: "var(--dsw-alias-label-tertiary)", fontWeight: 500 }, children: tr("bots.new.pictureColor", "Background color") }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dsh-bots-swatches", children: [
-            BOT_AVATAR_COLORS.map((hex) => {
-              const nameKey = BOT_AVATAR_COLOR_NAMES[hex];
-              const label = nameKey ? tr(nameKey, hex) : hex;
+            BOT_AVATAR_COLORS.map((color) => {
+              const nameKey = BOT_AVATAR_COLOR_NAMES[color];
+              const isSwatchTransparent = isTransparentBotAvatarColor(color);
+              const label = nameKey ? tr(nameKey, isSwatchTransparent ? transparentLabel : color) : color;
+              const selected = normalizedColor === color;
               return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "button",
                 {
                   type: "button",
-                  className: "dsh-bots-swatch",
-                  "data-selected": normalizedColor === hex ? "true" : "false",
-                  style: { backgroundColor: hex },
+                  className: isSwatchTransparent ? "dsh-bots-swatch dsh-bots-swatch-transparent" : "dsh-bots-swatch",
+                  "data-swatch": color,
+                  "data-selected": selected ? "true" : "false",
+                  "aria-pressed": selected,
+                  style: isSwatchTransparent ? void 0 : { backgroundColor: color },
                   title: label,
                   "aria-label": label,
-                  onClick: () => handleColorPick(hex)
+                  onClick: () => handleColorPick(color)
                 },
-                hex
+                color
               );
             }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
@@ -4109,7 +4333,7 @@ function AvatarPicker({
                   "input",
                   {
                     type: "color",
-                    value: normalizedColor,
+                    value: isTransparent ? lastHexColorRef.current : normalizedColor,
                     onChange: (e) => handleColorPick(e.target.value),
                     style: { opacity: 0, width: "100%", height: "100%", cursor: "pointer" },
                     "aria-label": tr("bots.new.pictureColorCustom", "Custom color")
@@ -4126,13 +4350,14 @@ function AvatarPicker({
               value: customHexText,
               onChange: (e) => {
                 setCustomHexText(e.target.value);
-                const valid = normalizeHexColor(e.target.value);
+                const valid = normalizeBotAvatarColor(e.target.value);
                 if (valid) {
                   handleColorPick(valid);
                 }
               },
-              placeholder: "#b3dbf4",
-              maxLength: 7,
+              placeholder: isTransparent ? transparentLabel : "#b3dbf4",
+              "aria-label": tr("bots.new.pictureColorCustom", "Custom color"),
+              maxLength: 16,
               style: { height: 28, fontSize: 12, lineHeight: "18px", width: 96, padding: "2px 8px", fontFamily: "var(--ds-font-family-code)" }
             }
           ) })
@@ -4178,7 +4403,10 @@ function AvatarPicker({
               className: "dsh-bots-link-btn",
               style: { display: "inline-flex", alignItems: "center", gap: 4 },
               onClick: () => {
-                onChange(undoSnapshot);
+                setPendingUpload(false);
+                setLocalUpload(undoSnapshot.localUpload);
+                setPersistedUpload(undoSnapshot.persistedUpload);
+                onChange(undoSnapshot.value);
                 setUndoSnapshot(null);
               },
               children: [
@@ -4193,7 +4421,7 @@ function AvatarPicker({
     }
   );
 }
-var AVATAR_PICKER_POPOVER_WIDTH = 352;
+var AVATAR_PICKER_POPOVER_WIDTH = 376;
 function AvatarPickerPopover({
   open,
   anchorRect,
@@ -6126,11 +6354,23 @@ function BotImportDialog({ open, onClose }) {
   }));
   const [pickerAnchor, setPickerAnchor] = (0, import_react8.useState)(null);
   const avatarBtnRef = (0, import_react8.useRef)(null);
+  const colorEditedRef = (0, import_react8.useRef)(false);
   const [importing, setImporting] = (0, import_react8.useState)(false);
   const [error, setError] = (0, import_react8.useState)(null);
   const [expandedFiles, setExpandedFiles] = (0, import_react8.useState)({});
   const [reviewedDigestBySource, setReviewedDigestBySource] = (0, import_react8.useState)({});
   const [changedAfterReview, setChangedAfterReview] = (0, import_react8.useState)(false);
+  const handleAvatarPickerChange = (0, import_react8.useCallback)((next) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
+    setAvatarVal((prev) => {
+      if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
+        colorEditedRef.current = true;
+      }
+      return next;
+    });
+  }, []);
   const loadSources = async () => {
     setLoading(true);
     setError(null);
@@ -6143,11 +6383,14 @@ function BotImportDialog({ open, onClose }) {
       if (first) {
         setSelectedId(first.id);
         if (!keep) {
+          const initialColor = normalizeBotAvatarColor(first.avatarColor);
+          colorEditedRef.current = Boolean(initialColor);
           setTargetName(first.name);
           setAvatarVal({
             avatar: first.avatar || randomMascotAvatar(),
-            avatarColor: normalizeHexColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-            uploadedImage: null
+            avatarColor: initialColor ?? DEFAULT_BOT_AVATAR_COLOR,
+            uploadedImage: null,
+            explicitColor: Boolean(initialColor)
           });
         }
       }
@@ -6246,13 +6489,16 @@ ${f.content}`)
     selected && targetName.trim() && !importing && !hasBlockers && (!needsExplicitReview || reviewSatisfied)
   );
   const handleSelectSource = (src) => {
+    const initialColor = normalizeBotAvatarColor(src.avatarColor);
+    colorEditedRef.current = Boolean(initialColor);
     setSelectedId(src.id);
     setTargetName(src.name);
     setExpandedFiles({});
     setAvatarVal({
       avatar: src.avatar || randomMascotAvatar(),
-      avatarColor: normalizeHexColor(src.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-      uploadedImage: null
+      avatarColor: initialColor ?? DEFAULT_BOT_AVATAR_COLOR,
+      uploadedImage: null,
+      explicitColor: Boolean(initialColor)
     });
   };
   const handleImport = async () => {
@@ -6275,6 +6521,9 @@ ${f.content}`)
           await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, {
             botId: created.id,
             base64Png: avatarVal.uploadedImage.base64Png
+          });
+          await botsStore.updateBot(created.id, {
+            avatarColor: avatarVal.avatarColor
           });
           invalidateUploadedAvatarCache(created.id);
         } else {
@@ -6522,8 +6771,9 @@ ${f.content}`)
               anchorRect: pickerAnchor,
               triggerRef: avatarBtnRef,
               onClose: () => setPickerAnchor(null),
+              hasExplicitColor: colorEditedRef.current,
               value: avatarVal,
-              onChange: setAvatarVal
+              onChange: handleAvatarPickerChange
             }
           )
         ] })
@@ -9808,6 +10058,7 @@ function NewBotDialog({ open, draft, onClose }) {
   const chipsBarRef = (0, import_react12.useRef)(null);
   const avatarBtnRef = (0, import_react12.useRef)(null);
   const modalRef = (0, import_react12.useRef)(null);
+  const colorEditedRef = (0, import_react12.useRef)(false);
   (0, import_react12.useEffect)(() => {
     if (!activeChipPopover) {
       return void 0;
@@ -9831,13 +10082,17 @@ function NewBotDialog({ open, draft, onClose }) {
     setIncludeSchedules(true);
     setIncludeEvents(true);
     const hasPrefilledName = Boolean(template || draft?.initialName || draft?.takeOverWorkspace?.name);
+    const initialColor = normalizeBotAvatarColor(draft?.initialAvatarColor);
+    colorEditedRef.current = Boolean(initialColor);
     if (template) {
+      const nextAvatar = template.mascot ? mascotAvatar(template.mascot) : randomMascotAvatar();
       setName(draft?.initialName ?? template.name ?? "");
       setPurpose(draft?.initialPurpose ?? template.line ?? "");
       setAvatarVal({
-        avatar: template.mascot ? mascotAvatar(template.mascot) : randomMascotAvatar(),
-        avatarColor: normalizeHexColor(draft?.initialAvatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-        uploadedImage: null
+        avatar: nextAvatar,
+        avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
+        uploadedImage: null,
+        explicitColor: Boolean(initialColor)
       });
       setSelectedSkills([...template.skills ?? []]);
       setWatches(template.watches ?? "");
@@ -9845,24 +10100,28 @@ function NewBotDialog({ open, draft, onClose }) {
       setReports(template.reports ?? "");
     } else if (draft?.takeOverWorkspace) {
       const tw = draft.takeOverWorkspace;
+      const nextAvatar = draft.initialAvatar ?? randomMascotAvatar();
       setName(draft.initialName ?? tw.name ?? "");
       setPurpose(draft.initialPurpose ?? "");
       setAvatarVal({
-        avatar: draft.initialAvatar ?? randomMascotAvatar(),
-        avatarColor: normalizeHexColor(draft.initialAvatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-        uploadedImage: null
+        avatar: nextAvatar,
+        avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
+        uploadedImage: null,
+        explicitColor: Boolean(initialColor)
       });
       setSelectedSkills([]);
       setWatches(tw.watches ?? "");
       setDoesText(tw.does ?? "");
       setReports(tw.reports ?? "");
     } else {
+      const nextAvatar = draft?.initialAvatar ?? randomMascotAvatar();
       setName(draft?.initialName ?? "");
       setPurpose(draft?.initialPurpose ?? "");
       setAvatarVal({
-        avatar: draft?.initialAvatar ?? randomMascotAvatar(),
-        avatarColor: normalizeHexColor(draft?.initialAvatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-        uploadedImage: null
+        avatar: nextAvatar,
+        avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
+        uploadedImage: null,
+        explicitColor: Boolean(initialColor)
       });
       setSelectedSkills([]);
       setWatches("");
@@ -9930,14 +10189,26 @@ function NewBotDialog({ open, draft, onClose }) {
     setError(null);
     try {
       const cropped = await cropImageFileToPng512(file);
-      setAvatarVal({
+      setAvatarVal((prev) => ({
         avatar: "upload:pending",
-        avatarColor: cropped.edgeColor,
-        uploadedImage: cropped
-      });
+        avatarColor: colorEditedRef.current ? prev.avatarColor : cropped.edgeColor,
+        uploadedImage: cropped,
+        explicitColor: colorEditedRef.current
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }, []);
+  const handleAvatarPickerChange = (0, import_react12.useCallback)((next) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
+    setAvatarVal((prev) => {
+      if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
+        colorEditedRef.current = true;
+      }
+      return next;
+    });
   }, []);
   const handlePaste = (event) => {
     const items = event.clipboardData?.items;
@@ -10066,7 +10337,7 @@ function NewBotDialog({ open, draft, onClose }) {
   if (!open || typeof document === "undefined") {
     return null;
   }
-  const bandColor = avatarVal.uploadedImage && avatarVal.avatar.startsWith("upload:") ? avatarVal.uploadedImage.edgeColor : avatarVal.avatarColor;
+  const bandColor = isTransparentBotAvatarColor(avatarVal.avatarColor) ? "transparent" : avatarVal.avatarColor;
   const isTakeOver = Boolean(draft?.takeOverWorkspace);
   const templateSkills = Array.isArray(template?.skills) ? template.skills : [];
   const templateSchedules = Array.isArray(template?.schedules) ? template.schedules : [];
@@ -10453,8 +10724,9 @@ function NewBotDialog({ open, draft, onClose }) {
                   anchorRect: pickerAnchor,
                   triggerRef: avatarBtnRef,
                   onClose: () => setPickerAnchor(null),
+                  hasExplicitColor: colorEditedRef.current,
                   value: avatarVal,
-                  onChange: setAvatarVal
+                  onChange: handleAvatarPickerChange
                 }
               )
             ]
@@ -18920,12 +19192,16 @@ function BotPanelHeader({
     }
     return candidates.length > 0 ? Math.min(...candidates) : null;
   }, [bot, earliestAutoTs, nextRunAt, now]);
+  const persistedColor = normalizeBotAvatarColor(bot.avatarColor);
   const pickerValue = {
     avatar: bot.avatar || "mascot:W1",
-    avatarColor: bot.avatarColor || DEFAULT_BOT_AVATAR_COLOR
+    avatarColor: persistedColor ?? DEFAULT_BOT_AVATAR_COLOR
   };
   const handleAvatarChange = (next) => {
     if (next.avatar === "upload:pending") {
+      if (next.avatarColor !== persistedColor) {
+        void botsStore.updateBot(bot.id, { avatarColor: next.avatarColor });
+      }
       return;
     }
     void botsStore.updateBot(bot.id, {
@@ -18934,12 +19210,13 @@ function BotPanelHeader({
     });
   };
   const handleUploadCommit = async (image) => {
-    await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, {
+    const res = await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, {
       botId: bot.id,
       base64Png: image.base64Png
     });
     invalidateUploadedAvatarCache(bot.id);
     await botsStore.refresh();
+    return typeof res?.avatar === "string" && res.avatar.startsWith("upload:") ? res.avatar : void 0;
   };
   const handleCopyPath = async () => {
     setMoreOpen(false);
@@ -19128,6 +19405,8 @@ function BotPanelHeader({
         anchorRect: pickerRect,
         triggerRef: avatarBtnRef,
         onClose: () => setPickerRect(null),
+        botId: bot.id,
+        hasExplicitColor: Boolean(persistedColor),
         value: pickerValue,
         onChange: handleAvatarChange,
         onUploadCommit: handleUploadCommit
@@ -21028,6 +21307,9 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
       return void 0;
     }
     const handlePaste = (event) => {
+      if (event.defaultPrevented) {
+        return;
+      }
       const items = event.clipboardData?.items;
       if (!items) {
         return;
@@ -21044,6 +21326,9 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
         const snapshot = { avatar: bot.avatar ?? null, avatarColor: bot.avatarColor ?? null };
         void cropImageFileToPng512(file).then(async (cropped) => {
           await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, { botId: bot.id, base64Png: cropped.base64Png });
+          if (!normalizeBotAvatarColor(bot.avatarColor) && cropped.edgeColor === TRANSPARENT_BOT_AVATAR_COLOR) {
+            await botsStore.updateBot(bot.id, { avatarColor: TRANSPARENT_BOT_AVATAR_COLOR });
+          }
           invalidateUploadedAvatarCache(bot.id);
           await botsStore.refresh();
           setUndoAvatar(snapshot);
@@ -21078,9 +21363,10 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
     }
   };
   const handleUploadCommit = async (image) => {
-    await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, { botId: bot.id, base64Png: image.base64Png });
+    const res = await callBotRpc(RPC_METHODS2.AVATAR_UPLOAD, { botId: bot.id, base64Png: image.base64Png });
     invalidateUploadedAvatarCache(bot.id);
     await botsStore.refresh();
+    return typeof res?.avatar === "string" && res.avatar.startsWith("upload:") ? res.avatar : void 0;
   };
   const breadcrumb = /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-settings-crumb", children: [
     /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
@@ -21345,14 +21631,21 @@ function BotSettingsView({ host, botId: propBotId, onClosePage }) {
         anchorRect: pickerRect,
         triggerRef: avatarBtnRef,
         onClose: () => setPickerRect(null),
+        botId: bot.id,
+        hasExplicitColor: Boolean(normalizeBotAvatarColor(bot.avatarColor)),
         value: {
           avatar: bot.avatar || "mascot:W1",
-          avatarColor: bot.avatarColor || DEFAULT_BOT_AVATAR_COLOR
+          avatarColor: normalizeBotAvatarColor(bot.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR
         },
         onChange: (next) => {
-          if (next.avatar !== "upload:pending") {
-            void botsStore.updateBot(bot.id, { avatar: next.avatar, avatarColor: next.avatarColor });
+          const persisted = normalizeBotAvatarColor(bot.avatarColor);
+          if (next.avatar === "upload:pending") {
+            if (next.avatarColor !== persisted) {
+              void botsStore.updateBot(bot.id, { avatarColor: next.avatarColor });
+            }
+            return;
           }
+          void botsStore.updateBot(bot.id, { avatar: next.avatar, avatarColor: next.avatarColor });
         },
         onUploadCommit: handleUploadCommit
       }
@@ -23608,7 +23901,15 @@ ${lines.join("\n")}`
 function EmptyBotsCard() {
   const { tr } = useBotsLocale();
   return /* @__PURE__ */ (0, import_jsx_runtime37.jsxs)("div", { className: "dsh-bots-empty-card", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime37.jsx)("div", { className: "dsh-bots-empty-stack", children: EMPTY_CARD_MASCOT_IDS.map((mascotId) => /* @__PURE__ */ (0, import_jsx_runtime37.jsx)("span", { className: "dsh-bots-empty-stack-item", children: /* @__PURE__ */ (0, import_jsx_runtime37.jsx)(BotAvatar, { avatar: mascotAvatar(mascotId), size: 28, radius: 8 }) }, mascotId)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime37.jsx)("div", { className: "dsh-bots-empty-stack", children: EMPTY_CARD_MASCOT_IDS.map((mascotId) => /* @__PURE__ */ (0, import_jsx_runtime37.jsx)("span", { className: "dsh-bots-empty-stack-item", children: /* @__PURE__ */ (0, import_jsx_runtime37.jsx)(
+      BotAvatar,
+      {
+        avatar: mascotAvatar(mascotId),
+        avatarColor: recommendedMascotColor(mascotId),
+        size: 28,
+        radius: 8
+      }
+    ) }, mascotId)) }),
     /* @__PURE__ */ (0, import_jsx_runtime37.jsx)("div", { className: "dsh-bots-empty-title", children: tr("bots.section.emptyCardTitle", "\u4F60\u7684\u5927\u80A5\u9C7C\u961F\u53CB") }),
     /* @__PURE__ */ (0, import_jsx_runtime37.jsx)("div", { className: "dsh-bots-empty-subtitle", children: tr("bots.section.emptyCardSubtitle", "\u5E38\u9A7B\u534F\u4F5C\u3001\u81EA\u4E3B\u5DE1\u89C6\u4E0E\u591A\u9C7C\u8054\u52A8") }),
     /* @__PURE__ */ (0, import_jsx_runtime37.jsxs)("div", { className: "dsh-bots-empty-actions", children: [

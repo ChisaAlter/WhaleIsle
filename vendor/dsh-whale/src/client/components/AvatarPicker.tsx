@@ -1,4 +1,4 @@
-// Orca-faithful AvatarPicker: 3D circular mascot WebP carousel, 11-color swatches + custom hex,
+// Orca-faithful AvatarPicker: 3D circular mascot WebP carousel, transparent + 11-color swatches + custom hex,
 // 512x512 PNG upload/drop/paste cropper, and edge-color extraction for NewBotDialog banner.
 
 import {
@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
   type RefObject,
@@ -20,18 +21,23 @@ import {
   PICKABLE_BOT_MASCOT_IDS,
   WHALE_BOT_MASCOT_IDS,
   WHALE_MASCOT_LABELS,
+  WHALE_MASCOT_LABELS_EN,
   mascotAvatar,
   parseBotAvatar,
+  recommendedMascotColor,
 } from '../../shared/bot-avatar.js';
 import {
   BOT_AVATAR_COLORS,
   BOT_AVATAR_COLOR_NAMES,
   DEFAULT_BOT_AVATAR_COLOR,
+  TRANSPARENT_BOT_AVATAR_COLOR,
   isDarkBotAvatarColor,
+  isTransparentBotAvatarColor,
+  normalizeBotAvatarColor,
   normalizeHexColor,
 } from '../../shared/bot-avatar-color.js';
 import { useBotsLocale } from '../store/bots-store';
-import { mascotAssetUrl } from '../store/rpc';
+import { mascotAssetUrl, readUploadedAvatarDataUrl } from '../store/rpc';
 import { IconChevronLeft, IconChevronRight, IconUndo, IconUpload } from './Icons';
 
 export interface CroppedAvatarImage {
@@ -44,12 +50,15 @@ export interface AvatarPickerValue {
   avatar: string;
   avatarColor: string;
   uploadedImage?: CroppedAvatarImage | null;
+  explicitColor?: boolean;
 }
 
 export interface AvatarPickerProps {
   value: AvatarPickerValue;
   onChange: (next: AvatarPickerValue) => void;
-  onUploadCommit?: (image: CroppedAvatarImage) => Promise<void> | void;
+  onUploadCommit?: (image: CroppedAvatarImage) => Promise<string | void> | string | void;
+  botId?: string | null;
+  hasExplicitColor?: boolean;
   showUpload?: boolean;
   className?: string;
 }
@@ -90,7 +99,7 @@ export function extractEdgeColorFromCanvas(canvas: HTMLCanvasElement): string {
     sample(width - 3, y);
   }
   if (count === 0) {
-    return DEFAULT_BOT_AVATAR_COLOR;
+    return TRANSPARENT_BOT_AVATAR_COLOR;
   }
   return rgbToHex(rSum / count, gSum / count, bSum / count);
 }
@@ -145,6 +154,7 @@ interface SlideItem {
   kind: 'mascot' | 'upload';
   mascotId?: string;
   dataUrl?: string;
+  uploadAvatar?: string;
 }
 
 function circularDelta(index: number, active: number, length: number): number {
@@ -159,9 +169,18 @@ function circularDelta(index: number, active: number, length: number): number {
 }
 
 function MascotWebpTile({ mascotId, color }: { mascotId: string; color: string }) {
-  const dark = isDarkBotAvatarColor(color);
+  const transparent = isTransparentBotAvatarColor(color);
+  const dark = !transparent && isDarkBotAvatarColor(color);
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: color }}>
+    <div
+      data-transparent={transparent ? 'true' : 'false'}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        backgroundColor: transparent ? 'transparent' : color,
+      }}
+    >
       {dark && (
         <img
           src={mascotAssetUrl(mascotId, 'rim')}
@@ -182,16 +201,21 @@ function MascotWebpTile({ mascotId, color }: { mascotId: string; color: string }
 
 type MascotGroup = 'whale' | 'all';
 
-const WHALE_MASCOT_LABELS_EN: Record<string, string> = {
-  W1: 'Whale Chan',
-  W2: 'Blue Whale',
-  W3: 'Coder Whale',
-  W4: 'Crown Whale',
-  W5: 'Sailor Whale',
-  W6: 'Foodie Whale',
-  W7: 'Starry Whale',
-  W8: 'Chibi Whale',
-};
+interface PersistedUploadState {
+  avatar: string;
+  dataUrl: string | null;
+}
+
+interface UploadUndoState {
+  value: AvatarPickerValue;
+  persistedUpload: PersistedUploadState | null;
+  localUpload: CroppedAvatarImage | null;
+}
+
+function isCommittedUploadAvatar(avatar: string | null | undefined): avatar is string {
+  const parsed = parseBotAvatar(avatar);
+  return parsed?.kind === 'upload' && Boolean(parsed.version) && parsed.version !== 'pending';
+}
 
 function isWhaleMascotId(id: string | null | undefined): boolean {
   return Boolean(id && (WHALE_BOT_MASCOT_IDS as readonly string[]).includes(id));
@@ -210,13 +234,16 @@ function mascotCaption(slide: SlideItem | undefined, locale: string): string {
     const label = (WHALE_MASCOT_LABELS as Record<string, string>)[id];
     return label ?? `萌宠 ${id}`;
   }
-  return WHALE_MASCOT_LABELS_EN[id] ?? `Mascot ${id}`;
+  const labelEn = (WHALE_MASCOT_LABELS_EN as Record<string, string>)[id];
+  return labelEn ?? `Mascot ${id}`;
 }
 
 export function AvatarPicker({
   value,
   onChange,
   onUploadCommit,
+  botId,
+  hasExplicitColor,
   showUpload = true,
   className,
 }: AvatarPickerProps) {
@@ -228,26 +255,93 @@ export function AvatarPicker({
   const parsed = parseBotAvatar(value.avatar);
   const parsedKind = parsed?.kind ?? null;
   const parsedMascotId = parsed?.kind === 'mascot' ? parsed.id : null;
+  const parsedVersion = parsed?.kind === 'upload' ? parsed.version : null;
 
   const [group, setGroup] = useState<MascotGroup>(() => (
     parsedMascotId && !isWhaleMascotId(parsedMascotId) ? 'all' : 'whale'
   ));
   const [error, setError] = useState<string | null>(null);
   const [draggingFile, setDraggingFile] = useState(false);
-  const [undoSnapshot, setUndoSnapshot] = useState<AvatarPickerValue | null>(null);
+  const [undoSnapshot, setUndoSnapshot] = useState<UploadUndoState | null>(null);
+  const [persistedUpload, setPersistedUpload] = useState<PersistedUploadState | null>(() => (
+    isCommittedUploadAvatar(value.avatar)
+      ? { avatar: value.avatar, dataUrl: value.uploadedImage?.dataUrl ?? null }
+      : null
+  ));
+  const [localUpload, setLocalUpload] = useState<CroppedAvatarImage | null>(null);
+  const [pendingUpload, setPendingUpload] = useState(false);
+  const [committingUpload, setCommittingUpload] = useState(false);
 
-  const normalizedColor = normalizeHexColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
-  const [customHexText, setCustomHexText] = useState(normalizedColor);
+  const normalizedColor = normalizeBotAvatarColor(value.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR;
+  const isTransparent = isTransparentBotAvatarColor(normalizedColor);
+  const hasExplicitColorRef = useRef(Boolean(hasExplicitColor || value.explicitColor));
+  const lastHexColorRef = useRef(normalizeHexColor(normalizedColor) ?? DEFAULT_BOT_AVATAR_COLOR);
+  const [customHexText, setCustomHexText] = useState(isTransparent ? '' : normalizedColor);
 
   useEffect(() => {
-    setCustomHexText(normalizedColor);
-  }, [normalizedColor]);
+    if (hasExplicitColor || value.explicitColor) {
+      hasExplicitColorRef.current = true;
+    }
+  }, [hasExplicitColor, value.explicitColor]);
+
+  useEffect(() => {
+    const hex = normalizeHexColor(normalizedColor);
+    if (hex) {
+      lastHexColorRef.current = hex;
+    }
+    setCustomHexText(isTransparent ? '' : normalizedColor);
+  }, [isTransparent, normalizedColor]);
+
+  useEffect(() => {
+    if (committingUpload || !isCommittedUploadAvatar(value.avatar)) {
+      return;
+    }
+    setPendingUpload(false);
+    setPersistedUpload((prev) => {
+      const nextDataUrl = localUpload?.dataUrl
+        ?? value.uploadedImage?.dataUrl
+        ?? (prev?.avatar === value.avatar ? prev.dataUrl : null);
+      if (prev?.avatar === value.avatar && prev.dataUrl === nextDataUrl) {
+        return prev;
+      }
+      return { avatar: value.avatar, dataUrl: nextDataUrl };
+    });
+  }, [committingUpload, localUpload?.dataUrl, value.avatar, value.uploadedImage?.dataUrl]);
+
+  useEffect(() => {
+    const targetAvatar = persistedUpload?.avatar;
+    if (!botId || !targetAvatar || persistedUpload?.dataUrl || localUpload?.dataUrl) {
+      return undefined;
+    }
+    const targetParsed = parseBotAvatar(targetAvatar);
+    if (targetParsed?.kind !== 'upload' || !targetParsed.version || targetParsed.version === 'pending') {
+      return undefined;
+    }
+    let cancelled = false;
+    void readUploadedAvatarDataUrl(botId, targetParsed.version).then((dataUrl) => {
+      if (!cancelled && dataUrl) {
+        setPersistedUpload((prev) => (prev?.avatar === targetAvatar ? { avatar: targetAvatar, dataUrl } : prev));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId, localUpload?.dataUrl, persistedUpload?.avatar, persistedUpload?.dataUrl]);
 
   useEffect(() => () => {
     if (undoTimerRef.current !== null) {
       window.clearTimeout(undoTimerRef.current);
     }
   }, []);
+
+  const effectiveUploadedImage = value.uploadedImage ?? localUpload;
+  const effectiveUploadDataUrl = value.uploadedImage?.dataUrl ?? localUpload?.dataUrl ?? persistedUpload?.dataUrl ?? null;
+  const committedUploadAvatar = !committingUpload && isCommittedUploadAvatar(value.avatar)
+    ? value.avatar
+    : persistedUpload?.avatar;
+  const effectiveUploadAvatar = value.uploadedImage?.dataUrl
+    ? 'upload:pending'
+    : (committedUploadAvatar ?? 'upload:pending');
 
   const slides = useMemo<SlideItem[]>(() => {
     const ids = group === 'whale' ? WHALE_BOT_MASCOT_IDS : PICKABLE_BOT_MASCOT_IDS;
@@ -256,18 +350,21 @@ export function AvatarPicker({
       kind: 'mascot',
       mascotId: id,
     }));
-    if (value.uploadedImage?.dataUrl) {
+    if (effectiveUploadDataUrl) {
       list.unshift({
         key: 'upload:custom',
         kind: 'upload',
-        dataUrl: value.uploadedImage.dataUrl,
+        dataUrl: effectiveUploadDataUrl,
+        uploadAvatar: effectiveUploadAvatar,
       });
     }
     return list;
-  }, [group, value.uploadedImage?.dataUrl]);
+  }, [effectiveUploadAvatar, effectiveUploadDataUrl, group]);
+
+  const isUploadActive = pendingUpload || parsedKind === 'upload';
 
   const activeIndex = useMemo(() => {
-    if (value.uploadedImage?.dataUrl && parsedKind === 'upload') {
+    if (effectiveUploadDataUrl && isUploadActive) {
       return 0;
     }
     if (parsedMascotId) {
@@ -276,19 +373,39 @@ export function AvatarPicker({
         return idx;
       }
     }
-    return value.uploadedImage?.dataUrl ? 1 : 0;
-  }, [parsedKind, parsedMascotId, slides, value.uploadedImage?.dataUrl]);
+    return effectiveUploadDataUrl ? 1 : 0;
+  }, [effectiveUploadDataUrl, isUploadActive, parsedMascotId, slides]);
 
   const handleGroupSwitch = (nextGroup: MascotGroup) => {
     setGroup(nextGroup);
-    if (nextGroup === 'whale' && parsedKind !== 'upload' && !isWhaleMascotId(parsedMascotId)) {
+    if (nextGroup === 'whale' && !isUploadActive && !isWhaleMascotId(parsedMascotId)) {
+      const firstId = WHALE_BOT_MASCOT_IDS[0] ?? 'W1';
       onChange({
-        avatar: mascotAvatar(WHALE_BOT_MASCOT_IDS[0] ?? 'W1'),
-        avatarColor: normalizedColor,
-        uploadedImage: value.uploadedImage,
+        avatar: mascotAvatar(firstId),
+        avatarColor: hasExplicitColorRef.current ? normalizedColor : (recommendedMascotColor(firstId) ?? normalizedColor),
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current,
       });
     }
   };
+
+  const commitUploadedAvatar = useCallback(async (image: CroppedAvatarImage): Promise<string | null> => {
+    if (!onUploadCommit) {
+      return null;
+    }
+    setCommittingUpload(true);
+    try {
+      const committedAvatar = await onUploadCommit(image);
+      if (isCommittedUploadAvatar(committedAvatar)) {
+        setPersistedUpload({ avatar: committedAvatar, dataUrl: image.dataUrl });
+        setPendingUpload(false);
+        return committedAvatar;
+      }
+      return null;
+    } finally {
+      setCommittingUpload(false);
+    }
+  }, [onUploadCommit]);
 
   const selectIndex = useCallback((nextIdx: number) => {
     const wrapped = ((nextIdx % slides.length) + slides.length) % slides.length;
@@ -296,33 +413,64 @@ export function AvatarPicker({
     if (!target) {
       return;
     }
-    if (target.kind === 'upload' && value.uploadedImage) {
+    if (target.kind === 'upload') {
+      const targetAvatar = target.uploadAvatar ?? 'upload:pending';
+      if (targetAvatar === 'upload:pending' && localUpload && onUploadCommit) {
+        setPendingUpload(true);
+        onChange({
+          avatar: 'upload:pending',
+          avatarColor: normalizedColor,
+          uploadedImage: localUpload,
+          explicitColor: hasExplicitColorRef.current,
+        });
+        void commitUploadedAvatar(localUpload).catch((err) => {
+          setPendingUpload(false);
+          setError(err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
+      setPendingUpload(false);
       onChange({
-        avatar: 'upload:pending',
-        avatarColor: value.uploadedImage.edgeColor || normalizedColor,
-        uploadedImage: value.uploadedImage,
+        avatar: targetAvatar,
+        avatarColor: normalizedColor,
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current,
       });
     } else if (target.mascotId) {
+      setPendingUpload(false);
+      const nextColor = hasExplicitColorRef.current
+        ? normalizedColor
+        : (recommendedMascotColor(target.mascotId) ?? normalizedColor);
       onChange({
         avatar: mascotAvatar(target.mascotId),
-        avatarColor: normalizedColor,
-        uploadedImage: value.uploadedImage,
+        avatarColor: nextColor,
+        uploadedImage: effectiveUploadedImage,
+        explicitColor: hasExplicitColorRef.current,
       });
     }
-  }, [normalizedColor, onChange, slides, value.uploadedImage]);
+  }, [commitUploadedAvatar, effectiveUploadedImage, localUpload, normalizedColor, onChange, onUploadCommit, slides]);
 
   const processFile = useCallback(async (file: File) => {
     setError(null);
-    const snapshot = { ...value };
+    const snapshot: UploadUndoState = {
+      value: { ...value },
+      persistedUpload,
+      localUpload,
+    };
     try {
       const cropped = await cropImageFileToPng512(file);
+      const nextColor = hasExplicitColorRef.current ? normalizedColor : cropped.edgeColor;
+      setLocalUpload(cropped);
+      setPersistedUpload(null);
+      setPendingUpload(true);
       onChange({
         avatar: 'upload:pending',
-        avatarColor: cropped.edgeColor,
+        avatarColor: nextColor,
         uploadedImage: cropped,
+        explicitColor: hasExplicitColorRef.current,
       });
       if (onUploadCommit) {
-        await onUploadCommit(cropped);
+        await commitUploadedAvatar(cropped);
       }
       setUndoSnapshot(snapshot);
       if (undoTimerRef.current !== null) {
@@ -333,9 +481,12 @@ export function AvatarPicker({
         undoTimerRef.current = null;
       }, 8000);
     } catch (err) {
+      setLocalUpload(snapshot.localUpload);
+      setPersistedUpload(snapshot.persistedUpload);
+      setPendingUpload(false);
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [onChange, onUploadCommit, value]);
+  }, [commitUploadedAvatar, localUpload, normalizedColor, onChange, onUploadCommit, persistedUpload, value]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowLeft') {
@@ -348,41 +499,78 @@ export function AvatarPicker({
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!showUpload) {
+      return;
+    }
     event.preventDefault();
+    event.stopPropagation();
     setDraggingFile(false);
     const file = event.dataTransfer.files?.[0];
-    if (file && showUpload) {
+    if (file) {
       void processFile(file);
     }
   };
 
-  const handleColorPick = (hex: string) => {
-    const valid = normalizeHexColor(hex);
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (!showUpload) {
+      return;
+    }
+    const items = event.clipboardData?.items;
+    if (!items) {
+      return;
+    }
+    for (const item of Array.from(items)) {
+      if (!item.type.startsWith('image/')) {
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) {
+        event.preventDefault();
+        event.stopPropagation();
+        void processFile(file);
+        return;
+      }
+    }
+  };
+
+  const handleColorPick = (rawColor: string) => {
+    const valid = normalizeBotAvatarColor(rawColor);
     if (!valid) {
       return;
     }
+    hasExplicitColorRef.current = true;
     onChange({
       ...value,
+      avatar: pendingUpload ? 'upload:pending' : value.avatar,
       avatarColor: valid,
+      uploadedImage: effectiveUploadedImage,
+      explicitColor: true,
     });
   };
 
   const activeSlide = slides[activeIndex];
-  const isUploadSelected = activeSlide?.kind === 'upload';
   const currentCaption = mascotCaption(activeSlide, locale);
+  const transparentLabel = tr('bots.new.colorTransparent', zh ? '透明' : 'Transparent');
 
   return (
     <div
       className={`dsh-bots-picker ${className ?? ''}`.trim()}
       data-drag-file={draggingFile ? 'true' : 'false'}
       onKeyDown={handleKeyDown}
+      onPaste={handlePaste}
       onDragOver={(e) => {
         if (showUpload) {
           e.preventDefault();
+          e.stopPropagation();
           setDraggingFile(true);
         }
       }}
-      onDragLeave={() => setDraggingFile(false)}
+      onDragLeave={(e) => {
+        if (showUpload) {
+          e.stopPropagation();
+        }
+        setDraggingFile(false);
+      }}
       onDrop={handleDrop}
       tabIndex={0}
     >
@@ -434,6 +622,7 @@ export function AvatarPicker({
             <div
               key={slide.key}
               className="dsh-bots-carousel-slide"
+              data-transparent={isTransparent ? 'true' : 'false'}
               onClick={() => selectIndex(idx)}
               style={{
                 transform: `translateX(${tx}px) scale(${scale})`,
@@ -443,12 +632,22 @@ export function AvatarPicker({
               }}
             >
               {slide.kind === 'upload' && slide.dataUrl ? (
-                <img
-                  src={slide.dataUrl}
-                  alt="Custom avatar"
-                  draggable={false}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
+                <div
+                  data-transparent={isTransparent ? 'true' : 'false'}
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: isTransparent ? 'transparent' : normalizedColor,
+                  }}
+                >
+                  <img
+                    src={slide.dataUrl}
+                    alt="Custom avatar"
+                    draggable={false}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                </div>
               ) : (
                 <MascotWebpTile mascotId={slide.mascotId ?? 'W1'} color={normalizedColor} />
               )}
@@ -467,60 +666,65 @@ export function AvatarPicker({
         </button>
       </div>
 
-      {!isUploadSelected && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', fontWeight: 500 }}>
-            {tr('bots.new.pictureColor', 'Background color')}
-          </div>
-          <div className="dsh-bots-swatches">
-            {BOT_AVATAR_COLORS.map((hex) => {
-              const nameKey = BOT_AVATAR_COLOR_NAMES[hex as keyof typeof BOT_AVATAR_COLOR_NAMES];
-              const label = nameKey ? tr(nameKey, hex) : hex;
-              return (
-                <button
-                  key={hex}
-                  type="button"
-                  className="dsh-bots-swatch"
-                  data-selected={normalizedColor === hex ? 'true' : 'false'}
-                  style={{ backgroundColor: hex }}
-                  title={label}
-                  aria-label={label}
-                  onClick={() => handleColorPick(hex)}
-                />
-              );
-            })}
-            <label
-              className="dsh-bots-swatch dsh-bots-swatch-wheel"
-              title={tr('bots.new.pictureColorCustom', 'Custom color')}
-            >
-              <input
-                type="color"
-                value={normalizedColor}
-                onChange={(e) => handleColorPick(e.target.value)}
-                style={{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
-                aria-label={tr('bots.new.pictureColorCustom', 'Custom color')}
-              />
-            </label>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              type="text"
-              className="dsh-bots-input"
-              value={customHexText}
-              onChange={(e) => {
-                setCustomHexText(e.target.value);
-                const valid = normalizeHexColor(e.target.value);
-                if (valid) {
-                  handleColorPick(valid);
-                }
-              }}
-              placeholder="#b3dbf4"
-              maxLength={7}
-              style={{ height: 28, fontSize: 12, lineHeight: '18px', width: 96, padding: '2px 8px', fontFamily: 'var(--ds-font-family-code)' }}
-            />
-          </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', fontWeight: 500 }}>
+          {tr('bots.new.pictureColor', 'Background color')}
         </div>
-      )}
+        <div className="dsh-bots-swatches">
+          {BOT_AVATAR_COLORS.map((color) => {
+            const nameKey = BOT_AVATAR_COLOR_NAMES[color as keyof typeof BOT_AVATAR_COLOR_NAMES];
+            const isSwatchTransparent = isTransparentBotAvatarColor(color);
+            const label = nameKey
+              ? tr(nameKey, isSwatchTransparent ? transparentLabel : color)
+              : color;
+            const selected = normalizedColor === color;
+            return (
+              <button
+                key={color}
+                type="button"
+                className={isSwatchTransparent ? 'dsh-bots-swatch dsh-bots-swatch-transparent' : 'dsh-bots-swatch'}
+                data-swatch={color}
+                data-selected={selected ? 'true' : 'false'}
+                aria-pressed={selected}
+                style={isSwatchTransparent ? undefined : { backgroundColor: color }}
+                title={label}
+                aria-label={label}
+                onClick={() => handleColorPick(color)}
+              />
+            );
+          })}
+          <label
+            className="dsh-bots-swatch dsh-bots-swatch-wheel"
+            title={tr('bots.new.pictureColorCustom', 'Custom color')}
+          >
+            <input
+              type="color"
+              value={isTransparent ? lastHexColorRef.current : normalizedColor}
+              onChange={(e) => handleColorPick(e.target.value)}
+              style={{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+              aria-label={tr('bots.new.pictureColorCustom', 'Custom color')}
+            />
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="text"
+            className="dsh-bots-input"
+            value={customHexText}
+            onChange={(e) => {
+              setCustomHexText(e.target.value);
+              const valid = normalizeBotAvatarColor(e.target.value);
+              if (valid) {
+                handleColorPick(valid);
+              }
+            }}
+            placeholder={isTransparent ? transparentLabel : '#b3dbf4'}
+            aria-label={tr('bots.new.pictureColorCustom', 'Custom color')}
+            maxLength={16}
+            style={{ height: 28, fontSize: 12, lineHeight: '18px', width: 96, padding: '2px 8px', fontFamily: 'var(--ds-font-family-code)' }}
+          />
+        </div>
+      </div>
 
       {showUpload && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -560,7 +764,10 @@ export function AvatarPicker({
             className="dsh-bots-link-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
             onClick={() => {
-              onChange(undoSnapshot);
+              setPendingUpload(false);
+              setLocalUpload(undoSnapshot.localUpload);
+              setPersistedUpload(undoSnapshot.persistedUpload);
+              onChange(undoSnapshot.value);
               setUndoSnapshot(null);
             }}
           >
@@ -585,8 +792,8 @@ export interface AvatarPickerPopoverProps extends AvatarPickerProps {
   onClose: () => void;
 }
 
-/** 12 swatches × 22px + 11 × 5px gap fit one row inside 352 − 2×12px padding − 2px border. */
-const AVATAR_PICKER_POPOVER_WIDTH = 352;
+/** 13 swatches × 22px + 12 × 5px gap fit one row inside 376 − 2×12px padding − 2px border. */
+const AVATAR_PICKER_POPOVER_WIDTH = 376;
 
 export function AvatarPickerPopover({
   open,

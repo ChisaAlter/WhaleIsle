@@ -14,8 +14,12 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { mascotAvatar, randomMascotAvatar } from '../../shared/bot-avatar.js';
-import { DEFAULT_BOT_AVATAR_COLOR, normalizeHexColor } from '../../shared/bot-avatar-color.js';
+import { mascotAvatar, randomMascotAvatar, recommendedMascotColor } from '../../shared/bot-avatar.js';
+import {
+  DEFAULT_BOT_AVATAR_COLOR,
+  isTransparentBotAvatarColor,
+  normalizeBotAvatarColor,
+} from '../../shared/bot-avatar-color.js';
 import { BOT_CONNECTOR_NAMES, botTemplate, localizeTemplate } from '../../shared/bot-templates.js';
 import {
   botsStore,
@@ -108,6 +112,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   const chipsBarRef = useRef<HTMLDivElement | null>(null);
   const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const colorEditedRef = useRef(false);
 
   useEffect(() => {
     if (!activeChipPopover) {
@@ -134,14 +139,18 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     setIncludeEvents(true);
 
     const hasPrefilledName = Boolean(template || draft?.initialName || draft?.takeOverWorkspace?.name);
+    const initialColor = normalizeBotAvatarColor(draft?.initialAvatarColor);
+    colorEditedRef.current = Boolean(initialColor);
 
     if (template) {
+      const nextAvatar = template.mascot ? mascotAvatar(template.mascot) : randomMascotAvatar();
       setName(draft?.initialName ?? template.name ?? '');
       setPurpose(draft?.initialPurpose ?? template.line ?? '');
       setAvatarVal({
-        avatar: template.mascot ? mascotAvatar(template.mascot) : randomMascotAvatar(),
-        avatarColor: normalizeHexColor(draft?.initialAvatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+        avatar: nextAvatar,
+        avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
         uploadedImage: null,
+        explicitColor: Boolean(initialColor),
       });
       setSelectedSkills([...(template.skills ?? [])]);
       setWatches(template.watches ?? '');
@@ -149,24 +158,28 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
       setReports(template.reports ?? '');
     } else if (draft?.takeOverWorkspace) {
       const tw = draft.takeOverWorkspace;
+      const nextAvatar = draft.initialAvatar ?? randomMascotAvatar();
       setName(draft.initialName ?? tw.name ?? '');
       setPurpose(draft.initialPurpose ?? '');
       setAvatarVal({
-        avatar: draft.initialAvatar ?? randomMascotAvatar(),
-        avatarColor: normalizeHexColor(draft.initialAvatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+        avatar: nextAvatar,
+        avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
         uploadedImage: null,
+        explicitColor: Boolean(initialColor),
       });
       setSelectedSkills([]);
       setWatches(tw.watches ?? '');
       setDoesText(tw.does ?? '');
       setReports(tw.reports ?? '');
     } else {
+      const nextAvatar = draft?.initialAvatar ?? randomMascotAvatar();
       setName(draft?.initialName ?? '');
       setPurpose(draft?.initialPurpose ?? '');
       setAvatarVal({
-        avatar: draft?.initialAvatar ?? randomMascotAvatar(),
-        avatarColor: normalizeHexColor(draft?.initialAvatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+        avatar: nextAvatar,
+        avatarColor: initialColor ?? recommendedMascotColor(nextAvatar) ?? DEFAULT_BOT_AVATAR_COLOR,
         uploadedImage: null,
+        explicitColor: Boolean(initialColor),
       });
       setSelectedSkills([]);
       setWatches('');
@@ -243,14 +256,27 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     setError(null);
     try {
       const cropped = await cropImageFileToPng512(file);
-      setAvatarVal({
+      setAvatarVal((prev) => ({
         avatar: 'upload:pending',
-        avatarColor: cropped.edgeColor,
+        avatarColor: colorEditedRef.current ? prev.avatarColor : cropped.edgeColor,
         uploadedImage: cropped,
-      });
+        explicitColor: colorEditedRef.current,
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }, []);
+
+  const handleAvatarPickerChange = useCallback((next: AvatarPickerValue) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
+    setAvatarVal((prev) => {
+      if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
+        colorEditedRef.current = true;
+      }
+      return next;
+    });
   }, []);
 
   const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
@@ -392,8 +418,8 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     return null;
   }
 
-  const bandColor = avatarVal.uploadedImage && avatarVal.avatar.startsWith('upload:')
-    ? avatarVal.uploadedImage.edgeColor
+  const bandColor = isTransparentBotAvatarColor(avatarVal.avatarColor)
+    ? 'transparent'
     : avatarVal.avatarColor;
   const isTakeOver = Boolean(draft?.takeOverWorkspace);
 
@@ -826,8 +852,9 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
           anchorRect={pickerAnchor}
           triggerRef={avatarBtnRef}
           onClose={() => setPickerAnchor(null)}
+          hasExplicitColor={colorEditedRef.current}
           value={avatarVal}
-          onChange={setAvatarVal}
+          onChange={handleAvatarPickerChange}
         />
       </div>
     </div>,

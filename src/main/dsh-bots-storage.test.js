@@ -1885,3 +1885,35 @@ test('items-store.js: answers/questionEventId alignment, ownerComment short-wind
     assert.ok(openOnly.some((g) => g.itemUids.includes(orcaItem.item.uid)), 'closed owed rows must not starve open items beyond LIMIT 50');
   });
 });
+
+test('db.js & fs-home.js: avatarColor transparent persists in SQLite and bot.json', async () => {
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const { botsRootDir, writeManagedFiles } = await importBotsModule('fs-home.js');
+
+  await withTempWorkspace('avatar-transparent', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+
+    const created = handle.bots.insertBot({
+      id: 'b-trans-1',
+      folder: 'trans-bot',
+      name: 'TransBot',
+      avatar: 'upload:0123456789abcdef',
+      avatarColor: 'transparent',
+    }, 1000);
+    assert.equal(created.avatarColor, 'transparent');
+    assert.equal(handle.bots.getBot('b-trans-1').avatarColor, 'transparent');
+
+    const homeDir = path.join(botsRootDir(root), 'trans-bot');
+    writeManagedFiles(homeDir, created);
+    const botJson = JSON.parse(fs.readFileSync(path.join(homeDir, 'bot.json'), 'utf8'));
+    assert.equal(botJson.avatar, 'upload:0123456789abcdef');
+    assert.equal(botJson.avatarColor, 'transparent');
+
+    const updated = handle.bots.updateBot('b-trans-1', { avatarColor: '#f4c4cf' }, 2000);
+    assert.equal(updated.avatarColor, '#f4c4cf');
+    writeManagedFiles(homeDir, updated);
+    const botJsonAfter = JSON.parse(fs.readFileSync(path.join(homeDir, 'bot.json'), 'utf8'));
+    assert.equal(botJsonAfter.avatarColor, '#f4c4cf');
+  });
+});

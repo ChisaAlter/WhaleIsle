@@ -1,6 +1,6 @@
 // Core bot domain constants, validation, normalization, dot states, and global settings.
 
-import { normalizeHexColor } from './bot-avatar-color.js';
+import { normalizeBotAvatarColor } from './bot-avatar-color.js';
 
 export * from './bot-rpc-methods.js';
 
@@ -423,7 +423,7 @@ function normalizeConnectorFields(raw) {
 
 function normalizeDisplayOptionals(raw) {
   const out = {};
-  const avatarColor = raw.avatarColor === null ? null : normalizeHexColor(raw.avatarColor);
+  const avatarColor = raw.avatarColor === null ? null : normalizeBotAvatarColor(raw.avatarColor);
   if (avatarColor !== null || raw.avatarColor === null) {
     out.avatarColor = avatarColor;
   }

@@ -17,7 +17,7 @@ import {
   localizeTemplate,
   mascotAvatar,
   newBotName,
-  normalizeHexColor,
+  normalizeBotAvatarColor,
   patchLookAround,
   patchTidyUp,
   planBotFromPackage,
@@ -461,7 +461,7 @@ export function buildNewBotRecord({ params, name, folder, template, existing, no
     folder,
     agent: 'deepseek-harness',
     avatar: pickInitialAvatar(params, template, existing),
-    avatarColor: params.avatarColor ? normalizeHexColor(params.avatarColor) : null,
+    avatarColor: params.avatarColor ? normalizeBotAvatarColor(params.avatarColor) : null,
     paused: false,
     ...(params.launch ? { launch: params.launch } : {}),
     ...(params.permissionMode ? { permissionMode: params.permissionMode } : {}),
@@ -508,7 +508,7 @@ export function applyBotFieldPatch(existing, patch, now) {
     if (Object.prototype.hasOwnProperty.call(patch, key)) next[key] = patch[key];
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'avatarColor')) {
-    next.avatarColor = patch.avatarColor ? normalizeHexColor(patch.avatarColor) : null;
+    next.avatarColor = patch.avatarColor ? normalizeBotAvatarColor(patch.avatarColor) : null;
   }
   if (patch.notifications && typeof patch.notifications === 'object') {
     next.notifications = { ...DEFAULT_BOT_NOTIFICATIONS, ...(existing.notifications ?? {}), ...patch.notifications };

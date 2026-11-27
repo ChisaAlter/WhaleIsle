@@ -1,10 +1,10 @@
 // Import existing bots from local Orca / OpenClaw / Hermes / legacy Whale folders.
 // Enhanced with scanBotText security review, expandable SOUL/Skill preview, and re-review on content change.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { randomMascotAvatar } from '../../shared/bot-avatar.js';
-import { DEFAULT_BOT_AVATAR_COLOR, normalizeHexColor } from '../../shared/bot-avatar-color.js';
+import { DEFAULT_BOT_AVATAR_COLOR, normalizeBotAvatarColor } from '../../shared/bot-avatar-color.js';
 import { botsStore, useBotsLocale } from '../store/bots-store';
 import {
   RPC_METHODS,
@@ -73,11 +73,24 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
   }));
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null);
   const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
+  const colorEditedRef = useRef(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
   const [reviewedDigestBySource, setReviewedDigestBySource] = useState<Record<string, string>>({});
   const [changedAfterReview, setChangedAfterReview] = useState(false);
+
+  const handleAvatarPickerChange = useCallback((next: AvatarPickerValue) => {
+    if (next.explicitColor) {
+      colorEditedRef.current = true;
+    }
+    setAvatarVal((prev) => {
+      if (next.avatar === prev.avatar && next.avatarColor !== prev.avatarColor) {
+        colorEditedRef.current = true;
+      }
+      return next;
+    });
+  }, []);
 
   const loadSources = async () => {
     setLoading(true);
@@ -91,11 +104,14 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
       if (first) {
         setSelectedId(first.id);
         if (!keep) {
+          const initialColor = normalizeBotAvatarColor(first.avatarColor);
+          colorEditedRef.current = Boolean(initialColor);
           setTargetName(first.name);
           setAvatarVal({
             avatar: first.avatar || randomMascotAvatar(),
-            avatarColor: normalizeHexColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+            avatarColor: initialColor ?? DEFAULT_BOT_AVATAR_COLOR,
             uploadedImage: null,
+            explicitColor: Boolean(initialColor),
           });
         }
       }
@@ -207,13 +223,16 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
   );
 
   const handleSelectSource = (src: ExtendedImportSource) => {
+    const initialColor = normalizeBotAvatarColor(src.avatarColor);
+    colorEditedRef.current = Boolean(initialColor);
     setSelectedId(src.id);
     setTargetName(src.name);
     setExpandedFiles({});
     setAvatarVal({
       avatar: src.avatar || randomMascotAvatar(),
-      avatarColor: normalizeHexColor(src.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+      avatarColor: initialColor ?? DEFAULT_BOT_AVATAR_COLOR,
       uploadedImage: null,
+      explicitColor: Boolean(initialColor),
     });
   };
 
@@ -237,6 +256,9 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
           await callBotRpc(RPC_METHODS.AVATAR_UPLOAD, {
             botId: created.id,
             base64Png: avatarVal.uploadedImage.base64Png,
+          });
+          await botsStore.updateBot(created.id, {
+            avatarColor: avatarVal.avatarColor,
           });
           invalidateUploadedAvatarCache(created.id);
         } else {
@@ -520,8 +542,9 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
           anchorRect={pickerAnchor}
           triggerRef={avatarBtnRef}
           onClose={() => setPickerAnchor(null)}
+          hasExplicitColor={colorEditedRef.current}
           value={avatarVal}
-          onChange={setAvatarVal}
+          onChange={handleAvatarPickerChange}
         />
       </div>
     </div>,

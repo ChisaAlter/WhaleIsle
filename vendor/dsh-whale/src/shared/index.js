@@ -6,6 +6,9 @@ export * from './bot-avatar-color.js';
 export {
   WHALE_BOT_MASCOT_IDS,
   WHALE_MASCOT_LABELS,
+  WHALE_MASCOT_LABELS_EN,
+  WHALE_MASCOT_RECOMMENDED_COLORS,
+  WHALE_MASCOT_DESCRIPTIONS,
   EMPTY_CARD_MASCOT_IDS,
   BOT_MASCOT_IDS,
   RETIRED_BOT_MASCOT_IDS,
@@ -28,6 +31,7 @@ export {
   parseBotAvatar,
   pickRandomMascot,
   randomMascotAvatar,
+  recommendedMascotColor,
   isSettableBotAvatar,
   botInitial,
   botFallback,

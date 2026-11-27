@@ -3,7 +3,7 @@
 // filter toggle, inline settings gear button, and '...' overflow menu.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_BOT_AVATAR_COLOR } from '../../shared/bot-avatar-color.js';
+import { DEFAULT_BOT_AVATAR_COLOR, normalizeBotAvatarColor } from '../../shared/bot-avatar-color.js';
 import { botLookAround, nextLookAroundAt } from '../../shared/bot-look-around.js';
 import { TIDY_UP_HOURS, botTidyUp } from '../../shared/bot-tidy-up.js';
 import { botsStore, useBotsLocale, useBotsState, useNow } from '../store/bots-store';
@@ -190,13 +190,17 @@ export function BotPanelHeader({
     return candidates.length > 0 ? Math.min(...candidates) : null;
   }, [bot, earliestAutoTs, nextRunAt, now]);
 
+  const persistedColor = normalizeBotAvatarColor(bot.avatarColor);
   const pickerValue: AvatarPickerValue = {
     avatar: bot.avatar || 'mascot:W1',
-    avatarColor: bot.avatarColor || DEFAULT_BOT_AVATAR_COLOR,
+    avatarColor: persistedColor ?? DEFAULT_BOT_AVATAR_COLOR,
   };
 
   const handleAvatarChange = (next: AvatarPickerValue) => {
     if (next.avatar === 'upload:pending') {
+      if (next.avatarColor !== persistedColor) {
+        void botsStore.updateBot(bot.id, { avatarColor: next.avatarColor });
+      }
       return;
     }
     void botsStore.updateBot(bot.id, {
@@ -205,13 +209,14 @@ export function BotPanelHeader({
     });
   };
 
-  const handleUploadCommit = async (image: CroppedAvatarImage) => {
-    await callBotRpc(RPC_METHODS.AVATAR_UPLOAD, {
+  const handleUploadCommit = async (image: CroppedAvatarImage): Promise<string | undefined> => {
+    const res = await callBotRpc<{ avatar?: string }>(RPC_METHODS.AVATAR_UPLOAD, {
       botId: bot.id,
       base64Png: image.base64Png,
     });
     invalidateUploadedAvatarCache(bot.id);
     await botsStore.refresh();
+    return typeof res?.avatar === 'string' && res.avatar.startsWith('upload:') ? res.avatar : undefined;
   };
 
   const handleCopyPath = async () => {
@@ -390,6 +395,8 @@ export function BotPanelHeader({
         anchorRect={pickerRect}
         triggerRef={avatarBtnRef}
         onClose={() => setPickerRect(null)}
+        botId={bot.id}
+        hasExplicitColor={Boolean(persistedColor)}
         value={pickerValue}
         onChange={handleAvatarChange}
         onUploadCommit={handleUploadCommit}

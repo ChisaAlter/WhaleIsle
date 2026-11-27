@@ -14,7 +14,7 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { EMPTY_CARD_MASCOT_IDS, mascotAvatar } from '../../shared/bot-avatar.js';
+import { EMPTY_CARD_MASCOT_IDS, mascotAvatar, recommendedMascotColor } from '../../shared/bot-avatar.js';
 import {
   BOT_SIDEBAR_SORT_CHOICES,
   SIDEBAR_BOTS_MIN_HEIGHT,
@@ -336,7 +336,12 @@ function EmptyBotsCard() {
       <div className="dsh-bots-empty-stack">
         {EMPTY_CARD_MASCOT_IDS.map((mascotId) => (
           <span key={mascotId} className="dsh-bots-empty-stack-item">
-            <BotAvatar avatar={mascotAvatar(mascotId)} size={28} radius={8} />
+            <BotAvatar
+              avatar={mascotAvatar(mascotId)}
+              avatarColor={recommendedMascotColor(mascotId)}
+              size={28}
+              radius={8}
+            />
           </span>
         ))}
       </div>

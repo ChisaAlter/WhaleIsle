@@ -478,8 +478,9 @@
   margin: 0 calc(var(--dsh-sidebar-paint-inset) + 1px) 6px;
 }
 
-/* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
-   corners); collapsed it renders as the rail's plain icon control. */
+/* New Session: 38px bar, 12px radius (figma 133:7634 geometry), matching the
+   composer card's translucent frosted surface, inset rim, and hairline stroke;
+   collapsed it renders as the rail's plain icon control. */
 .newSession {
   container-type: inline-size;
   position: relative;
@@ -493,9 +494,15 @@
   padding: 8px 12px;
   margin: 0;
   box-sizing: border-box;
-  border: 0.5px solid var(--dsw-alias-border-l3);
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md);
-  background: var(--dsw-alias-button-elevated-fill);
+  /* Circular corners preserve the inset rim under the global corner sheet. */
+  corner-shape: round;
+  background: var(--dsw-specific-input-major);
+  box-shadow:
+    inset 0 0 12px 1px rgba(255, 255, 255, 0.25),
+    var(--dsw-elevation-stroke);
   color: var(--dsw-alias-label-primary);
   font-size: 14px;
   font-weight: 500;
@@ -504,15 +511,46 @@
   overflow: hidden;
 }
 
+/* Keep backdrop-filter on a background pseudo-element so the button itself
+   never creates a backdrop root and can layer translucent hover/active washes
+   above the frosted fill without flashing opaque on wallpapers. */
+.newSession::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  corner-shape: inherit;
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
+}
+
 @media (hover: hover) {
   .newSession:hover {
-    background: var(--dsw-alias-button-floating-hover);
+    --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+  }
+
+  .newSession:hover::before {
+    background: var(--dsw-alias-interactive-bg-hover);
   }
 }
 
-/* macOS: the themed elevated fill reads as a foreign slab on the vibrancy
-   sidebar; a white wash sits in the glass like native macOS sidebar
-   controls; the glass tokens lower its alpha in dark mode. */
+.newSession:active {
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+}
+
+.newSession:active::before {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.newSession:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
+}
+
+/* macOS: the themed surface reads as a foreign slab on the vibrancy sidebar;
+   a white wash sits in the glass like native macOS sidebar controls; the glass
+   tokens lower its alpha in dark mode. */
 :global([data-platform='darwin']) :where(.root:not([role='dialog'])) .newSession {
   background: var(--dsw-specific-sidebar-glass-fill);
 }
@@ -521,6 +559,42 @@
   :global([data-platform='darwin']) :where(.root:not([role='dialog'])) .newSession:hover {
     background: var(--dsw-specific-sidebar-glass-hover);
   }
+
+  :global([data-platform='darwin']) :where(.root:not([role='dialog'])) .newSession:hover:not(:active)::before {
+    background: transparent;
+  }
+}
+
+/* Codex renders New Session as a flat 32px list row (skins.css); drop the
+   frosted rim and backdrop pseudo-element so the flat skin stays flush. */
+:global(html[data-dsh-skin='codex']) .newSession {
+  box-shadow: none;
+}
+
+:global(html[data-dsh-skin='codex']) .newSession::before {
+  display: none;
+}
+
+/* Claude renders flat warm-paper chrome without glass blur or glowing rims
+   (skins.css); keep only the hairline stroke and opaque warm-paper hover/active
+   tints while hiding the backdrop pseudo-element. */
+:global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession {
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-stroke);
+}
+
+:global(html[data-dsh-skin='claude']) .newSession::before {
+  display: none;
+}
+
+@media (hover: hover) {
+  :global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession:hover {
+    background: color-mix(in srgb, var(--dsw-specific-input-major), var(--dsw-alias-label-primary) 5%);
+  }
+}
+
+:global(html[data-dsh-skin='claude']) .root:not(.collapsed) .newSession:active {
+  background: color-mix(in srgb, var(--dsw-specific-input-major), var(--dsw-alias-label-primary) 8%);
 }
 
 /* The rail stacks the occupant's controls under the New session icon. */
@@ -538,14 +612,23 @@
   padding: 0;
   margin: 0;
   gap: 0;
-  border-color: transparent;
+  border: 0;
   background: transparent;
+  box-shadow: none;
+}
+
+.collapsed .newSession::before {
+  display: none;
 }
 
 @media (hover: hover) {
   .collapsed .newSession:hover {
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
+}
+
+.collapsed .newSession:active {
+  background-color: var(--dsw-alias-interactive-bg-active);
 }
 
 :global([data-platform='darwin']) :where(.root:not([role='dialog'])).collapsed .newSession {
@@ -630,7 +713,12 @@
   corner-shape: round;
 }
 
-.newSessionLabelMask { flex: 1; min-width: 0; }
+.newSessionLabelMask {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+}
 
 .newSession:focus-visible .newSessionLabelMask:has(+ .newSessionShortcut) {
   overflow: hidden;
@@ -647,6 +735,8 @@
 .newSessionContent > svg { flex: none; }
 
 .newSessionShortcut {
+  position: relative;
+  z-index: 1;
   opacity: 0;
   display: inline-flex;
   flex: none;
