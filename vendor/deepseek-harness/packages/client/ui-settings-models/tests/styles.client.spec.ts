@@ -66,6 +66,7 @@ describe('ModelsSection theme styles', () => {
     for (const selector of ['.addCard .editor', '.setupCard .editor']) {
       expect(block(selector)).toMatchObject({ background: 'none', padding: '0' })
     }
+    expect(block('.rowCard .editor')).toMatchObject({ background: 'none', padding: '14px 0 0' })
   })
 
   it('ships no native select controls in the settings models UI', () => {

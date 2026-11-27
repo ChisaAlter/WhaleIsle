@@ -77,11 +77,11 @@
 
 .rows {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -89,7 +89,7 @@
   border: 0.5px solid var(--dsw-alias-settings-card-stroke);
   background: var(--dsw-alias-settings-card-fill);
   border-radius: var(--dsw-radius-md);
-  padding: 12px 16px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -98,10 +98,18 @@
 
 .rowHead {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 12px;
   min-width: 0;
+}
+
+.rowTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .rowIdentity {
@@ -110,7 +118,20 @@
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  flex: 1;
+}
+
+.rowMeta {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.rowErrorBanner {
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-state-error-primary);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
 }
 
 .rowName {
@@ -203,6 +224,14 @@
   padding: 0;
 }
 
+/* Flatten inline editors inside provider rows so rowCard remains the single card boundary. */
+.rowCard .editor {
+  background: none;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 0;
+  padding: 14px 0 0;
+}
+
 .editorHeader {
   display: flex;
   align-items: baseline;
@@ -291,8 +320,46 @@
 }
 
 .addButton {
-  flex: 1;
+  flex: none;
   min-width: 0;
+}
+
+.fieldGrid2,
+.identityGrid,
+.endpointProtocolGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+.keyActionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.keyInputGrow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.advancedSubgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  min-width: 0;
+}
+
+.advancedSubgroupTitle {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .addModes {
@@ -777,10 +844,19 @@
 }
 
 @container (max-width: 480px) {
-  .modelAdvanced {
+  .modelAdvanced,
+  .fieldGrid2,
+  .identityGrid,
+  .endpointProtocolGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .keyActionRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rowTitleBlock,
   .rowIdentity {
     flex-basis: 100%;
   }
@@ -912,10 +988,64 @@
   min-width: 0;
 }
 
+.sectionHeaderBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+
 .sectionHeader {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.headerSummary {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.summaryPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.summaryPillReady {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.summaryPillIssue {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  flex: none;
 }
 
 @media (pointer: coarse) {

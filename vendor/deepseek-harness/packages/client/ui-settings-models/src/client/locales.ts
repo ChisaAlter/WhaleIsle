@@ -255,6 +255,17 @@ export const en = {
   providerErrorModelCompatApi: 'Provider "{provider}" model "{model}" sets compatibility option "{field}", which protocol "{api}" does not support.',
   providerErrorRouteCompatApi: 'Provider "{provider}" sets compatibility option "{field}", but none of its models use a protocol that supports it.',
   providerErrorReasoningEfforts: 'Provider "{provider}" model "{model}" has an invalid reasoning effort configuration.',
+  providersCount: '{count} configured',
+  providersReadyCount: '{count} ready',
+  providersIssueCount: '{count} need attention',
+  summaryMissingBaseUrl: 'Missing Base URL',
+  summaryModelCount: '{count} models',
+  summaryDefaultCatalog: 'Built-in catalog',
+  summaryEnvAuth: 'Env var',
+  summaryAccountAuth: 'Signed in',
+  summaryApiKeyAuth: 'API key',
+  summaryNoKey: 'No key',
+  advancedOptionsTitle: 'Advanced',
 }
 
 /** The settings.models namespace key union. */
@@ -516,6 +527,17 @@ export const zh: { [Key in keyof typeof en]: string } = {
   providerErrorModelCompatApi: '提供商“{provider}”的模型“{model}”设置了兼容性参数“{field}”，但协议“{api}”不支持该参数。',
   providerErrorRouteCompatApi: '提供商“{provider}”设置了兼容性参数“{field}”，但该路由下的模型协议均不支持此参数。',
   providerErrorReasoningEfforts: '提供商“{provider}”的模型“{model}”思考强度（reasoningEfforts）配置无效。',
+  providersCount: '已配置 {count} 个',
+  providersReadyCount: '{count} 个可用',
+  providersIssueCount: '{count} 项待处理',
+  summaryMissingBaseUrl: '缺少 API 地址',
+  summaryModelCount: '{count} 个模型',
+  summaryDefaultCatalog: '内置目录',
+  summaryEnvAuth: '环境变量',
+  summaryAccountAuth: '已登录',
+  summaryApiKeyAuth: 'API 密钥',
+  summaryNoKey: '未设密钥',
+  advancedOptionsTitle: '高级配置',
 }
 
 /** Japanese copy, checked against the English keys. */
