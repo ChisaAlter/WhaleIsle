@@ -651,15 +651,15 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
         h(LeadingComp, { sessionId: 'ordinary-session-1' }),
         h(ActionsComp, { sessionId: 'ordinary-session-1' }),
       ),
-      h('section', { id: 'paused-frame' },
-        h(FrameComp, {
-          useSessions: (sel) => sel({ byId: { 'sess-paused-home': { id: 'sess-paused-home', retainedBy: { mainView: 1 } } } }),
-        }, h('span', { className: 'inner-hero' }, 'PausedBody')),
-      ),
       h('section', { id: 'normal-frame' },
         h(FrameComp, {
           useSessions: (sel) => sel({ byId: { 'ordinary-session-1': { id: 'ordinary-session-1', retainedBy: { mainView: 1 } } } }),
         }, h('span', { className: 'inner-hero' }, 'NormalBody')),
+      ),
+      h('section', { id: 'paused-frame' },
+        h(FrameComp, {
+          useSessions: (sel) => sel({ byId: { 'sess-paused-home': { id: 'sess-paused-home', retainedBy: { mainView: 1 } } } }),
+        }, h('span', { className: 'inner-hero' }, 'PausedBody')),
       ),
       h('section', { id: 'global-settings' }, h(SettingsComp, {})),
       h(OverlayComp, {}),
@@ -2039,4 +2039,675 @@ domTest('Right-panel actions: suggestions start/dismiss, lookNow, and automation
   assert.equal(lookCallsAfter.length, prevLookCount + 1);
   assert.equal(lookCallsAfter.at(-1).params.background, true);
   assert.ok(getToasts().some((toast) => toast.tone === 'error' && /巡视跳过：超出预算限制/.test(toast.text)));
+});
+
+domTest('sidebar active highlight clears when switching to ordinary session, blank new session, or non-bot global panel', async (t) => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
+    url: 'http://localhost:3124/',
+    pretendToBeVisual: true,
+  });
+
+  const savedGlobals = {
+    window: Object.getOwnPropertyDescriptor(globalThis, 'window'),
+    document: Object.getOwnPropertyDescriptor(globalThis, 'document'),
+    HTMLElement: Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement'),
+    Node: Object.getOwnPropertyDescriptor(globalThis, 'Node'),
+    CustomEvent: Object.getOwnPropertyDescriptor(globalThis, 'CustomEvent'),
+    Event: Object.getOwnPropertyDescriptor(globalThis, 'Event'),
+  };
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    CustomEvent: dom.window.CustomEvent,
+    Event: dom.window.Event,
+  });
+
+  const eventSources = [];
+  const rpcCalls = [];
+  const FakeEventSource = createFakeEventSourceClass(eventSources);
+  const fixtures = defaultBotFixtures();
+  const fetchImpl = makeRpcFetch((method) => {
+    if (method === 'bots.list') return fixtures;
+    if (method === 'bots.items.owner.list') return { items: [], counts: { planned: 0, working: 0, needs_you: 0, done: 0, canceled: 0 }, total: 0 };
+    return { ok: true };
+  }, rpcCalls);
+
+  let loadedSpec = null;
+  dom.window.__ModuleLoader__ = { load(entry) { loadedSpec = entry; } };
+  dom.window.EventSource = FakeEventSource;
+  dom.window.fetch = fetchImpl;
+
+  vm.runInNewContext(
+    fs.readFileSync(CLIENT_FILE, 'utf8'),
+    {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      EventSource: FakeEventSource,
+      fetch: fetchImpl,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      AbortController,
+      URL,
+      URLSearchParams,
+      CustomEvent: dom.window.CustomEvent,
+      console,
+    },
+    { filename: CLIENT_FILE },
+  );
+
+  const pluginExports = loadedSpec.factory((id) => {
+    if (id === 'react') return React;
+    if (id === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (id === 'react-dom') return ReactDOM;
+    if (id === 'react-dom/client') return { createRoot };
+    return {};
+  });
+
+  let sessionsState = { byId: { 'sess-whale-home': { id: 'sess-whale-home', retainedBy: { mainView: 1 } } } };
+  const sessionListeners = new Set();
+  let panelState = { activePanelId: null };
+  const panelListeners = new Set();
+  const disposers = [];
+  const declared = new Set(ALL_SLOT_SPECS);
+  const registrations = [];
+  const ctx = {
+    locale: { register: () => () => {}, getLocale: () => ({ active: 'zh-CN' }), subscribe: () => () => {} },
+    layout: {
+      selectPanel: (id) => {
+        panelState = { activePanelId: id };
+        for (const l of panelListeners) l();
+      },
+      panelInfo: {
+        getSnapshot: () => panelState,
+        subscribe: (l) => {
+          panelListeners.add(l);
+          return () => panelListeners.delete(l);
+        },
+      },
+    },
+    settingsNavigation: { open: () => {}, close: () => {} },
+    sessions: {
+      list: {
+        getSnapshot: () => sessionsState,
+        subscribe: (l) => {
+          sessionListeners.add(l);
+          return () => sessionListeners.delete(l);
+        },
+      },
+    },
+    uiWorkspace: {
+      openSession: async (id) => {
+        sessionsState = { byId: { [id]: { id, retainedBy: { mainView: 1 } } } };
+        for (const l of sessionListeners) l();
+      },
+    },
+    slots: {
+      spec: (n) => (declared.has(n) ? {} : undefined),
+      subscribe: () => () => {},
+      inject: (_n, fn) => fn(),
+      register: (decl, component) => {
+        registrations.push({ decl, component });
+        return () => {};
+      },
+    },
+    inject: (_d, cb) => {
+      cb(ctx);
+      return () => {};
+    },
+    effect: (fn) => {
+      const d = fn();
+      if (typeof d === 'function') disposers.push(d);
+      return () => d?.();
+    },
+  };
+
+  pluginExports.apply(ctx);
+  const SidebarComp = registrations.find((r) => r.decl.name === 'sidebar.sections.before')?.component;
+  const root = createRoot(dom.window.document.querySelector('main'));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    for (const d of disposers.splice(0).reverse()) d?.();
+    for (const es of eventSources) if (!es.closed) es.close();
+    dom.window.close();
+    for (const [k, desc] of Object.entries(savedGlobals)) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await new Promise((resolve) => setImmediate(resolve)); });
+    }
+  };
+
+  await act(async () => { root.render(h(SidebarComp, { wide: true })); });
+  await flush();
+
+  const whaleCard = () => [...dom.window.document.querySelectorAll('.dsh-bots-card-wrap')]
+    .find((el) => el.querySelector('.dsh-bots-card-name')?.textContent === '鲸鱼娘')
+    ?.querySelector('.dsh-bots-card');
+
+  assert.equal(whaleCard().getAttribute('data-active'), 'true', 'bot active when mainView holds bot home session');
+
+  // Switch to an ordinary workspace session: active highlight must clear immediately.
+  await act(async () => {
+    sessionsState = { byId: { 'workspace-sess-1': { id: 'workspace-sess-1', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'false', 'ordinary workspace session clears bot active highlight');
+  assert.equal(whaleCard().getAttribute('data-has-active-child'), 'false');
+
+  // Switch to bot worker session: parent card keeps data-has-active-child="true".
+  await act(async () => {
+    sessionsState = { byId: { 'sess-w-side-1': { id: 'sess-w-side-1', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-has-active-child'), 'true');
+
+  // Switch to blank / no main session (new session): active highlights must clear.
+  await act(async () => {
+    sessionsState = { byId: {} };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'false');
+  assert.equal(whaleCard().getAttribute('data-has-active-child'), 'false');
+
+  // Select bot again, then open non-bot global panel: active highlight clears.
+  await act(async () => {
+    sessionsState = { byId: { 'sess-whale-home': { id: 'sess-whale-home', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'true');
+
+  await act(async () => { ctx.layout.selectPanel('skills'); });
+  await flush();
+  assert.equal(whaleCard().getAttribute('data-active'), 'false', 'non-bot panel clears bot active highlight');
+});
+
+domTest('BotSidebarCard clears failed dot and upNext pill on active-card click, pill click, context menu mark-read, and external session switch', async (t) => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
+    url: 'http://localhost:3125/',
+    pretendToBeVisual: true,
+  });
+  if (!dom.window.PointerEvent) {
+    dom.window.PointerEvent = dom.window.MouseEvent;
+  }
+
+  const globalValues = {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    localStorage: dom.window.localStorage,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    CustomEvent: dom.window.CustomEvent,
+    Event: dom.window.Event,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  const savedGlobals = Object.fromEntries(
+    Object.keys(globalValues).map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]),
+  );
+  for (const [k, v] of Object.entries(globalValues)) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value: v });
+  }
+
+  const eventSources = [];
+  const rpcCalls = [];
+  const FakeEventSource = createFakeEventSourceClass(eventSources);
+  const fixtures = {
+    botsEnabled: true,
+    skipNewHomeChatConfirm: false,
+    hideBotCreatedWorkspaces: true,
+    sidebarProjectsFirst: false,
+    petBotId: 'bot-whale',
+    bots: [
+      {
+        id: 'bot-whale',
+        name: 'Claude Duts',
+        purpose: '个人主大肥鱼队友',
+        avatar: 'mascot:W1',
+        avatarColor: '#3b82f6',
+        paused: false,
+        unread: false,
+        dotState: 'failed',
+        upNextCount: 2,
+        needsYouCount: 0,
+        homeSessionId: 'sess-whale-home',
+        chatSessionId: 'sess-whale-home',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-whale',
+      },
+      {
+        id: 'bot-beta',
+        name: '巡检二号',
+        purpose: '构建监控',
+        avatar: 'mascot:W2',
+        avatarColor: '#10b981',
+        paused: false,
+        unread: false,
+        dotState: 'failed',
+        upNextCount: 3,
+        needsYouCount: 0,
+        homeSessionId: 'sess-beta-home',
+        chatSessionId: 'sess-beta-home',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-beta',
+      },
+      {
+        id: 'bot-gamma',
+        name: '观察三号',
+        purpose: '日志分析',
+        avatar: 'mascot:W3',
+        avatarColor: '#8b5cf6',
+        paused: false,
+        unread: false,
+        dotState: 'failed',
+        upNextCount: 2,
+        needsYouCount: 0,
+        homeSessionId: 'sess-gamma-home',
+        chatSessionId: 'sess-gamma-home',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-gamma',
+      },
+      {
+        id: 'bot-delta',
+        name: '外部切入四号',
+        purpose: '会话联动',
+        avatar: 'mascot:W4',
+        avatarColor: '#f59e0b',
+        paused: false,
+        unread: false,
+        dotState: 'failed',
+        upNextCount: 1,
+        needsYouCount: 0,
+        homeSessionId: 'sess-delta-home',
+        chatSessionId: 'sess-delta-home',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-delta',
+      },
+      {
+        id: 'bot-null-sid',
+        name: '迁移空会话五号',
+        purpose: '首次打开分配会话',
+        avatar: 'mascot:W1',
+        avatarColor: '#06b6d4',
+        paused: false,
+        unread: false,
+        dotState: 'failed',
+        upNextCount: 1,
+        needsYouCount: 0,
+        homeSessionId: null,
+        chatSessionId: null,
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-null-sid',
+      },
+      {
+        id: 'bot-pill-cancel',
+        name: '胶囊切走六号',
+        purpose: '在途取消右栏',
+        avatar: 'mascot:W2',
+        avatarColor: '#ec4899',
+        paused: false,
+        unread: false,
+        dotState: 'idle',
+        upNextCount: 2,
+        needsYouCount: 0,
+        homeSessionId: 'sess-claude-pill-home',
+        chatSessionId: 'sess-claude-pill-home',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-pill-cancel',
+      },
+    ],
+    groups: [],
+    chatsByBot: {
+      'bot-whale': {
+        botId: 'bot-whale',
+        chats: [{ chatId: 'sess-whale-home', sessionId: 'sess-whale-home', origin: 'home', title: 'Home Chat', dotState: 'failed', unread: false }],
+      },
+      'bot-gamma': {
+        botId: 'bot-gamma',
+        chats: [
+          { chatId: 'sess-gamma-home', sessionId: 'sess-gamma-home', origin: 'home', title: 'Home Chat', dotState: 'idle', unread: false },
+          { chatId: 'sess-gamma-side', sessionId: 'sess-gamma-side', origin: 'side', title: 'Side Chat', dotState: 'failed', unread: true },
+        ],
+      },
+    },
+    needsYou: {},
+    needsYouAt: Date.now(),
+  };
+
+  const sessionMap = {
+    'bot-whale': 'sess-whale-home',
+    'bot-beta': 'sess-beta-home',
+    'bot-gamma': 'sess-gamma-home',
+    'bot-delta': 'sess-delta-home',
+    'bot-null-sid': 'sess-migrated-home',
+    'bot-pill-cancel': 'sess-claude-pill-home',
+  };
+  let gammaSideUnread = true;
+  let gammaUpNextCount = 2;
+  let pillCancelChatOpenGate = null;
+
+  const fetchImpl = makeRpcFetch(async (method, params) => {
+    if (method === 'bots.list') {
+      return {
+        ...fixtures,
+        bots: fixtures.bots.map((b) => (b.id === 'bot-gamma'
+          ? { ...b, unread: gammaSideUnread, dotState: gammaSideUnread ? 'failed' : 'idle', upNextCount: gammaUpNextCount }
+          : b)),
+      };
+    }
+    if (method === 'bots.chat.open') {
+      if (params.botId === 'bot-pill-cancel' && pillCancelChatOpenGate) {
+        await pillCancelChatOpenGate;
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+      return { sessionId: sessionMap[params.botId] ?? 'sess-whale-home' };
+    }
+    if (method === 'bots.chats.seen' && params.botId === 'bot-gamma' && !params.sessionId) {
+      gammaSideUnread = false;
+    }
+    if (method === 'bots.upNext.seen' && params.botId === 'bot-gamma') {
+      gammaUpNextCount = 0;
+    }
+    return { ok: true };
+  }, rpcCalls);
+
+  dom.window.IS_REACT_ACT_ENVIRONMENT = true;
+  let loadedSpec = null;
+  dom.window.__ModuleLoader__ = { load(entry) { loadedSpec = entry; } };
+  dom.window.EventSource = FakeEventSource;
+  dom.window.fetch = fetchImpl;
+  globalThis.EventSource = FakeEventSource;
+  globalThis.fetch = fetchImpl;
+
+  vm.runInNewContext(
+    fs.readFileSync(CLIENT_FILE, 'utf8'),
+    {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      EventSource: FakeEventSource,
+      fetch: fetchImpl,
+      setTimeout: dom.window.setTimeout.bind(dom.window),
+      clearTimeout: dom.window.clearTimeout.bind(dom.window),
+      setInterval: dom.window.setInterval.bind(dom.window),
+      clearInterval: dom.window.clearInterval.bind(dom.window),
+      AbortController,
+      URL,
+      URLSearchParams,
+      CustomEvent: dom.window.CustomEvent,
+      console,
+    },
+    { filename: CLIENT_FILE },
+  );
+
+  const pluginExports = loadedSpec.factory((id) => {
+    if (id === 'react') return React;
+    if (id === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (id === 'react-dom') return ReactDOM;
+    if (id === 'react-dom/client') return { createRoot };
+    return {};
+  });
+
+  let sessionsState = { byId: { 'sess-whale-home': { id: 'sess-whale-home', retainedBy: { mainView: 1 } } } };
+  const sessionListeners = new Set();
+  const openTabInCalls = [];
+  const openSessionCalls = [];
+  const disposers = [];
+  const declared = new Set(ALL_SLOT_SPECS);
+  const registrations = [];
+  const sidebarRight = {
+    openTab: () => {},
+    openTabIn: (sid, kind, opts) => {
+      openTabInCalls.push({ sid, kind, opts });
+      return true;
+    },
+  };
+  const sidebarRightTabs = { register: () => () => {} };
+  const services = { sidebarRight, sidebarRightTabs };
+
+  const ctx = {
+    locale: { register: () => () => {}, getLocale: () => ({ active: 'zh-CN' }), subscribe: () => () => {} },
+    layout: { selectPanel: () => {}, panelInfo: { getSnapshot: () => ({ activePanelId: null }), subscribe: () => () => {} } },
+    settingsNavigation: { open: () => {}, close: () => {} },
+    sessions: {
+      list: {
+        getSnapshot: () => sessionsState,
+        subscribe: (l) => {
+          sessionListeners.add(l);
+          return () => sessionListeners.delete(l);
+        },
+      },
+    },
+    uiWorkspace: {
+      openSession: async (id) => {
+        openSessionCalls.push(id);
+        await new Promise((resolve) => setImmediate(resolve));
+        sessionsState = { byId: { [id]: { id, retainedBy: { mainView: 1 } } } };
+        for (const l of sessionListeners) l();
+      },
+    },
+    sidebarRight,
+    sidebarRightTabs,
+    get: (key) => services[key],
+    slots: {
+      spec: (n) => (declared.has(n) ? {} : undefined),
+      subscribe: () => () => {},
+      inject: (_n, fn) => fn(),
+      register: (decl, component) => {
+        registrations.push({ decl, component });
+        return () => {};
+      },
+    },
+    inject: (_d, cb) => {
+      cb(ctx);
+      return () => {};
+    },
+    effect: (fn) => {
+      const d = fn();
+      if (typeof d === 'function') disposers.push(d);
+      return () => d?.();
+    },
+  };
+
+  pluginExports.apply(ctx);
+  const SidebarComp = registrations.find((r) => r.decl.name === 'sidebar.sections.before')?.component;
+  const root = createRoot(dom.window.document.querySelector('main'));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    for (const d of disposers.splice(0).reverse()) d?.();
+    for (const es of eventSources) if (!es.closed) es.close();
+    dom.window.close();
+    for (const [k, desc] of Object.entries(savedGlobals)) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await new Promise((resolve) => setImmediate(resolve)); });
+    }
+  };
+  const cardByName = (name) => [...dom.window.document.querySelectorAll('.dsh-bots-card-wrap')]
+    .find((el) => el.querySelector('.dsh-bots-card-name')?.textContent === name)
+    ?.querySelector('.dsh-bots-card');
+
+  await act(async () => { root.render(h(SidebarComp, { wide: true })); });
+  await flush();
+
+  const whaleCard = cardByName('Claude Duts');
+  assert.ok(whaleCard, 'active whale card must render');
+  assert.equal(whaleCard.getAttribute('data-active'), 'true', 'initial mount marks matching mainView bot active');
+  assert.equal(
+    whaleCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state'),
+    'failed',
+    'initial mount must not auto-clear failed red dot',
+  );
+  assert.equal(
+    whaleCard.querySelector('.dsh-bots-upnext-pill')?.textContent,
+    '2',
+    'initial mount must not auto-clear upNext pill',
+  );
+  assert.equal(
+    rpcCalls.some((c) => c.method === 'bots.chats.seen' || c.method === 'bots.upNext.seen'),
+    false,
+    'initial mount must not emit seen RPCs',
+  );
+
+  await act(async () => { whaleCard.click(); });
+  await flush();
+  assert.equal(
+    whaleCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null,
+    null,
+    'clicking active card must optimistically clear failed red dot',
+  );
+  assert.equal(
+    whaleCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null,
+    null,
+    'clicking active card must optimistically clear upNext pill',
+  );
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.chats.seen' && c.params?.botId === 'bot-whale' && c.params?.sessionId === 'sess-whale-home'),
+    'clicking active card must emit bots.chats.seen',
+  );
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.botId === 'bot-whale'),
+    'clicking active card with upNextCount > 0 must emit bots.upNext.seen',
+  );
+
+  const betaCard = cardByName('巡检二号');
+  const betaPill = betaCard?.querySelector('.dsh-bots-upnext-pill');
+  assert.equal(betaPill?.textContent, '3', 'beta card must render upNext pill before click');
+  openTabInCalls.length = 0;
+  await act(async () => { betaPill.click(); });
+  await flush();
+  assert.equal(betaCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null, null, 'clicking upNext pill must clear pill');
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.botId === 'bot-beta'),
+    'clicking upNext pill must emit bots.upNext.seen for target bot',
+  );
+  assert.ok(openSessionCalls.includes('sess-beta-home'), 'clicking upNext pill must open target bot home session');
+  assert.deepEqual(
+    openTabInCalls.map((c) => ({ sid: c.sid, kind: c.kind })),
+    [{ sid: 'sess-beta-home', kind: 'dsh-bots' }],
+    'clicking upNext pill from another session must attach right panel to target bot session',
+  );
+
+  const gammaCard = cardByName('观察三号');
+  assert.equal(gammaCard?.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state'), 'failed');
+  assert.equal(gammaCard?.querySelector('.dsh-bots-upnext-pill')?.textContent, '2');
+  await act(async () => {
+    gammaCard.dispatchEvent(new dom.window.MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, button: 2, clientX: 180, clientY: 160,
+    }));
+  });
+  await flush();
+  const popover = dom.window.document.querySelector('.dsh-bots-popover');
+  assert.ok(popover, 'right-clicking card must open context menu');
+  const markReadBtn = [...popover.querySelectorAll('.dsh-bots-menu-item')]
+    .find((btn) => /标记?为已读|Mark Read/.test(btn.textContent || ''));
+  assert.ok(markReadBtn, 'unread=false card with failed dot or upNextCount > 0 must show Mark Read');
+  await act(async () => { markReadBtn.click(); });
+  await flush();
+  assert.equal(gammaCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null, null, 'context menu Mark Read must clear failed dot');
+  assert.equal(gammaCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null, null, 'context menu Mark Read must clear upNext pill');
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.chats.seen' && c.params?.botId === 'bot-gamma' && c.params?.sessionId === undefined),
+    'context menu Mark Read must emit whole-bot bots.chats.seen without sessionId so side chats are marked seen',
+  );
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.botId === 'bot-gamma'),
+    'context menu Mark Read must emit bots.upNext.seen when upNextCount > 0',
+  );
+
+  await act(async () => {
+    eventSources.at(-1)?.emit('bots:changed', { data: JSON.stringify({ botIds: ['bot-gamma'], kinds: ['chats', 'status'] }) });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+  await flush();
+  assert.equal(
+    gammaCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null,
+    null,
+    'side-chat error/unread dot must stay cleared after server bots.list refresh',
+  );
+
+  await act(async () => {
+    gammaCard.dispatchEvent(new dom.window.MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, button: 2, clientX: 180, clientY: 160,
+    }));
+  });
+  await flush();
+  const popoverAfter = dom.window.document.querySelector('.dsh-bots-popover');
+  const markUnreadBtn = [...(popoverAfter?.querySelectorAll('.dsh-bots-menu-item') ?? [])]
+    .find((btn) => /标记?为未读|Mark Unread/.test(btn.textContent || ''));
+  assert.ok(markUnreadBtn, 'once failed dot and upNext pill are cleared, context menu switches back to Mark Unread');
+  await act(async () => { markUnreadBtn.click(); });
+  await flush();
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.chats.unseen' && c.params?.botId === 'bot-gamma' && c.params?.sessionId === 'sess-gamma-home'),
+    'context menu Mark Unread still targets home sessionId',
+  );
+
+  const deltaCard = cardByName('外部切入四号');
+  assert.equal(deltaCard?.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state'), 'failed');
+  assert.equal(deltaCard?.querySelector('.dsh-bots-upnext-pill')?.textContent, '1');
+  await act(async () => {
+    sessionsState = { byId: { 'sess-delta-home': { id: 'sess-delta-home', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(deltaCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null, null, 'external session switch into bot home must clear failed dot');
+  assert.equal(deltaCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null, null, 'external session switch into bot home must clear upNext pill');
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.chats.seen' && c.params?.botId === 'bot-delta' && c.params?.sessionId === 'sess-delta-home'),
+    'external session switch must emit bots.chats.seen',
+  );
+  assert.ok(
+    rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.botId === 'bot-delta'),
+    'external session switch into bot home must emit bots.upNext.seen',
+  );
+
+  await act(async () => {
+    sessionsState = { byId: { 'sess-plain-workspace-init': { id: 'sess-plain-workspace-init', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  openSessionCalls.length = 0;
+  const nullSidCard = cardByName('迁移空会话五号');
+  assert.equal(nullSidCard?.querySelector('.dsh-bots-upnext-pill')?.textContent, '1');
+  await act(async () => { nullSidCard.click(); });
+  await flush();
+  assert.deepEqual(openSessionCalls, ['sess-migrated-home'], 'clicking null-chatSessionId bot with upNextCount > 0 must open newly resolved session');
+  assert.equal(nullSidCard.getAttribute('data-active'), 'true', 'null-chatSessionId bot card must remain active after opening session');
+  assert.equal(nullSidCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null, null);
+  assert.equal(nullSidCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null, null);
+
+  await act(async () => {
+    sessionsState = { byId: { 'sess-plain-workspace-1': { id: 'sess-plain-workspace-1', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(nullSidCard.getAttribute('data-active'), 'false', 'switching host away from opened bot clears active highlight');
+
+  let releasePillChatOpen;
+  pillCancelChatOpenGate = new Promise((resolve) => { releasePillChatOpen = resolve; });
+  openTabInCalls.length = 0;
+  const pillCancelCard = cardByName('胶囊切走六号');
+  const cancelPillBtn = pillCancelCard?.querySelector('.dsh-bots-upnext-pill');
+  assert.equal(cancelPillBtn?.textContent, '2');
+  await act(async () => { cancelPillBtn.click(); });
+  await act(async () => {
+    sessionsState = { byId: { 'sess-plain-workspace-2': { id: 'sess-plain-workspace-2', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await act(async () => { releasePillChatOpen(); });
+  await flush();
+  assert.deepEqual(openTabInCalls, [], 'switching session away before openBotHome settles must not open target bot right panel');
+  assert.equal(pillCancelCard.getAttribute('data-active'), 'false', 'cancelled pill open leaves card inactive');
 });

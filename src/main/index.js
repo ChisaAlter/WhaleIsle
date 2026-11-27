@@ -212,6 +212,7 @@ if (!gotLock) {
       runColdStartGate: updates.runColdStartGate,
       updateCenterWindow: updates.updateCenterWindow,
       updateReadyAttention: updates.updateReadyAttention,
+      shellOverlays: dialogs.shellOverlays,
       confirmModelAction: dialogs.confirmModelAction,
       showDesktopSecret: dialogs.showDesktopSecret,
       welcomeClientMetadata: account.welcomeClientMetadata,

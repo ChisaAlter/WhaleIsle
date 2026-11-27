@@ -155,6 +155,27 @@ function normalizeChatsMap(raw: Record<string, BotChatTree | BotChatRow[]> | und
   return out;
 }
 
+function clearSeenDotState<T extends string | null | undefined>(dot: T): T {
+  return dot === 'failed' || dot === 'interrupted' ? ('idle' as T) : dot;
+}
+
+function markTreeChatSeen(tree: BotChatTree | undefined, sessionId: string | null): BotChatTree | undefined {
+  if (!tree) return undefined;
+  const chats = tree.chats.map((c) => {
+    if (sessionId && c.sessionId !== sessionId && c.chatId !== sessionId) return c;
+    const row = c as BotChatRow & { dotState?: string | null };
+    return { ...row, unread: false, ...(row.dotState ? { dotState: clearSeenDotState(row.dotState) } : {}) };
+  });
+  return { ...tree, chats };
+}
+
+function resolveKnownBotSession(bot: BotRecord | undefined): string | null { return bot?.chatSessionId ?? bot?.homeSessionId ?? null; }
+
+function applyOpenedBotSession(prev: BotsState, botId: string, sid: string, known: string | null): BotsState {
+  const bots = sid === known ? prev.bots : prev.bots.map((b) => (b.id === botId ? { ...b, chatSessionId: sid, homeSessionId: b.homeSessionId ?? sid } : b));
+  return { ...prev, activeBotId: botId, activeGroupId: null, activeSessionId: sid, bots };
+}
+
 function extractNeedsYou(payload: BotListPayload) {
   const raw = payload.needsYou;
   if (raw && typeof raw === 'object' && 'counts' in raw && typeof raw.counts === 'object') {
@@ -428,18 +449,19 @@ class BotsStore {
 
   async openBotHome(botId: string): Promise<void> {
     const bot = this.state.bots.find((entry) => entry.id === botId);
-    const knownSession = bot?.chatSessionId ?? bot?.homeSessionId ?? null;
-    this.setState({ activeBotId: botId, activeGroupId: null, ...(knownSession ? { activeSessionId: knownSession } : {}) });
-    if (knownSession) this.host.openSession?.(knownSession, { botId });
+    const known = resolveKnownBotSession(bot);
+    this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: known });
+    if (known) { this.host.openSession?.(known, { botId }); void this.markChatSeen(botId, known, true); }
+    if ((bot?.upNextCount ?? 0) > 0) void this.markUpNextSeen(botId);
     try {
       const res = await callBotRpc<{ sessionId?: string }>(RPC_METHODS.CHAT_OPEN, { botId });
-      const sid = res?.sessionId ?? knownSession;
-      if (sid) {
-        this.setState({ activeBotId: botId, activeGroupId: null, activeSessionId: sid });
-        if (sid !== knownSession) this.host.openSession?.(sid, { botId });
-        void this.markChatSeen(botId, sid, true);
-      }
+      if (this.state.activeBotId !== botId) return;
+      const sid = res?.sessionId ?? known;
+      if (!sid) { this.setState({ activeBotId: null }); return; }
+      this.setState((prev) => applyOpenedBotSession(prev, botId, sid, known));
+      if (sid !== known) { this.host.openSession?.(sid, { botId }); void this.markChatSeen(botId, sid, true); }
     } catch (err) {
+      if (!known && this.state.activeBotId === botId) this.setState({ activeBotId: null });
       this.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     }
   }
@@ -481,13 +503,20 @@ class BotsStore {
   }
 
   async markChatSeen(botId: string, sessionId: string | null, seen: boolean): Promise<void> {
-    this.setState((prev) => ({ ...prev, bots: prev.bots.map((b) => (b.id === botId ? { ...b, unread: !seen } : b)) }));
+    this.setState((prev) => {
+      const nextTree = seen ? markTreeChatSeen(prev.chatsByBot[botId], sessionId) : undefined;
+      const bots = prev.bots.map((b) => (b.id !== botId ? b : { ...b, unread: !seen, ...(seen ? { dotState: clearSeenDotState(b.dotState) } : {}) }));
+      return { ...prev, bots, ...(nextTree ? { chatsByBot: { ...prev.chatsByBot, [botId]: nextTree } } : {}) };
+    });
     try {
-      await callBotRpc(seen ? RPC_METHODS.CHATS_SEEN : RPC_METHODS.CHATS_UNSEEN, {
-        botId, ...(sessionId ? { sessionId } : {}),
-      });
-    } catch (err) {
-      console.warn(`[dsh-bots] Failed to update read status for ${botId}`, err);
+      await callBotRpc(seen ? RPC_METHODS.CHATS_SEEN : RPC_METHODS.CHATS_UNSEEN, { botId, ...(sessionId ? { sessionId } : {}) });
+    } catch (err) { console.warn(`[dsh-bots] Failed to update read status for ${botId}`, err); }
+  }
+
+  async markUpNextSeen(botId: string): Promise<void> {
+    this.setState((prev) => ({ ...prev, bots: prev.bots.map((b) => (b.id === botId ? { ...b, upNextCount: 0 } : b)) }));
+    try { await callBotRpc(RPC_METHODS.UP_NEXT_SEEN, { botId }); } catch (err) {
+      console.warn(`[dsh-bots] Failed to mark up-next seen for ${botId}`, err);
     }
   }
 
@@ -553,12 +582,24 @@ class BotsStore {
   }
 
   setActiveSelection(sel: { botId?: string | null; groupId?: string | null; sessionId?: string | null }): void {
-    this.setState((prev) => ({
-      ...prev,
-      activeBotId: sel.botId !== undefined ? sel.botId : prev.activeBotId,
-      activeGroupId: sel.groupId !== undefined ? sel.groupId : prev.activeGroupId,
-      activeSessionId: sel.sessionId !== undefined ? sel.sessionId : prev.activeSessionId,
-    }));
+    this.setState((prev) => {
+      const nextBotId = sel.botId !== undefined ? sel.botId : prev.activeBotId;
+      const nextGroupId = sel.groupId !== undefined ? sel.groupId : prev.activeGroupId;
+      const nextSessionId = sel.sessionId !== undefined ? sel.sessionId : prev.activeSessionId;
+      if (
+        nextBotId === prev.activeBotId
+        && nextGroupId === prev.activeGroupId
+        && nextSessionId === prev.activeSessionId
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        activeBotId: nextBotId,
+        activeGroupId: nextGroupId,
+        activeSessionId: nextSessionId,
+      };
+    });
   }
 
   setRightPanelTab(tab: BotRightPanelTab, botId?: string): void {

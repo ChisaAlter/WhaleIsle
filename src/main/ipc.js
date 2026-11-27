@@ -85,7 +85,9 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 
 function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
-  getLive2dPet, updateCenter = null, openUpdateCenter = () => {},
+  getLive2dPet,
+  getStarPrompt = /** @type {(() => any) | any} */ (() => null),
+  updateCenter = null, openUpdateCenter = () => {},
   onConfigChanged = /** @type {((next: Record<string, any>, patch?: Record<string, any>) => void) | undefined} */ (undefined),
 }) {
   // Every channel mounts through the shared wrapper: the IPC contract
@@ -321,6 +323,27 @@ function registerIpc({
   });
 
   handle('shell:open-dsh-home', () => require('./open-dsh-home').openDesktopDshHome());
+
+  const resolveStarPrompt = () => /** @type {any} */ (typeof getStarPrompt === 'function' ? getStarPrompt() : getStarPrompt);
+  handle('shell:star-prompt-activity', () => {
+    resolveStarPrompt()?.recordActivity();
+  });
+  handle('shell:star-prompt-state', () => (
+    resolveStarPrompt()?.getView() ?? {
+      visible: false,
+      phase: 'hidden',
+      mode: 'direct',
+      locale: loadConfig().locale === 'en' ? 'en' : 'zh',
+      errorCode: '',
+    }
+  ));
+  handle('shell:star-prompt-action', (/** @type {unknown} */ _event, /** @type {Record<string, unknown>} */ payload) => {
+    const starPrompt = resolveStarPrompt();
+    if (!starPrompt) {
+      throw new Error('Star prompt is unavailable');
+    }
+    return starPrompt.handleAction(payload);
+  });
 
   handle('shell:list-marketplace', async (_event, options = {}) => {
     return require('./marketplace-catalog').listMarketplace({

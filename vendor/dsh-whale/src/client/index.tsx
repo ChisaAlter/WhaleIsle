@@ -7,6 +7,7 @@ import './styles/bots-enhancements.css';
 import './styles/bots-group-enhancements.css';
 
 import { useEffect, type ComponentType, type ReactNode } from 'react';
+import { resolveActiveBotSelection } from '../shared/bot-sidebar-logic.js';
 import { LOCALES, normalizeLocale } from '../shared/locales.js';
 import { BotsModalHost } from './components/BotConfirmDialogs';
 import {
@@ -163,7 +164,13 @@ interface HarnessClientContext {
   locale?: LocaleServiceLike;
   sessions?: SessionsServiceLike;
   uiWorkspace?: { openSession?: (sessionId: string) => Promise<void> | void };
-  layout?: { selectPanel?: (panelId: string | null) => void };
+  layout?: {
+    selectPanel?: (panelId: string | null) => void;
+    panelInfo?: {
+      getSnapshot?: () => { activePanelId?: string | null };
+      subscribe?: (listener: () => void) => () => void;
+    };
+  };
   settingsNavigation?: {
     open?: (section?: string) => Promise<void> | void;
     close?: () => void;
@@ -223,18 +230,14 @@ function readMainSessionId(sessions: SessionsServiceLike | undefined): string | 
   return null;
 }
 
-function findBotForSession(sessionId: string): BotRecord | null {
-  const state = botsStore.getState();
-  for (const bot of state.bots) {
-    if (bot.chatSessionId === sessionId || bot.homeSessionId === sessionId) {
-      return bot;
-    }
-    const tree = state.chatsByBot[bot.id];
-    if (tree?.chats.some((chat) => chat.sessionId === sessionId || chat.chatId === sessionId)) {
-      return bot;
-    }
+function readActivePanelId(layout: HarnessClientContext['layout']): string | null {
+  try {
+    const raw = layout?.panelInfo?.getSnapshot?.()?.activePanelId;
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
+  } catch (err) {
+    console.warn('[dsh-whale] Failed to inspect active main panel', err);
+    return null;
   }
-  return null;
 }
 
 function registerSlotWhenDeclared(
@@ -367,10 +370,10 @@ function openNativeRightPanel(
     return;
   }
   const state = botsStore.getState();
-  const targetBot = state.bots.find((entry) => entry.id === botId);
-  const candidateSessionId = state.activeSessionId
-    ?? targetBot?.chatSessionId
-    ?? targetBot?.homeSessionId
+  const targetBot = botId ? state.bots.find((entry) => entry.id === botId) : undefined;
+  const botSessionId = targetBot?.chatSessionId ?? targetBot?.homeSessionId;
+  const candidateSessionId = (botId ? botSessionId : null)
+    ?? state.activeSessionId
     ?? readMainSessionId(sessions);
   try {
     if (candidateSessionId && typeof rightbar.openTabIn === 'function') {
@@ -578,6 +581,58 @@ function registerNativeRightSidebarTab(
   }
 }
 
+function isBotHomeSession(
+  bot: BotRecord,
+  chatsByBot: ReturnType<typeof botsStore.getState>['chatsByBot'],
+  sessionId: string,
+): boolean {
+  const direct = bot.chatSessionId ?? bot.homeSessionId ?? null;
+  if (direct) {
+    return direct === sessionId;
+  }
+  const homeChat = chatsByBot[bot.id]?.chats.find((c) => c.origin === 'home' && !c.closed);
+  return homeChat?.sessionId === sessionId || homeChat?.chatId === sessionId;
+}
+
+function shouldPreserveOptimisticSelection(
+  state: ReturnType<typeof botsStore.getState>,
+  sid: string | null,
+  panelId: string | null,
+  sameHostView: boolean,
+): boolean {
+  if (!sameHostView) {
+    return false;
+  }
+  if (sid === null && panelId === null) {
+    return true;
+  }
+  if (!state.activeBotId || !state.bots.some((b) => b.id === state.activeBotId)) {
+    return false;
+  }
+  return state.activeSessionId === null || state.activeSessionId !== sid;
+}
+
+function markEnteredBotSessionSeen(
+  state: ReturnType<typeof botsStore.getState>,
+  prevSid: string | null | undefined,
+  sid: string | null,
+  next: { botId: string | null; sessionId: string | null },
+): void {
+  if (prevSid === undefined || sid === prevSid || !next.botId || !next.sessionId) {
+    return;
+  }
+  const bot = state.bots.find((entry) => entry.id === next.botId);
+  if (!bot) {
+    return;
+  }
+  if (bot.unread || bot.dotState === 'failed') {
+    void botsStore.markChatSeen(bot.id, next.sessionId, true);
+  }
+  if (isBotHomeSession(bot, state.chatsByBot, next.sessionId) && (bot.upNextCount ?? 0) > 0) {
+    void botsStore.markUpNextSeen(bot.id);
+  }
+}
+
 export function apply(ctx: HarnessClientContext): void {
   const sessions = readOptionalService<SessionsServiceLike>(ctx, 'sessions');
   let capturedRightbar: SidebarRightControllerLike | null = null;
@@ -665,20 +720,68 @@ export function apply(ctx: HarnessClientContext): void {
   }, 'dsh-whale: botsStore lifecycle');
 
   ctx.effect(() => {
-    const syncMainSession = () => {
+    let prevState = botsStore.getState();
+    let lastMainSessionId: string | null | undefined;
+    let lastPanelId: string | null | undefined;
+
+    const syncMainSelection = (force = false) => {
+      const currentState = botsStore.getState();
       const sid = readMainSessionId(sessions);
-      if (!sid) {
+      const panelId = readActivePanelId(ctx.layout);
+      const prevSid = lastMainSessionId;
+      const sameHostView = sid === prevSid && panelId === lastPanelId;
+      const dataChanged =
+        currentState.loaded !== prevState.loaded
+        || currentState.bots !== prevState.bots
+        || currentState.chatsByBot !== prevState.chatsByBot;
+      prevState = currentState;
+
+      if (!force && sameHostView && !dataChanged) {
         return;
       }
-      const matched = findBotForSession(sid);
+      lastMainSessionId = sid;
+      lastPanelId = panelId;
+
+      if (!force && dataChanged && shouldPreserveOptimisticSelection(currentState, sid, panelId, sameHostView)) {
+        return;
+      }
+
+      const settingsBotId = currentState.settingsRoute?.host === 'page' ? currentState.settingsRoute.botId : null;
+      const next = resolveActiveBotSelection({
+        activePanelId: panelId,
+        mainSessionId: sid,
+        bots: currentState.bots,
+        chatsByBot: currentState.chatsByBot,
+        prevActiveGroupId: currentState.activeGroupId,
+        prevActiveBotId: currentState.activeBotId,
+        settingsRouteBotId: settingsBotId,
+      }) as {
+        botId: string | null;
+        groupId: string | null;
+        sessionId: string | null;
+        closePageSettings: boolean;
+      };
+
+      if (next.closePageSettings && settingsBotId) {
+        botsStore.closeBotSettings();
+      }
       botsStore.setActiveSelection({
-        sessionId: sid,
-        ...(matched ? { botId: matched.id, groupId: null } : {}),
+        botId: next.botId,
+        groupId: next.groupId,
+        sessionId: next.sessionId,
       });
+      markEnteredBotSessionSeen(currentState, prevSid, sid, next);
     };
-    syncMainSession();
-    const unsub = sessions?.list?.subscribe?.(syncMainSession);
-    return () => { unsub?.(); };
+
+    syncMainSelection(true);
+    const unsubSessions = sessions?.list?.subscribe?.(() => syncMainSelection(true));
+    const unsubPanel = ctx.layout?.panelInfo?.subscribe?.(() => syncMainSelection(true));
+    const unsubStore = botsStore.subscribe(() => syncMainSelection(false));
+    return () => {
+      unsubSessions?.();
+      unsubPanel?.();
+      unsubStore();
+    };
   }, 'dsh-whale: active session sync');
 
   // Sidebar Bots section above Workspaces; `html[data-sidebar-projects-first="true"]`

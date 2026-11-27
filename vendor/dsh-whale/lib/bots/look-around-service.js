@@ -418,6 +418,11 @@ export function createLookAroundService(deps) {
     return listUpNext(botId, now).length;
   }
 
+  /** @param {string} botId @param {number} [now] */
+  function countUnseenUpNext(botId, now = Date.now()) {
+    return getState(botId, now).unseenCount;
+  }
+
   /** @param {string} botId @param {any} patch @param {number} [now] */
   function setConfig(botId, patch, now = Date.now()) {
     const bot = botsStore.getBot(botId);
@@ -696,11 +701,11 @@ export function createLookAroundService(deps) {
       state.seenIds = [...seenSet];
       state.unseenIds = [...unseenSet];
     } else {
-      state.seenAt = now;
+      state.seenAt = Math.max(now, ...state.suggestions.map((/** @type {any} */ s) => Number(s.createdAt) || 0));
       state.unseenIds = [];
     }
     writeBotState(botId, state, now);
-    eventBus.emit({ botIds: [botId], kinds: ['lookAround'] });
+    eventBus.emit({ botIds: [botId], kinds: ['lookAround', 'bot'] });
     return { ok: true, botId, seenAt: state.seenAt, ...(targetIds.length > 0 ? { ids: targetIds } : {}) };
   }
 
@@ -722,7 +727,7 @@ export function createLookAroundService(deps) {
       state.seenIds = [];
     }
     writeBotState(botId, state, now);
-    eventBus.emit({ botIds: [botId], kinds: ['lookAround'] });
+    eventBus.emit({ botIds: [botId], kinds: ['lookAround', 'bot'] });
     return { ok: true, botId, seenAt: state.seenAt, ...(targetIds.length > 0 ? { ids: targetIds } : {}) };
   }
 
@@ -781,18 +786,7 @@ export function createLookAroundService(deps) {
   }
 
   return {
-    getState,
-    listUpNext,
-    countOpenUpNext,
-    setConfig,
-    markFirstOwnerChat,
-    addSuggestion,
-    lookNow,
-    tick,
-    startSuggestion,
-    dismissSuggestion,
-    markSeen,
-    markUnseen,
-    close,
+    getState, listUpNext, countOpenUpNext, countUnseenUpNext, setConfig, markFirstOwnerChat,
+    addSuggestion, lookNow, tick, startSuggestion, dismissSuggestion, markSeen, markUnseen, close,
   };
 }

@@ -84,15 +84,8 @@ function chatMatchesStopTarget(chat, work, sid, matchedChat) {
  */
 export function createSessionWorkOps(deps) {
   const {
-    botsStore,
-    workStore,
-    eventBus,
-    liveBySession,
-    startingSessions,
-    inFlightTurns,
-    controllerOf,
-    requireBot,
-    cancelSession,
+    botsStore, workStore, eventBus, liveBySession, startingSessions,
+    inFlightTurns, controllerOf, requireBot, cancelSession,
   } = deps;
 
   /** @param {string} botId @param {string} wid @param {string} sid */
@@ -239,12 +232,7 @@ export function createSessionWorkOps(deps) {
     return bestChat;
   }
 
-  /**
-   * Pair `bot_work` rows with their backing `kind === 'worker'` `bot_chats` rows so a single
-   * dispatched worker is never rendered twice (once as a raw `task-xxxx` entry and again as its chat row).
-   * @param {any[]} chatRows
-   * @param {any[]} allWorkers
-   */
+  /** @param {any[]} chatRows @param {any[]} allWorkers */
   function linkWorkersAndChats(chatRows, allWorkers) {
     /** @type {Map<string, any>} */
     const matchedChatByWorkId = new Map();
@@ -331,22 +319,23 @@ export function createSessionWorkOps(deps) {
     };
   }
 
-  /** @param {any} live @param {any} linkedWork */
-  function resolveChatDotState(live, linkedWork) {
-    const base = live?.state ?? 'idle';
-    return base === 'idle' && linkedWork && !linkedWork.closedAt ? 'working' : base;
-  }
-
   /** @param {any} chat @param {any} live */
   function isChatUnread(chat, live) {
     return Boolean(live?.updatedAt && (!chat.seenAt || live.updatedAt > chat.seenAt));
+  }
+
+  /** @param {any} chat @param {any} live @param {any} linkedWork */
+  function resolveChatDotState(chat, live, linkedWork) {
+    const raw = live?.state ?? 'idle';
+    const base = (raw === 'failed' || raw === 'interrupted') && !isChatUnread(chat, live) ? 'idle' : raw;
+    return base === 'idle' && linkedWork && !linkedWork.closedAt ? 'working' : base;
   }
 
   /** @param {any} chat @param {any} bot @param {any[] | null} [preloadedWorkers] @param {ReturnType<typeof linkWorkersAndChats> | null} [linkCtx] */
   function decorateChatRow(chat, bot, preloadedWorkers = null, linkCtx = null) {
     const live = liveBySession.get(chat.sessionId);
     const linkedWork = linkCtx?.matchedWorkByChatSessionId?.get(chat.sessionId) ?? null;
-    const dotState = resolveChatDotState(live, linkedWork);
+    const dotState = resolveChatDotState(chat, live, linkedWork);
     const workers = Array.isArray(preloadedWorkers)
       ? preloadedWorkers
       : (workStore.listChatWorkersByBot(bot.id, { chatIds: [chat.sessionId] }).get(chat.sessionId) ?? []);
@@ -399,13 +388,30 @@ export function createSessionWorkOps(deps) {
     return matches.sort((a, b) => b.lastActiveAt - a.lastActiveAt).slice(0, Math.min(200, Math.max(1, limit)));
   }
 
-  /** @param {string} sessionId */
-  function markSeen(sessionId) {
+  /** @param {string} sid @param {number} now */
+  const seenAtFor = (sid, now) => Math.max(now, liveBySession.get(sid)?.updatedAt ?? 0);
+
+  /** @param {string | null | undefined} sessionId @param {string | null} [botId] */
+  function markSeen(sessionId, botId = null) {
     const now = Date.now();
-    const chat = botsStore.getChat(sessionId);
-    botsStore.markChatSeen(sessionId, now);
-    if (chat?.botId) eventBus.emit({ botIds: [chat.botId], kinds: ['chats', 'status'] });
-    return { ok: true, sessionId, seenAt: now };
+    const sid = String(sessionId ?? '').trim();
+    const bid = String(botId ?? '').trim();
+    if (!sid && bid) {
+      let seenAt = now;
+      for (const c of botsStore.listChats(bid, { includeClosed: false })) {
+        const chatSeenAt = seenAtFor(c.sessionId, now);
+        seenAt = Math.max(seenAt, chatSeenAt);
+        botsStore.markChatSeen(c.sessionId, chatSeenAt);
+      }
+      eventBus.emit({ botIds: [bid], kinds: ['chats', 'status'] });
+      return { ok: true, botId: bid, seenAt };
+    }
+    const seenAt = seenAtFor(sid, now);
+    const chat = botsStore.getChat(sid);
+    botsStore.markChatSeen(sid, seenAt);
+    const targetBotId = chat?.botId || bid;
+    if (targetBotId) eventBus.emit({ botIds: [targetBotId], kinds: ['chats', 'status'] });
+    return { ok: true, sessionId: sid, seenAt };
   }
 
   /** @param {string} sessionId */
@@ -449,14 +455,7 @@ export function createSessionWorkOps(deps) {
   }
 
   return {
-    deleteChat,
-    stopWork,
-    listChats,
-    searchChats,
-    markSeen,
-    markUnseen,
-    buildChatTree,
-    buildActivity,
+    deleteChat, stopWork, listChats, searchChats, markSeen, markUnseen, buildChatTree, buildActivity,
   };
 }
 

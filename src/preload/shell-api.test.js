@@ -712,3 +712,58 @@ test('boot and launcher preload apply data-dsh-minimal without injecting inline 
     }
   }
 });
+
+test('starPrompt API is exposed only on the harness surface and routes to expected channels', async () => {
+  const invokes = [];
+  const sends = [];
+  const subscriptions = [];
+  const view = {
+    visible: true,
+    phase: 'visible',
+    mode: 'direct',
+    locale: 'zh',
+    errorCode: '',
+  };
+  const renderer = {
+    invoke: async (channel, ...args) => {
+      invokes.push([channel, ...args]);
+      return view;
+    },
+    send: (channel, ...args) => {
+      sends.push([channel, ...args]);
+    },
+    on: (channel, listener) => {
+      subscriptions.push([channel, listener]);
+    },
+    removeListener: () => {},
+  };
+
+  const harness = buildShellApi('harness', renderer);
+  assert.equal(typeof harness.reportStarPromptActivity, 'function');
+  assert.equal(typeof harness.getStarPromptState, 'function');
+  assert.equal(typeof harness.starPromptAction, 'function');
+  assert.equal(typeof harness.onStarPromptChanged, 'function');
+
+  harness.reportStarPromptActivity();
+  assert.deepEqual(sends, [['shell:star-prompt-activity']]);
+  assert.deepEqual(await harness.getStarPromptState(), view);
+  assert.deepEqual(await harness.starPromptAction({ type: 'snooze' }), view);
+  assert.deepEqual(invokes, [
+    ['shell:star-prompt-state'],
+    ['shell:star-prompt-action', { type: 'snooze' }],
+  ]);
+
+  const unsub = harness.onStarPromptChanged(() => {});
+  assert.equal(typeof unsub, 'function');
+  assert.equal(subscriptions.length, 1);
+  assert.equal(subscriptions[0][0], 'shell:star-prompt-changed');
+  unsub();
+
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
+    const other = buildShellApi(role, renderer);
+    assert.equal(other.reportStarPromptActivity, undefined);
+    assert.equal(other.getStarPromptState, undefined);
+    assert.equal(other.starPromptAction, undefined);
+    assert.equal(other.onStarPromptChanged, undefined);
+  }
+});

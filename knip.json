@@ -85,7 +85,8 @@
   ],
   "ignoreFiles": [
     // chrome.js 用 fs.readFileSync 读取后以文本注入 harness 页面，非模块引用
-    "src/main/harness-chrome-inject.js"
+    "src/main/harness-chrome-inject.js",
+    "src/main/star-prompt-inject.js"
   ],
   "ignoreDependencies": [
     // eslint flat config 的插件依赖链仍在使用；删除会破坏 lint，故保留

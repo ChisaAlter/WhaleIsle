@@ -244,81 +244,103 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
 
   return (
     <div className={styles['editor']}>
-      <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('customRoute')}</span>
-        <Tooltip label={t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')} disabled={!routeInvalid && !routeTaken} portal side="bottom">
+      <div className={styles['fieldGrid2']}>
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('customRoute')}</span>
+          <Tooltip label={t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')} disabled={!routeInvalid && !routeTaken} portal side="bottom">
+            <Input variant="form"
+              className={styles['input']}
+              type="text"
+              value={route}
+              placeholder="acme-gateway"
+              aria-label={t('customRoute')}
+              aria-invalid={routeInvalid || routeTaken}
+              aria-describedby={routeInvalid || routeTaken ? `${errorId}-route` : undefined}
+              disabled={profileDisabled}
+              onChange={(event) => { setRoute(event.target.value) }}
+            />
+          </Tooltip>
+        </div>
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
           <Input variant="form"
             className={styles['input']}
             type="text"
-            value={route}
-            placeholder="acme-gateway"
-            aria-label={t('customRoute')}
-            aria-invalid={routeInvalid || routeTaken}
-            aria-describedby={routeInvalid || routeTaken ? `${errorId}-route` : undefined}
+            value={displayName}
+            placeholder={route.length === 0 ? t('customDisplayName') : route}
+            aria-label={t('customDisplayName')}
             disabled={profileDisabled}
-            onChange={(event) => { setRoute(event.target.value) }}
+            onChange={(event) => { setDisplayName(event.target.value) }}
           />
-        </Tooltip>
+        </div>
       </div>
       {/* A rejected id reads as a fault, not as guidance — the same split the
           key field below already makes between its failure and its hint. */}
       <p className={styles['advancedHint']}>{t('customRouteHint')}</p>
       {routeInvalid || routeTaken ? <span className={styles['visuallyHidden']} id={`${errorId}-route`}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</span> : null}
-      <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
-        <Input variant="form"
-          className={styles['input']}
-          type="text"
-          value={displayName}
-          placeholder={route.length === 0 ? t('customDisplayName') : route}
-          aria-label={t('customDisplayName')}
-          disabled={profileDisabled}
-          onChange={(event) => { setDisplayName(event.target.value) }}
-        />
-      </div>
-      <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
-        <Tooltip label={t('customBaseUrlInvalid')} disabled={!baseUrlInvalid} portal side="bottom">
-          <Input variant="form"
-            className={styles['input']}
-            type="text"
-            value={baseURL}
-            placeholder={t(BASE_URL_PLACEHOLDERS[protocol] ?? 'customBaseUrlPlaceholder')}
-            aria-label={t('baseUrl')}
-            aria-invalid={baseUrlInvalid}
-            aria-describedby={baseUrlInvalid ? `${errorId}-baseUrl` : undefined}
+      <div className={styles['endpointProtocolGrid']}>
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
+          <Tooltip label={t('customBaseUrlInvalid')} disabled={!baseUrlInvalid} portal side="bottom">
+            <Input variant="form"
+              className={styles['input']}
+              type="text"
+              value={baseURL}
+              placeholder={t(BASE_URL_PLACEHOLDERS[protocol] ?? 'customBaseUrlPlaceholder')}
+              aria-label={t('baseUrl')}
+              aria-invalid={baseUrlInvalid}
+              aria-describedby={baseUrlInvalid ? `${errorId}-baseUrl` : undefined}
+              disabled={profileDisabled}
+              onChange={(event) => { setBaseURL(event.target.value) }}
+            />
+          </Tooltip>
+        </div>
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('customApi')}</span>
+          <SettingsSelect
+            variant="block"
+            aria-label={t('customApi')}
+            value={protocol}
             disabled={profileDisabled}
-            onChange={(event) => { setBaseURL(event.target.value) }}
+            onChange={setProtocol}
+            options={protocols.map(choice => ({ id: choice, label: protocolLabel(t, choice) }))}
           />
-        </Tooltip>
+        </div>
       </div>
       {baseUrlInvalid ? <span className={styles['visuallyHidden']} id={`${errorId}-baseUrl`}>{t('customBaseUrlInvalid')}</span> : null}
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('customApi')}</span>
-        <SettingsSelect
-          variant="block"
-          aria-label={t('customApi')}
-          value={protocol}
-          disabled={profileDisabled}
-          onChange={setProtocol}
-          options={protocols.map(choice => ({ id: choice, label: protocolLabel(t, choice) }))}
-        />
-      </div>
-      <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-        <Tooltip label={keyFailure === undefined ? '' : t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)} disabled={keyFailure === undefined} portal side="bottom">
-          <ApiKeyInput
-            t={t}
-            value={keyDraft}
-            placeholder={t('keyPlaceholder')}
-            aria-label={t('keyInput')}
-            aria-invalid={keyFailure !== undefined}
-            aria-describedby={keyFailure === undefined ? undefined : `${errorId}-key`}
-            required={protocolNeedsKey(protocol)}
-            disabled={disabled}
-            onChange={(event) => { setKeyDraft(event.target.value) }}
-          />
-        </Tooltip>
+        <ConnectionTestControl
+          probe={{
+            settingsNs: NS,
+            baseURL: normalizedBaseURL,
+            api: protocol,
+            ...keyValue.length === 0 ? {} : { apiKey: keyValue },
+          }}
+          blockedReason={normalizedBaseURL.length === 0
+            ? 'customNeedsBaseUrl'
+            : baseUrlInvalid
+              ? 'customBaseUrlInvalid'
+              : keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure}
+          disabled={profileDisabled}
+          operations={operations}
+          t={t}
+          leading={(
+            <Tooltip label={keyFailure === undefined ? '' : t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)} disabled={keyFailure === undefined} portal side="bottom">
+              <ApiKeyInput
+                t={t}
+                value={keyDraft}
+                placeholder={t('keyPlaceholder')}
+                aria-label={t('keyInput')}
+                aria-invalid={keyFailure !== undefined}
+                aria-describedby={keyFailure === undefined ? undefined : `${errorId}-key`}
+                required={protocolNeedsKey(protocol)}
+                disabled={disabled}
+                onChange={(event) => { setKeyDraft(event.target.value) }}
+              />
+            </Tooltip>
+          )}
+        />
         {/* A create card has no stored key to keep, so the blank case says
             what a blank field means here instead: this route may authenticate
             through the provider's own ambient discovery or OAuth. A key the
@@ -327,38 +349,6 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           ? null
           : <span className={styles['visuallyHidden']} id={`${errorId}-key`}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</span>}
       </div>
-      <ConnectionTestControl
-        probe={{
-          settingsNs: NS,
-          baseURL: normalizedBaseURL,
-          api: protocol,
-          ...keyValue.length === 0 ? {} : { apiKey: keyValue },
-        }}
-        blockedReason={normalizedBaseURL.length === 0
-          ? 'customNeedsBaseUrl'
-          : baseUrlInvalid
-            ? 'customBaseUrlInvalid'
-            : keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure}
-        disabled={profileDisabled}
-        operations={operations}
-        t={t}
-      />
-      <HeadersEditor
-        headers={headers}
-        t={t}
-        disabled={profileDisabled}
-        onChange={(next, err) => {
-          setHeaders(next)
-          setHeadersError(err)
-        }}
-      />
-      <CompatEditor
-        compat={compat}
-        protocol={protocol}
-        t={t}
-        disabled={profileDisabled}
-        onChange={setCompat}
-      />
       <ModelListEditor
         models={models}
         onChange={setModels}
@@ -378,6 +368,25 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         disabled={profileDisabled}
         onBusyChange={setListBusy}
       />
+      <div className={styles['advancedSubgroup']}>
+        <span className={styles['advancedSubgroupTitle']}>{t('advancedOptionsTitle')}</span>
+        <HeadersEditor
+          headers={headers}
+          t={t}
+          disabled={profileDisabled}
+          onChange={(next, err) => {
+            setHeaders(next)
+            setHeadersError(err)
+          }}
+        />
+        <CompatEditor
+          compat={compat}
+          protocol={protocol}
+          t={t}
+          disabled={profileDisabled}
+          onChange={setCompat}
+        />
+      </div>
       {failure !== undefined && !failureDismissed
         ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} />
         : null}

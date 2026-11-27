@@ -28,6 +28,8 @@ export interface ConnectionTestControlProps {
   operations: ModelsOperations
   /** Localized copy accessor. */
   t: (key: keyof typeof en) => string
+  /** Optional primary control (such as the API key input) aligned inline before the button. */
+  leading?: ReactNode
 }
 
 /**
@@ -36,7 +38,7 @@ export interface ConnectionTestControlProps {
  * @returns the connection test control row.
  */
 export function ConnectionTestControl(props: ConnectionTestControlProps): ReactNode {
-  const { probe, blockedReason, disabled = false, operations, t } = props
+  const { probe, blockedReason, disabled = false, operations, t, leading } = props
   const [testing, setTesting] = useState(false)
   const [outcome, setOutcome] = useState<ConnectionOutcome | undefined>(undefined)
   const epochRef = useRef(0)
@@ -80,39 +82,55 @@ export function ConnectionTestControl(props: ConnectionTestControlProps): ReactN
   }
 
   const blockedLabel = blockedReason === undefined ? '' : t(blockedReason)
+  const trigger = (
+    <Tooltip label={blockedLabel} disabled={blockedReason === undefined} portal side="bottom">
+      <span className={styles['buttonAnchor']}>
+        <Button
+          size="sm"
+          variant="outline"
+          loading={testing}
+          feedback={testing ? t('testingConnection') : undefined}
+          disabled={disabled || blockedReason !== undefined || testing}
+          onClick={() => { void runTest() }}
+        >
+          {t('testConnection')}
+        </Button>
+      </span>
+    </Tooltip>
+  )
+  const statusNode = outcome === undefined
+    ? null
+    : outcome.kind === 'success'
+      ? (
+        <span role="status" className={styles['savedNotice']}>
+          {t(outcome.count === 0 ? 'connectionSuccessEmpty' : 'connectionSuccess')
+            .replace('{ms}', () => String(outcome.ms))
+            .replace('{count}', () => String(outcome.count))}
+        </span>
+      )
+      : (
+        <span role="status" className={styles['error']}>
+          {t('connectionFailed').replace('{message}', () => outcome.message)}
+        </span>
+      )
+
+  if (leading !== undefined) {
+    return (
+      <div className={styles['connectionTest']}>
+        <div className={styles['keyActionRow']}>
+          <div className={styles['keyInputGrow']}>{leading}</div>
+          <div className={styles['connectionTestRow']}>{trigger}</div>
+        </div>
+        {statusNode}
+      </div>
+    )
+  }
 
   return (
     <div className={styles['connectionTest']}>
       <div className={styles['connectionTestRow']}>
-        <Tooltip label={blockedLabel} disabled={blockedReason === undefined} portal side="bottom">
-          <span className={styles['buttonAnchor']}>
-            <Button
-              size="sm"
-              variant="outline"
-              loading={testing}
-              feedback={testing ? t('testingConnection') : undefined}
-              disabled={disabled || blockedReason !== undefined || testing}
-              onClick={() => { void runTest() }}
-            >
-              {t('testConnection')}
-            </Button>
-          </span>
-        </Tooltip>
-        {outcome === undefined
-          ? null
-          : outcome.kind === 'success'
-            ? (
-              <span role="status" className={styles['savedNotice']}>
-                {t(outcome.count === 0 ? 'connectionSuccessEmpty' : 'connectionSuccess')
-                  .replace('{ms}', () => String(outcome.ms))
-                  .replace('{count}', () => String(outcome.count))}
-              </span>
-            )
-            : (
-              <span role="status" className={styles['error']}>
-                {t('connectionFailed').replace('{message}', () => outcome.message)}
-              </span>
-            )}
+        {trigger}
+        {statusNode}
       </div>
     </div>
   )
