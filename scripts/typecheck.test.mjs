@@ -5,7 +5,16 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeFixture } from './lib/fixture.mjs';
-import { parseDiagnostics, diffCounts, objectToCounts, countsToObject } from './typecheck.mjs';
+import {
+  parseDiagnostics,
+  diffCounts,
+  objectToCounts,
+  countsToObject,
+  HARD_FAIL_CODES,
+  HARD_FAIL_EXEMPT,
+  evaluateHardCodePolicy,
+  summarizeMetrics,
+} from './typecheck.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./typecheck.mjs', import.meta.url));
 const CLEAN_JS = '/** @param {number} a */\nfunction f(a) { return a + 1 }\n';
@@ -262,4 +271,69 @@ test('tsconfig.check.json paths point only to tracked declarations or root node_
       assert.ok(existsSync(join(root, relTarget)), `${pkg} declaration target missing: ${relTarget}`);
     }
   }
+});
+
+test('evaluateHardCodePolicy enforces ratchet and zero modes with exact exemptions', () => {
+  assert.equal(HARD_FAIL_CODES.has('TS2304'), true);
+  assert.equal(HARD_FAIL_CODES.has('TS2554'), true);
+  assert.equal(HARD_FAIL_CODES.has('TS7006'), false);
+  assert.equal(HARD_FAIL_EXEMPT.unresolvedModules.length, 11);
+
+  const base = parseDiagnostics([
+    "src/a.js(1,1): error TS2554: Expected 1 arguments, but got 2.",
+    "mobile/web/app.js(1,1): error TS2307: Cannot find module './app/chrome.js?v=20261117' or its corresponding type declarations.",
+    "scripts/install-harness.cjs(1,1): error TS2307: Cannot find module './runtime-links' or its corresponding type declarations.",
+  ].join('\n')).counts;
+
+  // Same or reduced counts pass ratchet, but still fail zero mode when residual non-exempt hard codes remain.
+  const decreased = parseDiagnostics([
+    "mobile/web/app.js(1,1): error TS2307: Cannot find module './app/chrome.js?v=20261117' or its corresponding type declarations.",
+    "scripts/install-harness.cjs(1,1): error TS2307: Cannot find module './runtime-links' or its corresponding type declarations.",
+  ].join('\n')).counts;
+  assert.equal(evaluateHardCodePolicy(base, base, 'ratchet').ok, true);
+  assert.equal(evaluateHardCodePolicy(decreased, base, 'ratchet').ok, true);
+  assert.equal(evaluateHardCodePolicy(base, base, 'zero').ok, false);
+  assert.equal(evaluateHardCodePolicy(decreased, decreased, 'zero').ok, true);
+
+  // Any new non-exempt TS2304/TS2554 or unapproved TS2307 fails ratchet; non-exact exempt specifier also fails.
+  const regressed = parseDiagnostics([
+    "src/a.js(1,1): error TS2554: Expected 1 arguments, but got 2.",
+    "src/a.js(2,1): error TS2304: Cannot find name 'httpError'.",
+    "scripts/install-harness.cjs(2,1): error TS2307: Cannot find module './other-missing' or its corresponding type declarations.",
+  ].join('\n')).counts;
+  const res = evaluateHardCodePolicy(regressed, base, 'ratchet');
+  assert.equal(res.ok, false);
+  assert.equal(res.violations.length, 2);
+  assert.match(res.violations[0], /TS2304/);
+  assert.match(res.violations[1], /TS2307/);
+
+  // Zero mode catches residual baseline entries even if missing from current.
+  const empty = new Map();
+  assert.equal(evaluateHardCodePolicy(empty, base, 'zero').ok, false);
+});
+
+test('CLI --update-baseline rejects new hard-fail errors and --metrics reports tier counts', (t) => {
+  const { project, baseline } = fixture(t, {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [] },
+      files: ['a.js'],
+    }),
+    'a.js': ERROR_JS,
+  });
+  assert.equal(run(project, baseline, ['--update-baseline']).status, 0);
+  const beforeText = readFileSync(baseline, 'utf8');
+
+  writeFileSync(join(project, '..', 'a.js'), 'nonExistentCall();\n');
+  const blocked = run(project, baseline, ['--update-baseline']);
+  assert.notEqual(blocked.status, 0);
+  assert.match(blocked.stderr + blocked.stdout, /拒绝更新基线/);
+  assert.equal(readFileSync(baseline, 'utf8'), beforeText);
+
+  const metricsRun = spawnSync(process.execPath, [SCRIPT, '--metrics', '--baseline', baseline], { encoding: 'utf8' });
+  assert.equal(metricsRun.status, 0, metricsRun.stderr);
+  const metrics = JSON.parse(metricsRun.stdout);
+  assert.equal(metrics.total, 1);
+  assert.equal(metrics.buckets.E, 1);
+  assert.equal(metrics.buckets.A, 0);
+  assert.equal(typeof summarizeMetrics(objectToCounts(JSON.parse(beforeText))).files, 'number');
 });

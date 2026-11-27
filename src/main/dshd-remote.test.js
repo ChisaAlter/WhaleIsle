@@ -80,11 +80,11 @@ test('desktop start and packaging prepare and ship the trimmed DSHD remote runti
   assert.match(prepareScript, /function pruneWeriftRuntime/);
   assert.match(prepareScript, /daemon start\/stop probe passed/);
   assert.doesNotMatch(prepareScript, /'@chisacode\/client': 'file:/);
-  assert.match(prepareScript, /@electron['"], 'rebuild'/);
-  assert.match(prepareScript, /'--only', 'better-sqlite3'/);
-  assert.doesNotMatch(prepareScript, /'--which-module', 'better-sqlite3'/);
+  assert.match(prepareScript, /function pruneSqlitePrebuilds/);
+  assert.doesNotMatch(prepareScript, /@electron['"], 'rebuild'/);
+  assert.doesNotMatch(prepareScript, /'--only', 'better-sqlite3'/);
   assert.match(prepareScript, /ELECTRON_RUN_AS_NODE: '1'/);
-  assert.match(prepareScript, /Electron better-sqlite3 ABI probe passed/);
+  assert.match(prepareScript, /Electron better-sqlite3 ABI probe passed after pruning/);
   const resources = manifest.build.extraResources;
   assert.ok(resources.some((entry) => (
     entry.from === 'vendor/chisacode-remote'

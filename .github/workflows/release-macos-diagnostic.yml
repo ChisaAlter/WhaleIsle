@@ -45,10 +45,12 @@ jobs:
               sha256: createHash('sha256').update(readFileSync(path)).digest('hex') })) };
           writeFileSync(process.env.RUNNER_TEMP + '/whale-macos-build-tools/macos-build-source.json', JSON.stringify(record, null, 2) + '\n');
           NODE
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          is-release: 'true'
+          harness-changed: 'true'
       - run: node scripts/check-mac-icon.js
       - run: npm ci
       - run: node node_modules/electron/install.js

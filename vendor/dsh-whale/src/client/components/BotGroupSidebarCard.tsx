@@ -1,6 +1,6 @@
 // Sidebar card for a multi-bot group chat with collage avatar, inline rename, and context menu.
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { addressedBotWords } from '../../shared/bot-quiet-result.js';
 import {
@@ -13,6 +13,7 @@ import type { BotGroupRecord, BotRecord } from '../store/rpc';
 import { BotGroupAvatar } from './BotAvatar';
 import type { SearchTextSegment } from './BotSidebarCard';
 import { IconEdit, IconEye, IconEyeOff, IconTrash, IconUsers } from './Icons';
+import { useAnchoredPopoverDismiss } from './useAnchoredPopoverDismiss';
 
 export interface BotGroupSidebarCardProps {
   group: BotGroupRecord;
@@ -24,42 +25,32 @@ export interface BotGroupSidebarCardProps {
 function GroupContextMenu({
   group,
   position,
+  triggerRef,
   onClose,
   onStartRename,
 }: {
   group: BotGroupRecord;
   position: { x: number; y: number };
+  triggerRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
   onStartRename: () => void;
 }) {
   const { tr } = useBotsLocale();
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const handleDown = (event: globalThis.MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleDown);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleDown);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [onClose]);
+  useAnchoredPopoverDismiss({
+    open: true,
+    popoverRef: menuRef,
+    contextTriggerRef: triggerRef,
+    onClose,
+  });
 
   if (typeof document === 'undefined') {
     return null;
   }
 
-  const left = Math.min(position.x, window.innerWidth - 205);
-  const top = Math.min(position.y, window.innerHeight - 200);
+  const left = Math.max(8, Math.min(position.x, window.innerWidth - 205));
+  const top = Math.max(8, Math.min(position.y, window.innerHeight - 200));
 
   return createPortal(
     <div ref={menuRef} className="dsh-bots-popover" style={{ left, top }}>
@@ -126,6 +117,7 @@ export function BotGroupSidebarCard({
   const [renaming, setRenaming] = useState(false);
   const [renameText, setRenameText] = useState(group.name);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setRenameText(group.name);
@@ -168,6 +160,7 @@ export function BotGroupSidebarCard({
   return (
     <div className="dsh-bots-card-wrap">
       <div
+        ref={cardRef}
         className="dsh-bots-card"
         data-active={isActive ? 'true' : 'false'}
         data-unread={group.unread ? 'true' : 'false'}
@@ -232,6 +225,7 @@ export function BotGroupSidebarCard({
         <GroupContextMenu
           group={group}
           position={menuPos}
+          triggerRef={cardRef}
           onClose={() => setMenuPos(null)}
           onStartRename={() => setRenaming(true)}
         />

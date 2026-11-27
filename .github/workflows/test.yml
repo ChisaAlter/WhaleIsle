@@ -19,7 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       product: ${{ steps.changes.outputs.product }}
-      vendor: ${{ steps.changes.outputs.vendor }}
+      harness: ${{ steps.changes.outputs.harness }}
+      vendor_plugins: ${{ steps.changes.outputs.vendor_plugins }}
+      whale_web: ${{ steps.changes.outputs.whale_web }}
       tools: ${{ steps.changes.outputs.tools }}
       motion: ${{ steps.changes.outputs.motion }}
       release: ${{ steps.changes.outputs.release }}
@@ -41,10 +43,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'false'
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - name: Vendor provenance and artifact consistency
@@ -60,21 +62,29 @@ jobs:
     # Browser lanes for desktop forks of the web composition. They follow the
     # upstream web e2e platform (Linux shell, sandbox and approval semantics).
     needs: scope
-    if: needs.scope.outputs.vendor == 'true'
+    if: needs.scope.outputs.whale_web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       LEFTHOOK: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - id: setup_whale
+        uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'false'
+          cache-harness: 'true'
+          cache-playwright: 'true'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - name: Build the shipped Harness profile
         run: npm run setup:harness
+      - name: Install Playwright Chromium system deps
+        if: steps.setup_whale.outputs.pw-cache-hit == 'true'
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install-deps chromium
       - name: Install the Chromium build apps/web's Playwright pins
+        if: steps.setup_whale.outputs.pw-cache-hit != 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install --with-deps chromium
       - name: Big Fish workbench, panels and task cards
         run: node scripts/run-whale-big-fish-qa.mjs
@@ -101,10 +111,13 @@ jobs:
       WHALE_REQUIRE_TEST_PREREQS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'true'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - name: Lint
         run: npm run lint
@@ -135,16 +148,16 @@ jobs:
       - name: Update download network recovery
         run: npm run qa:update-download
       - name: GUI behavior tests
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness run test:gui
       - name: Core behavior tests
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/core/agent-loop packages/core/session packages/core/tools packages/llm packages/api/session-controller packages/api/workspace-controller packages/fs/tool-fs packages/workspace packages/session/session-projection-cache packages/subagent/subagent packages/boot/app-boot/tests/desktop-market.spec.ts packages/boot/app-boot/tests/desktop-pad.spec.ts --maxWorkers 2
       - name: Malformed tool recovery
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t "replays malformed-tool-call-retry"
       - name: Hardening & maturity suites
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true'
         env:
           DSH_COVERAGE_TEST_TIMEOUT_MS: '15000'
         run: |
@@ -154,10 +167,10 @@ jobs:
           npm run test:eval-harness
           node scripts/eval-harness.mjs --mode offline
       - name: Built desktop composition
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true' || needs.scope.outputs.vendor_plugins == 'true'
         run: node scripts/check-skip-compose-contract.js vendor/deepseek-harness
       - name: Built desktop styling
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true' || needs.scope.outputs.vendor_plugins == 'true'
         run: node scripts/check-built-shell.mjs
       - name: Native window behavior
         if: needs.scope.outputs.motion == 'true'
@@ -193,10 +206,13 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'false'
+          is-release: 'true'
+          harness-changed: 'true'
       - run: node scripts/check-mac-icon.js
       - run: npm ci
       - run: node node_modules/electron/install.js
@@ -235,10 +251,13 @@ jobs:
       WHALE_REQUIRE_TEST_PREREQS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'false'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - run: node node_modules/electron/install.js
       - name: Build the shipped Harness profile
@@ -269,7 +288,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - name: Hardening & maturity suites
-        if: needs.scope.outputs.vendor == 'true'
+        if: needs.scope.outputs.harness == 'true'
         env:
           DSH_COVERAGE_TEST_TIMEOUT_MS: '15000'
         run: |
@@ -291,10 +310,13 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: ./.github/actions/setup-whale
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          cache-electron: 'true'
+          cache-harness: 'true'
+          cache-office: 'false'
+          is-release: ${{ needs.scope.outputs.release }}
+          harness-changed: ${{ needs.scope.outputs.harness }}
       - run: npm ci
       - run: node node_modules/electron/install.js
       - name: Build the shipped Harness profile

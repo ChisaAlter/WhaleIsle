@@ -37,7 +37,6 @@ const runtimeServerExport = path.join(runtimeServerRoot, 'dist', 'server', 'serv
 const runtimeStaticDir = path.join(runtimeServerRoot, 'dist', 'server');
 const daemonRunner = path.join(root, 'src', 'main', 'dshd-daemon-runner.mjs');
 const electronPackage = path.join(root, 'node_modules', 'electron', 'package.json');
-const electronRebuildCli = path.join(root, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js');
 const runtimeBudgetBytes = 96 * 1024 * 1024;
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const typescript = path.join(upstreamRoot, 'node_modules', 'typescript', 'package.json');
@@ -89,46 +88,37 @@ function probeElectronSqliteRuntime(sqlitePackage) {
   }
 }
 
-function pruneSqliteBuildArtifacts(sqlitePackage) {
-  const nativeFile = path.join(sqlitePackage, 'build', 'Release', 'better_sqlite3.node');
-  if (!fs.existsSync(nativeFile)) {
-    throw new Error(`[dshd-remote] rebuilt better-sqlite3 binary is missing at ${nativeFile}`);
+/**
+ * Keep only the target platform's N-API prebuild for `better-sqlite3` and strip
+ * build-time source/C++ artifacts.
+ * @param {string} sqlitePackage
+ * @param {string} [target]
+ */
+export function pruneSqlitePrebuilds(sqlitePackage, target = `${process.platform}-${process.arch}`) {
+  const prebuildsRoot = path.join(sqlitePackage, 'prebuilds');
+  const keepName = `${target}.node`;
+  const targetFile = path.join(prebuildsRoot, keepName);
+  if (!fs.existsSync(targetFile)) {
+    throw new Error(`[dshd-remote] better-sqlite3 prebuild is missing for ${target}`);
   }
-  const native = fs.readFileSync(nativeFile);
-  fs.rmSync(path.join(sqlitePackage, 'build'), { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(nativeFile), { recursive: true });
-  fs.writeFileSync(nativeFile, native);
-  for (const entry of ['bin', 'deps', 'prebuilds', 'src', 'binding.gyp']) {
+  for (const entry of fs.readdirSync(prebuildsRoot, { withFileTypes: true })) {
+    if (entry.name !== keepName) {
+      fs.rmSync(path.join(prebuildsRoot, entry.name), { recursive: true, force: true });
+    }
+  }
+  for (const entry of ['bin', 'deps', 'src', 'binding.gyp', 'build']) {
     fs.rmSync(path.join(sqlitePackage, entry), { recursive: true, force: true });
   }
 }
 
 function prepareElectronSqliteRuntime(targetRoot = runtimeRoot) {
   const targetNodeModules = path.join(targetRoot, 'node_modules');
-  if (!fs.existsSync(electronPackage) || !fs.existsSync(electronRebuildCli)) {
-    throw new Error('[dshd-remote] Electron or @electron/rebuild is missing; run npm ci first');
+  if (!fs.existsSync(electronPackage)) {
+    throw new Error('[dshd-remote] Electron is missing; run npm ci first');
   }
-  const electronVersion = JSON.parse(fs.readFileSync(electronPackage, 'utf8')).version;
   const sqlitePackage = path.join(targetNodeModules, 'better-sqlite3');
-  // better-sqlite3@13+ skips native compilation in binding.gyp when a host prebuild exists; remove prebuilds before @electron/rebuild so it compiles against Electron's ABI.
-  fs.rmSync(path.join(sqlitePackage, 'prebuilds'), { recursive: true, force: true });
-  console.log(`[dshd-remote] rebuilding better-sqlite3 for Electron ${electronVersion}`);
-  run(
-    process.execPath,
-    [
-      electronRebuildCli,
-      '--version', electronVersion,
-      '--module-dir', targetRoot,
-      '--only', 'better-sqlite3',
-      '--force',
-      ...(process.platform === 'win32' ? ['--sequential'] : []),
-    ],
-    root,
-    { shell: false },
-  );
-
   probeElectronSqliteRuntime(sqlitePackage);
-  pruneSqliteBuildArtifacts(sqlitePackage);
+  pruneSqlitePrebuilds(sqlitePackage);
   probeElectronSqliteRuntime(sqlitePackage);
   console.log('[dshd-remote] Electron better-sqlite3 ABI probe passed after pruning');
 }
@@ -250,13 +240,14 @@ function forbiddenOptionalPayloads(targetNodeModules = runtimeNodeModules) {
 function assertTrimmedRuntime(targetRoot = runtimeRoot) {
   const targetNodeModules = path.join(targetRoot, 'node_modules');
   const targetServerExport = path.join(targetNodeModules, '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js');
-  const nodePtyTarget = `${process.platform}-${process.arch}`;
+  const platformArch = `${process.platform}-${process.arch}`;
+  const sqlitePrebuild = path.join(targetNodeModules, 'better-sqlite3', 'prebuilds', `${platformArch}.node`);
   const required = [
     targetServerExport,
-    path.join(targetNodeModules, 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
+    sqlitePrebuild,
     path.join(targetNodeModules, '@chisacode', 'protocol', 'dist', 'connection-offer.js'),
     path.join(targetNodeModules, '@chisacode', 'relay', 'dist', 'e2ee.js'),
-    path.join(targetNodeModules, 'node-pty', 'prebuilds', nodePtyTarget),
+    path.join(targetNodeModules, 'node-pty', 'prebuilds', platformArch),
   ];
   const missing = required.filter((file) => !fs.existsSync(file));
   if (missing.length > 0) {
@@ -265,12 +256,18 @@ function assertTrimmedRuntime(targetRoot = runtimeRoot) {
   const forbidden = forbiddenOptionalPayloads(targetNodeModules);
   const nodePtyPrebuilds = path.join(targetNodeModules, 'node-pty', 'prebuilds');
   for (const entry of fs.readdirSync(nodePtyPrebuilds, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name !== nodePtyTarget) {
+    if (entry.isDirectory() && entry.name !== platformArch) {
       forbidden.push(path.join('node-pty', 'prebuilds', entry.name));
     }
   }
-  if (fs.existsSync(path.join(targetNodeModules, 'node-pty', 'third_party'))) {
-    forbidden.push(path.join('node-pty', 'third_party'));
+  const sqlitePrebuilds = path.join(targetNodeModules, 'better-sqlite3', 'prebuilds');
+  if (fs.existsSync(sqlitePrebuilds)) {
+    for (const entry of fs.readdirSync(sqlitePrebuilds, { withFileTypes: true })) {
+      if (entry.name !== `${platformArch}.node`) forbidden.push(path.join('better-sqlite3', 'prebuilds', entry.name));
+    }
+  }
+  for (const rel of [path.join('node-pty', 'third_party'), path.join('better-sqlite3', 'deps'), path.join('better-sqlite3', 'src'), path.join('better-sqlite3', 'build')]) {
+    if (fs.existsSync(path.join(targetNodeModules, rel))) forbidden.push(rel);
   }
   if (forbidden.length > 0) {
     throw new Error(`[dshd-remote] optional platform payloads leaked into runtime: ${forbidden.join(', ')}`);

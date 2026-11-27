@@ -138,13 +138,28 @@
     },
     "src/renderer/pet-live2d/ort": {
       "kind": "artifacts",
-      "origin": "onnxruntime-web@1.22.0 vendored dist: ort.all.min.js loader plus the WASM/JSEP backend pair",
+      "origin": "onnxruntime-web@1.22.0 vendored dist: ort.all.min.js loader + JSEP backend; non-JSEP pair omitted (unreferenced by loader or runtime)",
       "rebuildCommand": "copy the dist files out of the onnxruntime-web 1.22.0 npm package",
       "artifacts": {
         "paths": [
           "src/renderer/pet-live2d/ort"
         ],
-        "artifactHash": "7834dc2085c9b1b030d2ee10a3a990871b585e9eaec0400f02fb67794f283170"
+        "artifactHash": "dffdaaebdbd279e7a558d3863d49d7a066fd2f61b1c5915df1b907c49ea9ef3e"
+      }
+    },
+    "src/renderer/pet-live2d/anime4k.js": {
+      "kind": "artifacts",
+      "origin": "Trimmed IIFE bundle (ImageUpscaler + ANIME4KJS_SIMPLE_M_2X) built by scripts/prepare-anime4k.mjs from anime4k.js@1.1.3 npm tarball (shasum 9f976d8edd381089e73436116fc191d6fd6edc0e); MIT (monyone + bloc97)",
+      "rebuildCommand": "node scripts/prepare-anime4k.mjs --source <anime4k.js@1.1.3>",
+      "artifacts": {
+        "sources": [
+          "scripts/prepare-anime4k.mjs"
+        ],
+        "paths": [
+          "src/renderer/pet-live2d/anime4k.js",
+          "src/renderer/pet-live2d/anime4k.LICENSE"
+        ],
+        "artifactHash": "10c2e1cc59440b8db1bc6406e78260f6e4ead9c932dce778fef9cd6fa8463567"
       }
     },
     "assets/icon.png": {

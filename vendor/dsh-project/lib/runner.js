@@ -31,6 +31,7 @@ import {
   blocksToText,
   dependencyGate,
   effectiveTaskRoute,
+  httpError,
   messageOf,
   routeChanged,
   workerIsLive,
