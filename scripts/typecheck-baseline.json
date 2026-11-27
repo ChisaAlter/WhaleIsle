@@ -10146,9 +10146,6 @@
       }
     },
     "vendor/dsh-project/lib/runner.js": {
-      "TS2304": {
-        "Cannot find name 'httpError'.": 6
-      },
       "TS2339": {
         "Property 'libraryIndexSync' does not exist on type 'never'.": 1,
         "Property 'project' does not exist on type 'never'.": 4,
