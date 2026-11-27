@@ -144,7 +144,7 @@ fun ScanScreen(onFound: (String) -> Unit, onClose: () -> Unit, onPaste: () -> Un
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "Whale Isle · 鲸屿 MOBILE",
+                        "WhaleIsle · MOBILE",
                         color = connection.muted,
                         fontSize = 12.sp,
                         lineHeight = 18.sp,

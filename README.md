@@ -1,11 +1,11 @@
 <div align="center">
 
-<img src="assets/icon.png" width="84" height="84" alt="鲸屿 Whale Isle" />
+<img src="assets/icon.png" width="84" height="84" alt="WhaleIsle（鲸屿）" />
 
-# 鲸屿 Whale Isle
+# WhaleIsle
 
 <p>
-  基于 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> 的开源社区桌面客户端<br />
+  <strong>鲸屿</strong> · 基于 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> 的开源社区桌面客户端<br />
   对话、代码工作台、AI 团队协作与多端远程，收纳于同一窗口。
 </p>
 
@@ -32,7 +32,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/v0.3.16/hero-dark.png" />
   <source media="(prefers-color-scheme: light)" srcset="docs/images/v0.3.16/hero-light.png" />
-  <img src="docs/images/v0.3.16/hero-light.png" width="100%" alt="鲸屿 Whale Isle 0.3.16 主工作台：左侧会话与工作区，中间对话与代码高亮，右侧实时 Git 差异面板" />
+  <img src="docs/images/v0.3.16/hero-light.png" width="100%" alt="WhaleIsle 0.3.16 主工作台：左侧会话与工作区，中间对话与代码高亮，右侧实时 Git 差异面板" />
 </picture>
 
 <p>
@@ -85,24 +85,24 @@
 <table>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-approval.png" width="100%" alt="鲸屿 0.3.16 最小化审批浮窗（浅色工具审批与深色计划审阅）及任务栏、托盘同步角标" /><br />
+      <img src="docs/images/v0.3.16/showcase-approval.png" width="100%" alt="WhaleIsle 0.3.16 最小化审批浮窗（浅色工具审批与深色计划审阅）及任务栏、托盘同步角标" /><br />
       <strong>最小化审批浮窗与图标角标</strong><br />
       <sub>不抢焦点处理后台工具审批与计划审阅，支持队列翻页、直接决策或跳转原会话。</sub>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-project.png" width="100%" alt="鲸屿 Project 协作工作台：右侧面板展示阶段与成员进度，底部等待权限审批" /><br />
+      <img src="docs/images/v0.3.16/showcase-project.png" width="100%" alt="WhaleIsle Project 协作工作台：右侧面板展示阶段与成员进度，底部等待权限审批" /><br />
       <strong>Project 团队协作</strong><br />
       <sub>右侧面板实时展示阶段与成员进度；仅在缺信息或需要越权审批时打扰你。</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-appearance.png" width="100%" alt="鲸屿 0.3.16 外观设置：深浅色模式与 DeepSeek、Codex、Claude、午夜等多套主题皮肤" /><br />
+      <img src="docs/images/v0.3.16/showcase-appearance.png" width="100%" alt="WhaleIsle 0.3.16 外观设置：深浅色模式与 DeepSeek、Codex、Claude、午夜等多套主题皮肤" /><br />
       <strong>多主题皮肤与原生材质</strong><br />
       <sub>支持多套双色主题、壁纸图库、透明度调节与 Windows 11 原生窗口毛玻璃。</sub>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/v0.3.16/showcase-ecosystem.png" width="100%" alt="鲸屿 0.3.16 桌面启动器与新版手机远程海天画布连接页" /><br />
+      <img src="docs/images/v0.3.16/showcase-ecosystem.png" width="100%" alt="WhaleIsle 0.3.16 桌面启动器与新版手机远程海天画布连接页" /><br />
       <strong>启动器与手机远程</strong><br />
       <sub>桌面启动器统一管理版本、CNB / GitHub 线路与组件；手机扫码直连本机工作区。</sub>
     </td>
@@ -124,7 +124,7 @@
 
 ### 快速开始
 
-1. 安装并启动鲸屿桌面端（可通过启动器管理版本、更新线路、配置导入与 Magpie 组件）。
+1. 安装并启动 WhaleIsle 桌面端（可通过启动器管理版本、更新线路、配置导入与 Magpie 组件）。
 2. 打开 **设置 → 模型** 配置模型 API 服务，模型调用费用由所选服务商收取。
 3. 选择本机目录（或通过 SSH 挂载远程目录），新建会话即可开始协作。
 4. 按需启用扩展能力：**设置 → 内置插件** 开启 Project，**设置 → 鲸鱼娘** 开启助理，**设置 → 远程** 开启手机扫码配对。
@@ -150,7 +150,7 @@
 <summary><strong>常见问题（FAQ）</strong></summary>
 
 - **软件是否收费？**
-  鲸屿基于 MIT 协议免费开源；模型 API 费用由你自行配置的模型服务商收取。
+  WhaleIsle 基于 MIT 协议免费开源；模型 API 费用由你自行配置的模型服务商收取。
 - **数据保存在哪里，升级会丢失吗？**
   Windows 位于 `%APPDATA%\Deepseek-Harness-Desktop`，macOS 位于 `~/Library/Application Support/Deepseek-Harness-Desktop`，覆盖安装保留全部数据。桌面端不读取官方 `~/.dsh`，可在启动器「导入」页只读导入其中的技能、MCP 与设置。
 - **和官方 `dsh web` 有什么区别？**
@@ -198,8 +198,8 @@ npm start
 - [维护与开发文档](docs/maintenance/README.md) · [发布流程](docs/handbook/modules/release-process.md) · [贡献指南](CONTRIBUTING.md)
 
 <div align="center">
-  <img src="assets/wechat-group.png" width="168" alt="鲸屿微信交流群二维码" /><br />
-  <sub>扫码加入鲸屿社区交流群</sub>
+  <img src="assets/wechat-group.png" width="168" alt="WhaleIsle（鲸屿）微信交流群二维码" /><br />
+  <sub>扫码加入 WhaleIsle（鲸屿）社区交流群</sub>
   <br /><br />
   <sub>
     致谢 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> ·

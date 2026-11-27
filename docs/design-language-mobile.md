@@ -4,11 +4,11 @@
 
 本文是 [design-language.md](design-language.md)「手机远程交互」节的完整契约；token 总表、强制规则与例外以母文档为准。2026-10-25 用户要求手机端尽量接近桌面，替代[旧 Claude 式结构](decisions/implemented/product/2026-09-24-mobile-remote-claude-structure.md)中的圆角抽屉、最近导航、衬线品牌和短操作全屏页。
 
-远程 Web 与 Android 共用桌面鲸屿的信息层级、颜色、字体栈和语义 token。画布与侧栏各取对应的基线角色；不引入第二套产品皮肤。Web 使用镜像 `--dsw-alias-*` / `--dsw-specific-*`，Android 使用同值 `DshTokens`。品牌头像使用 `assets/whale-head.png` 的同源透明图，与「鲸屿 / WHALE ISLE」及「BASED ON DEEPSEEK HARNESS」字标组合；不得用简笔鲸鱼或 emoji 替代。中文主字标仅「屿」使用品牌蓝，头像不加方形底板。
+远程 Web 与 Android 共用桌面 WhaleIsle 的信息层级、颜色、字体栈和语义 token。画布与侧栏各取对应的基线角色；不引入第二套产品皮肤。Web 使用镜像 `--dsw-alias-*` / `--dsw-specific-*`，Android 使用同值 `DshTokens`。品牌头像使用 `assets/whale-head.png` 的同源透明图，与双色驼峰 `WhaleIsle`（`Whale` 为主文字色、`Isle` 为品牌蓝）及「BASED ON DEEPSEEK HARNESS」字标组合；中文辅助名「鲸屿」仅出现在设置「关于」（`WhaleIsle（鲸屿）`），不得用简笔鲸鱼或 emoji 替代，头像不加方形底板。
 
 ## 连接入口
 
-连接、相机权限和扫码入口保留鲸屿海天关系，不复制桌面启动状态、日志、窗口按钮或 `--boot-*` 名称。品牌是紧凑头像和产品字标，使用系统界面字体；不再将巨型展示衬线作为手机品牌。浅深主题使用 `--mobile-connect-*` 与 Compose `DshTokens` 的同义表。首次打开且没有保存外观时跟随系统明暗。Android 首次配对或从连接入口重连时，认证、目录及当前会话的历史和控制项就绪后才进入聊天；连接中、失败、取消均保留在连接入口。已有聊天的同电脑断线恢复保留原任务面。
+连接、相机权限和扫码入口保留 WhaleIsle 海天关系，不复制桌面启动状态、日志、窗口按钮或 `--boot-*` 名称。品牌是紧凑头像和双色 `WhaleIsle` 产品字标（扫码副标为 `WhaleIsle · MOBILE`），使用系统界面字体；不再将巨型展示衬线作为手机品牌。浅深主题使用 `--mobile-connect-*` 与 Compose `DshTokens` 的同义表。首次打开且没有保存外观时跟随系统明暗。Android 首次配对或从连接入口重连时，认证、目录及当前会话的历史和控制项就绪后才进入聊天；连接中、失败、取消均保留在连接入口。已有聊天的同电脑断线恢复保留原任务面。
 
 连接首屏承载一个「扫描二维码」主按钮、一个「粘贴配对链接」次入口和已保存电脑重连。粘贴字段只在选择后展开；从权限页或原生扫码选择粘贴时，返回后立即展开并聚焦。保存电脑以可重连的紧凑行显示，名称为主、连接端点为次，忘记有独立命中区。名称优先取 `server_info.hostname`，旧记录无名称时显示「我的电脑」，内部 `serverId` 不作名称。Web sticky 与 Android 加密库保持既有身份，不为视觉整理删除凭据。
 

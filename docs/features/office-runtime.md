@@ -21,7 +21,7 @@
 - `workspace-dependencies`/`skill-office` 两行由 `desktop-plugins/office/desktop-office.patch.yml` overlay 配置上游已有行（不重复插入），每次启动（full+skip）都传；绝不写进用户 `cordis.patch.yml`。
 - `source/root/assetRoot` 全是显式绝对路径，`skill-office` 显式使用 `pythonEnvironment: workspace-dependencies`；`DSH_PRIMARY_RUNTIME` 覆盖整目录、空串退出；`DSH_BUNDLED_PRIMARY_RUNTIME` 只作载体默认声明。
 - `prepare-office-runtime.mjs` 先调用上游准备 Python/Node 载荷，再独立复制当前 `skill-office/assets` 到 `build/office-runtime/office-skills`；rc.2 的上游准备器不再输出技能目录。
-- payload 校验：runtime.json platform/arch/payloadDigest 匹配 + node.exe + `office/SKILL.md`（`OFFICE_SKILL_FOLDERS = ['office']`）；packaged 缺失或已有载荷但资源不完整=运行时损坏：本次启动跳过 Office，鲸屿照常启动，启动器「启动诊断」列出原因；dev 缺少载荷=警告可启动。
+- payload 校验：runtime.json platform/arch/payloadDigest 匹配 + node.exe + `office/SKILL.md`（`OFFICE_SKILL_FOLDERS = ['office']`）；packaged 缺失或已有载荷但资源不完整=运行时损坏：本次启动跳过 Office，WhaleIsle 照常启动，启动器「启动诊断」列出原因；dev 缺少载荷=警告可启动。
 - 依赖安装按 staging→validate→atomic install；失败保留旧 payload，会话/Profile 不受影响。
 - 每访问走 workspace 授权；拒绝 symlink/junction 逃逸；缓存随版本/代际失效。
 - 加载、取消、错误、大小限制、加密、缺字体失败都显式上报，不静默吞。

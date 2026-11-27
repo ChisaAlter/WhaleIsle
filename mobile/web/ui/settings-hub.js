@@ -81,7 +81,7 @@ function settingsGroups({ channel, accessMode, gitLine, scheme, usage } = {}) {
     },
     {
       label: '关于',
-      rows: [{ pane: '关于', desc: 'Whale Isle' }],
+      rows: [{ pane: '关于', desc: 'WhaleIsle（鲸屿）' }],
     },
   ];
 }

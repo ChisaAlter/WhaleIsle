@@ -1,4 +1,4 @@
-# Whale Isle 0.3.16
+# WhaleIsle 0.3.16
 
 - **Minimized approval popup and icon badge**: When the main window is minimized or hidden to the tray, pending approvals (tool, permission, and plan review) open an unfocused floating card in the primary display's bottom-right corner and update the taskbar/tray or macOS Dock badge. Approve, deny, request changes, or jump to the session from the popup, or turn the popup off in Settings → General while keeping the badge in sync.
 - **ACP 0.4.9 and Agent Teams**: Pick an agent first, then preview and choose its model and reasoning effort. The bundled ACP integration now supports Agent Teams.

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Whale Isle should grow from a conversation client into a local-first personal assistant that can discover work, plan it, execute it with bounded autonomy, pause for human decisions, and deliver verified results.
+WhaleIsle should grow from a conversation client into a local-first personal assistant that can discover work, plan it, execute it with bounded autonomy, pause for human decisions, and deliver verified results.
 
 This document records the first architecture baseline. It is intentionally runtime-neutral so the durable engine can evolve without coupling the UI to a specific agent framework.
 

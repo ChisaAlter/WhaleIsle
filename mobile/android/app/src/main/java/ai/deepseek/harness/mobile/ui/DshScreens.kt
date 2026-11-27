@@ -142,7 +142,7 @@ private fun ConnectionBrand(compact: Boolean, supportingText: String?) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(28.dp).height(1.dp).background(connection.hairline))
             Text(
-                "鲸屿 · MOBILE",
+                "WhaleIsle · MOBILE",
                 color = connection.muted,
                 fontSize = 11.sp,
                 lineHeight = 18.sp,
@@ -348,7 +348,7 @@ private fun PermissionScreen(
             letterSpacing = 1.2.sp,
         )
         Text(
-            "让鲸屿看见二维码",
+            "让 WhaleIsle 看见二维码",
             color = palette.connection.ink,
             fontSize = 17.sp,
             lineHeight = 24.sp,

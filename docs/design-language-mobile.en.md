@@ -18,12 +18,12 @@ The decision is in
 ## Pre-connection sea-horizon canvas
 
 Connect, camera permission, and scan entry inherit atmosphere rather than
-components from the Whale Isle desktop boot page. A 1px horizon at 62% splits
+components from the WhaleIsle desktop boot page. A 1px horizon at 62% splits
 sky and water: light mode uses pale skylight, faint clouds, and blue water;
-dark mode uses sparse stars, deep-space haze, and deep water. The centered
-`Whale Isle` uses a Didot / Bodoni display serif and the secondary lockup is
-`鲸屿 · MOBILE`. This display-serif exception stays at the connection entry and
-does not spread into chat copy or controls. Do not copy desktop boot states,
+dark mode uses sparse stars, deep-space haze, and deep water. Branding uses the
+shared transparent whale-girl head with the two-tone camelCase `WhaleIsle`
+wordmark (`Isle` in brand blue) and `BASED ON DEEPSEEK HARNESS` attribution, and
+the secondary scan/connect lockup is `WhaleIsle · MOBILE`. Do not copy desktop boot states,
 logs, window controls, shine animation, or `--boot-*` names.
 
 The lower first screen uses one translucent compact action dock rather than a
@@ -46,7 +46,7 @@ support. The canvas honors safe areas, 320px widths, and landscape. Dock
 content may scroll, but decoration must never cover the primary action.
 
 Light and dark use same-meaning `--mobile-connect-*` and Compose `DshTokens`
-tables calibrated from the DSHD baseline and Whale Isle boot canvas; they do
+tables calibrated from the DSHD baseline and WhaleIsle boot canvas; they do
 not read desktop `--boot-*`. With no saved appearance, first launch follows the
 system scheme instead of forcing light. Native and Web camera previews share
 the same high-contrast camera tokens, mask, and clear frame. A generic browser
