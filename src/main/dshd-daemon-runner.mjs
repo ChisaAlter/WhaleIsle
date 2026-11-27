@@ -68,6 +68,7 @@ function withTimeout(promise, ms) {
   });
 }
 
+/** @type {any} */
 let daemon = null;
 let stopping = false;
 let startSettled = Promise.resolve();
@@ -108,22 +109,36 @@ process.on('unhandledRejection', (err) => {
 
 // stdin is the cross-platform graceful-stop channel (Windows has no trappable
 // SIGTERM); its close means the parent is gone and this host must not linger.
+const MAX_STDIN_BUFFER_CHARS = 64 * 1024;
 let stdinBuffer = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
   stdinBuffer += chunk;
+  if (stdinBuffer.length > MAX_STDIN_BUFFER_CHARS) {
+    stdinBuffer = stdinBuffer.slice(-MAX_STDIN_BUFFER_CHARS);
+  }
   let newline = stdinBuffer.indexOf('\n');
   while (newline !== -1) {
     const line = stdinBuffer.slice(0, newline).trim();
     stdinBuffer = stdinBuffer.slice(newline + 1);
-    const kind = applyDaemonStdinLine(line);
-    if (kind === 'stop') {
-      void shutdown('stop');
+    if (line.startsWith('revoke-device ')) {
+      const deviceId = line.slice('revoke-device '.length).trim();
+      if (deviceId && daemon && typeof daemon.disconnectDevice === 'function') {
+        void Promise.resolve(daemon.disconnectDevice(deviceId)).catch((err) => {
+          emit({ msg: 'dshd_daemon_revoke_error', deviceId, error: errorText(err) });
+        });
+      }
+    } else {
+      const kind = applyDaemonStdinLine(line);
+      if (kind === 'stop') {
+        void shutdown('stop');
+      }
     }
     newline = stdinBuffer.indexOf('\n');
   }
 });
 process.stdin.on('end', () => { void shutdown('stdin-closed'); });
+process.stdin.on('close', () => { void shutdown('stdin-closed'); });
 process.stdin.on('error', () => { void shutdown('stdin-error'); });
 process.stdin.resume();
 

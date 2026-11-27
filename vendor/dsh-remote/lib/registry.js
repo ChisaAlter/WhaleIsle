@@ -10,7 +10,8 @@
 // Keeping this logic in one module makes the guarantee unit-testable and
 // shared between the HTTP routes and the tools (rw_connect).
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 
 /** Load { list, currentId, explicitNone } from the registry file. */
@@ -41,7 +42,7 @@ export function loadMachines(file) {
  *  none", nor clears an explicit choice. When no previous file exists the
  *  `currentId` key is omitted entirely (fresh registry = "no choice yet"). */
 export function saveMachines(file, list, currentId, keepCurrentKey = true) {
-  try { mkdirSync(path.dirname(file), { recursive: true }) } catch { /* The following write reports a directory or permission failure to the caller. */ }
+  try { mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }) } catch { /* The following write reports a directory or permission failure to the caller. */ }
   let stored = currentId
   let hasStored = keepCurrentKey
   if (!keepCurrentKey) {
@@ -55,7 +56,14 @@ export function saveMachines(file, list, currentId, keepCurrentKey = true) {
   }
   const payload = { list }
   if (hasStored) payload.currentId = stored
-  writeFileSync(file, JSON.stringify(payload, null, 2))
+  const tmp = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+  try {
+    writeFileSync(tmp, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 })
+    renameSync(tmp, file)
+  } catch (err) {
+    try { unlinkSync(tmp) } catch { /* ignore */ }
+    throw err
+  }
 }
 
 export const passphraseSecretId = (id) => `${id}.passphrase`
@@ -270,4 +278,34 @@ export async function deleteMachineSecrets(m, secretsDir, deleteSecret) {
     deleteSecret(passphraseSecretId(m.id), secretsDir),
     deleteSecret(proxyPasswordSecretId(m.id), secretsDir),
   ])
+}
+
+/** Upsert a machine from `rw_connect` while honoring OS credential storage. */
+export async function upsertConnectedMachine({
+  machines, rec, platformBackend, secretsDir, persistPassword, deleteSecret,
+}) {
+  const i = machines.findIndex((m) => m.host === rec.host && m.username === rec.username && Number(m.port) === rec.port)
+  const prev = i >= 0 ? machines[i] : null
+  const id = prev ? prev.id : machineId()
+  const requestedBackend = prev?.credentialBackend || (rec.password ? platformBackend() : 'plain')
+  const saved = await buildAndPersistMachine({
+    id,
+    body: {
+      ...(prev || {}),
+      name: prev?.name || rec.host,
+      host: rec.host,
+      port: rec.port,
+      username: rec.username,
+      password: rec.password,
+      privateKeyPath: rec.privateKeyPath || prev?.privateKeyPath || '',
+    },
+    prev,
+    requestedBackend,
+    secretsDir,
+    persistPassword,
+    deleteSecret,
+  })
+  if (i >= 0) machines[i] = saved.rec
+  else machines.push(saved.rec)
+  return id
 }

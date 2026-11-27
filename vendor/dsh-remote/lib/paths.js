@@ -215,3 +215,16 @@ export function shortHash(s) {
   }
   return (h >>> 0).toString(36)
 }
+
+/** Resolve a remote file path safely under a local mirror root (or null if escaping). */
+export function resolveMirrorDownloadPath(pathMod, mirrorBase, ws, remotePath) {
+  const base = pathMod.resolve(mirrorBase)
+  const under = relPathUnder(ws, remotePath)
+  const rel = (under != null ? under : remotePath.replace(/^[a-zA-Z]:[\\/]?/, '').replace(/^\/+/, '')).replace(/\\/g, '/')
+  const local = pathMod.resolve(base, rel)
+  const relCheck = pathMod.relative(base, local)
+  if (!relCheck || relCheck === '..' || relCheck.startsWith(`..${pathMod.sep}`) || pathMod.isAbsolute(relCheck)) {
+    return null
+  }
+  return local
+}

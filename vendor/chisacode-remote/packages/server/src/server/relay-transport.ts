@@ -668,16 +668,22 @@ export async function attachEncryptedSocket(
       }
       pendingMessages.push(data);
     };
+    let closeFinalized = false;
+    const finalizeClose = (code?: number, reason?: string) => {
+      if (closeFinalized) {
+        return;
+      }
+      closeFinalized = true;
+      rtcController?.dispose();
+      rtcController = null;
+      if (connectionId) {
+        logger.info({ connectionId, code, reason }, "remote_client_disconnected");
+      }
+      emitter.emit("close", code, reason);
+    };
     const channel = await createDaemonChannel(relayTransport, daemonKeyPair, {
       onmessage: emitMessage,
-      onclose: (code, reason) => {
-        rtcController?.dispose();
-        rtcController = null;
-        if (connectionId) {
-          logger.info({ connectionId, code, reason }, "remote_client_disconnected");
-        }
-        emitter.emit("close", code, reason);
-      },
+      onclose: finalizeClose,
       onerror: (error) => {
         logger.warn({ err: error }, "relay_e2ee_error");
         emitter.emit("error", error);
@@ -692,9 +698,14 @@ export async function attachEncryptedSocket(
         detectHostCandidates: upgradeOptions?.detectHostCandidates,
       });
     }
-    const encryptedSocket = createEncryptedSocket(channel, emitter, () => {
-      rtcController?.markAuthenticated();
-    });
+    const encryptedSocket = createEncryptedSocket(
+      channel,
+      emitter,
+      () => {
+        rtcController?.markAuthenticated();
+      },
+      finalizeClose,
+    );
     const securityContext = channel.getSecurityContext();
     const boundMetadata: ExternalSocketMetadata | undefined = metadata
       ? {
@@ -773,6 +784,7 @@ function createEncryptedSocket(
   channel: EncryptedChannel,
   emitter: EventEmitter,
   onAuthResultSent?: () => void,
+  onClose?: (code?: number, reason?: string) => void,
 ): RelaySocketLike {
   let readyState = 1;
 
@@ -782,6 +794,7 @@ function createEncryptedSocket(
     if (readyState === 3) return;
     readyState = 3;
     channel.close(code, reason);
+    onClose?.(code, reason);
   };
 
   emitter.on("close", () => {

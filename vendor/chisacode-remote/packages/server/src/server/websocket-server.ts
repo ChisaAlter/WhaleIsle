@@ -2197,6 +2197,53 @@ export class VoiceAssistantWebSocketServer {
       this.sendToClient(ws, message);
     }
   }
+
+  public async disconnectDevice(deviceId: string): Promise<number> {
+    const target = deviceId.trim();
+    if (!target) {
+      return 0;
+    }
+    let disconnected = 0;
+
+    for (const [ws, pending] of [...this.pendingConnections.entries()]) {
+      if (pending.authenticatedDeviceId !== target) {
+        continue;
+      }
+      this.clearPendingConnection(ws);
+      disconnected += 1;
+      try {
+        ws.close(4003, "Device revoked");
+      } catch {
+        // ignore close errors
+      }
+    }
+
+    const matched = new Set<SessionConnection>();
+    for (const connection of this.sessions.values()) {
+      if (connection.authenticatedDeviceId === target) {
+        matched.add(connection);
+      }
+    }
+    for (const connection of this.externalSessionsByKey.values()) {
+      if (connection.authenticatedDeviceId === target) {
+        matched.add(connection);
+      }
+    }
+
+    for (const connection of matched) {
+      disconnected += 1;
+      for (const socket of [...connection.sockets]) {
+        try {
+          socket.close(4003, "Device revoked");
+        } catch {
+          // ignore close errors
+        }
+      }
+      await this.cleanupConnection(connection, "Device revoked");
+    }
+
+    return disconnected;
+  }
 }
 
 interface SocketRequestMetadata {

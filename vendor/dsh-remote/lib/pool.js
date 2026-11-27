@@ -109,6 +109,35 @@ export class SshPool {
     return pending
   }
 
+  async _connectProxyTunnel(proxyCfg, isCurrent) {
+    const localProxyPool = new SshPool({
+      ...this.config,
+      host: proxyCfg.host,
+      port: Number(proxyCfg.port) || 22,
+      username: proxyCfg.username || this.config.username || 'root',
+      password: proxyCfg.password || '',
+      privateKeyPath: proxyCfg.privateKeyPath || '',
+      passphrase: proxyCfg.passphrase || '',
+      hostKeyMode: proxyCfg.hostKeyMode || (this.config.hostKeyMode === 'off' ? 'accept-new' : this.config.hostKeyMode),
+      proxy: undefined,
+    }, { knownHostsFile: this._knownHostsFile })
+    this.proxyPool = localProxyPool
+    try {
+      if (!proxyCfg.password && this.proxyPasswordResolver) {
+        localProxyPool.passwordResolver = this.proxyPasswordResolver
+      }
+      const pclient = await localProxyPool.connect()
+      if (!isCurrent()) throw new Error('ssh target changed during proxy connect')
+      return await new Promise((res, rej) => {
+        pclient.forwardOut('127.0.0.1', 0, this.config.host, this.config.port, (e, ch) => (e ? rej(new Error('proxy forward to target failed: ' + ((e && e.message) || e))) : res(ch)))
+      })
+    } catch (err) {
+      try { localProxyPool.close() } catch { /* ignore */ }
+      if (this.proxyPool === localProxyPool) this.proxyPool = null
+      throw err
+    }
+  }
+
   async _doConnect(epoch) {
     const isCurrent = () => this.epoch === epoch
     const knownHostsFile = typeof this._knownHostsFile === 'function' ? this._knownHostsFile() : this._knownHostsFile
@@ -129,24 +158,7 @@ export class SshPool {
     const proxyCfg = this.config.proxy
     if (proxyCfg && proxyCfg.host) {
       try {
-        this.proxyPool = new SshPool({
-          ...this.config,
-          host: proxyCfg.host,
-          port: Number(proxyCfg.port) || 22,
-          username: proxyCfg.username || this.config.username || 'root',
-          password: proxyCfg.password || '',
-          privateKeyPath: proxyCfg.privateKeyPath || '',
-          passphrase: proxyCfg.passphrase || '',
-          proxy: undefined,
-        }, { knownHostsFile: this._knownHostsFile })
-        if (!proxyCfg.password && this.proxyPasswordResolver) {
-          this.proxyPool.passwordResolver = this.proxyPasswordResolver
-        }
-        const pclient = await this.proxyPool.connect()
-        if (!isCurrent()) throw new Error('ssh target changed during proxy connect')
-        sock = await new Promise((res, rej) => {
-          pclient.forwardOut('127.0.0.1', 0, this.config.host, this.config.port, (e, ch) => (e ? rej(new Error('proxy forward to target failed: ' + ((e && e.message) || e))) : res(ch)))
-        })
+        sock = await this._connectProxyTunnel(proxyCfg, isCurrent)
       } catch (err) {
         return fail(err)
       }
@@ -280,11 +292,18 @@ export class SshPool {
     this.gitBashPath = ''
   }
 
+  /** Reject Windows cmd.exe metacharacters in remote executable paths. */
+  _isSafeWindowsShellPath(p, { allowLocalAppData = false } = {}) {
+    if (typeof p !== 'string' || !p.trim()) return false
+    const check = allowLocalAppData ? p.replace(/^%LOCALAPPDATA%/i, '') : p
+    return !/["&|<>^%\r\n\0]/.test(check)
+  }
+
   /** On a Windows remote, locate Git Bash (config path → PATH → common installs). */
   async _resolveGitBash() {
     const cfg = String(this.config.shell || '').trim()
     if (cfg && cfg !== 'git-bash' && cfg !== 'native') {
-      if (await this._cmdExists(cfg)) {
+      if (this._isSafeWindowsShellPath(cfg) && await this._cmdExists(cfg)) {
         this.gitBashPath = cfg
         this.shellMode = 'git-bash'
         return
@@ -298,7 +317,7 @@ export class SshPool {
     try {
       const r = await this._execRaw('cmd /c where bash', { timeoutMs: 8000 })
       const first = String(r.stdout || '').trim().split(/\r?\n/)[0].trim()
-      if (first) {
+      if (first && this._isSafeWindowsShellPath(first)) {
         this.gitBashPath = first
         this.shellMode = 'git-bash'
         return
@@ -307,11 +326,10 @@ export class SshPool {
     const candidates = [
       'C:\\Program Files\\Git\\bin\\bash.exe',
       'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-      ...(process.env.LOCALAPPDATA ? [process.env.LOCALAPPDATA + '\\Programs\\Git\\bin\\bash.exe'] : []),
       '%LOCALAPPDATA%\\Programs\\Git\\bin\\bash.exe',
     ]
     for (const c of candidates) {
-      if (await this._cmdExists(c)) {
+      if (await this._cmdExists(c, { allowLocalAppData: true })) {
         this.gitBashPath = c
         this.shellMode = 'git-bash'
         return
@@ -321,7 +339,8 @@ export class SshPool {
     this.gitBashPath = ''
   }
 
-  async _cmdExists(p) {
+  async _cmdExists(p, opts = {}) {
+    if (!this._isSafeWindowsShellPath(p, opts)) return false
     try {
       const r = await this._execRaw(`cmd /c if exist "${p}" (echo Y) else (echo N)`, { timeoutMs: 8000 })
       return /Y/.test(String(r.stdout || ''))
@@ -543,17 +562,64 @@ export class SshPool {
               fastGet: (p, lp) => withTimeout((d, l, cb) => sftp.fastGet(d, l, cb))(P(p), lp),
               fastPut: (lp, p) => withTimeout((l, d, cb) => sftp.fastPut(l, d, cb))(lp, P(p)),
               // Range read for oversized previews: never downloads the whole file.
-              readPartial: (p, offset, length) => withTimeout((d, off, len, cb) => {
-                sftp.open(d, 'r', (e, handle) => {
-                  if (e) return cb(e)
-                  const buf = Buffer.alloc(len)
-                  sftp.read(handle, buf, 0, len, off, (e2, bytesRead, data) => {
-                    sftp.close(handle, () => {})
-                    if (e2) return cb(e2)
-                    cb(null, Buffer.isBuffer(data) ? data.subarray(0, bytesRead) : buf.subarray(0, bytesRead))
+              // Loops on SFTP short reads and closes the remote handle on timeout too.
+              readPartial: (p, offset, length) => new Promise((r2, j2) => {
+                const target = P(p)
+                const want = Math.max(0, Number(length) || 0)
+                let settled = false
+                let openHandle = null
+                const closeHandle = () => {
+                  const h = openHandle
+                  openHandle = null
+                  if (h) {
+                    try { sftp.close(h, () => {}) } catch { /* ignore */ }
+                  }
+                }
+                const finish = (e, v) => {
+                  if (settled) return
+                  settled = true
+                  clearTimeout(timer)
+                  closeHandle()
+                  if (e) {
+                    if (/channel open failure|open failed|unexpected sftp session termination|session termination|no response from server|not connected|stream closed|disconnect/i.test(String((e && e.message) || e))) {
+                      clearThis()
+                    }
+                    j2(e)
+                  } else {
+                    r2(v)
+                  }
+                }
+                const timer = setTimeout(() => finish(new Error('sftp operation timed out')), this.config.commandTimeoutMs)
+                if (want === 0) { finish(null, Buffer.alloc(0)); return }
+                try {
+                  sftp.open(target, 'r', (e, handle) => {
+                    if (e) return finish(e)
+                    if (settled) { try { sftp.close(handle, () => {}) } catch { /* ignore */ } return }
+                    openHandle = handle
+                    const buf = Buffer.alloc(want)
+                    let totalRead = 0
+                    const readNext = () => {
+                      if (settled) return
+                      const remaining = want - totalRead
+                      if (remaining <= 0) return finish(null, buf.subarray(0, totalRead))
+                      sftp.read(handle, buf, totalRead, remaining, offset + totalRead, (e2, bytesRead, data) => {
+                        if (settled) return
+                        if (e2) return finish(e2)
+                        if (!bytesRead || bytesRead <= 0) return finish(null, buf.subarray(0, totalRead))
+                        if (Buffer.isBuffer(data) && data !== buf) {
+                          data.copy(buf, totalRead, 0, Math.min(bytesRead, remaining))
+                        }
+                        totalRead += Math.min(bytesRead, remaining)
+                        if (totalRead >= want) return finish(null, buf.subarray(0, totalRead))
+                        readNext()
+                      })
+                    }
+                    readNext()
                   })
-                })
-              })(P(p), offset, length),
+                } catch (e) {
+                  finish(e)
+                }
+              }),
             })
           })
         }

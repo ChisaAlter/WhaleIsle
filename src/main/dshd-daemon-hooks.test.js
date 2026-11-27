@@ -86,6 +86,7 @@ test('shared mux replays only current pending approvals to a later subscriber', 
     installDesktopRpcHooks();
     const initial = subscribe();
     applyDaemonStdinLine('harness-origin http://127.0.0.1:3080');
+    await Promise.resolve();
     const socket = sockets[0];
     socket.open();
     socket.item({ type: 'ready', clientId: 'gateway-owner' });
@@ -106,12 +107,14 @@ test('shared mux replays only current pending approvals to a later subscriber', 
     socket.close();
     assert.deepEqual(subscribe(), [], 'closed Gateway owner identities must not be replayed');
     applyDaemonStdinLine('harness-cookie next-session=value');
+    await Promise.resolve();
     const replacement = sockets.at(-1);
     replacement.open();
     replacement.item({ type: 'ready', clientId: 'next-owner' });
     replacement.item({ type: 'waterfall', event: 'approval/request', eventId: 'event-c', agentId: 'session-a', request: { requestId: 'approval-c' } });
     assert.equal(subscribe()[0].envelope.payload.approvalId, 'approval-c');
     applyDaemonStdinLine('harness-origin http://127.0.0.1:3081');
+    await Promise.resolve();
     socket.item({ type: 'waterfall', event: 'approval/request', eventId: 'stale-event', agentId: 'session-old', request: { requestId: 'stale-approval' } });
     assert.deepEqual(subscribe(), [], 'new origins must not inherit approvals or late frames from the old stream');
   } finally {
@@ -119,5 +122,37 @@ test('shared mux replays only current pending approvals to a later subscriber', 
     applyDaemonStdinLine('harness-origin ');
     globalThis.WebSocket = previousSocket;
     globalThis.fetch = previousFetch;
+  }
+});
+
+test('applyDaemonStdinLine skips mux when unsubscribed and coalesces origin+cookie updates', async () => {
+  const { applyDaemonStdinLine, installDesktopRpcHooks } = await import('./dshd-daemon-hooks.mjs');
+  const previousSocket = globalThis.WebSocket;
+  const sockets = [];
+  class Socket {
+    constructor(url, opts) { this.url = url; this.opts = opts; this.listeners = new Map(); this.readyState = 0; sockets.push(this); }
+    addEventListener(name, listener) { this.listeners.set(name, [...(this.listeners.get(name) || []), listener]); }
+    send() {}
+    close() { this.readyState = 3; for (const fn of this.listeners.get('close') || []) fn({}); }
+  }
+  globalThis.WebSocket = Socket;
+  let unsubscribe = null;
+  try {
+    installDesktopRpcHooks();
+    applyDaemonStdinLine('harness-origin http://127.0.0.1:3080');
+    applyDaemonStdinLine('harness-cookie dsh-browser-session=first');
+    await Promise.resolve();
+    assert.equal(sockets.length, 0, 'zero subscribers must not open a permanent mux socket');
+    unsubscribe = globalThis.__dshdDesktopRpc.subscribeMux(() => {});
+    assert.equal(sockets.length, 1);
+    applyDaemonStdinLine('harness-origin http://127.0.0.1:3082');
+    applyDaemonStdinLine('harness-cookie dsh-browser-session=second');
+    await Promise.resolve();
+    assert.equal(sockets.length, 2, 'consecutive origin + cookie lines must coalesce into one reconnect');
+    assert.equal(sockets[1].opts.headers.Cookie, 'dsh-browser-session=second');
+  } finally {
+    unsubscribe?.();
+    applyDaemonStdinLine('harness-origin ');
+    globalThis.WebSocket = previousSocket;
   }
 });

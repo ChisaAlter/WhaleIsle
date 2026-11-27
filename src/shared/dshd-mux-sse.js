@@ -176,6 +176,67 @@ function sleep(ms, signal) {
  */
 
 /**
+ * @param {Map<unknown, Record<string, unknown>>} approvals
+ * @param {unknown} eventId
+ * @param {Record<string, unknown>} payload
+ */
+function recordPendingApproval(approvals, eventId, payload) {
+  if (approvals.size >= 512) {
+    const oldest = approvals.keys().next().value;
+    if (oldest !== undefined) approvals.delete(oldest);
+  }
+  approvals.set(eventId, payload);
+}
+
+/**
+ * @param {object} ctx
+ * @param {any} ctx.value
+ * @param {string} ctx.eventClientId
+ * @param {Map<unknown, Record<string, unknown>>} ctx.approvals
+ * @param {(envelope: object) => void} ctx.onEnvelope
+ * @param {() => number} ctx.nextSeq
+ * @param {string} ctx.endpoint
+ * @param {(eventId: unknown) => void} ctx.forwardNext
+ * @returns {boolean}
+ */
+function handleEventControlValue({ value, eventClientId, approvals, onEnvelope, nextSeq, endpoint, forwardNext }) {
+  if (value?.type === 'waterfall' && eventClientId) {
+    if (value.event === 'approval/request') {
+      const request = value.request || {};
+      const payload = {
+        type: 'approval/requested',
+        sessionId: value.agentId,
+        approvalId: request.requestId || value.eventId,
+        toolName: request.toolName,
+        reason: request.reason || '',
+      };
+      recordPendingApproval(approvals, value.eventId, payload);
+      onEnvelope({
+        type: 'server-request',
+        rpcId: `remote-event:${JSON.stringify({ clientId: eventClientId, eventId: value.eventId })}`,
+        payload,
+      });
+    } else {
+      forwardNext(value.eventId);
+    }
+    return true;
+  }
+  if (value?.type === 'cancel') {
+    const approval = approvals.get(value.eventId);
+    if (approval) {
+      approvals.delete(value.eventId);
+      onEnvelope({
+        type: 'server-request',
+        rpcId: `${endpoint}#${nextSeq()}`,
+        payload: { type: 'approval/resolved', sessionId: approval.sessionId, approvalId: approval.approvalId },
+      });
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
  * Keep the catalog streams open until `signal` aborts; reconnect with backoff
  * when the socket closes. Resolves only on abort; rejects only on a bad origin.
  * Approval waterfalls retain the Gateway event generation for their unary reply.
@@ -252,27 +313,18 @@ async function openMuxSse({ origin, cookie, onEnvelope, onDisconnect, signal, We
         sawItem = true;
         const value = frame.value;
         if (endpoint === '$events' && value?.type === 'ready') { eventClientId = value.clientId; return; }
-        if (endpoint === '$events' && value?.type === 'waterfall' && eventClientId) {
-          if (value.event === 'approval/request') {
-            const request = value.request || {};
-            const payload = { type: 'approval/requested', sessionId: value.agentId,
-              approvalId: request.requestId || value.eventId, toolName: request.toolName, reason: request.reason || '' };
-            approvals.set(value.eventId, payload);
-            onEnvelope({ type: 'server-request', rpcId: `remote-event:${JSON.stringify({ clientId: eventClientId, eventId: value.eventId })}`, payload });
-          } else {
-            // This client does not present other waterfalls; let another answerer handle them.
+        if (endpoint === '$events' && handleEventControlValue({
+          value,
+          eventClientId,
+          approvals,
+          onEnvelope,
+          nextSeq: () => { seq += 1; return seq; },
+          endpoint,
+          forwardNext: (eventId) => {
             void forwardRemoteEventResult({ origin, cookie, signal, fetchImpl, clientId: eventClientId,
-              eventId: value.eventId, outcome: { kind: 'next' } }).catch(() => socket.close());
-          }
-          return;
-        }
-        if (endpoint === '$events' && value?.type === 'cancel') {
-          const approval = approvals.get(value.eventId);
-          if (approval) {
-            approvals.delete(value.eventId);
-            onEnvelope({ type: 'server-request', rpcId: `${endpoint}#${++seq}`,
-              payload: { type: 'approval/resolved', sessionId: approval.sessionId, approvalId: approval.approvalId } });
-          }
+              eventId, outcome: { kind: 'next' } }).catch(() => socket.close());
+          },
+        })) {
           return;
         }
         const payload = mapRemoteStreamItem(endpoint, frame.value);
