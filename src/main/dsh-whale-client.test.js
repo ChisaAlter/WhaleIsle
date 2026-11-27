@@ -2331,12 +2331,49 @@ domTest('BotSidebarCard clears failed dot and upNext pill on active-card click, 
         chatSessionId: 'sess-delta-home',
         homePath: 'C:/Users/demo/.whaleisle/bots/bot-delta',
       },
+      {
+        id: 'bot-null-sid',
+        name: '迁移空会话五号',
+        purpose: '首次打开分配会话',
+        avatar: 'mascot:W1',
+        avatarColor: '#06b6d4',
+        paused: false,
+        unread: false,
+        dotState: 'failed',
+        upNextCount: 1,
+        needsYouCount: 0,
+        homeSessionId: null,
+        chatSessionId: null,
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-null-sid',
+      },
+      {
+        id: 'bot-pill-cancel',
+        name: '胶囊切走六号',
+        purpose: '在途取消右栏',
+        avatar: 'mascot:W2',
+        avatarColor: '#ec4899',
+        paused: false,
+        unread: false,
+        dotState: 'idle',
+        upNextCount: 2,
+        needsYouCount: 0,
+        homeSessionId: 'sess-claude-pill-home',
+        chatSessionId: 'sess-claude-pill-home',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-pill-cancel',
+      },
     ],
     groups: [],
     chatsByBot: {
       'bot-whale': {
         botId: 'bot-whale',
         chats: [{ chatId: 'sess-whale-home', sessionId: 'sess-whale-home', origin: 'home', title: 'Home Chat', dotState: 'failed', unread: false }],
+      },
+      'bot-gamma': {
+        botId: 'bot-gamma',
+        chats: [
+          { chatId: 'sess-gamma-home', sessionId: 'sess-gamma-home', origin: 'home', title: 'Home Chat', dotState: 'idle', unread: false },
+          { chatId: 'sess-gamma-side', sessionId: 'sess-gamma-side', origin: 'side', title: 'Side Chat', dotState: 'failed', unread: true },
+        ],
       },
     },
     needsYou: {},
@@ -2348,11 +2385,35 @@ domTest('BotSidebarCard clears failed dot and upNext pill on active-card click, 
     'bot-beta': 'sess-beta-home',
     'bot-gamma': 'sess-gamma-home',
     'bot-delta': 'sess-delta-home',
+    'bot-null-sid': 'sess-migrated-home',
+    'bot-pill-cancel': 'sess-claude-pill-home',
   };
+  let gammaSideUnread = true;
+  let gammaUpNextCount = 2;
+  let pillCancelChatOpenGate = null;
 
-  const fetchImpl = makeRpcFetch((method, params) => {
-    if (method === 'bots.list') return fixtures;
-    if (method === 'bots.chat.open') return { sessionId: sessionMap[params.botId] ?? 'sess-whale-home' };
+  const fetchImpl = makeRpcFetch(async (method, params) => {
+    if (method === 'bots.list') {
+      return {
+        ...fixtures,
+        bots: fixtures.bots.map((b) => (b.id === 'bot-gamma'
+          ? { ...b, unread: gammaSideUnread, dotState: gammaSideUnread ? 'failed' : 'idle', upNextCount: gammaUpNextCount }
+          : b)),
+      };
+    }
+    if (method === 'bots.chat.open') {
+      if (params.botId === 'bot-pill-cancel' && pillCancelChatOpenGate) {
+        await pillCancelChatOpenGate;
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+      return { sessionId: sessionMap[params.botId] ?? 'sess-whale-home' };
+    }
+    if (method === 'bots.chats.seen' && params.botId === 'bot-gamma' && !params.sessionId) {
+      gammaSideUnread = false;
+    }
+    if (method === 'bots.upNext.seen' && params.botId === 'bot-gamma') {
+      gammaUpNextCount = 0;
+    }
     return { ok: true };
   }, rpcCalls);
 
@@ -2557,12 +2618,23 @@ domTest('BotSidebarCard clears failed dot and upNext pill on active-card click, 
   assert.equal(gammaCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null, null, 'context menu Mark Read must clear failed dot');
   assert.equal(gammaCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null, null, 'context menu Mark Read must clear upNext pill');
   assert.ok(
-    rpcCalls.some((c) => c.method === 'bots.chats.seen' && c.params?.botId === 'bot-gamma' && c.params?.sessionId === 'sess-gamma-home'),
-    'context menu Mark Read must emit bots.chats.seen',
+    rpcCalls.some((c) => c.method === 'bots.chats.seen' && c.params?.botId === 'bot-gamma' && c.params?.sessionId === undefined),
+    'context menu Mark Read must emit whole-bot bots.chats.seen without sessionId so side chats are marked seen',
   );
   assert.ok(
     rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.botId === 'bot-gamma'),
     'context menu Mark Read must emit bots.upNext.seen when upNextCount > 0',
+  );
+
+  await act(async () => {
+    eventSources.at(-1)?.emit('bots:changed', { data: JSON.stringify({ botIds: ['bot-gamma'], kinds: ['chats', 'status'] }) });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+  await flush();
+  assert.equal(
+    gammaCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null,
+    null,
+    'side-chat error/unread dot must stay cleared after server bots.list refresh',
   );
 
   await act(async () => {
@@ -2572,10 +2644,14 @@ domTest('BotSidebarCard clears failed dot and upNext pill on active-card click, 
   });
   await flush();
   const popoverAfter = dom.window.document.querySelector('.dsh-bots-popover');
+  const markUnreadBtn = [...(popoverAfter?.querySelectorAll('.dsh-bots-menu-item') ?? [])]
+    .find((btn) => /标记?为未读|Mark Unread/.test(btn.textContent || ''));
+  assert.ok(markUnreadBtn, 'once failed dot and upNext pill are cleared, context menu switches back to Mark Unread');
+  await act(async () => { markUnreadBtn.click(); });
+  await flush();
   assert.ok(
-    [...(popoverAfter?.querySelectorAll('.dsh-bots-menu-item') ?? [])]
-      .some((btn) => /标记?为未读|Mark Unread/.test(btn.textContent || '')),
-    'once failed dot and upNext pill are cleared, context menu switches back to Mark Unread',
+    rpcCalls.some((c) => c.method === 'bots.chats.unseen' && c.params?.botId === 'bot-gamma' && c.params?.sessionId === 'sess-gamma-home'),
+    'context menu Mark Unread still targets home sessionId',
   );
 
   const deltaCard = cardByName('外部切入四号');
@@ -2596,4 +2672,42 @@ domTest('BotSidebarCard clears failed dot and upNext pill on active-card click, 
     rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.botId === 'bot-delta'),
     'external session switch into bot home must emit bots.upNext.seen',
   );
+
+  await act(async () => {
+    sessionsState = { byId: { 'sess-plain-workspace-init': { id: 'sess-plain-workspace-init', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  openSessionCalls.length = 0;
+  const nullSidCard = cardByName('迁移空会话五号');
+  assert.equal(nullSidCard?.querySelector('.dsh-bots-upnext-pill')?.textContent, '1');
+  await act(async () => { nullSidCard.click(); });
+  await flush();
+  assert.deepEqual(openSessionCalls, ['sess-migrated-home'], 'clicking null-chatSessionId bot with upNextCount > 0 must open newly resolved session');
+  assert.equal(nullSidCard.getAttribute('data-active'), 'true', 'null-chatSessionId bot card must remain active after opening session');
+  assert.equal(nullSidCard.querySelector('.dsh-bots-avatar-dot')?.getAttribute('data-state') ?? null, null);
+  assert.equal(nullSidCard.querySelector('.dsh-bots-upnext-pill')?.textContent ?? null, null);
+
+  await act(async () => {
+    sessionsState = { byId: { 'sess-plain-workspace-1': { id: 'sess-plain-workspace-1', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await flush();
+  assert.equal(nullSidCard.getAttribute('data-active'), 'false', 'switching host away from opened bot clears active highlight');
+
+  let releasePillChatOpen;
+  pillCancelChatOpenGate = new Promise((resolve) => { releasePillChatOpen = resolve; });
+  openTabInCalls.length = 0;
+  const pillCancelCard = cardByName('胶囊切走六号');
+  const cancelPillBtn = pillCancelCard?.querySelector('.dsh-bots-upnext-pill');
+  assert.equal(cancelPillBtn?.textContent, '2');
+  await act(async () => { cancelPillBtn.click(); });
+  await act(async () => {
+    sessionsState = { byId: { 'sess-plain-workspace-2': { id: 'sess-plain-workspace-2', retainedBy: { mainView: 1 } } } };
+    for (const l of sessionListeners) l();
+  });
+  await act(async () => { releasePillChatOpen(); });
+  await flush();
+  assert.deepEqual(openTabInCalls, [], 'switching session away before openBotHome settles must not open target bot right panel');
+  assert.equal(pillCancelCard.getAttribute('data-active'), 'false', 'cancelled pill open leaves card inactive');
 });
